@@ -1,17 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { useTheme } from '@/hooks/use-theme'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Switch } from '@/components/ui/switch'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const { login, isAuthenticated } = useAuth()
-  const { theme, setTheme } = useTheme()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -37,8 +35,6 @@ export default function LoginPage() {
       setIsLoading(false)
     }
   }
-
-  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -83,15 +79,8 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 pt-6 border-t flex items-center justify-between">
-            <Label htmlFor="dark-mode" className="text-sm text-muted-foreground">
-              Dark Mode
-            </Label>
-            <Switch
-              id="dark-mode"
-              checked={isDark}
-              onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
-            />
+          <div className="mt-6 pt-6 border-t flex items-center justify-center">
+            <ThemeToggle />
           </div>
         </CardContent>
       </Card>
