@@ -34,11 +34,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const checkOpenSearchStatus = async () => {
+    // This function is for use after login - silently handles errors
     try {
       const response = await settingsApi.getOpenSearchStatus()
       setIsOpenSearchConfigured(response.configured)
     } catch {
-      // If not authenticated yet, this will fail - that's ok
       setIsOpenSearchConfigured(false)
     }
   }
@@ -56,9 +56,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      // Validate token by making an authenticated request
+      // Validate token AND check OpenSearch status in one call
+      // This will throw if the token is invalid
       try {
-        await checkOpenSearchStatus()
+        const osStatus = await settingsApi.getOpenSearchStatus()
+        setIsOpenSearchConfigured(osStatus.configured)
         setIsAuthenticated(true)
       } catch {
         // Token is invalid or expired - clear it
