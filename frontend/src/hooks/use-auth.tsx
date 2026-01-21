@@ -1,23 +1,20 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { api } from '@/lib/api'
+import { api, settingsApi } from '@/lib/api'
 
 interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
   setupCompleted: boolean
+  isOpenSearchConfigured: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
-  setup: (data: SetupData) => Promise<void>
+  setup: (email: string, password: string) => Promise<void>
+  setOpenSearchConfigured: (configured: boolean) => void
 }
 
 interface SetupData {
   admin_email: string
   admin_password: string
-  opensearch_host: string
-  opensearch_port: number
-  opensearch_username?: string
-  opensearch_password?: string
-  opensearch_use_ssl: boolean
 }
 
 interface SetupStatusResponse {
@@ -35,10 +32,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [setupCompleted, setSetupCompleted] = useState(false)
+  const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
 
   useEffect(() => {
     checkAuth()
   }, [])
+
+  const checkOpenSearchStatus = async () => {
+    try {
+      const response = await settingsApi.getOpenSearchStatus()
+      setIsOpenSearchConfigured(response.configured)
+    } catch {
+      // If not authenticated yet, this will fail - that's ok
+      setIsOpenSearchConfigured(false)
+    }
+  }
 
   const checkAuth = async () => {
     try {
@@ -46,10 +54,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSetupCompleted(status.setup_completed)
 
       const token = localStorage.getItem('chad-token')
-      setIsAuthenticated(!!token && status.setup_completed)
+      const authenticated = !!token && status.setup_completed
+      setIsAuthenticated(authenticated)
+
+      // Check OpenSearch status if authenticated
+      if (authenticated) {
+        await checkOpenSearchStatus()
+      }
     } catch {
       setSetupCompleted(false)
       setIsAuthenticated(false)
+      setIsOpenSearchConfigured(false)
     } finally {
       setIsLoading(false)
     }
@@ -59,22 +74,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const response = await api.post<TokenResponse>('/auth/login', { email, password })
     localStorage.setItem('chad-token', response.access_token)
     setIsAuthenticated(true)
+    // Check OpenSearch status after login
+    await checkOpenSearchStatus()
   }
 
   const logout = () => {
     localStorage.removeItem('chad-token')
     setIsAuthenticated(false)
+    setIsOpenSearchConfigured(false)
   }
 
-  const setup = async (data: SetupData) => {
-    const response = await api.post<TokenResponse>('/auth/setup', data)
+  const setup = async (email: string, password: string) => {
+    const response = await api.post<TokenResponse>('/auth/setup', {
+      admin_email: email,
+      admin_password: password,
+    })
     localStorage.setItem('chad-token', response.access_token)
     setSetupCompleted(true)
     setIsAuthenticated(true)
+    // OpenSearch not configured yet after setup
+    setIsOpenSearchConfigured(false)
   }
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, setupCompleted, login, logout, setup }}>
+    <AuthContext.Provider value={{
+      isAuthenticated,
+      isLoading,
+      setupCompleted,
+      isOpenSearchConfigured,
+      login,
+      logout,
+      setup,
+      setOpenSearchConfigured: setIsOpenSearchConfigured,
+    }}>
       {children}
     </AuthContext.Provider>
   )

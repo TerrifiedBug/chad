@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import { Header } from '@/components/Header'
 import SetupPage from '@/pages/Setup'
 import LoginPage from '@/pages/Login'
+import OpenSearchWizard from '@/pages/OpenSearchWizard'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -20,16 +21,26 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-  const { setupCompleted, isLoading } = useAuth()
+  const { setupCompleted, isLoading, isAuthenticated, isOpenSearchConfigured } = useAuth()
 
   if (isLoading) {
     return <div className="flex h-screen items-center justify-center">Loading...</div>
   }
 
+  // Step 1: Initial setup (create admin account)
   if (!setupCompleted) {
     return (
       <Routes>
         <Route path="*" element={<SetupPage />} />
+      </Routes>
+    )
+  }
+
+  // Step 2: OpenSearch wizard (shown if logged in but OpenSearch not configured)
+  if (isAuthenticated && !isOpenSearchConfigured) {
+    return (
+      <Routes>
+        <Route path="*" element={<OpenSearchWizard />} />
       </Routes>
     )
   }

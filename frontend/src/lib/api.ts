@@ -62,3 +62,37 @@ class ApiClient {
 }
 
 export const api = new ApiClient()
+
+// Settings types
+export type OpenSearchConfig = {
+  host: string
+  port: number
+  username?: string
+  password?: string
+  use_ssl: boolean
+}
+
+export type ValidationStep = {
+  name: string
+  success: boolean
+  error?: string | null
+}
+
+export type OpenSearchTestResponse = {
+  success: boolean
+  steps: ValidationStep[]
+}
+
+export type OpenSearchStatusResponse = {
+  configured: boolean
+}
+
+// Settings API
+export const settingsApi = {
+  testOpenSearch: (config: OpenSearchConfig) =>
+    api.post<OpenSearchTestResponse>('/settings/opensearch/test', config),
+  saveOpenSearch: (config: OpenSearchConfig) =>
+    api.post<{ success: boolean }>('/settings/opensearch', config),
+  getOpenSearchStatus: () =>
+    api.get<OpenSearchStatusResponse>('/settings/opensearch/status'),
+}
