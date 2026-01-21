@@ -1,0 +1,16 @@
+[project]
+name = "chad-backend"
+version = "0.1.0"
+description = "CHAD - Cyber Hunting And Detection Backend"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
