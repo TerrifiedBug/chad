@@ -19,9 +19,8 @@ pydantic-settings==2.2.1
 email-validator==2.1.1
 
 # Sigma (for future tasks)
-pysigma==0.11.0
-pysigma-backend-opensearch==1.0.0
-pysigma-pipeline-ecs==1.1.0
+pysigma>=0.11.0
+pysigma-backend-opensearch>=1.0.0
 
 # OpenSearch client
 opensearch-py==2.5.0
