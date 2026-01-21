@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.session import get_db
-from app.models.setting import Setting
 from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, SetupRequest, TokenResponse
 
@@ -41,19 +40,6 @@ async def initial_setup(
         is_active=True,
     )
     db.add(admin)
-
-    # Store OpenSearch settings
-    opensearch_setting = Setting(
-        key="opensearch",
-        value={
-            "host": request.opensearch_host,
-            "port": request.opensearch_port,
-            "username": request.opensearch_username,
-            "password": request.opensearch_password,
-            "use_ssl": request.opensearch_use_ssl,
-        },
-    )
-    db.add(opensearch_setting)
 
     await db.commit()
     await db.refresh(admin)
