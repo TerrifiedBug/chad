@@ -1,4 +1,4 @@
-# Sigma Alerting Platform
+# CHAD - Cyber Hunting And Detection
 
 A web-based Sigma rule management and alerting platform for OpenSearch. Replaces OpenSearch's built-in Security Analytics with a modern, feature-rich interface for security teams.
 
@@ -65,8 +65,8 @@ A web-based Sigma rule management and alerting platform for OpenSearch. Replaces
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-org/sigma-alerting-platform.git
-cd sigma-alerting-platform
+git clone https://github.com/your-org/chad.git
+cd chad
 ```
 
 2. Create environment file:
@@ -77,7 +77,7 @@ cp .env.example .env
 
 3. Start the platform:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 4. Access the UI at `http://localhost:3000`
@@ -101,10 +101,10 @@ Add a store to your Fluentd match to send logs to the platform:
     ...
   </store>
 
-  <!-- Add this to send to Sigma platform -->
+  <!-- Add this to send to CHAD -->
   <store>
     @type http
-    endpoint http://sigma-platform:8000/logs/auditbeat
+    endpoint http://chad:8000/logs/auditbeat
     serializer json
     <buffer>
       flush_interval 60s
@@ -122,9 +122,9 @@ All configuration is managed through the web UI after initial setup. Environment
 # Database (required)
 POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
-POSTGRES_USER=sigma
+POSTGRES_USER=chad
 POSTGRES_PASSWORD=<secure-password>
-POSTGRES_DB=sigma
+POSTGRES_DB=chad
 
 # App secret (required)
 JWT_SECRET_KEY=<random-secret>
@@ -142,132 +142,40 @@ JWT_SECRET_KEY=<random-secret>
 - **AI Mapping** - Local (Ollama) or cloud (OpenAI/Anthropic) for ECS suggestions
 - **Processing** - Batch size, queue thresholds, index prefixes
 
-## Usage
-
-### Creating a Rule
-
-1. Navigate to **Rules** → **New Rule**
-2. Write Sigma YAML in the editor:
-```yaml
-title: Suspicious PowerShell Execution
-status: test
-logsource:
-    product: windows
-    category: process_creation
-detection:
-    selection:
-        Image|endswith: '\powershell.exe'
-        CommandLine|contains:
-            - '-enc'
-            - '-encoded'
-    condition: selection
-level: high
-```
-3. Select target **Index Pattern** (e.g., winlogbeat)
-4. Click **Validate** to check fields exist
-5. Click **Test** with sample logs to verify detection
-6. Click **Deploy** to activate the rule
-
-### Investigating Alerts
-
-1. Navigate to **Alerts**
-2. Filter by severity, rule, time range
-3. Click an alert to view:
-   - Full matched log
-   - Rule details
-   - Threat intel enrichment
-4. Actions: Create Jira ticket, create exception, snooze rule
-
-### Importing from SigmaHQ
-
-1. Navigate to **SigmaHQ**
-2. Filter by product (windows, linux), category, tags
-3. Search for specific rules
-4. Select rules to import
-5. Assign index pattern
-6. Click **Import**
-
-## API
-
-### Read-Only External API
-
-```bash
-# List rules
-GET /api/v1/rules
-
-# Get alerts
-GET /api/v1/alerts?since=2024-01-01&severity=high
-
-# System stats
-GET /api/v1/stats
-```
-
-### Internal API
-
-See [API Documentation](docs/api.md) for full endpoint reference.
-
 ## Development
 
-### Prerequisites
-
-- Python 3.11+
-- Node.js 20+
-- PostgreSQL 16
-- OpenSearch (or use testcontainers)
-
-### Backend Setup
+Development uses Docker for all commands to avoid polluting local environments:
 
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+# Start development environment
+docker compose -f docker-compose.dev.yml up -d
 
-# Run tests
-pytest
+# Run backend tests
+docker compose -f docker-compose.dev.yml run --rm backend pytest
 
-# Start development server
-uvicorn main:app --reload
-```
+# Run frontend tests
+docker compose -f docker-compose.dev.yml run --rm frontend npm test
 
-### Frontend Setup
+# Run linting
+docker compose -f docker-compose.dev.yml run --rm backend ruff check .
+docker compose -f docker-compose.dev.yml run --rm frontend npm run lint
 
-```bash
-cd frontend
-npm install
-
-# Run tests
-npm test
-
-# Start development server
-npm run dev
-```
-
-### Running Tests
-
-```bash
-# Backend unit + integration tests
-cd backend && pytest
-
-# Frontend unit tests
-cd frontend && npm test
-
-# E2E tests
-cd frontend && npm run test:e2e
+# Interactive shell
+docker compose -f docker-compose.dev.yml exec backend bash
+docker compose -f docker-compose.dev.yml exec frontend sh
 ```
 
 ## Roadmap
 
 ### v1.0 - Core Platform
-- [x] Rule CRUD with YAML editor
-- [x] Field validation
-- [x] Sample log testing
-- [x] Basic dashboard
-- [x] Local auth + SSO
-- [x] Webhook notifications
-- [x] Rule versioning
-- [x] Dark mode
+- [ ] Rule CRUD with YAML editor
+- [ ] Field validation
+- [ ] Sample log testing
+- [ ] Basic dashboard
+- [ ] Local auth + SSO
+- [ ] Webhook notifications
+- [ ] Rule versioning
+- [ ] Dark mode
 
 ### v1.1 - Rule Management
 - [ ] SigmaHQ sync + bulk import
@@ -286,22 +194,13 @@ cd frontend && npm run test:e2e
 ### v1.3 - Integrations
 - [ ] Jira Cloud
 - [ ] Threat intel enrichment
-- [ ] Read-only REST API
+- [ ] Read-only REST API (user-scoped API keys)
 
 ### v2.0 - Scale & Intelligence
 - [ ] AI-assisted ECS mapping
 - [ ] Horizontal scaling (Celery + Redis)
 - [ ] Time-based correlation rules
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
-
 ## License
 
 [License details here]
-
-## Support
-
-- Documentation: [docs/](docs/)
-- Issues: [GitHub Issues](https://github.com/your-org/sigma-alerting-platform/issues)
