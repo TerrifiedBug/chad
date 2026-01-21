@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # Authentication
+    ALLOW_LOCAL_LOGIN_OVERRIDE: bool = False
+
     # App
     APP_NAME: str = "CHAD"
     DEBUG: bool = False
