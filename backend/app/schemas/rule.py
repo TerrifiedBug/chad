@@ -53,3 +53,40 @@ class RuleResponse(RuleBase):
 class RuleDetailResponse(RuleResponse):
     index_pattern: IndexPatternResponse
     versions: list[RuleVersionResponse] = []
+
+
+# Validation schemas
+class RuleValidateRequest(BaseModel):
+    yaml_content: str
+    index_pattern_id: UUID | None = None  # Optional - validates syntax without field check
+
+
+class ValidationErrorItem(BaseModel):
+    type: str  # "syntax", "schema", "field"
+    message: str
+    line: int | None = None
+    field: str | None = None
+
+
+class RuleValidateResponse(BaseModel):
+    valid: bool
+    errors: list[ValidationErrorItem] = []
+    opensearch_query: dict | None = None
+    fields: list[str] = []
+
+
+# Sample log testing schemas
+class RuleTestRequest(BaseModel):
+    yaml_content: str
+    sample_logs: list[dict]
+
+
+class LogMatchResult(BaseModel):
+    log_index: int
+    matched: bool
+
+
+class RuleTestResponse(BaseModel):
+    matches: list[LogMatchResult]
+    opensearch_query: dict | None = None
+    errors: list[ValidationErrorItem] = []

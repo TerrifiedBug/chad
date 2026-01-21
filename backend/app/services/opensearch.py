@@ -164,3 +164,89 @@ def validate_opensearch_connection(
                 client.indices.delete(index=test_index, ignore=[404])
             except:
                 pass
+
+
+def get_index_fields(client: OpenSearch, pattern: str) -> set[str]:
+    """
+    Get all field names from indices matching the pattern.
+
+    Args:
+        client: OpenSearch client
+        pattern: Index pattern (e.g., "logs-*")
+
+    Returns:
+        Set of field names across all matching indices
+    """
+    fields: set[str] = set()
+
+    try:
+        # Get mapping for all indices matching pattern
+        mappings = client.indices.get_mapping(index=pattern)
+
+        for index_name, index_data in mappings.items():
+            props = index_data.get("mappings", {}).get("properties", {})
+            _extract_fields(props, "", fields)
+
+    except Exception:
+        # Pattern may not match any indices
+        pass
+
+    return fields
+
+
+def _extract_fields(properties: dict[str, Any], prefix: str, fields: set[str]) -> None:
+    """Recursively extract field names from mapping properties."""
+    for field_name, field_config in properties.items():
+        full_name = f"{prefix}{field_name}" if prefix else field_name
+        fields.add(full_name)
+
+        # Handle nested objects
+        if "properties" in field_config:
+            _extract_fields(field_config["properties"], f"{full_name}.", fields)
+
+
+def validate_index_pattern(client: OpenSearch, pattern: str) -> dict[str, Any]:
+    """
+    Validate an index pattern exists and get info about matching indices.
+
+    Args:
+        client: OpenSearch client
+        pattern: Index pattern to validate
+
+    Returns:
+        Dict with validation result and index info
+    """
+    try:
+        # Get matching indices
+        indices_info = client.cat.indices(index=pattern, format="json")
+        indices = [idx["index"] for idx in indices_info]
+
+        if not indices:
+            return {
+                "valid": False,
+                "indices": [],
+                "total_docs": 0,
+                "sample_fields": [],
+            }
+
+        # Get total doc count
+        total_docs = sum(int(idx.get("docs.count", 0)) for idx in indices_info)
+
+        # Get sample fields from mapping
+        fields = get_index_fields(client, pattern)
+
+        return {
+            "valid": True,
+            "indices": indices[:10],  # Limit to first 10
+            "total_docs": total_docs,
+            "sample_fields": sorted(list(fields))[:50],  # Limit to 50 fields
+        }
+
+    except Exception as e:
+        return {
+            "valid": False,
+            "indices": [],
+            "total_docs": 0,
+            "sample_fields": [],
+            "error": str(e),
+        }

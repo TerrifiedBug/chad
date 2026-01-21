@@ -29,3 +29,16 @@ class IndexPatternResponse(IndexPatternBase):
 
     class Config:
         from_attributes = True
+
+
+# Validation schemas
+class IndexPatternValidateRequest(BaseModel):
+    pattern: str
+
+
+class IndexPatternValidateResponse(BaseModel):
+    valid: bool
+    indices: list[str] = []
+    total_docs: int = 0
+    sample_fields: list[str] = []
+    error: str | None = None

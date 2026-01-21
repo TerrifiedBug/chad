@@ -2,15 +2,30 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_opensearch_client
 from app.db.session import get_db
+from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleStatus, RuleVersion
 from app.models.user import User
-from app.schemas.rule import RuleCreate, RuleDetailResponse, RuleResponse, RuleUpdate
+from app.schemas.rule import (
+    RuleCreate,
+    RuleDetailResponse,
+    RuleResponse,
+    RuleTestRequest,
+    RuleTestResponse,
+    RuleUpdate,
+    RuleValidateRequest,
+    RuleValidateResponse,
+    ValidationErrorItem,
+    LogMatchResult,
+)
+from app.services.opensearch import get_index_fields
+from app.services.sigma import sigma_service
 
 router = APIRouter(prefix="/rules", tags=["rules"])
 
@@ -146,3 +161,123 @@ async def delete_rule(
 
     await db.delete(rule)
     await db.commit()
+
+
+@router.post("/validate", response_model=RuleValidateResponse)
+async def validate_rule(
+    request: RuleValidateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Validate a Sigma rule YAML.
+
+    Checks:
+    1. YAML syntax
+    2. Sigma schema (required fields)
+    3. Field existence in target index (if index_pattern_id provided)
+    """
+    # Parse and validate the rule
+    result = sigma_service.translate_and_validate(request.yaml_content)
+
+    if not result.success:
+        return RuleValidateResponse(
+            valid=False,
+            errors=[
+                ValidationErrorItem(
+                    type=e.type,
+                    message=e.message,
+                    line=e.line,
+                    field=e.field,
+                )
+                for e in (result.errors or [])
+            ],
+        )
+
+    # If index_pattern_id provided, validate fields exist in OpenSearch
+    if request.index_pattern_id:
+        # Get the index pattern
+        pattern_result = await db.execute(
+            select(IndexPattern).where(IndexPattern.id == request.index_pattern_id)
+        )
+        index_pattern = pattern_result.scalar_one_or_none()
+
+        if index_pattern is None:
+            return RuleValidateResponse(
+                valid=False,
+                errors=[
+                    ValidationErrorItem(
+                        type="field",
+                        message="Index pattern not found",
+                    )
+                ],
+            )
+
+        # Get fields from OpenSearch index
+        index_fields = get_index_fields(opensearch, index_pattern.pattern)
+
+        # Check if all rule fields exist in index
+        missing_fields = []
+        for field in result.fields or set():
+            if field not in index_fields:
+                missing_fields.append(field)
+
+        if missing_fields:
+            return RuleValidateResponse(
+                valid=False,
+                errors=[
+                    ValidationErrorItem(
+                        type="field",
+                        field=field,
+                        message=f"Field '{field}' not found in index '{index_pattern.pattern}'",
+                    )
+                    for field in missing_fields
+                ],
+                fields=list(result.fields or set()),
+            )
+
+    return RuleValidateResponse(
+        valid=True,
+        opensearch_query=result.query,
+        fields=list(result.fields or set()),
+    )
+
+
+@router.post("/test", response_model=RuleTestResponse)
+async def test_rule(
+    request: RuleTestRequest,
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Test a Sigma rule against sample log data.
+
+    Does not require OpenSearch - runs in-memory matching.
+    """
+    # Parse and translate the rule
+    result = sigma_service.translate_and_validate(request.yaml_content)
+
+    if not result.success:
+        return RuleTestResponse(
+            matches=[],
+            errors=[
+                ValidationErrorItem(
+                    type=e.type,
+                    message=e.message,
+                    line=e.line,
+                    field=e.field,
+                )
+                for e in (result.errors or [])
+            ],
+        )
+
+    # Test each log against the rule
+    matches = []
+    for idx, log in enumerate(request.sample_logs):
+        matched = sigma_service.test_against_log(result.query, log)
+        matches.append(LogMatchResult(log_index=idx, matched=matched))
+
+    return RuleTestResponse(
+        matches=matches,
+        opensearch_query=result.query,
+    )

@@ -2,10 +2,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, get_opensearch_client, require_admin
 from app.db.session import get_db
 from app.models.index_pattern import IndexPattern
 from app.models.user import User
@@ -13,7 +14,10 @@ from app.schemas.index_pattern import (
     IndexPatternCreate,
     IndexPatternResponse,
     IndexPatternUpdate,
+    IndexPatternValidateRequest,
+    IndexPatternValidateResponse,
 )
+from app.services.opensearch import validate_index_pattern
 
 router = APIRouter(prefix="/index-patterns", tags=["index-patterns"])
 
@@ -124,3 +128,25 @@ async def delete_index_pattern(
 
     await db.delete(pattern)
     await db.commit()
+
+
+@router.post("/validate", response_model=IndexPatternValidateResponse)
+async def validate_pattern(
+    request: IndexPatternValidateRequest,
+    opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Validate an index pattern exists in OpenSearch.
+
+    Returns info about matching indices and sample fields.
+    """
+    result = validate_index_pattern(opensearch, request.pattern)
+
+    return IndexPatternValidateResponse(
+        valid=result["valid"],
+        indices=result.get("indices", []),
+        total_docs=result.get("total_docs", 0),
+        sample_fields=result.get("sample_fields", []),
+        error=result.get("error"),
+    )

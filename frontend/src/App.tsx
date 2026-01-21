@@ -5,6 +5,9 @@ import { Header } from '@/components/Header'
 import SetupPage from '@/pages/Setup'
 import LoginPage from '@/pages/Login'
 import OpenSearchWizard from '@/pages/OpenSearchWizard'
+import RulesPage from '@/pages/Rules'
+import RuleEditorPage from '@/pages/RuleEditor'
+import IndexPatternsPage from '@/pages/IndexPatterns'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -54,7 +57,50 @@ function AppRoutes() {
             <Header />
             <main className="container px-4 py-8">
               <h1 className="text-2xl font-bold">Welcome to CHAD</h1>
-              <p className="text-muted-foreground mt-2">Dashboard coming soon...</p>
+              <p className="text-muted-foreground mt-2">
+                Select <strong>Rules</strong> to manage detection rules or{' '}
+                <strong>Index Patterns</strong> to configure target indices.
+              </p>
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/rules" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="container px-4 py-8">
+              <RulesPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/rules/new" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="container px-4 py-8">
+              <RuleEditorPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/rules/:id" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="container px-4 py-8">
+              <RuleEditorPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/index-patterns" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="container px-4 py-8">
+              <IndexPatternsPage />
             </main>
           </div>
         </ProtectedRoute>

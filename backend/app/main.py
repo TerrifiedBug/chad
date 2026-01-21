@@ -29,8 +29,8 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# Include routers
-app.include_router(auth_router)
-app.include_router(rules_router)
-app.include_router(index_patterns_router)
-app.include_router(settings_router)
+# Include routers with /api prefix
+app.include_router(auth_router, prefix="/api")
+app.include_router(rules_router, prefix="/api")
+app.include_router(index_patterns_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")

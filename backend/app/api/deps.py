@@ -2,12 +2,15 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.db.session import get_db
+from app.models.setting import Setting
 from app.models.user import User
+from app.services.opensearch import create_client
 
 security = HTTPBearer()
 
@@ -60,3 +63,27 @@ async def require_admin(
             detail="Admin access required",
         )
     return current_user
+
+
+async def get_opensearch_client(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> OpenSearch:
+    """Get OpenSearch client from stored configuration."""
+    result = await db.execute(select(Setting).where(Setting.key == "opensearch"))
+    setting = result.scalar_one_or_none()
+
+    if setting is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OpenSearch not configured. Please configure OpenSearch in settings.",
+        )
+
+    config = setting.value
+    return create_client(
+        host=config["host"],
+        port=config["port"],
+        username=config.get("username"),
+        password=config.get("password"),
+        use_ssl=config.get("use_ssl", True),
+    )

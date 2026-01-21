@@ -12,11 +12,6 @@ interface AuthContextType {
   setOpenSearchConfigured: (configured: boolean) => void
 }
 
-interface SetupData {
-  admin_email: string
-  admin_password: string
-}
-
 interface SetupStatusResponse {
   setup_completed: boolean
 }
