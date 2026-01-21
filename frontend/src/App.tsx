@@ -42,9 +42,12 @@ function AppRoutes() {
   // Step 2: OpenSearch wizard (shown if logged in but OpenSearch not configured)
   if (isAuthenticated && !isOpenSearchConfigured) {
     return (
-      <Routes>
-        <Route path="*" element={<OpenSearchWizard />} />
-      </Routes>
+      <div className="min-h-screen bg-background">
+        <Header />
+        <Routes>
+          <Route path="*" element={<OpenSearchWizard />} />
+        </Routes>
+      </div>
     )
   }
 
@@ -55,7 +58,7 @@ function AppRoutes() {
         <ProtectedRoute>
           <div className="min-h-screen bg-background">
             <Header />
-            <main className="container px-4 py-8">
+            <main className="px-6 py-8">
               <h1 className="text-2xl font-bold">Welcome to CHAD</h1>
               <p className="text-muted-foreground mt-2">
                 Select <strong>Rules</strong> to manage detection rules or{' '}
@@ -69,7 +72,7 @@ function AppRoutes() {
         <ProtectedRoute>
           <div className="min-h-screen bg-background">
             <Header />
-            <main className="container px-4 py-8">
+            <main className="px-6 py-8">
               <RulesPage />
             </main>
           </div>
@@ -79,7 +82,7 @@ function AppRoutes() {
         <ProtectedRoute>
           <div className="min-h-screen bg-background">
             <Header />
-            <main className="container px-4 py-8">
+            <main className="px-6 py-8">
               <RuleEditorPage />
             </main>
           </div>
@@ -89,7 +92,7 @@ function AppRoutes() {
         <ProtectedRoute>
           <div className="min-h-screen bg-background">
             <Header />
-            <main className="container px-4 py-8">
+            <main className="px-6 py-8">
               <RuleEditorPage />
             </main>
           </div>
@@ -99,7 +102,7 @@ function AppRoutes() {
         <ProtectedRoute>
           <div className="min-h-screen bg-background">
             <Header />
-            <main className="container px-4 py-8">
+            <main className="px-6 py-8">
               <IndexPatternsPage />
             </main>
           </div>

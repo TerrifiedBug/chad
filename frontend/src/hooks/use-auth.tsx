@@ -49,12 +49,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSetupCompleted(status.setup_completed)
 
       const token = localStorage.getItem('chad-token')
-      const authenticated = !!token && status.setup_completed
-      setIsAuthenticated(authenticated)
 
-      // Check OpenSearch status if authenticated
-      if (authenticated) {
+      if (!token || !status.setup_completed) {
+        setIsAuthenticated(false)
+        setIsOpenSearchConfigured(false)
+        return
+      }
+
+      // Validate token by making an authenticated request
+      try {
         await checkOpenSearchStatus()
+        setIsAuthenticated(true)
+      } catch {
+        // Token is invalid or expired - clear it
+        localStorage.removeItem('chad-token')
+        setIsAuthenticated(false)
+        setIsOpenSearchConfigured(false)
       }
     } catch {
       setSetupCompleted(false)

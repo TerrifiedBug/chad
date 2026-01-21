@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # JWT
     JWT_SECRET_KEY: str = "dev-secret-key-change-in-prod"
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours for dev
 
     # Authentication
     ALLOW_LOCAL_LOGIN_OVERRIDE: bool = False

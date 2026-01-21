@@ -15,7 +15,7 @@ export function Header() {
 
   return (
     <header className="border-b">
-      <div className="container flex h-16 items-center justify-between px-4">
+      <div className="flex h-16 w-full items-center justify-between px-6">
         <div className="flex items-center gap-8">
           <Link to="/" className="text-xl font-bold">
             CHAD
