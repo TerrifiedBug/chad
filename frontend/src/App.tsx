@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
+import { Header } from '@/components/Header'
 import SetupPage from '@/pages/Setup'
 import LoginPage from '@/pages/Login'
 
@@ -38,9 +39,12 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={
         <ProtectedRoute>
-          <div className="p-8">
-            <h1 className="text-2xl font-bold">Welcome to CHAD</h1>
-            <p className="text-muted-foreground mt-2">Dashboard coming soon...</p>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="container px-4 py-8">
+              <h1 className="text-2xl font-bold">Welcome to CHAD</h1>
+              <p className="text-muted-foreground mt-2">Dashboard coming soon...</p>
+            </main>
           </div>
         </ProtectedRoute>
       } />
