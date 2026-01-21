@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { settingsApi, OpenSearchConfig, ValidationStep } from '@/lib/api'
-import { ThemeToggle } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -108,15 +107,7 @@ export default function OpenSearchWizard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="container flex h-16 items-center justify-between px-4">
-          <h1 className="text-xl font-bold">CHAD</h1>
-          <ThemeToggle />
-        </div>
-      </header>
-
-      <div className="flex items-center justify-center py-12 px-4">
+    <div className="flex items-center justify-center py-12 px-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Configure OpenSearch</CardTitle>
@@ -226,7 +217,6 @@ export default function OpenSearchWizard() {
             )}
           </CardContent>
         </Card>
-      </div>
     </div>
   )
 }
