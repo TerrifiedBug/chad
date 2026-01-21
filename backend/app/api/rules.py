@@ -46,6 +46,7 @@ async def create_rule(
         status=RuleStatus.DISABLED,
     )
     db.add(rule)
+    await db.flush()  # Flush to get the rule.id
 
     # Create initial version
     version = RuleVersion(
