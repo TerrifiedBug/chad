@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+frontend/dist/
+*.tsbuildinfo
+*.d.ts
+*.js.map
+
+# Vite
+vite.config.js
+vite.config.d.ts
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.egg
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Docker
+*.log
