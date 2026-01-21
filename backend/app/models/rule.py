@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from enum import Enum
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base, TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.index_pattern import IndexPattern
+    from app.models.user import User
+
+
+class RuleStatus(str, Enum):
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+    SNOOZED = "snoozed"
+
+
+class Rule(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "rules"
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    yaml_content: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(String(50), default="medium")
+    status: Mapped[RuleStatus] = mapped_column(default=RuleStatus.DISABLED)
+    snooze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    index_pattern_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("index_patterns.id"), nullable=False
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+
+    # Relationships
+    index_pattern: Mapped["IndexPattern"] = relationship("IndexPattern")
+    creator: Mapped["User"] = relationship("User")
+    versions: Mapped[list["RuleVersion"]] = relationship(
+        "RuleVersion", back_populates="rule", order_by="desc(RuleVersion.version_number)"
+    )
+
+
+class RuleVersion(Base, UUIDMixin):
+    __tablename__ = "rule_versions"
+
+    rule_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("rules.id", ondelete="CASCADE"), nullable=False
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    yaml_content: Mapped[str] = mapped_column(Text, nullable=False)
+    changed_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default="now()", nullable=False
+    )
+
+    # Relationships
+    rule: Mapped["Rule"] = relationship("Rule", back_populates="versions")
+    author: Mapped["User"] = relationship("User")
