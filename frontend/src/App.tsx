@@ -17,6 +17,7 @@ import UsersPage from '@/pages/Users'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
 import SigmaHQPage from '@/pages/SigmaHQ'
+import AuditLogPage from '@/pages/AuditLog'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -155,6 +156,16 @@ function AppRoutes() {
             <Header />
             <main className="px-6 py-8">
               <UsersPage />
+            </main>
+          </div>
+        </AdminRoute>
+      } />
+      <Route path="/settings/audit" element={
+        <AdminRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <AuditLogPage />
             </main>
           </div>
         </AdminRoute>

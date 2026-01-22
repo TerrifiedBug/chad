@@ -576,3 +576,49 @@ export const apiKeysApi = {
     api.patch<APIKey>(`/api-keys/${id}`, data),
   delete: (id: string) => api.delete(`/api-keys/${id}`),
 }
+
+// Audit Log types
+export type AuditLogEntry = {
+  id: string
+  user_id: string | null
+  user_email: string | null
+  action: string
+  resource_type: string
+  resource_id: string | null
+  details: Record<string, unknown> | null
+  created_at: string
+}
+
+export type AuditLogListResponse = {
+  items: AuditLogEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export const auditApi = {
+  list: (params?: {
+    user_id?: string
+    action?: string
+    resource_type?: string
+    start_date?: string
+    end_date?: string
+    limit?: number
+    offset?: number
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.user_id) searchParams.set('user_id', params.user_id)
+    if (params?.action) searchParams.set('action', params.action)
+    if (params?.resource_type) searchParams.set('resource_type', params.resource_type)
+    if (params?.start_date) searchParams.set('start_date', params.start_date)
+    if (params?.end_date) searchParams.set('end_date', params.end_date)
+    if (params?.limit) searchParams.set('limit', params.limit.toString())
+    if (params?.offset) searchParams.set('offset', params.offset.toString())
+    const query = searchParams.toString()
+    return api.get<AuditLogListResponse>(`/audit${query ? `?${query}` : ''}`)
+  },
+  getActions: () =>
+    api.get<{ actions: string[] }>('/audit/actions'),
+  getResourceTypes: () =>
+    api.get<{ resource_types: string[] }>('/audit/resource-types'),
+}
