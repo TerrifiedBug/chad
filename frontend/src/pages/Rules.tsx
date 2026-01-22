@@ -41,6 +41,10 @@ export default function RulesPage() {
   const [search, setSearch] = useState('')
   const [deploymentFilter, setDeploymentFilter] = useState<DeploymentFilter>('all')
 
+  // Selection state
+  const [selectedRules, setSelectedRules] = useState<Set<string>>(new Set())
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
+
   useEffect(() => {
     loadData()
   }, [])
@@ -75,6 +79,49 @@ export default function RulesPage() {
       (deploymentFilter === 'not_deployed' && rule.deployed_at === null)
     return matchesSearch && matchesDeployment
   })
+
+  // Toggle single selection with shift+click support
+  const toggleRuleSelection = (ruleId: string, index: number, shiftKey: boolean) => {
+    setSelectedRules((prev) => {
+      const newSet = new Set(prev)
+
+      if (shiftKey && lastSelectedIndex !== null) {
+        // Shift+click: select range
+        const start = Math.min(lastSelectedIndex, index)
+        const end = Math.max(lastSelectedIndex, index)
+        for (let i = start; i <= end; i++) {
+          if (filteredRules[i]) {
+            newSet.add(filteredRules[i].id)
+          }
+        }
+      } else {
+        // Regular click: toggle single
+        if (newSet.has(ruleId)) {
+          newSet.delete(ruleId)
+        } else {
+          newSet.add(ruleId)
+        }
+      }
+
+      return newSet
+    })
+    setLastSelectedIndex(index)
+  }
+
+  // Select all visible rules
+  const selectAll = () => {
+    if (selectedRules.size === filteredRules.length && filteredRules.length > 0) {
+      setSelectedRules(new Set())
+    } else {
+      setSelectedRules(new Set(filteredRules.map((r) => r.id)))
+    }
+  }
+
+  // Clear selection
+  const clearSelection = () => {
+    setSelectedRules(new Set())
+    setLastSelectedIndex(null)
+  }
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {
