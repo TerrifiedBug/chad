@@ -50,7 +50,7 @@ class SnoozeRequest(BaseModel):
 
 
 class RuleCommentCreate(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=10000)
 
 
 class RuleCommentResponse(BaseModel):
@@ -1071,6 +1071,10 @@ async def list_rule_comments(
     _: Annotated[User, Depends(get_current_user)],
 ):
     """List all comments for a rule."""
+    rule_result = await db.execute(select(Rule).where(Rule.id == rule_id))
+    if rule_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
     result = await db.execute(
         select(RuleComment)
         .where(RuleComment.rule_id == rule_id)
@@ -1090,7 +1094,7 @@ async def list_rule_comments(
     ]
 
 
-@router.post("/{rule_id}/comments", response_model=RuleCommentResponse)
+@router.post("/{rule_id}/comments", response_model=RuleCommentResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule_comment(
     rule_id: UUID,
     data: RuleCommentCreate,
@@ -1098,6 +1102,10 @@ async def create_rule_comment(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Add a comment to a rule."""
+    rule_result = await db.execute(select(Rule).where(Rule.id == rule_id))
+    if rule_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
     comment = RuleComment(
         rule_id=rule_id,
         user_id=current_user.id,
