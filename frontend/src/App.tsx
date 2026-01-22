@@ -180,7 +180,7 @@ function AppRoutes() {
           </div>
         </ProtectedRoute>
       } />
-      <Route path="/api-keys" element={
+      <Route path="/settings/api-keys" element={
         <ProtectedRoute>
           <div className="min-h-screen bg-background">
             <Header />

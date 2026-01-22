@@ -84,7 +84,7 @@ export function Header() {
                     Settings
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem onClick={() => navigate('/api-keys')}>
+                <DropdownMenuItem onClick={() => navigate('/settings/api-keys')}>
                   <Key className="mr-2 h-4 w-4" />
                   API Keys
                 </DropdownMenuItem>
