@@ -19,7 +19,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Plus, Search } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
+import { cn } from '@/lib/utils'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -251,6 +253,12 @@ export default function RulesPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={selectedRules.size === filteredRules.length && filteredRules.length > 0}
+                    onCheckedChange={selectAll}
+                  />
+                </TableHead>
                 <TableHead>Title</TableHead>
                 <TableHead>Severity</TableHead>
                 <TableHead>Status</TableHead>
@@ -260,12 +268,25 @@ export default function RulesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRules.map((rule) => (
+              {filteredRules.map((rule, index) => (
                 <TableRow
                   key={rule.id}
-                  className="cursor-pointer hover:bg-muted/50"
+                  className={cn(
+                    'cursor-pointer hover:bg-muted/50',
+                    selectedRules.has(rule.id) && 'bg-muted/50'
+                  )}
                   onClick={() => navigate(`/rules/${rule.id}`)}
                 >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedRules.has(rule.id)}
+                      onCheckedChange={() => toggleRuleSelection(rule.id, index, false)}
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation()
+                        toggleRuleSelection(rule.id, index, e.shiftKey)
+                      }}
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">{rule.title}</TableCell>
                   <TableCell>
                     <span
