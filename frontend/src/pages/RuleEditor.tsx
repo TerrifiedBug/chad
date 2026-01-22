@@ -6,6 +6,9 @@ import {
   IndexPattern,
   ValidationError,
   LogMatchResult,
+  RuleException,
+  ExceptionOperator,
+  RuleExceptionCreate,
 } from '@/lib/api'
 import { YamlEditor } from '@/components/YamlEditor'
 import { Button } from '@/components/ui/button'
@@ -21,7 +24,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus } from 'lucide-react'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -75,12 +78,36 @@ export default function RuleEditorPage() {
   const [deployError, setDeployError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
 
+  // Exception state
+  const [exceptions, setExceptions] = useState<RuleException[]>([])
+  const [isLoadingExceptions, setIsLoadingExceptions] = useState(false)
+  const [newExceptionField, setNewExceptionField] = useState('')
+  const [newExceptionOperator, setNewExceptionOperator] = useState<ExceptionOperator>('equals')
+  const [newExceptionValue, setNewExceptionValue] = useState('')
+  const [newExceptionReason, setNewExceptionReason] = useState('')
+  const [isAddingException, setIsAddingException] = useState(false)
+
   useEffect(() => {
     loadIndexPatterns()
     if (!isNew) {
       loadRule()
+      loadExceptions()
     }
   }, [id])
+
+  // Load exceptions when rule ID is available
+  const loadExceptions = async () => {
+    if (!id || isNew) return
+    setIsLoadingExceptions(true)
+    try {
+      const result = await rulesApi.listExceptions(id)
+      setExceptions(result)
+    } catch (err) {
+      console.error('Failed to load exceptions:', err)
+    } finally {
+      setIsLoadingExceptions(false)
+    }
+  }
 
   // Debounced validation
   useEffect(() => {
@@ -310,6 +337,68 @@ export default function RuleEditorPage() {
     }
   }
 
+  // Exception handlers
+  const handleAddException = async () => {
+    if (!id || !newExceptionField.trim() || !newExceptionValue.trim()) {
+      setError('Field and value are required for exceptions')
+      return
+    }
+
+    setIsAddingException(true)
+    try {
+      const data: RuleExceptionCreate = {
+        field: newExceptionField.trim(),
+        operator: newExceptionOperator,
+        value: newExceptionValue.trim(),
+        reason: newExceptionReason.trim() || undefined,
+      }
+      const newException = await rulesApi.createException(id, data)
+      setExceptions((prev) => [...prev, newException])
+      // Reset form
+      setNewExceptionField('')
+      setNewExceptionOperator('equals')
+      setNewExceptionValue('')
+      setNewExceptionReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add exception')
+    } finally {
+      setIsAddingException(false)
+    }
+  }
+
+  const handleToggleException = async (exceptionId: string, isActive: boolean) => {
+    if (!id) return
+    try {
+      const updated = await rulesApi.updateException(id, exceptionId, { is_active: isActive })
+      setExceptions((prev) =>
+        prev.map((e) => (e.id === exceptionId ? updated : e))
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update exception')
+    }
+  }
+
+  const handleDeleteException = async (exceptionId: string) => {
+    if (!id) return
+    try {
+      await rulesApi.deleteException(id, exceptionId)
+      setExceptions((prev) => prev.filter((e) => e.id !== exceptionId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete exception')
+    }
+  }
+
+  const operatorLabels: Record<ExceptionOperator, string> = {
+    equals: 'Equals',
+    not_equals: 'Not equals',
+    contains: 'Contains',
+    not_contains: 'Not contains',
+    starts_with: 'Starts with',
+    ends_with: 'Ends with',
+    regex: 'Regex',
+    in_list: 'In list',
+  }
+
   const editorErrors = validationErrors
     .filter((e) => e.line)
     .map((e) => ({ line: e.line!, message: e.message }))
@@ -448,7 +537,7 @@ export default function RuleEditorPage() {
                 <SelectTrigger>
                   <SelectValue placeholder="Select index pattern" />
                 </SelectTrigger>
-                <SelectContent className="z-50">
+                <SelectContent className="z-50 bg-popover">
                   {indexPatterns.map((pattern) => (
                     <SelectItem key={pattern.id} value={pattern.id}>
                       {pattern.name}
@@ -463,7 +552,7 @@ export default function RuleEditorPage() {
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="z-50">
+                <SelectContent className="z-50 bg-popover">
                   <SelectItem value="informational">Informational</SelectItem>
                   <SelectItem value="low">Low</SelectItem>
                   <SelectItem value="medium">Medium</SelectItem>
@@ -480,12 +569,15 @@ export default function RuleEditorPage() {
           {/* Validation Card */}
           <Card>
             <CardHeader className="py-3">
-              <CardTitle className="text-sm font-medium">Validation</CardTitle>
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                Validation
+                {isValidating && (
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {isValidating ? (
-                <div className="text-sm text-muted-foreground">Validating...</div>
-              ) : isValid === null ? (
+              {isValid === null ? (
                 <div className="text-sm text-muted-foreground">
                   Enter a rule to validate
                 </div>
@@ -571,6 +663,129 @@ export default function RuleEditorPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Exceptions Card - Only show for existing rules */}
+          {!isNew && (
+            <Card>
+              <CardHeader className="py-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  Exceptions
+                  {isLoadingExceptions && (
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Existing exceptions list */}
+                {exceptions.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    No exceptions defined
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {exceptions.map((exception) => (
+                      <div
+                        key={exception.id}
+                        className={`p-2 border rounded-md space-y-1 ${
+                          !exception.is_active ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {exception.field}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {operatorLabels[exception.operator]}: {exception.value}
+                            </div>
+                            {exception.reason && (
+                              <div className="text-xs text-muted-foreground mt-1 italic">
+                                Reason: {exception.reason}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Switch
+                              checked={exception.is_active}
+                              onCheckedChange={(checked) =>
+                                handleToggleException(exception.id, checked)
+                              }
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleDeleteException(exception.id)}
+                            >
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add exception form */}
+                <div className="border-t pt-4 space-y-3">
+                  <Label className="text-xs font-medium">Add Exception</Label>
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="Field name"
+                      value={newExceptionField}
+                      onChange={(e) => setNewExceptionField(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                    <Select
+                      value={newExceptionOperator}
+                      onValueChange={(value) =>
+                        setNewExceptionOperator(value as ExceptionOperator)
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="z-50 bg-popover">
+                        <SelectItem value="equals">Equals</SelectItem>
+                        <SelectItem value="not_equals">Not equals</SelectItem>
+                        <SelectItem value="contains">Contains</SelectItem>
+                        <SelectItem value="not_contains">Not contains</SelectItem>
+                        <SelectItem value="starts_with">Starts with</SelectItem>
+                        <SelectItem value="ends_with">Ends with</SelectItem>
+                        <SelectItem value="regex">Regex</SelectItem>
+                        <SelectItem value="in_list">In list</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <textarea
+                      placeholder="Value"
+                      value={newExceptionValue}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewExceptionValue(e.target.value)}
+                      className="w-full min-h-[60px] p-2 text-sm border rounded-md bg-background resize-none"
+                    />
+                    <Input
+                      placeholder="Reason (optional)"
+                      value={newExceptionReason}
+                      onChange={(e) => setNewExceptionReason(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleAddException}
+                      disabled={
+                        isAddingException ||
+                        !newExceptionField.trim() ||
+                        !newExceptionValue.trim()
+                      }
+                      className="w-full"
+                    >
+                      <Plus className="h-3 w-3 mr-2" />
+                      {isAddingException ? 'Adding...' : 'Add Exception'}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

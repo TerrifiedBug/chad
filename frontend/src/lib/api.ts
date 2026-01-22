@@ -128,6 +128,44 @@ export const settingsApi = {
     api.put<{ success: boolean }>('/settings/app-url', { url }),
 }
 
+// Exception types
+export type ExceptionOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
+  | 'not_contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'regex'
+  | 'in_list'
+
+export type RuleException = {
+  id: string
+  rule_id: string
+  field: string
+  operator: ExceptionOperator
+  value: string
+  reason: string | null
+  is_active: boolean
+  created_by: string
+  created_at: string
+}
+
+export type RuleExceptionCreate = {
+  field: string
+  operator?: ExceptionOperator
+  value: string
+  reason?: string
+}
+
+export type RuleExceptionUpdate = {
+  field?: string
+  operator?: ExceptionOperator
+  value?: string
+  reason?: string
+  is_active?: boolean
+}
+
 // Rule types
 export type RuleStatus = 'enabled' | 'disabled' | 'snoozed'
 
@@ -228,6 +266,15 @@ export const rulesApi = {
     api.post<{ success: boolean }>(`/rules/${id}/undeploy`),
   rollback: (id: string, version: number) =>
     api.post<RuleDeployResponse>(`/rules/${id}/rollback`, { version }),
+  // Exceptions
+  listExceptions: (ruleId: string) =>
+    api.get<RuleException[]>(`/rules/${ruleId}/exceptions`),
+  createException: (ruleId: string, data: RuleExceptionCreate) =>
+    api.post<RuleException>(`/rules/${ruleId}/exceptions`, data),
+  updateException: (ruleId: string, exceptionId: string, data: RuleExceptionUpdate) =>
+    api.patch<RuleException>(`/rules/${ruleId}/exceptions/${exceptionId}`, data),
+  deleteException: (ruleId: string, exceptionId: string) =>
+    api.delete(`/rules/${ruleId}/exceptions/${exceptionId}`),
 }
 
 // Index Pattern types
