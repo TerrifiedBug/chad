@@ -5,6 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.setting import Setting
 
+# Default settings for rate limiting
+RATE_LIMIT_DEFAULTS = {
+    "rate_limit_enabled": True,
+    "rate_limit_max_attempts": 5,
+    "rate_limit_lockout_minutes": 15,
+}
+
 
 async def get_setting(db: AsyncSession, key: str) -> dict | None:
     """Get a setting value by key."""
