@@ -13,6 +13,7 @@ from app.api.deps import get_current_user, get_opensearch_client, get_opensearch
 from app.db.session import get_db
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleStatus, RuleVersion
+from app.models.rule_comment import RuleComment
 from app.models.rule_exception import RuleException
 from app.models.user import User
 from app.schemas.bulk import BulkOperationRequest, BulkOperationResult
@@ -46,6 +47,19 @@ router = APIRouter(prefix="/rules", tags=["rules"])
 
 class SnoozeRequest(BaseModel):
     hours: int = Field(ge=1, le=168)  # 1 hour to 1 week
+
+
+class RuleCommentCreate(BaseModel):
+    content: str
+
+
+class RuleCommentResponse(BaseModel):
+    id: str
+    rule_id: str
+    user_id: str | None
+    user_email: str | None
+    content: str
+    created_at: datetime
 
 
 @router.get("", response_model=list[RuleResponse])
@@ -1045,3 +1059,65 @@ async def bulk_undeploy_rules(
     await db.commit()
 
     return BulkOperationResult(success=success, failed=failed)
+
+
+# Rule Comments Endpoints
+
+
+@router.get("/{rule_id}/comments", response_model=list[RuleCommentResponse])
+async def list_rule_comments(
+    rule_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """List all comments for a rule."""
+    result = await db.execute(
+        select(RuleComment)
+        .where(RuleComment.rule_id == rule_id)
+        .order_by(RuleComment.created_at.desc())
+    )
+    comments = result.scalars().all()
+    return [
+        RuleCommentResponse(
+            id=str(c.id),
+            rule_id=str(c.rule_id),
+            user_id=str(c.user_id) if c.user_id else None,
+            user_email=c.user.email if c.user else None,
+            content=c.content,
+            created_at=c.created_at,
+        )
+        for c in comments
+    ]
+
+
+@router.post("/{rule_id}/comments", response_model=RuleCommentResponse)
+async def create_rule_comment(
+    rule_id: UUID,
+    data: RuleCommentCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Add a comment to a rule."""
+    comment = RuleComment(
+        rule_id=rule_id,
+        user_id=current_user.id,
+        content=data.content,
+    )
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment)
+
+    await audit_log(
+        db, current_user.id, "rule.comment", "rule", str(rule_id),
+        {"comment_id": str(comment.id)}
+    )
+    await db.commit()
+
+    return RuleCommentResponse(
+        id=str(comment.id),
+        rule_id=str(comment.rule_id),
+        user_id=str(comment.user_id),
+        user_email=current_user.email,
+        content=comment.content,
+        created_at=comment.created_at,
+    )
