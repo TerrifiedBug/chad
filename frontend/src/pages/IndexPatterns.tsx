@@ -24,7 +24,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key } from 'lucide-react'
-import { LogShipperInfo } from '@/components/LogShipperInfo'
 
 export default function IndexPatternsPage() {
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
@@ -35,6 +34,7 @@ export default function IndexPatternsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingPattern, setEditingPattern] = useState<IndexPattern | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   // Form state
   const [formData, setFormData] = useState({
@@ -52,6 +52,7 @@ export default function IndexPatternsPage() {
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   // Token visibility state
   const [visibleTokens, setVisibleTokens] = useState<Set<string>>(new Set())
@@ -63,6 +64,9 @@ export default function IndexPatternsPage() {
 
   // Token details dialog
   const [tokenDetailsPattern, setTokenDetailsPattern] = useState<IndexPattern | null>(null)
+
+  // Track if user has manually edited percolator_index
+  const [percolatorIndexManuallyEdited, setPercolatorIndexManuallyEdited] = useState(false)
 
   useEffect(() => {
     loadPatterns()
@@ -90,6 +94,8 @@ export default function IndexPatternsPage() {
       description: '',
     })
     setValidationResult(null)
+    setPercolatorIndexManuallyEdited(false)
+    setSaveError('')
     setIsDialogOpen(true)
   }
 
@@ -102,6 +108,8 @@ export default function IndexPatternsPage() {
       description: pattern.description || '',
     })
     setValidationResult(null)
+    setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
+    setSaveError('')
     setIsDialogOpen(true)
   }
 
@@ -131,6 +139,7 @@ export default function IndexPatternsPage() {
     }
 
     setIsSaving(true)
+    setSaveError('')
     try {
       if (editingPattern) {
         await indexPatternsApi.update(editingPattern.id, {
@@ -150,7 +159,7 @@ export default function IndexPatternsPage() {
       setIsDialogOpen(false)
       loadPatterns()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      setSaveError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setIsSaving(false)
     }
@@ -160,15 +169,21 @@ export default function IndexPatternsPage() {
     if (!deleteId) return
 
     setIsDeleting(true)
+    setDeleteError('')
     try {
       await indexPatternsApi.delete(deleteId)
       setDeleteId(null)
       loadPatterns()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed')
+      setDeleteError(err instanceof Error ? err.message : 'Delete failed')
     } finally {
       setIsDeleting(false)
     }
+  }
+
+  const openDeleteDialog = (patternId: string) => {
+    setDeleteId(patternId)
+    setDeleteError('')
   }
 
   const handleRegenerateToken = async () => {
@@ -224,7 +239,10 @@ export default function IndexPatternsPage() {
     setFormData((prev) => ({
       ...prev,
       pattern: value,
-      percolator_index: prev.percolator_index || `chad-percolator-${value.replace(/\*/g, '').replace(/-$/, '')}`,
+      // Only auto-generate if user hasn't manually edited percolator_index
+      percolator_index: percolatorIndexManuallyEdited
+        ? prev.percolator_index
+        : `chad-percolator-${value.replace(/\*/g, '').replace(/-$/, '')}`,
     }))
     setValidationResult(null)
   }
@@ -248,8 +266,6 @@ export default function IndexPatternsPage() {
           {error}
         </div>
       )}
-
-      <LogShipperInfo percolatorIndex={patterns[0]?.percolator_index} />
 
       {isLoading ? (
         <div className="text-center py-8 text-muted-foreground">Loading...</div>
@@ -300,7 +316,7 @@ export default function IndexPatternsPage() {
                         variant="ghost"
                         size="icon"
                         title="Delete pattern"
-                        onClick={() => setDeleteId(pattern.id)}
+                        onClick={() => openDeleteDialog(pattern.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -514,9 +530,10 @@ export default function IndexPatternsPage() {
               <Input
                 id="percolator"
                 value={formData.percolator_index}
-                onChange={(e) =>
+                onChange={(e) => {
                   setFormData({ ...formData, percolator_index: e.target.value })
-                }
+                  setPercolatorIndexManuallyEdited(true)
+                }}
                 placeholder="chad-percolator-windows"
                 className="font-mono"
               />
@@ -565,6 +582,12 @@ export default function IndexPatternsPage() {
                 placeholder="Windows event logs from Sysmon"
               />
             </div>
+
+            {saveError && (
+              <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
+                {saveError}
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -597,6 +620,11 @@ export default function IndexPatternsPage() {
               reassigned.
             </DialogDescription>
           </DialogHeader>
+          {deleteError && (
+            <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
+              {deleteError}
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteId(null)}>
               Cancel
