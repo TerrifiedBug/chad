@@ -66,6 +66,11 @@ export default function SettingsPage() {
   // Session settings
   const [sessionTimeout, setSessionTimeout] = useState(480)
 
+  // Rate limiting settings
+  const [rateLimitEnabled, setRateLimitEnabled] = useState(true)
+  const [rateLimitMaxAttempts, setRateLimitMaxAttempts] = useState(5)
+  const [rateLimitLockoutMinutes, setRateLimitLockoutMinutes] = useState(15)
+
   // App URL setting
   const [appUrl, setAppUrl] = useState('')
 
@@ -153,6 +158,14 @@ export default function SettingsPage() {
       if (settings.session && typeof settings.session === 'object') {
         const session = settings.session as Record<string, unknown>
         setSessionTimeout((session.timeout_minutes as number) || 480)
+      }
+
+      // Rate limiting
+      if (settings.rate_limiting && typeof settings.rate_limiting === 'object') {
+        const rateLimiting = settings.rate_limiting as Record<string, unknown>
+        setRateLimitEnabled(rateLimiting.enabled !== false)
+        setRateLimitMaxAttempts((rateLimiting.max_attempts as number) || 5)
+        setRateLimitLockoutMinutes((rateLimiting.lockout_minutes as number) || 15)
       }
 
       // SSO
@@ -315,6 +328,25 @@ export default function SettingsPage() {
     }
   }
 
+  const saveRateLimiting = async () => {
+    setIsSaving(true)
+    setError('')
+    setSuccess('')
+    try {
+      await settingsApiExtended.update('rate_limiting', {
+        enabled: rateLimitEnabled,
+        max_attempts: rateLimitMaxAttempts,
+        lockout_minutes: rateLimitLockoutMinutes,
+      })
+      setSuccess('Rate limiting settings saved')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const saveSso = async () => {
     setIsSaving(true)
     setError('')
@@ -425,7 +457,7 @@ export default function SettingsPage() {
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
-          <TabsTrigger value="session">Session</TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="sso">SSO</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="sigmahq">SigmaHQ</TabsTrigger>
@@ -622,7 +654,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="session" className="mt-4">
+        <TabsContent value="security" className="mt-4 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Session Settings</CardTitle>
@@ -649,6 +681,68 @@ export default function SettingsPage() {
                 </p>
               </div>
               <Button onClick={saveSession} disabled={isSaving}>
+                <Save className="mr-2 h-4 w-4" />
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Rate Limiting</CardTitle>
+              <CardDescription>
+                Protect against brute force attacks by limiting failed login attempts
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Enable Rate Limiting</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Lock accounts after too many failed login attempts
+                  </p>
+                </div>
+                <Switch
+                  checked={rateLimitEnabled}
+                  onCheckedChange={setRateLimitEnabled}
+                />
+              </div>
+
+              {rateLimitEnabled && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="rate-limit-max-attempts">Max Failed Attempts</Label>
+                    <Input
+                      id="rate-limit-max-attempts"
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={rateLimitMaxAttempts}
+                      onChange={(e) => setRateLimitMaxAttempts(parseInt(e.target.value) || 5)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Number of failed attempts before account lockout
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="rate-limit-lockout-minutes">Lockout Duration (minutes)</Label>
+                    <Input
+                      id="rate-limit-lockout-minutes"
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={rateLimitLockoutMinutes}
+                      onChange={(e) => setRateLimitLockoutMinutes(parseInt(e.target.value) || 15)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      How long to lock the account after max attempts
+                    </p>
+                  </div>
+                </>
+              )}
+
+              <Button onClick={saveRateLimiting} disabled={isSaving}>
                 <Save className="mr-2 h-4 w-4" />
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>
