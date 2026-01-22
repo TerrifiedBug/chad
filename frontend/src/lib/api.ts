@@ -275,6 +275,14 @@ export const rulesApi = {
     api.patch<RuleException>(`/rules/${ruleId}/exceptions/${exceptionId}`, data),
   deleteException: (ruleId: string, exceptionId: string) =>
     api.delete(`/rules/${ruleId}/exceptions/${exceptionId}`),
+  // Snooze
+  snooze: (id: string, hours: number) =>
+    api.post<{ success: boolean; snooze_until: string; status: string }>(
+      `/rules/${id}/snooze`,
+      { hours }
+    ),
+  unsnooze: (id: string) =>
+    api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`),
 }
 
 // Index Pattern types

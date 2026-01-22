@@ -22,9 +22,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock } from 'lucide-react'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -51,7 +57,7 @@ export default function RuleEditorPage() {
   const [severity, setSeverity] = useState('medium')
   const [indexPatternId, setIndexPatternId] = useState('')
   const [description, setDescription] = useState('')
-  const [status, setStatus] = useState<'enabled' | 'disabled'>('disabled')
+  const [status, setStatus] = useState<'enabled' | 'disabled' | 'snoozed'>('disabled')
 
   // UI state
   const [indexPatterns, setIndexPatterns] = useState<IndexPattern[]>([])
@@ -86,6 +92,10 @@ export default function RuleEditorPage() {
   const [newExceptionValue, setNewExceptionValue] = useState('')
   const [newExceptionReason, setNewExceptionReason] = useState('')
   const [isAddingException, setIsAddingException] = useState(false)
+
+  // Snooze state
+  const [snoozeUntil, setSnoozeUntil] = useState<string | null>(null)
+  const [isSnoozing, setIsSnoozing] = useState(false)
 
   useEffect(() => {
     loadIndexPatterns()
@@ -143,7 +153,8 @@ export default function RuleEditorPage() {
       setDescription(rule.description || '')
       setDeployedAt(rule.deployed_at)
       setDeployedVersion(rule.deployed_version)
-      setStatus(rule.status as 'enabled' | 'disabled')
+      setStatus(rule.status as 'enabled' | 'disabled' | 'snoozed')
+      setSnoozeUntil(rule.snooze_until)
       // Get current version from versions array (sorted desc by version_number)
       if (rule.versions && rule.versions.length > 0) {
         setCurrentVersion(rule.versions[0].version_number)
@@ -388,6 +399,40 @@ export default function RuleEditorPage() {
     }
   }
 
+  // Snooze handlers
+  const handleSnooze = async (hours: number) => {
+    if (!id) return
+    setIsSnoozing(true)
+    try {
+      const result = await rulesApi.snooze(id, hours)
+      setStatus('snoozed')
+      setSnoozeUntil(result.snooze_until)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to snooze rule')
+    } finally {
+      setIsSnoozing(false)
+    }
+  }
+
+  const handleUnsnooze = async () => {
+    if (!id) return
+    setIsSnoozing(true)
+    try {
+      await rulesApi.unsnooze(id)
+      setStatus('enabled')
+      setSnoozeUntil(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to unsnooze rule')
+    } finally {
+      setIsSnoozing(false)
+    }
+  }
+
+  const formatSnoozeExpiry = (iso: string) => {
+    const date = new Date(iso)
+    return date.toLocaleString()
+  }
+
   const operatorLabels: Record<ExceptionOperator, string> = {
     equals: 'Equals',
     not_equals: 'Not equals',
@@ -440,13 +485,47 @@ export default function RuleEditorPage() {
         <div className="flex items-center gap-2">
           {!isNew && (
             <div className="flex items-center gap-2 mr-4">
-              <Switch
-                checked={status === 'enabled'}
-                onCheckedChange={(checked) => setStatus(checked ? 'enabled' : 'disabled')}
-              />
-              <Label className="text-sm">
-                {status === 'enabled' ? 'Enabled' : 'Disabled'}
-              </Label>
+              {status === 'snoozed' && snoozeUntil ? (
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-yellow-500" />
+                  <span className="text-sm text-yellow-600">
+                    Snoozed until {formatSnoozeExpiry(snoozeUntil)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUnsnooze}
+                    disabled={isSnoozing}
+                  >
+                    {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={status === 'enabled'}
+                    onCheckedChange={(checked) => setStatus(checked ? 'enabled' : 'disabled')}
+                  />
+                  <Label className="text-sm">
+                    {status === 'enabled' ? 'Enabled' : 'Disabled'}
+                  </Label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" disabled={isSnoozing}>
+                        <Clock className="h-4 w-4 mr-1" />
+                        Snooze
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="z-50 bg-popover">
+                      <DropdownMenuItem onClick={() => handleSnooze(1)}>1 hour</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(4)}>4 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(8)}>8 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(24)}>24 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(168)}>1 week</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
             </div>
           )}
           {saveSuccess && (

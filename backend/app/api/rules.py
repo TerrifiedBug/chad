@@ -1,8 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +41,10 @@ from app.services.percolator import PercolatorService
 from app.services.sigma import sigma_service
 
 router = APIRouter(prefix="/rules", tags=["rules"])
+
+
+class SnoozeRequest(BaseModel):
+    hours: int = Field(ge=1, le=168)  # 1 hour to 1 week
 
 
 @router.get("", response_model=list[RuleResponse])
@@ -588,6 +593,80 @@ async def rollback_rule(
         rolled_back_from=version_number,
         yaml_content=target_version.yaml_content,
     )
+
+
+@router.post("/{rule_id}/snooze")
+async def snooze_rule(
+    rule_id: UUID,
+    request: SnoozeRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Snooze a rule for the specified number of hours."""
+    result = await db.execute(
+        select(Rule)
+        .where(Rule.id == rule_id)
+        .options(selectinload(Rule.index_pattern))
+    )
+    rule = result.scalar_one_or_none()
+
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    snooze_until = datetime.now(timezone.utc) + timedelta(hours=request.hours)
+    rule.status = RuleStatus.SNOOZED
+    rule.snooze_until = snooze_until
+
+    # Update percolator if deployed
+    if rule.deployed_at is not None and os_client is not None:
+        percolator = PercolatorService(os_client)
+        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+        percolator.update_rule_status(percolator_index, str(rule.id), enabled=False)
+
+    await db.commit()
+    await audit_log(db, current_user.id, "rule.snooze", "rule", str(rule.id), {"title": rule.title, "hours": request.hours})
+    await db.commit()
+
+    return {
+        "success": True,
+        "snooze_until": snooze_until.isoformat(),
+        "status": "snoozed",
+    }
+
+
+@router.post("/{rule_id}/unsnooze")
+async def unsnooze_rule(
+    rule_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Cancel snooze and re-enable rule."""
+    result = await db.execute(
+        select(Rule)
+        .where(Rule.id == rule_id)
+        .options(selectinload(Rule.index_pattern))
+    )
+    rule = result.scalar_one_or_none()
+
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    rule.status = RuleStatus.ENABLED
+    rule.snooze_until = None
+
+    # Update percolator if deployed
+    if rule.deployed_at is not None and os_client is not None:
+        percolator = PercolatorService(os_client)
+        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+        percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
+
+    await db.commit()
+    await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title})
+    await db.commit()
+
+    return {"success": True, "status": "enabled"}
 
 
 # Rule Exception Endpoints
