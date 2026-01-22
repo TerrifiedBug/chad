@@ -485,6 +485,184 @@ Allow analysts to suppress false positives by defining field-value conditions th
 - Pagination for large datasets
 - Detail modal showing full JSON
 
+### OpenSearch Mirroring (Optional)
+
+- Toggle in Settings: "Mirror audit logs to OpenSearch"
+- When enabled, writes to `chad-audit-logs` index in addition to PostgreSQL
+- PostgreSQL remains source of truth
+- Enables integration with existing SIEM, advanced search, custom retention policies
+
+---
+
+## Log Shipping Authentication
+
+### Shared Secret
+
+The `/logs/{index}` endpoint requires authentication via a shared secret configured in Settings.
+
+**Configuration:**
+- Settings → System → Log Shipping Secret
+- Generate or set a secret token
+- Provide to Fluentd/log shipper configuration
+
+**Request Format:**
+```
+POST /api/logs/windows-sysmon
+Authorization: Bearer <log-shipping-secret>
+Content-Type: application/x-ndjson
+
+{"@timestamp": "...", "event": {...}}
+{"@timestamp": "...", "event": {...}}
+```
+
+**Validation:**
+- If secret not configured: endpoint disabled, returns 503
+- If secret configured but not provided: returns 401
+- If secret incorrect: returns 401
+
+**TLS:** Handled by reverse proxy (nginx, AWS ALB, etc.) - no CHAD code changes needed.
+
+---
+
+## User Management Enhancements
+
+### Admin Edit Capabilities
+
+| Field | Local Users | SSO Users |
+|-------|-------------|-----------|
+| Role | ✅ Editable | ❌ Managed by OIDC claims |
+| Password | ✅ Reset to temporary | ❌ Managed by IdP |
+| Active status | ✅ Enable/Disable | ✅ Enable/Disable |
+
+### UI Changes
+
+**Users page - Edit button per row:**
+- Opens modal with editable fields based on auth_method
+- Password reset generates temporary password, sets `must_change_password=true`
+- Disable removes access but preserves audit trail
+
+**Delete confirmation:**
+- Styled modal instead of browser `confirm()`
+- Shows user email prominently
+- Requires explicit Cancel/Delete click
+
+---
+
+## Rate Limiting & Brute Force Protection
+
+### Account Lockout
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `lockout_attempts` | 5 | Failed attempts before lockout |
+| `lockout_duration_minutes` | 15 | Lockout duration |
+
+**Behavior:**
+- Track failed login attempts per email in Redis/memory
+- After N failures: lock account for X minutes
+- Successful login resets counter
+- Lockout applies to local auth only (SSO handled by IdP)
+
+### IP Rate Limiting
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `login_rate_limit` | 10/minute | Max login attempts per IP |
+
+**Behavior:**
+- Track login attempts per IP address
+- Reject with 429 when limit exceeded
+- Protects against credential stuffing across accounts
+
+### Configuration
+
+Settings → Security → Brute Force Protection
+- Enable/disable account lockout
+- Configure attempts and duration
+- Enable/disable IP rate limiting
+- Configure rate limit
+
+---
+
+## Role Permissions
+
+### Configurable Permissions per Role
+
+Instead of hardcoded permissions, admins can toggle what each fixed role can do.
+
+**Settings → Security → Role Permissions:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Role Permissions                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                        │ Admin │ Analyst │ Viewer │             │
+│ ───────────────────────┼───────┼─────────┼────────┤             │
+│ View rules             │  ✅   │   ✅    │   ✅   │             │
+│ Create rules           │  ✅   │   ✅    │   ☐    │             │
+│ Edit own rules         │  ✅   │   ✅    │   ☐    │             │
+│ Edit all rules         │  ✅   │   ☐     │   ☐    │             │
+│ Delete rules           │  ✅   │   ☐     │   ☐    │             │
+│ Deploy/undeploy rules  │  ✅   │   ✅    │   ☐    │             │
+│ Manage exceptions      │  ✅   │   ✅    │   ☐    │             │
+│ View alerts            │  ✅   │   ✅    │   ✅   │             │
+│ Update alert status    │  ✅   │   ✅    │   ☐    │             │
+│ Import from SigmaHQ    │  ✅   │   ✅    │   ☐    │             │
+│ View audit log         │  ✅   │   ☐     │   ☐    │             │
+│ Manage settings        │  ✅   │   ☐     │   ☐    │             │
+│ Manage users           │  ✅   │   ☐     │   ☐    │             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Implementation:**
+- Permissions stored in `settings` table as JSON
+- Default permissions match current hardcoded behavior
+- Backend checks permissions on each endpoint
+- Frontend shows/hides UI elements based on permissions
+
+---
+
+## Rules List Redesign
+
+### SigmaHQ Browser Style
+
+Replace flat table with tree-based browser matching SigmaHQ layout:
+
+```
+┌──────────────────────┬──────────────────────────────────────────────────┐
+│ Index Patterns       │ Rule Preview                                     │
+├──────────────────────┼──────────────────────────────────────────────────┤
+│ 🔍 Search...         │ Suspicious PowerShell Execution                  │
+│                      │                                                  │
+│ ▼ windows-* (89)     │ ┌─────────────────────────────────────────────┐  │
+│   ● Susp PS Exec     │ │ Severity: 🔴 High                           │  │
+│   ● Mimikatz Use     │ │ Status: Deployed ✓                          │  │
+│   ● LSASS Access     │ │ Version: v3                                  │  │
+│ ▼ linux-* (42)       │ │ Index: windows-*                             │  │
+│   ● SSH Brute Force  │ │ Last edited: admin@..., 2h ago              │  │
+│ ▶ network-* (18)     │ │ Created: analyst@..., Jan 15                │  │
+│ ▶ cloud-aws-* (7)    │ └─────────────────────────────────────────────┘  │
+│                      │                                                  │
+│ Filter by Status     │ title: Suspicious PowerShell Execution          │
+│ ☑ Deployed           │ logsource:                                       │
+│ ☑ Disabled           │   product: windows                               │
+│ ☐ Snoozed            │ detection:                                       │
+│                      │   selection:                                     │
+│ Filter by Severity   │     CommandLine|contains: ['-enc', 'hidden']    │
+│ ☑ Critical/High      │ ...                                              │
+│ ☑ Medium             │                                                  │
+│ ☐ Low/Info           │ [Edit Rule] [Deploy] [Disable] [Snooze ▼]       │
+└──────────────────────┴──────────────────────────────────────────────────┘
+```
+
+**Features:**
+- Left panel: Tree organized by index pattern with rule counts
+- Search: Filter rules by keyword within selected index pattern
+- Filters: Status (deployed/disabled/snoozed), Severity
+- Right panel: Rule preview with CHAD metadata + full YAML
+- Action buttons: Edit, Deploy/Undeploy, Disable, Snooze
+- Consistent layout with SigmaHQ browser page
+
 ---
 
 ## Deployment
@@ -616,15 +794,25 @@ All other configuration managed in GUI:
 - Password change (local users)
 - APP_URL configuration via GUI
 
-### v1.1 - Rule Management
+### v1.1 - Rule Management & UX Completion
 
-**Phase 6 (SigmaHQ + Exceptions + Audit):**
+**Phase 6 (SigmaHQ + Exceptions + Audit + Quick Wins):**
 - SigmaHQ integration: Git clone, category browser, rule preview, import to CHAD
 - Auto-sync: Configurable scheduled pulls (daily/weekly/monthly)
 - Exception rules: Per-rule field-value filters for false positive tuning
 - Audit log viewer: Filterable UI for compliance
+- Snooze UI: Snooze rule for X hours from rule editor
+- HTTP Auth for log shipping: Shared secret header for `/logs/{index}` endpoint
+- Edit local users: Admin can change role, reset password, disable/enable users
+- External API alerts: Implement OpenSearch query for `/external/alerts`
+- Better delete confirmation: Styled modal instead of browser confirm()
 
-**Phase 7 (deferred):**
+**Phase 7 (UX Polish + Security + Deferred v1.1):**
+- Version history UI: Diff view and rollback from rule editor
+- Improved rules list: SigmaHQ browser style with tree by index pattern
+- Rate limiting: IP-based rate limiting + account lockout (5 attempts → 15 min)
+- Configurable role permissions: Toggle permissions per fixed role (admin/analyst/viewer)
+- Audit logs to OpenSearch: Optional dual-write to `chad-audit-logs` index
 - Bulk operations: Multi-select enable/disable/delete
 - Rule comments: Unified timeline with versions
 - Export: Single, bulk, full config backup
@@ -687,6 +875,16 @@ Documented for potential future releases:
 | SigmaHQ auto-sync | v1.1 | Scheduled daily/weekly/monthly git pulls |
 | Exception rules | v1.1 | Per-rule field-value filters for false positives |
 | Audit log viewer | v1.1 | Filterable UI for compliance |
+| Snooze UI | v1.1 | Snooze rule for X hours from rule editor |
+| Log shipping auth | v1.1 | Shared secret header for log ingestion endpoint |
+| Edit local users | v1.1 | Admin can change role, reset password, disable |
+| External API alerts | v1.1 | OpenSearch query for /external/alerts endpoint |
+| Delete confirmation | v1.1 | Styled modal instead of browser confirm() |
+| Version history UI | v1.1+ | Diff view and rollback from rule editor (Phase 7) |
+| Rules list redesign | v1.1+ | SigmaHQ browser style with tree by index pattern (Phase 7) |
+| Rate limiting | v1.1+ | IP rate limiting + account lockout (Phase 7) |
+| Role permissions | v1.1+ | Configurable permissions per fixed role (Phase 7) |
+| Audit to OpenSearch | v1.1+ | Optional dual-write to chad-audit-logs (Phase 7) |
 | Bulk operations | v1.1+ | Multi-select enable/disable/delete (Phase 7) |
 | Rule comments | v1.1+ | Unified timeline with versions (Phase 7) |
 | Export/backup | v1.1+ | Single, bulk, full config (Phase 7) |
@@ -704,7 +902,7 @@ Documented for potential future releases:
 
 ## Changelog
 
-### 2026-01-22 (Phase 6 Design)
+### 2026-01-22 (Phase 6 & 7 Design)
 
 Added v1.1 Phase 6 feature designs:
 
@@ -714,7 +912,25 @@ Added v1.1 Phase 6 feature designs:
 - **New sections**: SigmaHQ Integration, Exception Rules, Audit Logging
 - **New API endpoints**: `/sigmahq/*`, `/rules/{id}/exceptions/*`, `/audit`
 - **Updated schema**: `rule_exceptions` table with operator enum and is_active flag
-- **Phase 7 deferred**: Bulk operations, rule comments, export/backup
+
+Phase 6 quick wins added:
+
+- **Snooze UI**: Snooze rule for X hours from rule editor
+- **Log Shipping Auth**: Shared secret header for `/logs/{index}` endpoint
+- **Edit Local Users**: Admin can change role, reset password, disable/enable
+- **External API Alerts**: Implement OpenSearch query for `/external/alerts`
+- **Delete Confirmation**: Styled modal instead of browser confirm()
+
+Phase 7 designs added:
+
+- **Version History UI**: Diff view and rollback from rule editor
+- **Rules List Redesign**: SigmaHQ browser style with tree by index pattern
+- **Rate Limiting**: IP rate limiting + account lockout (5 attempts → 15 min)
+- **Role Permissions**: Configurable permissions per fixed role
+- **Audit to OpenSearch**: Optional dual-write to `chad-audit-logs` index
+- **Deferred v1.1**: Bulk operations, rule comments, export/backup
+
+New design sections: Log Shipping Authentication, User Management Enhancements, Rate Limiting & Brute Force Protection, Role Permissions, Rules List Redesign
 
 ### 2026-01-22 (Phase 5)
 
