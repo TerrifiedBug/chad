@@ -4,7 +4,7 @@ Role permissions API endpoints.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,8 +46,26 @@ async def update_permission(
     current_user: Annotated[User, Depends(require_admin)],
 ):
     """Update a role permission."""
+    # Validate role
+    if data.role not in ["admin", "analyst", "viewer"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid role. Must be admin, analyst, or viewer."
+        )
+
+    # Admin permissions cannot be modified
     if data.role == "admin":
-        return {"error": "Cannot modify admin permissions"}
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot modify admin permissions"
+        )
+
+    # Validate permission exists
+    if data.permission not in PERMISSION_DESCRIPTIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid permission. Valid permissions: {', '.join(PERMISSION_DESCRIPTIONS.keys())}"
+        )
 
     await set_role_permission(db, data.role, data.permission, data.granted)
     await audit_log(
