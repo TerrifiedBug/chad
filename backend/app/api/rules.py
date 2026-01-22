@@ -12,6 +12,7 @@ from app.api.deps import get_current_user, get_opensearch_client, get_opensearch
 from app.db.session import get_db
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleStatus, RuleVersion
+from app.models.rule_exception import RuleException
 from app.models.user import User
 from app.schemas.rule import (
     RuleCreate,
@@ -28,6 +29,11 @@ from app.schemas.rule import (
     ValidationErrorItem,
     LogMatchResult,
 )
+from app.schemas.rule_exception import (
+    RuleExceptionCreate,
+    RuleExceptionResponse,
+    RuleExceptionUpdate,
+)
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
 from app.services.sigma import sigma_service
@@ -43,11 +49,48 @@ async def list_rules(
     skip: int = 0,
     limit: int = 100,
 ):
-    query = select(Rule).offset(skip).limit(limit)
+    # Load rules with versions and version authors to get last edited by
+    query = (
+        select(Rule)
+        .options(
+            selectinload(Rule.versions).selectinload(RuleVersion.author)
+        )
+        .offset(skip)
+        .limit(limit)
+    )
     if status_filter:
         query = query.where(Rule.status == status_filter)
     result = await db.execute(query)
-    return result.scalars().all()
+    rules = result.scalars().all()
+
+    # Build response with last_edited_by
+    responses = []
+    for rule in rules:
+        rule_dict = {
+            "id": rule.id,
+            "title": rule.title,
+            "description": rule.description,
+            "yaml_content": rule.yaml_content,
+            "severity": rule.severity,
+            "status": rule.status,
+            "snooze_until": rule.snooze_until,
+            "created_by": rule.created_by,
+            "created_at": rule.created_at,
+            "updated_at": rule.updated_at,
+            "deployed_at": rule.deployed_at,
+            "deployed_version": rule.deployed_version,
+            "index_pattern_id": rule.index_pattern_id,
+            "last_edited_by": None,
+        }
+        # Get the latest version's author (versions are already sorted desc by version_number)
+        if rule.versions:
+            latest_version = rule.versions[0]
+            if latest_version.author:
+                rule_dict["last_edited_by"] = latest_version.author.email
+
+        responses.append(rule_dict)
+
+    return responses
 
 
 @router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
@@ -532,3 +575,115 @@ async def rollback_rule(
         rolled_back_from=version_number,
         yaml_content=target_version.yaml_content,
     )
+
+
+# Rule Exception Endpoints
+
+
+@router.get("/{rule_id}/exceptions", response_model=list[RuleExceptionResponse])
+async def list_rule_exceptions(
+    rule_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """List all exceptions for a rule."""
+    # Verify rule exists
+    result = await db.execute(select(Rule).where(Rule.id == rule_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    result = await db.execute(
+        select(RuleException)
+        .where(RuleException.rule_id == rule_id)
+        .order_by(RuleException.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.post(
+    "/{rule_id}/exceptions",
+    response_model=RuleExceptionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_rule_exception(
+    rule_id: UUID,
+    exception_data: RuleExceptionCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Create a new exception for a rule."""
+    # Verify rule exists
+    result = await db.execute(select(Rule).where(Rule.id == rule_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    exception = RuleException(
+        rule_id=rule_id,
+        field=exception_data.field,
+        operator=exception_data.operator,
+        value=exception_data.value,
+        reason=exception_data.reason,
+        created_by=current_user.id,
+    )
+    db.add(exception)
+    await db.commit()
+    await db.refresh(exception)
+    return exception
+
+
+@router.patch(
+    "/{rule_id}/exceptions/{exception_id}",
+    response_model=RuleExceptionResponse,
+)
+async def update_rule_exception(
+    rule_id: UUID,
+    exception_id: UUID,
+    exception_data: RuleExceptionUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Update an exception (change fields or toggle active state)."""
+    result = await db.execute(
+        select(RuleException).where(
+            RuleException.id == exception_id,
+            RuleException.rule_id == rule_id,
+        )
+    )
+    exception = result.scalar_one_or_none()
+
+    if exception is None:
+        raise HTTPException(status_code=404, detail="Exception not found")
+
+    update_data = exception_data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(exception, field, value)
+
+    await db.commit()
+    await db.refresh(exception)
+    return exception
+
+
+@router.delete(
+    "/{rule_id}/exceptions/{exception_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_rule_exception(
+    rule_id: UUID,
+    exception_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Delete an exception."""
+    result = await db.execute(
+        select(RuleException).where(
+            RuleException.id == exception_id,
+            RuleException.rule_id == rule_id,
+        )
+    )
+    exception = result.scalar_one_or_none()
+
+    if exception is None:
+        raise HTTPException(status_code=404, detail="Exception not found")
+
+    await db.delete(exception)
+    await db.commit()
