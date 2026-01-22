@@ -6,6 +6,7 @@ from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.encryption import decrypt
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.setting import Setting
@@ -80,11 +81,20 @@ async def get_opensearch_client(
         )
 
     config = setting.value
+    # Decrypt password if stored encrypted
+    password = config.get("password")
+    if password:
+        try:
+            password = decrypt(password)
+        except Exception:
+            # Password may be stored in plaintext (legacy) - use as-is
+            pass
+
     return create_client(
         host=config["host"],
         port=config["port"],
         username=config.get("username"),
-        password=config.get("password"),
+        password=password,
         use_ssl=config.get("use_ssl", True),
     )
 
@@ -105,12 +115,21 @@ async def get_opensearch_client_optional(
         return None
 
     config = setting.value
+    # Decrypt password if stored encrypted
+    password = config.get("password")
+    if password:
+        try:
+            password = decrypt(password)
+        except Exception:
+            # Password may be stored in plaintext (legacy) - use as-is
+            pass
+
     try:
         return create_client(
             host=config["host"],
             port=config["port"],
             username=config.get("username"),
-            password=config.get("password"),
+            password=password,
             use_ssl=config.get("use_ssl", True),
         )
     except Exception:

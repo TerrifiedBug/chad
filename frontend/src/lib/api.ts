@@ -133,6 +133,7 @@ export type RuleCreate = {
   description?: string
   yaml_content: string
   severity?: string
+  status?: RuleStatus
   index_pattern_id: string
 }
 

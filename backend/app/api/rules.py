@@ -61,9 +61,9 @@ async def create_rule(
         description=rule_data.description,
         yaml_content=rule_data.yaml_content,
         severity=rule_data.severity,
+        status=rule_data.status,
         index_pattern_id=rule_data.index_pattern_id,
         created_by=current_user.id,
-        status=RuleStatus.DISABLED,
     )
     db.add(rule)
     await db.flush()  # Flush to get the rule.id

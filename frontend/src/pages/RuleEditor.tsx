@@ -18,6 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw } from 'lucide-react'
 
@@ -46,6 +48,7 @@ export default function RuleEditorPage() {
   const [severity, setSeverity] = useState('medium')
   const [indexPatternId, setIndexPatternId] = useState('')
   const [description, setDescription] = useState('')
+  const [status, setStatus] = useState<'enabled' | 'disabled'>('disabled')
 
   // UI state
   const [indexPatterns, setIndexPatterns] = useState<IndexPattern[]>([])
@@ -113,6 +116,7 @@ export default function RuleEditorPage() {
       setDescription(rule.description || '')
       setDeployedAt(rule.deployed_at)
       setDeployedVersion(rule.deployed_version)
+      setStatus(rule.status as 'enabled' | 'disabled')
       // Get current version from versions array (sorted desc by version_number)
       if (rule.versions && rule.versions.length > 0) {
         setCurrentVersion(rule.versions[0].version_number)
@@ -174,6 +178,53 @@ export default function RuleEditorPage() {
     }
   }
 
+  // Extract title and level from YAML when it changes
+  const syncFromYaml = (yamlStr: string) => {
+    try {
+      const parsed = yaml.load(yamlStr) as Record<string, unknown>
+      if (parsed?.title && typeof parsed.title === 'string') {
+        setTitle(parsed.title)
+      }
+      if (parsed?.level && typeof parsed.level === 'string') {
+        const level = parsed.level.toLowerCase()
+        if (['critical', 'high', 'medium', 'low', 'informational'].includes(level)) {
+          setSeverity(level)
+        }
+      }
+    } catch {
+      // Invalid YAML, ignore
+    }
+  }
+
+  const handleYamlChange = (newYaml: string) => {
+    setYamlContent(newYaml)
+    syncFromYaml(newYaml)
+  }
+
+  const handleTitleChange = (newTitle: string) => {
+    setTitle(newTitle)
+    // Update YAML
+    const updatedYaml = yamlContent.replace(
+      /^title:\s*.+$/m,
+      `title: ${newTitle}`
+    )
+    if (updatedYaml !== yamlContent) {
+      setYamlContent(updatedYaml)
+    }
+  }
+
+  const handleSeverityChange = (newSeverity: string) => {
+    setSeverity(newSeverity)
+    // Update YAML level field
+    const updatedYaml = yamlContent.replace(
+      /^level:\s*.+$/m,
+      `level: ${newSeverity}`
+    )
+    if (updatedYaml !== yamlContent) {
+      setYamlContent(updatedYaml)
+    }
+  }
+
   const handleSave = async () => {
     if (!isValid) {
       setError('Please fix validation errors before saving')
@@ -201,6 +252,7 @@ export default function RuleEditorPage() {
           description: description || undefined,
           yaml_content: yamlContent,
           severity,
+          status,
           index_pattern_id: indexPatternId,
         })
         // Navigate to the edit page for the new rule
@@ -211,6 +263,7 @@ export default function RuleEditorPage() {
           description: description || undefined,
           yaml_content: yamlContent,
           severity,
+          status,
           index_pattern_id: indexPatternId,
         })
         // Reload rule to get updated version
@@ -296,6 +349,17 @@ export default function RuleEditorPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {!isNew && (
+            <div className="flex items-center gap-2 mr-4">
+              <Switch
+                checked={status === 'enabled'}
+                onCheckedChange={(checked) => setStatus(checked ? 'enabled' : 'disabled')}
+              />
+              <Label className="text-sm">
+                {status === 'enabled' ? 'Enabled' : 'Disabled'}
+              </Label>
+            </div>
+          )}
           {saveSuccess && (
             <span className="text-sm text-green-600 flex items-center gap-1">
               <Check className="h-4 w-4" />
@@ -363,7 +427,7 @@ export default function RuleEditorPage() {
             <Input
               id="title"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => handleTitleChange(e.target.value)}
               placeholder="Detection rule title"
             />
           </div>
@@ -371,7 +435,7 @@ export default function RuleEditorPage() {
           <div className="border rounded-lg overflow-hidden">
             <YamlEditor
               value={yamlContent}
-              onChange={setYamlContent}
+              onChange={handleYamlChange}
               height="400px"
               errors={editorErrors}
             />
@@ -384,7 +448,7 @@ export default function RuleEditorPage() {
                 <SelectTrigger>
                   <SelectValue placeholder="Select index pattern" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="z-50">
                   {indexPatterns.map((pattern) => (
                     <SelectItem key={pattern.id} value={pattern.id}>
                       {pattern.name}
@@ -395,11 +459,11 @@ export default function RuleEditorPage() {
             </div>
             <div className="space-y-2">
               <Label>Severity</Label>
-              <Select value={severity} onValueChange={setSeverity}>
+              <Select value={severity} onValueChange={handleSeverityChange}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="z-50">
                   <SelectItem value="informational">Informational</SelectItem>
                   <SelectItem value="low">Low</SelectItem>
                   <SelectItem value="medium">Medium</SelectItem>

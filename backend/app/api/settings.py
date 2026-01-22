@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_admin
+from app.core.encryption import encrypt
 from app.db.session import get_db
 from app.models.setting import Setting
 from app.models.user import User
@@ -65,11 +66,14 @@ async def save_opensearch_config(
     result = await db.execute(select(Setting).where(Setting.key == "opensearch"))
     setting = result.scalar_one_or_none()
 
+    # Encrypt password before storing
+    encrypted_password = encrypt(config.password) if config.password else None
+
     config_value = {
         "host": config.host,
         "port": config.port,
         "username": config.username,
-        "password": config.password,
+        "password": encrypted_password,
         "use_ssl": config.use_ssl,
     }
 

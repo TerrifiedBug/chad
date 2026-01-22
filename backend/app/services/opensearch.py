@@ -207,7 +207,7 @@ def _extract_fields(properties: dict[str, Any], prefix: str, fields: set[str]) -
 
 def validate_index_pattern(client: OpenSearch, pattern: str) -> dict[str, Any]:
     """
-    Validate an index pattern exists and get info about matching indices.
+    Validate an index pattern exists and check permissions.
 
     Args:
         client: OpenSearch client
@@ -216,6 +216,8 @@ def validate_index_pattern(client: OpenSearch, pattern: str) -> dict[str, Any]:
     Returns:
         Dict with validation result and index info
     """
+    errors: list[str] = []
+
     try:
         # Get matching indices
         indices_info = client.cat.indices(index=pattern, format="json")
@@ -227,10 +229,40 @@ def validate_index_pattern(client: OpenSearch, pattern: str) -> dict[str, Any]:
                 "indices": [],
                 "total_docs": 0,
                 "sample_fields": [],
+                "error": "No indices match this pattern",
             }
 
         # Get total doc count
         total_docs = sum(int(idx.get("docs.count", 0)) for idx in indices_info)
+
+        # Test search permission
+        try:
+            client.search(index=pattern, body={"size": 0})
+        except Exception as e:
+            error_str = str(e).lower()
+            if "403" in error_str or "security_exception" in error_str or "forbidden" in error_str:
+                errors.append("Missing search permission for this index pattern")
+            else:
+                errors.append(f"Search test failed: {e}")
+
+        # Test mapping permission
+        try:
+            client.indices.get_mapping(index=pattern)
+        except Exception as e:
+            error_str = str(e).lower()
+            if "403" in error_str or "security_exception" in error_str or "forbidden" in error_str:
+                errors.append("Missing get_mapping permission for this index pattern")
+            else:
+                errors.append(f"Mapping test failed: {e}")
+
+        if errors:
+            return {
+                "valid": False,
+                "indices": indices[:10],
+                "total_docs": total_docs,
+                "sample_fields": [],
+                "error": "; ".join(errors),
+            }
 
         # Get sample fields from mapping
         fields = get_index_fields(client, pattern)

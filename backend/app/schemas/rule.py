@@ -16,7 +16,7 @@ class RuleBase(BaseModel):
 
 
 class RuleCreate(RuleBase):
-    pass
+    status: RuleStatus = RuleStatus.DISABLED
 
 
 class RuleUpdate(BaseModel):
