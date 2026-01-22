@@ -12,6 +12,7 @@ Flow:
 
 import secrets
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from opensearchpy import OpenSearch
@@ -22,7 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_opensearch_client_optional
 from app.db.session import get_db
 from app.models.index_pattern import IndexPattern
-from app.services.alerts import AlertService
+from app.models.rule_exception import RuleException
+from app.services.alerts import AlertService, should_suppress_alert
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -133,6 +135,9 @@ async def receive_logs(
     total_matches = 0
     alerts_created = []
 
+    # Cache exceptions per rule to avoid repeated DB queries
+    rule_exceptions_cache: dict[str, list[dict]] = {}
+
     for log in logs:
         # Run percolate query
         matches = alert_service.match_log(percolator_index, log)
@@ -142,10 +147,39 @@ async def receive_logs(
             if not match.get("enabled", True):
                 continue
 
+            rule_id = match["rule_id"]
+
+            # Get exceptions for this rule (with caching)
+            if rule_id not in rule_exceptions_cache:
+                try:
+                    rule_uuid = UUID(rule_id)
+                    exc_result = await db.execute(
+                        select(RuleException).where(
+                            RuleException.rule_id == rule_uuid,
+                            RuleException.is_active == True,
+                        )
+                    )
+                    exceptions = exc_result.scalars().all()
+                    rule_exceptions_cache[rule_id] = [
+                        {
+                            "field": e.field,
+                            "operator": e.operator.value,
+                            "value": e.value,
+                            "is_active": e.is_active,
+                        }
+                        for e in exceptions
+                    ]
+                except (ValueError, Exception):
+                    rule_exceptions_cache[rule_id] = []
+
+            # Check if this match should be suppressed by an exception
+            if should_suppress_alert(log, rule_exceptions_cache[rule_id]):
+                continue
+
             # Create alert
             alert = alert_service.create_alert(
                 alerts_index=alerts_index,
-                rule_id=match["rule_id"],
+                rule_id=rule_id,
                 rule_title=match["rule_title"],
                 severity=match["severity"],
                 tags=match.get("tags", []),
@@ -185,6 +219,7 @@ async def test_log_matching(
     The token should be provided in the Authorization header: Bearer <token>
 
     Useful for testing rules during development.
+    Returns match results including whether exceptions would suppress the alert.
     """
     # Validate the auth token first
     await validate_log_shipping_token(index_suffix, authorization, db)
@@ -203,15 +238,52 @@ async def test_log_matching(
     alert_service = AlertService(os_client)
     matches = alert_service.match_log(percolator_index, log)
 
-    return {
-        "matches": [
-            {
-                "rule_id": m["rule_id"],
-                "rule_title": m["rule_title"],
-                "severity": m["severity"],
-                "tags": m.get("tags", []),
-                "enabled": m.get("enabled", True),
-            }
-            for m in matches
-        ]
-    }
+    results = []
+    for m in matches:
+        rule_id = m["rule_id"]
+
+        # Get exceptions for this rule
+        suppressed = False
+        matching_exception = None
+        try:
+            rule_uuid = UUID(rule_id)
+            exc_result = await db.execute(
+                select(RuleException).where(
+                    RuleException.rule_id == rule_uuid,
+                    RuleException.is_active == True,
+                )
+            )
+            exceptions = exc_result.scalars().all()
+            exception_dicts = [
+                {
+                    "field": e.field,
+                    "operator": e.operator.value,
+                    "value": e.value,
+                    "is_active": e.is_active,
+                    "reason": e.reason,
+                }
+                for e in exceptions
+            ]
+
+            # Check if suppressed and find matching exception
+            for exc in exception_dicts:
+                from app.services.alerts import check_exception_match
+                from app.models.rule_exception import ExceptionOperator
+                if check_exception_match(log, exc["field"], ExceptionOperator(exc["operator"]), exc["value"]):
+                    suppressed = True
+                    matching_exception = exc
+                    break
+        except (ValueError, Exception):
+            pass
+
+        results.append({
+            "rule_id": rule_id,
+            "rule_title": m["rule_title"],
+            "severity": m["severity"],
+            "tags": m.get("tags", []),
+            "enabled": m.get("enabled", True),
+            "suppressed_by_exception": suppressed,
+            "matching_exception": matching_exception,
+        })
+
+    return {"matches": results}
