@@ -14,6 +14,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -82,6 +83,9 @@ export default function UsersPage() {
   const [userToDelete, setUserToDelete] = useState<UserInfo | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Password reset confirmation state
+  const [isPasswordResetDialogOpen, setIsPasswordResetDialogOpen] = useState(false)
 
   // Password complexity
   const passwordComplexity = validatePasswordComplexity(newPassword)
@@ -195,12 +199,12 @@ export default function UsersPage() {
     }
   }
 
-  const resetUserPassword = async () => {
+  const confirmResetPassword = async () => {
     if (!editUser) return
-    if (!confirm('Are you sure you want to reset this user\'s password? They will need to change it on next login.')) return
 
     setIsResettingPassword(true)
     setEditError('')
+    setIsPasswordResetDialogOpen(false)
 
     try {
       const response = await usersApi.resetPassword(editUser.id)
@@ -497,7 +501,7 @@ export default function UsersPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={resetUserPassword}
+                    onClick={() => setIsPasswordResetDialogOpen(true)}
                     disabled={isResettingPassword}
                   >
                     <KeyRound className="mr-2 h-4 w-4" />
@@ -565,6 +569,26 @@ export default function UsersPage() {
         onConfirm={confirmDeleteUser}
         isDeleting={isDeleting}
       />
+
+      {/* Password Reset Confirmation Dialog */}
+      <Dialog open={isPasswordResetDialogOpen} onOpenChange={setIsPasswordResetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to reset this user's password? A temporary password will be generated and the user will be required to change it on next login.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPasswordResetDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmResetPassword}>
+              Reset Password
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
