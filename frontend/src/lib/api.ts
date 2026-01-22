@@ -444,6 +444,12 @@ export const usersApi = {
   },
   create: (data: UserCreate) =>
     api.post<UserInfo>('/users', data),
+  update: (userId: string, data: { role?: string; is_active?: boolean }) =>
+    api.patch<UserInfo>(`/users/${userId}`, data),
+  resetPassword: (userId: string) =>
+    api.post<{ temporary_password: string; message: string }>(
+      `/users/${userId}/reset-password`
+    ),
   delete: (userId: string) =>
     api.delete(`/users/${userId}`),
 }

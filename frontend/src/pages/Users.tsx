@@ -27,7 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Check, Plus, Trash2, X } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 // Password complexity validation
@@ -62,6 +63,19 @@ export default function UsersPage() {
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState('analyst')
   const [createError, setCreateError] = useState('')
+
+  // Edit user state
+  const [editUser, setEditUser] = useState<UserInfo | null>(null)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [editRole, setEditRole] = useState('')
+  const [editIsActive, setEditIsActive] = useState(true)
+  const [editError, setEditError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Password reset state
+  const [isResettingPassword, setIsResettingPassword] = useState(false)
+  const [tempPassword, setTempPassword] = useState('')
+  const [passwordCopied, setPasswordCopied] = useState(false)
 
   // Password complexity
   const passwordComplexity = validatePasswordComplexity(newPassword)
@@ -124,6 +138,80 @@ export default function UsersPage() {
       loadUsers()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')
+    }
+  }
+
+  const openEditDialog = (user: UserInfo) => {
+    setEditUser(user)
+    setEditRole(user.role)
+    setEditIsActive(user.is_active)
+    setEditError('')
+    setTempPassword('')
+    setPasswordCopied(false)
+    setIsEditDialogOpen(true)
+  }
+
+  const closeEditDialog = () => {
+    setIsEditDialogOpen(false)
+    setEditUser(null)
+    setEditError('')
+    setTempPassword('')
+    setPasswordCopied(false)
+  }
+
+  const saveUserChanges = async () => {
+    if (!editUser) return
+
+    setIsSaving(true)
+    setEditError('')
+
+    try {
+      await usersApi.update(editUser.id, {
+        role: editRole,
+        is_active: editIsActive,
+      })
+      closeEditDialog()
+      loadUsers()
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Failed to update user')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const resetUserPassword = async () => {
+    if (!editUser) return
+    if (!confirm('Are you sure you want to reset this user\'s password? They will need to change it on next login.')) return
+
+    setIsResettingPassword(true)
+    setEditError('')
+
+    try {
+      const response = await usersApi.resetPassword(editUser.id)
+      setTempPassword(response.temporary_password)
+      setPasswordCopied(false)
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Failed to reset password')
+    } finally {
+      setIsResettingPassword(false)
+    }
+  }
+
+  const copyTempPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(tempPassword)
+      setPasswordCopied(true)
+      setTimeout(() => setPasswordCopied(false), 2000)
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = tempPassword
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setPasswordCopied(true)
+      setTimeout(() => setPasswordCopied(false), 2000)
     }
   }
 
@@ -289,14 +377,25 @@ export default function UsersPage() {
                     {new Date(user.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => deleteUser(user.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEditDialog(user)}
+                        title="Edit user"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => deleteUser(user.id)}
+                        className="text-destructive hover:text-destructive"
+                        title="Delete user"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -304,6 +403,141 @@ export default function UsersPage() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Edit User Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => !open && closeEditDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              {editUser?.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {editError && (
+              <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
+                {editError}
+              </div>
+            )}
+
+            {/* Role Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-role">Role</Label>
+              {editUser?.auth_method === 'sso' ? (
+                <div className="space-y-1">
+                  <Select value={editRole} disabled>
+                    <SelectTrigger className="opacity-50 cursor-not-allowed">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-50 bg-popover">
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="analyst">Analyst</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Role is managed by SSO provider
+                  </p>
+                </div>
+              ) : (
+                <Select value={editRole} onValueChange={setEditRole}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover">
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="analyst">Analyst</SelectItem>
+                    <SelectItem value="viewer">Viewer</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {/* Active Status */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="edit-active">Active Status</Label>
+                <p className="text-xs text-muted-foreground">
+                  Inactive users cannot log in
+                </p>
+              </div>
+              <Switch
+                id="edit-active"
+                checked={editIsActive}
+                onCheckedChange={setEditIsActive}
+              />
+            </div>
+
+            {/* Password Reset Section - Only for local users */}
+            {editUser?.auth_method === 'local' && (
+              <div className="border-t pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>Password Reset</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Generate a temporary password for this user
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetUserPassword}
+                    disabled={isResettingPassword}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                  </Button>
+                </div>
+
+                {tempPassword && (
+                  <div className="bg-muted rounded-md p-3 space-y-2">
+                    <p className="text-sm font-medium">Temporary Password</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 bg-background px-3 py-2 rounded text-sm font-mono border">
+                        {tempPassword}
+                      </code>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={copyTempPassword}
+                        className="shrink-0"
+                      >
+                        {passwordCopied ? (
+                          <Check className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      The user will be required to change this password on next login.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SSO Info */}
+            {editUser?.auth_method === 'sso' && (
+              <div className="border-t pt-4">
+                <p className="text-sm text-muted-foreground">
+                  This user authenticates via SSO. Password management is handled by the identity provider.
+                </p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={closeEditDialog}>
+                Cancel
+              </Button>
+              <Button onClick={saveUserChanges} disabled={isSaving}>
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
