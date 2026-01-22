@@ -165,6 +165,7 @@ export default function ApiKeysPage() {
             <ul className="list-disc list-inside ml-4 text-muted-foreground">
               <li>GET /api/external/rules - List all rules</li>
               <li>GET /api/external/rules/:id - Get a specific rule</li>
+              <li>GET /api/external/alerts - List alerts (with pagination)</li>
               <li>GET /api/external/stats - Get summary statistics</li>
             </ul>
           </div>
