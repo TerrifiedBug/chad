@@ -9,6 +9,7 @@ from app.api.auth import router as auth_router
 from app.api.external import router as external_router
 from app.api.index_patterns import router as index_patterns_router
 from app.api.logs import router as logs_router
+from app.api.permissions import router as permissions_router
 from app.api.rules import router as rules_router
 from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
@@ -58,4 +59,5 @@ app.include_router(users_router, prefix="/api")
 app.include_router(api_keys_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(external_router, prefix="/api")
+app.include_router(permissions_router, prefix="/api")
 app.include_router(sigmahq_router, prefix="/api")
