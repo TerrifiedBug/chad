@@ -7,6 +7,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 
 @dataclass
 class SyncResult:
@@ -157,6 +159,162 @@ class SigmaHQService:
         if not rules_dir.exists():
             return 0
         return sum(1 for _ in rules_dir.rglob("*.yml"))
+
+    def get_category_tree(self) -> dict:
+        """
+        Build a nested category tree from the rules directory structure.
+
+        Returns:
+            {
+                "windows": {
+                    "count": 150,
+                    "children": {
+                        "process_creation": {"count": 50, "children": {}},
+                        "registry": {"count": 30, "children": {}},
+                    }
+                },
+                "linux": {...}
+            }
+        """
+        rules_dir = self.get_rules_directory()
+        if not rules_dir.exists():
+            return {}
+
+        def build_tree(path: Path, relative_to: Path) -> dict:
+            tree = {}
+            for item in sorted(path.iterdir()):
+                if item.is_dir() and not item.name.startswith("."):
+                    subtree = build_tree(item, relative_to)
+                    rule_count = sum(1 for _ in item.rglob("*.yml"))
+                    tree[item.name] = {
+                        "count": rule_count,
+                        "children": subtree,
+                    }
+            return tree
+
+        return build_tree(rules_dir, rules_dir)
+
+    def list_rules_in_category(self, category_path: str) -> list[dict]:
+        """
+        List all rules in a specific category directory.
+
+        Args:
+            category_path: Relative path like "windows/process_creation"
+
+        Returns:
+            List of rule metadata dicts with title, severity, status, path, tags
+        """
+        rules_dir = self.get_rules_directory()
+        target_dir = rules_dir / category_path
+
+        # Security: ensure path doesn't escape rules directory
+        try:
+            target_dir.resolve().relative_to(rules_dir.resolve())
+        except ValueError:
+            return []
+
+        if not target_dir.exists() or not target_dir.is_dir():
+            return []
+
+        rules = []
+        for rule_file in sorted(target_dir.glob("*.yml")):
+            try:
+                content = rule_file.read_text(encoding="utf-8")
+                parsed = yaml.safe_load(content)
+                if parsed and isinstance(parsed, dict):
+                    relative_path = rule_file.relative_to(rules_dir)
+                    rules.append({
+                        "title": parsed.get("title", rule_file.stem),
+                        "status": parsed.get("status", "unknown"),
+                        "severity": parsed.get("level", "unknown"),
+                        "description": parsed.get("description", ""),
+                        "tags": parsed.get("tags", []),
+                        "path": str(relative_path),
+                        "filename": rule_file.name,
+                    })
+            except Exception:
+                # Skip files that can't be parsed
+                continue
+
+        return rules
+
+    def get_rule_content(self, rule_path: str) -> str | None:
+        """
+        Get the raw YAML content of a specific rule.
+
+        Args:
+            rule_path: Relative path like "windows/process_creation/test_rule.yml"
+
+        Returns:
+            Raw YAML content as string, or None if not found
+        """
+        rules_dir = self.get_rules_directory()
+        full_path = rules_dir / rule_path
+
+        # Security: ensure path doesn't escape rules directory
+        try:
+            full_path.resolve().relative_to(rules_dir.resolve())
+        except ValueError:
+            return None
+
+        if not full_path.exists() or not full_path.is_file():
+            return None
+
+        return full_path.read_text(encoding="utf-8")
+
+    def search_rules(self, query: str, limit: int = 100) -> list[dict]:
+        """
+        Search rules by keyword in title, description, and tags.
+
+        Args:
+            query: Search string (case-insensitive)
+            limit: Maximum number of results
+
+        Returns:
+            List of matching rule metadata dicts
+        """
+        rules_dir = self.get_rules_directory()
+        if not rules_dir.exists():
+            return []
+
+        query_lower = query.lower()
+        matches = []
+
+        for rule_file in rules_dir.rglob("*.yml"):
+            if len(matches) >= limit:
+                break
+
+            try:
+                content = rule_file.read_text(encoding="utf-8")
+                parsed = yaml.safe_load(content)
+
+                if not parsed or not isinstance(parsed, dict):
+                    continue
+
+                # Search in title, description, and tags
+                title = str(parsed.get("title", "")).lower()
+                description = str(parsed.get("description", "")).lower()
+                tags = [str(t).lower() for t in parsed.get("tags", [])]
+
+                if (
+                    query_lower in title
+                    or query_lower in description
+                    or any(query_lower in tag for tag in tags)
+                ):
+                    relative_path = rule_file.relative_to(rules_dir)
+                    matches.append({
+                        "title": parsed.get("title", rule_file.stem),
+                        "status": parsed.get("status", "unknown"),
+                        "severity": parsed.get("level", "unknown"),
+                        "description": parsed.get("description", ""),
+                        "tags": parsed.get("tags", []),
+                        "path": str(relative_path),
+                        "filename": rule_file.name,
+                    })
+            except Exception:
+                continue
+
+        return matches
 
 
 # Singleton instance
