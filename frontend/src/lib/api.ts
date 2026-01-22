@@ -292,6 +292,7 @@ export type IndexPattern = {
   pattern: string
   percolator_index: string
   description: string | null
+  auth_token: string
   created_at: string
   updated_at: string
 }
@@ -327,6 +328,8 @@ export const indexPatternsApi = {
     api.delete(`/index-patterns/${id}`),
   validate: (pattern: string) =>
     api.post<IndexPatternValidateResponse>('/index-patterns/validate', { pattern }),
+  regenerateToken: (id: string) =>
+    api.post<{ auth_token: string }>(`/index-patterns/${id}/regenerate-token`),
 }
 
 // Alert types

@@ -82,8 +82,8 @@ def _get_alert_stats(os_client: OpenSearch) -> dict:
             body={
                 "size": 0,
                 "aggs": {
-                    "by_status": {"terms": {"field": "status.keyword"}},
-                    "by_severity": {"terms": {"field": "severity.keyword"}},
+                    "by_status": {"terms": {"field": "status"}},
+                    "by_severity": {"terms": {"field": "severity"}},
                 },
             },
         )
@@ -167,6 +167,13 @@ async def get_system_health(
         # Cluster health
         cluster_health = os_client.cluster.health()
 
+        # Get OpenSearch version info
+        try:
+            info = os_client.info()
+            version = info.get("version", {}).get("number", "unknown")
+        except Exception:
+            version = "unknown"
+
         # Percolator indices
         try:
             percolator_indices = os_client.cat.indices(
@@ -189,6 +196,7 @@ async def get_system_health(
                 "status": cluster_health["status"],
                 "cluster_name": cluster_health["cluster_name"],
                 "number_of_nodes": cluster_health["number_of_nodes"],
+                "version": version,
             },
             "percolator_indices": len(percolator_indices),
             "alert_indices": len(alert_indices),

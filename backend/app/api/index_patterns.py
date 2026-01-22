@@ -8,15 +8,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client, require_admin
 from app.db.session import get_db
-from app.models.index_pattern import IndexPattern
+from app.models.index_pattern import IndexPattern, generate_auth_token
 from app.models.user import User
 from app.schemas.index_pattern import (
     IndexPatternCreate,
     IndexPatternResponse,
+    IndexPatternTokenResponse,
     IndexPatternUpdate,
     IndexPatternValidateRequest,
     IndexPatternValidateResponse,
 )
+from app.services.audit import audit_log
 from app.services.opensearch import validate_index_pattern
 
 router = APIRouter(prefix="/index-patterns", tags=["index-patterns"])
@@ -128,6 +130,46 @@ async def delete_index_pattern(
 
     await db.delete(pattern)
     await db.commit()
+
+
+@router.post("/{pattern_id}/regenerate-token", response_model=IndexPatternTokenResponse)
+async def regenerate_auth_token(
+    pattern_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    """
+    Regenerate the auth token for an index pattern.
+
+    This invalidates any existing tokens and generates a new one.
+    Only admins can regenerate tokens.
+    """
+    result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
+    pattern = result.scalar_one_or_none()
+
+    if pattern is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Index pattern not found",
+        )
+
+    # Generate new token
+    pattern.auth_token = generate_auth_token()
+    await db.commit()
+    await db.refresh(pattern)
+
+    # Audit log the token regeneration
+    await audit_log(
+        db,
+        current_user.id,
+        "index_pattern.regenerate_token",
+        "index_pattern",
+        str(pattern.id),
+        {"name": pattern.name},
+    )
+    await db.commit()
+
+    return IndexPatternTokenResponse(auth_token=pattern.auth_token)
 
 
 @router.post("/validate", response_model=IndexPatternValidateResponse)

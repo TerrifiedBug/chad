@@ -19,3 +19,4 @@ class User(Base, UUIDMixin, TimestampMixin):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(default=UserRole.VIEWER)
     is_active: Mapped[bool] = mapped_column(default=True)
+    must_change_password: Mapped[bool] = mapped_column(default=False)

@@ -28,6 +28,8 @@ const severityColors: Record<string, string> = {
   informational: 'bg-gray-500 text-white',
 }
 
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 type DeploymentFilter = 'all' | 'deployed' | 'not_deployed'
 
 export default function RulesPage() {
@@ -138,6 +140,7 @@ export default function RulesPage() {
                 <TableHead>Severity</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Index Pattern</TableHead>
+                <TableHead>Last Edited By</TableHead>
                 <TableHead>Updated</TableHead>
               </TableRow>
             </TableHeader>
@@ -155,7 +158,7 @@ export default function RulesPage() {
                         severityColors[rule.severity] || 'bg-gray-500 text-white'
                       }`}
                     >
-                      {rule.severity}
+                      {capitalize(rule.severity)}
                     </span>
                   </TableCell>
                   <TableCell>
@@ -169,6 +172,9 @@ export default function RulesPage() {
                   </TableCell>
                   <TableCell>
                     {indexPatterns[rule.index_pattern_id]?.name || 'Unknown'}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {rule.last_edited_by || '-'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDate(rule.updated_at)}

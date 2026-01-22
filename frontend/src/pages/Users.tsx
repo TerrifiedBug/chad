@@ -13,6 +13,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -26,8 +27,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Plus, Trash2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+
+// Password complexity validation
+function validatePasswordComplexity(password: string) {
+  return {
+    minLength: password.length >= 8,
+    hasUppercase: /[A-Z]/.test(password),
+    hasLowercase: /[a-z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecial: /[!@#$%^&*()_+\-=\[\]{}|;:',.<>?/`~]/.test(password),
+  }
+}
+
+function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
+  return (
+    <div className={`flex items-center gap-2 text-xs ${met ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+      {met ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+      {text}
+    </div>
+  )
+}
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserInfo[]>([])
@@ -40,6 +61,11 @@ export default function UsersPage() {
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState('analyst')
+  const [createError, setCreateError] = useState('')
+
+  // Password complexity
+  const passwordComplexity = validatePasswordComplexity(newPassword)
+  const allRequirementsMet = Object.values(passwordComplexity).every(Boolean)
 
   useEffect(() => {
     loadUsers()
@@ -59,12 +85,17 @@ export default function UsersPage() {
 
   const createUser = async () => {
     if (!newEmail || !newPassword) {
-      setError('Email and password are required')
+      setCreateError('Email and password are required')
+      return
+    }
+
+    if (!allRequirementsMet) {
+      setCreateError('Password does not meet all complexity requirements')
       return
     }
 
     setIsCreating(true)
-    setError('')
+    setCreateError('')
 
     try {
       await usersApi.create({
@@ -76,9 +107,10 @@ export default function UsersPage() {
       setNewEmail('')
       setNewPassword('')
       setNewRole('analyst')
+      setCreateError('')
       loadUsers()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create user')
+      setCreateError(err instanceof Error ? err.message : 'Failed to create user')
     } finally {
       setIsCreating(false)
     }
@@ -124,8 +156,16 @@ export default function UsersPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create User</DialogTitle>
+              <DialogDescription>
+                The user will be required to change their password on first login.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              {createError && (
+                <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
+                  {createError}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -145,6 +185,13 @@ export default function UsersPage() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Enter password"
                 />
+                <div className="space-y-1 pt-1">
+                  <PasswordRequirement met={passwordComplexity.minLength} text="At least 8 characters" />
+                  <PasswordRequirement met={passwordComplexity.hasUppercase} text="At least one uppercase letter" />
+                  <PasswordRequirement met={passwordComplexity.hasLowercase} text="At least one lowercase letter" />
+                  <PasswordRequirement met={passwordComplexity.hasNumber} text="At least one number" />
+                  <PasswordRequirement met={passwordComplexity.hasSpecial} text="At least one special character (!@#$%^&*...)" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
@@ -152,7 +199,7 @@ export default function UsersPage() {
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="z-50">
+                  <SelectContent className="z-50 bg-popover">
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="analyst">Analyst</SelectItem>
                     <SelectItem value="viewer">Viewer</SelectItem>
@@ -162,7 +209,7 @@ export default function UsersPage() {
               <Button
                 onClick={createUser}
                 className="w-full"
-                disabled={isCreating}
+                disabled={isCreating || !allRequirementsMet || !newEmail}
               >
                 {isCreating ? 'Creating...' : 'Create User'}
               </Button>
@@ -183,6 +230,7 @@ export default function UsersPage() {
             <TableRow>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Auth</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="w-[100px]">Actions</TableHead>
@@ -191,14 +239,14 @@ export default function UsersPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
+                <TableCell colSpan={6} className="text-center py-8">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No users found
@@ -211,6 +259,18 @@ export default function UsersPage() {
                   <TableCell>
                     <Badge className={roleColors[user.role] || roleColors.viewer}>
                       {user.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        user.auth_method === 'sso'
+                          ? 'border-purple-300 text-purple-700 dark:border-purple-700 dark:text-purple-300'
+                          : 'border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300'
+                      }
+                    >
+                      {user.auth_method === 'sso' ? 'SSO' : 'Local'}
                     </Badge>
                   </TableCell>
                   <TableCell>

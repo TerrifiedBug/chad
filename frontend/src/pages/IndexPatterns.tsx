@@ -23,7 +23,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Plus, Pencil, Trash2, Check, X, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key } from 'lucide-react'
+import { LogShipperInfo } from '@/components/LogShipperInfo'
 
 export default function IndexPatternsPage() {
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
@@ -51,6 +52,17 @@ export default function IndexPatternsPage() {
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Token visibility state
+  const [visibleTokens, setVisibleTokens] = useState<Set<string>>(new Set())
+  const [copiedToken, setCopiedToken] = useState<string | null>(null)
+
+  // Token regeneration state
+  const [regenerateId, setRegenerateId] = useState<string | null>(null)
+  const [isRegenerating, setIsRegenerating] = useState(false)
+
+  // Token details dialog
+  const [tokenDetailsPattern, setTokenDetailsPattern] = useState<IndexPattern | null>(null)
 
   useEffect(() => {
     loadPatterns()
@@ -159,14 +171,66 @@ export default function IndexPatternsPage() {
     }
   }
 
+  const handleRegenerateToken = async () => {
+    if (!regenerateId) return
+
+    setIsRegenerating(true)
+    try {
+      const result = await indexPatternsApi.regenerateToken(regenerateId)
+      // Update the pattern in state with the new token
+      setPatterns(prev =>
+        prev.map(p =>
+          p.id === regenerateId ? { ...p, auth_token: result.auth_token } : p
+        )
+      )
+      // Also update token details dialog if open
+      if (tokenDetailsPattern?.id === regenerateId) {
+        setTokenDetailsPattern(prev =>
+          prev ? { ...prev, auth_token: result.auth_token } : null
+        )
+      }
+      setRegenerateId(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to regenerate token')
+    } finally {
+      setIsRegenerating(false)
+    }
+  }
+
+  const toggleTokenVisibility = (patternId: string) => {
+    setVisibleTokens(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(patternId)) {
+        newSet.delete(patternId)
+      } else {
+        newSet.add(patternId)
+      }
+      return newSet
+    })
+  }
+
+  const copyToClipboard = async (text: string, patternId: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedToken(patternId)
+      setTimeout(() => setCopiedToken(null), 2000)
+    } catch {
+      setError('Failed to copy to clipboard')
+    }
+  }
+
   // Auto-generate percolator index name from pattern
   const handlePatternChange = (value: string) => {
     setFormData((prev) => ({
       ...prev,
       pattern: value,
-      percolator_index: prev.percolator_index || `percolator-${value.replace(/\*/g, '')}`,
+      percolator_index: prev.percolator_index || `chad-percolator-${value.replace(/\*/g, '').replace(/-$/, '')}`,
     }))
     setValidationResult(null)
+  }
+
+  const getIndexSuffix = (percolatorIndex: string) => {
+    return percolatorIndex.replace(/^chad-percolator-/, '')
   }
 
   return (
@@ -185,6 +249,8 @@ export default function IndexPatternsPage() {
         </div>
       )}
 
+      <LogShipperInfo percolatorIndex={patterns[0]?.percolator_index} />
+
       {isLoading ? (
         <div className="text-center py-8 text-muted-foreground">Loading...</div>
       ) : patterns.length === 0 ? (
@@ -199,7 +265,7 @@ export default function IndexPatternsPage() {
                 <TableHead>Name</TableHead>
                 <TableHead>Pattern</TableHead>
                 <TableHead>Percolator Index</TableHead>
-                <TableHead className="w-24">Actions</TableHead>
+                <TableHead className="w-32">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -213,10 +279,19 @@ export default function IndexPatternsPage() {
                     {pattern.percolator_index}
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="View token & endpoint"
+                        onClick={() => setTokenDetailsPattern(pattern)}
+                      >
+                        <Key className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Edit pattern"
                         onClick={() => openEditDialog(pattern)}
                       >
                         <Pencil className="h-4 w-4" />
@@ -224,6 +299,7 @@ export default function IndexPatternsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="Delete pattern"
                         onClick={() => setDeleteId(pattern.id)}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -236,6 +312,130 @@ export default function IndexPatternsPage() {
           </Table>
         </div>
       )}
+
+      {/* Token Details Dialog */}
+      <Dialog open={!!tokenDetailsPattern} onOpenChange={() => setTokenDetailsPattern(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Log Shipping Configuration</DialogTitle>
+            <DialogDescription>
+              Use this token to authenticate log shipping requests for "{tokenDetailsPattern?.name}"
+            </DialogDescription>
+          </DialogHeader>
+
+          {tokenDetailsPattern && (
+            <div className="space-y-4 py-4">
+              {/* Endpoint URL */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Endpoint URL</Label>
+                <div className="flex gap-2">
+                  <code className="flex-1 text-sm bg-muted p-2 rounded font-mono break-all">
+                    POST {window.location.origin}/api/logs/{getIndexSuffix(tokenDetailsPattern.percolator_index)}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => copyToClipboard(
+                      `${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}`,
+                      `${tokenDetailsPattern.id}-url`
+                    )}
+                  >
+                    {copiedToken === `${tokenDetailsPattern.id}-url` ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Auth Token */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Auth Token</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() => setRegenerateId(tokenDetailsPattern.id)}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Regenerate
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <code className="flex-1 text-sm bg-muted p-2 rounded font-mono break-all">
+                    {visibleTokens.has(tokenDetailsPattern.id)
+                      ? tokenDetailsPattern.auth_token
+                      : `${'*'.repeat(20)}...${tokenDetailsPattern.auth_token.slice(-4)}`
+                    }
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => toggleTokenVisibility(tokenDetailsPattern.id)}
+                  >
+                    {visibleTokens.has(tokenDetailsPattern.id) ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => copyToClipboard(tokenDetailsPattern.auth_token, `${tokenDetailsPattern.id}-token`)}
+                  >
+                    {copiedToken === `${tokenDetailsPattern.id}-token` ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Example curl command */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Example Request</Label>
+                <div className="relative">
+                  <pre className="text-xs bg-muted p-3 rounded font-mono overflow-x-auto whitespace-pre-wrap">
+{`curl -X POST "${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}" \\
+  -H "Authorization: Bearer ${visibleTokens.has(tokenDetailsPattern.id) ? tokenDetailsPattern.auth_token : '<your-token>'}" \\
+  -H "Content-Type: application/json" \\
+  -d '[{"message": "test log", "timestamp": "2024-01-01T00:00:00Z"}]'`}
+                  </pre>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-2 right-2 h-6 w-6"
+                    onClick={() => copyToClipboard(
+                      `curl -X POST "${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}" \\\n  -H "Authorization: Bearer ${tokenDetailsPattern.auth_token}" \\\n  -H "Content-Type: application/json" \\\n  -d '[{"message": "test log", "timestamp": "2024-01-01T00:00:00Z"}]'`,
+                      `${tokenDetailsPattern.id}-curl`
+                    )}
+                  >
+                    {copiedToken === `${tokenDetailsPattern.id}-curl` ? (
+                      <Check className="h-3 w-3 text-green-500" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Send a JSON array of log documents to this endpoint. Each log will be matched against deployed rules and alerts will be generated for matches.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTokenDetailsPattern(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -317,13 +517,42 @@ export default function IndexPatternsPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, percolator_index: e.target.value })
                 }
-                placeholder="percolator-windows"
+                placeholder="chad-percolator-windows"
                 className="font-mono"
               />
               <p className="text-xs text-muted-foreground">
-                Where deployed rules will be stored in OpenSearch
+                Where deployed rules will be stored in OpenSearch. Must start with "chad-percolator-".
               </p>
             </div>
+
+            {/* Dynamic Log Shipper Endpoint Info */}
+            {formData.percolator_index && formData.percolator_index.startsWith('chad-percolator-') && (
+              <div className="space-y-2 p-3 bg-muted rounded-md">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Log Shipper Endpoint</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => {
+                      const suffix = getIndexSuffix(formData.percolator_index)
+                      navigator.clipboard.writeText(`${window.location.origin}/api/logs/${suffix}`)
+                    }}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+                <code className="block text-xs bg-background p-2 rounded font-mono break-all">
+                  POST {window.location.origin}/api/logs/{getIndexSuffix(formData.percolator_index)}
+                </code>
+                <p className="text-xs text-muted-foreground">
+                  {editingPattern
+                    ? 'Use the auth token to authenticate requests to this endpoint.'
+                    : 'An auth token will be generated when you save this pattern.'}
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="description">Description (optional)</Label>
@@ -378,6 +607,39 @@ export default function IndexPatternsPage() {
               disabled={isDeleting}
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Regenerate Token Confirmation Dialog */}
+      <Dialog open={!!regenerateId} onOpenChange={() => setRegenerateId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Regenerate Auth Token</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to regenerate the auth token? This will
+              immediately invalidate the existing token. Any log shippers using
+              the old token will stop working until updated with the new token.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRegenerateId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRegenerateToken}
+              disabled={isRegenerating}
+            >
+              {isRegenerating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Regenerating...
+                </>
+              ) : (
+                'Regenerate Token'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

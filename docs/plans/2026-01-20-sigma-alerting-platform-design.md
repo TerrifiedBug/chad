@@ -809,7 +809,7 @@ All other configuration managed in GUI:
 
 **Phase 7 (UX Polish + Security + Deferred v1.1):**
 - Version history UI: Diff view and rollback from rule editor
-- Improved rules list: SigmaHQ browser style with tree by index pattern
+- Improved rules list: SigmaHQ browser style with tree by index pattern.
 - Rate limiting: IP-based rate limiting + account lockout (5 attempts → 15 min)
 - Configurable role permissions: Toggle permissions per fixed role (admin/analyst/viewer)
 - Audit logs to OpenSearch: Optional dual-write to `chad-audit-logs` index

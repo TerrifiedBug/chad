@@ -21,12 +21,16 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     environment:
+      # Database
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=chad
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpassword}
       - POSTGRES_DB=chad
+      # Security (CHANGE IN PRODUCTION)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-prod}
+      # Frontend URL for SSO redirects (local dev needs explicit URL due to different ports)
+      - FRONTEND_URL=http://localhost:3000
     ports:
       - "8000:8000"
     depends_on:

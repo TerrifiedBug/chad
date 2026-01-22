@@ -47,6 +47,7 @@ class RuleResponse(RuleBase):
     updated_at: datetime
     deployed_at: datetime | None = None
     deployed_version: int | None = None
+    last_edited_by: str | None = None  # Email of user who last edited
 
     class Config:
         from_attributes = True

@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SETUP_COMPLETED: bool = False
 
+    # Frontend URL (for redirects after SSO login)
+    # Default "/" works for production (same origin behind reverse proxy)
+    # Only set explicitly for local dev with different ports
+    FRONTEND_URL: str = "/"
+
+    # Note: APP_URL is now managed via GUI in Settings > General
+    # Use app.services.settings.get_app_url() to retrieve it
+
     class Config:
         env_file = ".env"
         case_sensitive = True

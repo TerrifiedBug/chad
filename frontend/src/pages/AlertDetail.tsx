@@ -34,6 +34,8 @@ const statusLabels: Record<AlertStatus, string> = {
   false_positive: 'False Positive',
 }
 
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -129,7 +131,7 @@ export default function AlertDetailPage() {
               severityColors[alert.severity] || 'bg-gray-500 text-white'
             }`}
           >
-            {alert.severity}
+            {capitalize(alert.severity)}
           </span>
           <Select
             value={alert.status}
@@ -139,7 +141,7 @@ export default function AlertDetailPage() {
             <SelectTrigger className="w-40">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="z-50 bg-popover">
               <SelectItem value="new">New</SelectItem>
               <SelectItem value="acknowledged">Acknowledged</SelectItem>
               <SelectItem value="resolved">Resolved</SelectItem>

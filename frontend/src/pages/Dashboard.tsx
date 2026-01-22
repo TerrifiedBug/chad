@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { AlertTriangle, CheckCircle, Clock, FileText, Shield } from 'lucide-react'
+import { AlertTriangle, Clock, FileText, Shield } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 const severityColors: Record<string, string> = {
@@ -22,10 +22,20 @@ const severityColors: Record<string, string> = {
   informational: 'bg-gray-500 text-white',
 }
 
+const statusLabels: Record<string, string> = {
+  new: 'New',
+  acknowledged: 'Acknowledged',
+  resolved: 'Resolved',
+  false_positive: 'False Positive',
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [severityFilter, setSeverityFilter] = useState<string | null>(null)
 
   useEffect(() => {
     loadStats()
@@ -64,11 +74,33 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Overview of your detection system
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Overview of your detection system
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {['critical', 'high', 'medium', 'low', 'informational'].map(sev => {
+            const count = stats?.alerts.by_severity?.[sev] || 0
+            const isActive = severityFilter === sev
+            return (
+              <button
+                key={sev}
+                onClick={() => setSeverityFilter(isActive ? null : sev)}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all ${
+                  isActive
+                    ? 'bg-primary/10 scale-105'
+                    : 'hover:bg-muted'
+                }`}
+              >
+                <Badge className={severityColors[sev]}>{capitalize(sev)}</Badge>
+                <span className={`font-mono text-sm ${isActive ? 'font-semibold' : ''}`}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -130,59 +162,27 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Severity Breakdown */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Alerts by Severity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {['critical', 'high', 'medium', 'low', 'informational'].map(sev => (
-                <div key={sev} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Badge className={severityColors[sev]}>{sev}</Badge>
-                  </div>
-                  <span className="font-mono">
-                    {stats?.alerts.by_severity?.[sev] || 0}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>System Health</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span>OpenSearch</span>
-                <Badge variant="outline" className="bg-green-100 text-green-800">
-                  <CheckCircle className="h-3 w-3 mr-1" /> Connected
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Deployed Rules</span>
-                <span className="font-mono">{stats?.rules.deployed || 0}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Recent Alerts */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Recent Alerts</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle>Recent Alerts</CardTitle>
+            {severityFilter && (
+              <Badge className={severityColors[severityFilter]}>
+                {capitalize(severityFilter)}
+              </Badge>
+            )}
+          </div>
           <Link to="/alerts" className="text-sm text-primary hover:underline">
             View all
           </Link>
         </CardHeader>
         <CardContent>
-          {stats?.recent_alerts && stats.recent_alerts.length > 0 ? (
+          {(() => {
+            const filteredAlerts = severityFilter
+              ? stats?.recent_alerts?.filter(a => a.severity === severityFilter)
+              : stats?.recent_alerts
+            return filteredAlerts && filteredAlerts.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -193,11 +193,11 @@ export default function Dashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {stats.recent_alerts.map((alert) => (
+                {filteredAlerts.map((alert) => (
                   <TableRow key={alert.alert_id}>
                     <TableCell>
                       <Badge className={severityColors[alert.severity]}>
-                        {alert.severity}
+                        {capitalize(alert.severity)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -208,7 +208,7 @@ export default function Dashboard() {
                         {alert.rule_title}
                       </Link>
                     </TableCell>
-                    <TableCell>{alert.status}</TableCell>
+                    <TableCell>{statusLabels[alert.status] || capitalize(alert.status)}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDistanceToNow(new Date(alert.created_at), {
                         addSuffix: true,
@@ -220,9 +220,10 @@ export default function Dashboard() {
             </Table>
           ) : (
             <p className="text-center text-muted-foreground py-8">
-              No alerts yet
+              {severityFilter ? `No ${capitalize(severityFilter)} alerts` : 'No alerts yet'}
             </p>
-          )}
+          )
+          })()}
         </CardContent>
       </Card>
     </div>

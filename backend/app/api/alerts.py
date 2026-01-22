@@ -100,7 +100,7 @@ async def update_alert_status(
         alerts_index=alert_index,
         alert_id=alert_id,
         status=update.status,
-        user_id=str(current_user.id),
+        user_id=current_user.email,  # Store email for display
     )
 
     if not success:

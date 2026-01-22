@@ -1,15 +1,18 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { api, settingsApi } from '@/lib/api'
+import { api, authApi, settingsApi, CurrentUser } from '@/lib/api'
 
 interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
   setupCompleted: boolean
   isOpenSearchConfigured: boolean
+  user: CurrentUser | null
+  isAdmin: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   setup: (email: string, password: string) => Promise<void>
   setOpenSearchConfigured: (configured: boolean) => void
+  refreshUser: () => Promise<void>
 }
 
 interface SetupStatusResponse {
@@ -28,23 +31,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [setupCompleted, setSetupCompleted] = useState(false)
   const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
+  const [user, setUser] = useState<CurrentUser | null>(null)
 
   useEffect(() => {
     checkAuth()
   }, [])
 
-  const checkOpenSearchStatus = async () => {
-    // This function is for use after login - silently handles errors
-    try {
-      const response = await settingsApi.getOpenSearchStatus()
-      setIsOpenSearchConfigured(response.configured)
-    } catch {
-      setIsOpenSearchConfigured(false)
-    }
-  }
-
   const checkAuth = async () => {
     try {
+      // Check for SSO token in URL (returned from SSO callback)
+      const urlParams = new URLSearchParams(window.location.search)
+      const ssoToken = urlParams.get('sso_token')
+      if (ssoToken) {
+        // Store the SSO token
+        localStorage.setItem('chad-token', ssoToken)
+        // Clean up URL (remove the token from URL bar)
+        window.history.replaceState({}, '', '/')
+      }
+
       const status = await api.get<SetupStatusResponse>('/auth/setup-status')
       setSetupCompleted(status.setup_completed)
 
@@ -56,10 +60,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      // Validate token AND check OpenSearch status in one call
+      // Validate token, get user info, and check OpenSearch status
       // This will throw if the token is invalid
       try {
-        const osStatus = await settingsApi.getOpenSearchStatus()
+        const [userData, osStatus] = await Promise.all([
+          authApi.getMe(),
+          settingsApi.getOpenSearchStatus(),
+        ])
+        setUser(userData)
         setIsOpenSearchConfigured(osStatus.configured)
         setIsAuthenticated(true)
       } catch {
@@ -67,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('chad-token')
         setIsAuthenticated(false)
         setIsOpenSearchConfigured(false)
+        setUser(null)
       }
     } catch {
       setSetupCompleted(false)
@@ -80,15 +89,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     const response = await api.post<TokenResponse>('/auth/login', { email, password })
     localStorage.setItem('chad-token', response.access_token)
+    // Get user info and check OpenSearch status BEFORE setting authenticated
+    // This prevents the OpenSearch wizard from flashing briefly
+    const [userData, osStatus] = await Promise.all([
+      authApi.getMe(),
+      settingsApi.getOpenSearchStatus(),
+    ])
+    setUser(userData)
+    setIsOpenSearchConfigured(osStatus.configured)
     setIsAuthenticated(true)
-    // Check OpenSearch status after login
-    await checkOpenSearchStatus()
   }
 
   const logout = () => {
     localStorage.removeItem('chad-token')
     setIsAuthenticated(false)
     setIsOpenSearchConfigured(false)
+    setUser(null)
   }
 
   const setup = async (email: string, password: string) => {
@@ -101,6 +117,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true)
     // OpenSearch not configured yet after setup
     setIsOpenSearchConfigured(false)
+    // Get user info after setup
+    const userData = await authApi.getMe()
+    setUser(userData)
+  }
+
+  const refreshUser = async () => {
+    try {
+      const userData = await authApi.getMe()
+      setUser(userData)
+    } catch {
+      // If refresh fails, the user might have been logged out
+      logout()
+    }
   }
 
   return (
@@ -109,10 +138,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       setupCompleted,
       isOpenSearchConfigured,
+      user,
+      isAdmin: user?.role === 'admin',
       login,
       logout,
       setup,
       setOpenSearchConfigured: setIsOpenSearchConfigured,
+      refreshUser,
     }}>
       {children}
     </AuthContext.Provider>

@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import validate_password_complexity
 from app.api.deps import get_db, require_admin
 from app.models.user import User, UserRole
 
@@ -27,6 +28,7 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     created_at: str
+    auth_method: str  # "local" or "sso"
 
     class Config:
         from_attributes = True
@@ -52,6 +54,7 @@ async def list_users(
                 role=u.role.value,
                 is_active=u.is_active,
                 created_at=u.created_at.isoformat(),
+                auth_method="local" if u.password_hash else "sso",
             )
             for u in users
         ]
@@ -73,6 +76,14 @@ async def create_user(
             detail="Email already registered",
         )
 
+    # Validate password complexity
+    is_valid, error_msg = validate_password_complexity(data.password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        )
+
     # Validate role
     try:
         role = UserRole(data.role)
@@ -86,6 +97,7 @@ async def create_user(
         email=data.email,
         password_hash=bcrypt.hash(data.password),
         role=role,
+        must_change_password=True,  # New users must change password on first login
     )
     db.add(user)
     await db.commit()
@@ -97,6 +109,7 @@ async def create_user(
         role=user.role.value,
         is_active=user.is_active,
         created_at=user.created_at.isoformat(),
+        auth_method="local",  # Created via API = always local
     )
 
 
@@ -121,6 +134,18 @@ async def delete_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+
+    # Prevent deleting the last admin user
+    if user.role == UserRole.ADMIN:
+        admin_count_result = await db.execute(
+            select(User).where(User.role == UserRole.ADMIN, User.is_active == True)
+        )
+        admin_count = len(admin_count_result.scalars().all())
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete the last admin user",
+            )
 
     await db.delete(user)
     await db.commit()

@@ -5,6 +5,27 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { Check, X } from 'lucide-react'
+
+// Password complexity validation
+function validatePasswordComplexity(password: string) {
+  return {
+    minLength: password.length >= 8,
+    hasUppercase: /[A-Z]/.test(password),
+    hasLowercase: /[a-z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecial: /[!@#$%^&*()_+\-=\[\]{}|;:',.<>?/`~]/.test(password),
+  }
+}
+
+function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
+  return (
+    <div className={`flex items-center gap-2 text-xs ${met ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+      {met ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+      {text}
+    </div>
+  )
+}
 
 export default function SetupPage() {
   const { setup } = useAuth()
@@ -16,6 +37,10 @@ export default function SetupPage() {
     confirmPassword: '',
   })
 
+  // Password complexity
+  const complexity = validatePasswordComplexity(formData.password)
+  const allRequirementsMet = Object.values(complexity).every(Boolean)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -25,8 +50,8 @@ export default function SetupPage() {
       return
     }
 
-    if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters')
+    if (!allRequirementsMet) {
+      setError('Password does not meet all complexity requirements')
       return
     }
 
@@ -81,6 +106,13 @@ export default function SetupPage() {
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   required
                 />
+                <div className="space-y-1 pt-1">
+                  <PasswordRequirement met={complexity.minLength} text="At least 8 characters" />
+                  <PasswordRequirement met={complexity.hasUppercase} text="At least one uppercase letter" />
+                  <PasswordRequirement met={complexity.hasLowercase} text="At least one lowercase letter" />
+                  <PasswordRequirement met={complexity.hasNumber} text="At least one number" />
+                  <PasswordRequirement met={complexity.hasSpecial} text="At least one special character (!@#$%^&*...)" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
@@ -97,7 +129,7 @@ export default function SetupPage() {
                 <div className="text-destructive text-sm">{error}</div>
               )}
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || !allRequirementsMet || !formData.email}>
                 {isLoading ? 'Creating account...' : 'Create Admin Account'}
               </Button>
             </form>

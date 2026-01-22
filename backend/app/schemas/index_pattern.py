@@ -24,11 +24,17 @@ class IndexPatternUpdate(BaseModel):
 
 class IndexPatternResponse(IndexPatternBase):
     id: UUID
+    auth_token: str
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class IndexPatternTokenResponse(BaseModel):
+    """Response for token regeneration."""
+    auth_token: str
 
 
 # Validation schemas
