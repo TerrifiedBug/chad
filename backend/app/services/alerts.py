@@ -1,0 +1,243 @@
+"""
+Alert service - handles alert creation, storage, and retrieval.
+
+Alerts are stored in OpenSearch with the following structure:
+- chad-alerts-{index_suffix}: Index per log source
+- Each alert contains: rule info, matched log, timestamp, status
+"""
+
+from datetime import datetime, timezone
+from typing import Any
+import uuid
+
+from opensearchpy import OpenSearch
+
+ALERTS_MAPPING = {
+    "settings": {
+        "index.mapping.total_fields.limit": 10000,
+    },
+    "mappings": {
+        "dynamic": True,
+        "properties": {
+            "alert_id": {"type": "keyword"},
+            "rule_id": {"type": "keyword"},
+            "rule_title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+            "severity": {"type": "keyword"},
+            "tags": {"type": "keyword"},
+            "status": {"type": "keyword"},  # new, acknowledged, resolved, false_positive
+            "log_document": {"type": "object", "enabled": False},  # Store but don't index
+            "matched_fields": {"type": "keyword"},
+            "created_at": {"type": "date"},
+            "updated_at": {"type": "date"},
+            "acknowledged_by": {"type": "keyword"},
+            "acknowledged_at": {"type": "date"},
+        }
+    }
+}
+
+
+class AlertService:
+    def __init__(self, client: OpenSearch):
+        self.client = client
+
+    def get_alerts_index_name(self, index_suffix: str) -> str:
+        """Generate alerts index name for a given source."""
+        return f"chad-alerts-{index_suffix}"
+
+    def ensure_alerts_index(self, index_name: str) -> None:
+        """Create alerts index if it doesn't exist."""
+        if not self.client.indices.exists(index=index_name):
+            self.client.indices.create(index=index_name, body=ALERTS_MAPPING)
+
+    def match_log(
+        self, percolator_index: str, log: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """
+        Run percolate query to find matching rules.
+
+        Returns list of matching rule documents.
+        """
+        query = {
+            "query": {
+                "percolate": {
+                    "field": "query",
+                    "document": log,
+                }
+            }
+        }
+
+        try:
+            result = self.client.search(index=percolator_index, body=query)
+            matches = []
+            for hit in result.get("hits", {}).get("hits", []):
+                matches.append(hit["_source"])
+            return matches
+        except Exception:
+            return []
+
+    def create_alert(
+        self,
+        alerts_index: str,
+        rule_id: str,
+        rule_title: str,
+        severity: str,
+        tags: list[str],
+        log_document: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create and store an alert document."""
+        self.ensure_alerts_index(alerts_index)
+
+        alert_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+
+        alert = {
+            "alert_id": alert_id,
+            "rule_id": rule_id,
+            "rule_title": rule_title,
+            "severity": severity,
+            "tags": tags,
+            "status": "new",
+            "log_document": log_document,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        self.client.index(
+            index=alerts_index,
+            id=alert_id,
+            body=alert,
+            refresh=True,
+        )
+
+        return alert
+
+    def get_alerts(
+        self,
+        index_pattern: str = "chad-alerts-*",
+        status: str | None = None,
+        severity: str | None = None,
+        rule_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Query alerts with filters."""
+        must = []
+
+        if status:
+            must.append({"term": {"status": status}})
+        if severity:
+            must.append({"term": {"severity": severity}})
+        if rule_id:
+            must.append({"term": {"rule_id": rule_id}})
+
+        query = {
+            "query": {"bool": {"must": must}} if must else {"match_all": {}},
+            "sort": [{"created_at": {"order": "desc"}}],
+            "from": offset,
+            "size": limit,
+        }
+
+        try:
+            result = self.client.search(index=index_pattern, body=query)
+            return {
+                "total": result["hits"]["total"]["value"],
+                "alerts": [hit["_source"] for hit in result["hits"]["hits"]],
+            }
+        except Exception:
+            # Index may not exist yet
+            return {"total": 0, "alerts": []}
+
+    def get_alert(
+        self,
+        index_pattern: str,
+        alert_id: str,
+    ) -> dict[str, Any] | None:
+        """Get a single alert by ID."""
+        try:
+            result = self.client.search(
+                index=index_pattern,
+                body={"query": {"term": {"alert_id": alert_id}}},
+            )
+            hits = result.get("hits", {}).get("hits", [])
+            if hits:
+                return hits[0]["_source"]
+            return None
+        except Exception:
+            return None
+
+    def update_alert_status(
+        self,
+        alerts_index: str,
+        alert_id: str,
+        status: str,
+        user_id: str | None = None,
+    ) -> bool:
+        """Update alert status (acknowledge, resolve, mark false positive)."""
+        now = datetime.now(timezone.utc).isoformat()
+        update = {
+            "status": status,
+            "updated_at": now,
+        }
+
+        if status == "acknowledged" and user_id:
+            update["acknowledged_by"] = user_id
+            update["acknowledged_at"] = now
+
+        try:
+            self.client.update(
+                index=alerts_index,
+                id=alert_id,
+                body={"doc": update},
+                refresh=True,
+            )
+            return True
+        except Exception:
+            return False
+
+    def get_alert_counts(
+        self,
+        index_pattern: str = "chad-alerts-*",
+    ) -> dict[str, Any]:
+        """Get alert counts by status and severity for dashboard."""
+        query = {
+            "size": 0,
+            "aggs": {
+                "by_status": {
+                    "terms": {"field": "status", "size": 10}
+                },
+                "by_severity": {
+                    "terms": {"field": "severity", "size": 10}
+                },
+                "recent_24h": {
+                    "filter": {
+                        "range": {
+                            "created_at": {"gte": "now-24h"}
+                        }
+                    }
+                }
+            }
+        }
+
+        try:
+            result = self.client.search(index=index_pattern, body=query)
+            aggs = result.get("aggregations", {})
+
+            return {
+                "total": result["hits"]["total"]["value"],
+                "by_status": {
+                    b["key"]: b["doc_count"]
+                    for b in aggs.get("by_status", {}).get("buckets", [])
+                },
+                "by_severity": {
+                    b["key"]: b["doc_count"]
+                    for b in aggs.get("by_severity", {}).get("buckets", [])
+                },
+                "last_24h": aggs.get("recent_24h", {}).get("doc_count", 0),
+            }
+        except Exception:
+            return {
+                "total": 0,
+                "by_status": {},
+                "by_severity": {},
+                "last_24h": 0,
+            }

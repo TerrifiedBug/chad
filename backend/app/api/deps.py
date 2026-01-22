@@ -87,3 +87,31 @@ async def get_opensearch_client(
         password=config.get("password"),
         use_ssl=config.get("use_ssl", True),
     )
+
+
+async def get_opensearch_client_optional(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OpenSearch | None:
+    """
+    Get OpenSearch client if configured, otherwise return None.
+
+    Use this for endpoints where OpenSearch is optional (e.g., rule updates
+    that may need to sync to percolator but shouldn't fail if OS isn't configured).
+    """
+    result = await db.execute(select(Setting).where(Setting.key == "opensearch"))
+    setting = result.scalar_one_or_none()
+
+    if setting is None:
+        return None
+
+    config = setting.value
+    try:
+        return create_client(
+            host=config["host"],
+            port=config["port"],
+            username=config.get("username"),
+            password=config.get("password"),
+            use_ssl=config.get("use_ssl", True),
+        )
+    except Exception:
+        return None

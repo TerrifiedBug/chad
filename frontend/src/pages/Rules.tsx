@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus } from '@/lib/api'
+import { rulesApi, indexPatternsApi, Rule, IndexPattern } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -28,11 +28,7 @@ const severityColors: Record<string, string> = {
   informational: 'bg-gray-500 text-white',
 }
 
-const statusColors: Record<RuleStatus, string> = {
-  enabled: 'bg-green-500 text-white',
-  disabled: 'bg-gray-500 text-white',
-  snoozed: 'bg-yellow-500 text-black',
-}
+type DeploymentFilter = 'all' | 'deployed' | 'not_deployed'
 
 export default function RulesPage() {
   const navigate = useNavigate()
@@ -41,18 +37,18 @@ export default function RulesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<RuleStatus | 'all'>('all')
+  const [deploymentFilter, setDeploymentFilter] = useState<DeploymentFilter>('all')
 
   useEffect(() => {
     loadData()
-  }, [statusFilter])
+  }, [])
 
   const loadData = async () => {
     setIsLoading(true)
     setError('')
     try {
       const [rulesData, patternsData] = await Promise.all([
-        rulesApi.list(statusFilter === 'all' ? undefined : statusFilter),
+        rulesApi.list(),
         indexPatternsApi.list(),
       ])
       setRules(rulesData)
@@ -69,9 +65,14 @@ export default function RulesPage() {
     }
   }
 
-  const filteredRules = rules.filter((rule) =>
-    rule.title.toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredRules = rules.filter((rule) => {
+    const matchesSearch = rule.title.toLowerCase().includes(search.toLowerCase())
+    const matchesDeployment =
+      deploymentFilter === 'all' ||
+      (deploymentFilter === 'deployed' && rule.deployed_at !== null) ||
+      (deploymentFilter === 'not_deployed' && rule.deployed_at === null)
+    return matchesSearch && matchesDeployment
+  })
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {
@@ -102,17 +103,16 @@ export default function RulesPage() {
           />
         </div>
         <Select
-          value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value as RuleStatus | 'all')}
+          value={deploymentFilter}
+          onValueChange={(value) => setDeploymentFilter(value as DeploymentFilter)}
         >
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="enabled">Enabled</SelectItem>
-            <SelectItem value="disabled">Disabled</SelectItem>
-            <SelectItem value="snoozed">Snoozed</SelectItem>
+            <SelectItem value="all">All Rules</SelectItem>
+            <SelectItem value="deployed">Deployed</SelectItem>
+            <SelectItem value="not_deployed">Not Deployed</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -160,9 +160,11 @@ export default function RulesPage() {
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${statusColors[rule.status]}`}
+                      className={`px-2 py-1 rounded text-xs font-medium ${
+                        rule.deployed_at ? 'bg-green-500 text-white' : 'bg-gray-500 text-white'
+                      }`}
                     >
-                      {rule.status}
+                      {rule.deployed_at ? 'Deployed' : 'Not Deployed'}
                     </span>
                   </TableCell>
                   <TableCell>

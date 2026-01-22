@@ -45,6 +45,8 @@ class RuleResponse(RuleBase):
     created_by: UUID
     created_at: datetime
     updated_at: datetime
+    deployed_at: datetime | None = None
+    deployed_version: int | None = None
 
     class Config:
         from_attributes = True
@@ -90,3 +92,24 @@ class RuleTestResponse(BaseModel):
     matches: list[LogMatchResult]
     opensearch_query: dict | None = None
     errors: list[ValidationErrorItem] = []
+
+
+# Deployment schemas
+class RuleDeployResponse(BaseModel):
+    success: bool
+    rule_id: UUID
+    percolator_index: str
+    deployed_version: int
+    deployed_at: datetime
+
+
+class RuleUndeployResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class RuleRollbackResponse(BaseModel):
+    success: bool
+    new_version_number: int
+    rolled_back_from: int
+    yaml_content: str

@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.alerts import router as alerts_router
 from app.api.auth import router as auth_router
 from app.api.index_patterns import router as index_patterns_router
+from app.api.logs import router as logs_router
 from app.api.rules import router as rules_router
 from app.api.settings import router as settings_router
 from app.core.config import settings
@@ -34,3 +36,5 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(rules_router, prefix="/api")
 app.include_router(index_patterns_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
+app.include_router(alerts_router, prefix="/api")
+app.include_router(logs_router, prefix="/api")

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 const navItems = [
+  { href: '/alerts', label: 'Alerts' },
   { href: '/rules', label: 'Rules' },
   { href: '/index-patterns', label: 'Index Patterns' },
 ]

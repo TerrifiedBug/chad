@@ -8,6 +8,8 @@ import OpenSearchWizard from '@/pages/OpenSearchWizard'
 import RulesPage from '@/pages/Rules'
 import RuleEditorPage from '@/pages/RuleEditor'
 import IndexPatternsPage from '@/pages/IndexPatterns'
+import AlertsPage from '@/pages/Alerts'
+import AlertDetailPage from '@/pages/AlertDetail'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -104,6 +106,26 @@ function AppRoutes() {
             <Header />
             <main className="px-6 py-8">
               <IndexPatternsPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/alerts" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <AlertsPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/alerts/:id" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <AlertDetailPage />
             </main>
           </div>
         </ProtectedRoute>

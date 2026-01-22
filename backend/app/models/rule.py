@@ -32,6 +32,10 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     status: Mapped[RuleStatus] = mapped_column(default=RuleStatus.DISABLED)
     snooze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Deployment tracking
+    deployed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deployed_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     index_pattern_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("index_patterns.id"), nullable=False
     )

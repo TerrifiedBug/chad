@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw } from 'lucide-react'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -64,6 +64,14 @@ export default function RuleEditorPage() {
   const [isTesting, setIsTesting] = useState(false)
   const [testResults, setTestResults] = useState<LogMatchResult[] | null>(null)
 
+  // Deployment state
+  const [deployedAt, setDeployedAt] = useState<string | null>(null)
+  const [deployedVersion, setDeployedVersion] = useState<number | null>(null)
+  const [currentVersion, setCurrentVersion] = useState<number>(1)
+  const [isDeploying, setIsDeploying] = useState(false)
+  const [deployError, setDeployError] = useState('')
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
   useEffect(() => {
     loadIndexPatterns()
     if (!isNew) {
@@ -103,6 +111,12 @@ export default function RuleEditorPage() {
       setSeverity(rule.severity)
       setIndexPatternId(rule.index_pattern_id)
       setDescription(rule.description || '')
+      setDeployedAt(rule.deployed_at)
+      setDeployedVersion(rule.deployed_version)
+      // Get current version from versions array (sorted desc by version_number)
+      if (rule.versions && rule.versions.length > 0) {
+        setCurrentVersion(rule.versions[0].version_number)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule')
     } finally {
@@ -178,16 +192,19 @@ export default function RuleEditorPage() {
 
     setIsSaving(true)
     setError('')
+    setSaveSuccess(false)
 
     try {
       if (isNew) {
-        await rulesApi.create({
+        const newRule = await rulesApi.create({
           title,
           description: description || undefined,
           yaml_content: yamlContent,
           severity,
           index_pattern_id: indexPatternId,
         })
+        // Navigate to the edit page for the new rule
+        navigate(`/rules/${newRule.id}`, { replace: true })
       } else {
         await rulesApi.update(id!, {
           title,
@@ -196,12 +213,47 @@ export default function RuleEditorPage() {
           severity,
           index_pattern_id: indexPatternId,
         })
+        // Reload rule to get updated version
+        await loadRule()
+        setSaveSuccess(true)
+        // Clear success message after 3 seconds
+        setTimeout(() => setSaveSuccess(false), 3000)
       }
-      navigate('/rules')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleDeploy = async () => {
+    if (!id) return
+    setIsDeploying(true)
+    setDeployError('')
+    try {
+      const result = await rulesApi.deploy(id)
+      setDeployedAt(result.deployed_at)
+      setDeployedVersion(result.deployed_version)
+      // deployed_version should now match currentVersion
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : 'Deploy failed')
+    } finally {
+      setIsDeploying(false)
+    }
+  }
+
+  const handleUndeploy = async () => {
+    if (!id) return
+    setIsDeploying(true)
+    setDeployError('')
+    try {
+      await rulesApi.undeploy(id)
+      setDeployedAt(null)
+      setDeployedVersion(null)
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : 'Undeploy failed')
+    } finally {
+      setIsDeploying(false)
     }
   }
 
@@ -225,19 +277,81 @@ export default function RuleEditorPage() {
           <Button variant="ghost" size="icon" onClick={() => navigate('/rules')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-bold">
-            {isNew ? 'Create Rule' : 'Edit Rule'}
-          </h1>
+          <div>
+            <h1 className="text-2xl font-bold">
+              {isNew ? 'Create Rule' : 'Edit Rule'}
+              {!isNew && <span className="text-sm font-normal text-muted-foreground ml-2">v{currentVersion}</span>}
+            </h1>
+            {!isNew && deployedAt && (
+              <p className={`text-xs ${deployedVersion === currentVersion ? 'text-green-600' : 'text-yellow-600'}`}>
+                {deployedVersion === currentVersion
+                  ? `Deployed v${deployedVersion}`
+                  : `Deployed v${deployedVersion} (current is v${currentVersion} - redeploy needed)`
+                }
+              </p>
+            )}
+            {!isNew && !deployedAt && (
+              <p className="text-xs text-muted-foreground">Not deployed</p>
+            )}
+          </div>
         </div>
-        <Button onClick={handleSave} disabled={isSaving || !isValid}>
-          {isSaving ? 'Saving...' : 'Save'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {saveSuccess && (
+            <span className="text-sm text-green-600 flex items-center gap-1">
+              <Check className="h-4 w-4" />
+              Saved
+            </span>
+          )}
+          {!isNew && (
+            deployedAt ? (
+              <>
+                {deployedVersion !== currentVersion && (
+                  <Button
+                    variant="outline"
+                    onClick={handleDeploy}
+                    disabled={isDeploying || !isValid}
+                  >
+                    <Rocket className="h-4 w-4 mr-2" />
+                    {isDeploying ? 'Deploying...' : 'Redeploy'}
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  onClick={handleUndeploy}
+                  disabled={isDeploying}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  {isDeploying ? 'Undeploying...' : 'Undeploy'}
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={handleDeploy}
+                disabled={isDeploying || !isValid}
+              >
+                <Rocket className="h-4 w-4 mr-2" />
+                {isDeploying ? 'Deploying...' : 'Deploy'}
+              </Button>
+            )
+          )}
+          <Button onClick={handleSave} disabled={isSaving || !isValid}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
       </div>
 
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           {error}
+        </div>
+      )}
+
+      {deployError && (
+        <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
+          <AlertCircle className="h-4 w-4" />
+          Deployment error: {deployError}
         </div>
       )}
 
