@@ -21,6 +21,7 @@ import {
 import { FolderTree, Plus, Search, Table as TableIcon } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
+import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
 
 const severityColors: Record<string, string> = {
@@ -347,9 +348,13 @@ export default function RulesPage() {
           </Table>
         </div>
       ) : (
-        <div className="text-muted-foreground text-center py-8 border rounded-lg">
-          Tree view coming soon...
-        </div>
+        <RulesTreeView
+          rules={filteredRules}
+          indexPatterns={indexPatterns}
+          onRuleClick={(rule) => navigate(`/rules/${rule.id}`)}
+          selectedRules={selectedRules}
+          onRuleSelect={toggleRuleSelection}
+        />
       )}
 
       {/* Bulk Action Bar - shown when items are selected */}
