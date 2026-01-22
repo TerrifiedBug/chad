@@ -8,9 +8,86 @@ Alerts are stored in OpenSearch with the following structure:
 
 from datetime import datetime, timezone
 from typing import Any
+import json
+import re
 import uuid
 
 from opensearchpy import OpenSearch
+
+from app.models.rule_exception import ExceptionOperator
+
+
+def get_nested_value(obj: dict, path: str) -> Any:
+    """Get a value from a nested dict using dot notation."""
+    keys = path.split(".")
+    value = obj
+    for key in keys:
+        if isinstance(value, dict) and key in value:
+            value = value[key]
+        else:
+            return None
+    return value
+
+
+def check_exception_match(
+    log: dict,
+    field: str,
+    operator: ExceptionOperator,
+    value: str,
+) -> bool:
+    """Check if a log document matches an exception condition."""
+    log_value = get_nested_value(log, field)
+
+    if log_value is None:
+        return False
+
+    log_value_str = str(log_value)
+
+    if operator == ExceptionOperator.EQUALS:
+        return log_value_str == value
+    elif operator == ExceptionOperator.NOT_EQUALS:
+        return log_value_str != value
+    elif operator == ExceptionOperator.CONTAINS:
+        return value in log_value_str
+    elif operator == ExceptionOperator.NOT_CONTAINS:
+        return value not in log_value_str
+    elif operator == ExceptionOperator.STARTS_WITH:
+        return log_value_str.startswith(value)
+    elif operator == ExceptionOperator.ENDS_WITH:
+        return log_value_str.endswith(value)
+    elif operator == ExceptionOperator.REGEX:
+        try:
+            return bool(re.search(value, log_value_str))
+        except re.error:
+            return False
+    elif operator == ExceptionOperator.IN_LIST:
+        try:
+            value_list = json.loads(value)
+            return log_value_str in value_list
+        except json.JSONDecodeError:
+            return False
+
+    return False
+
+
+def should_suppress_alert(
+    log: dict,
+    exceptions: list[dict],
+) -> bool:
+    """Check if an alert should be suppressed based on active exceptions."""
+    for exc in exceptions:
+        if not exc.get("is_active", True):
+            continue
+
+        if check_exception_match(
+            log,
+            exc["field"],
+            ExceptionOperator(exc["operator"]),
+            exc["value"],
+        ):
+            return True
+
+    return False
 
 ALERTS_MAPPING = {
     "settings": {
