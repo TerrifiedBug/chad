@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Plus, Search } from 'lucide-react'
+import { FolderTree, Plus, Search, Table as TableIcon } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { cn } from '@/lib/utils'
@@ -43,6 +43,9 @@ export default function RulesPage() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [deploymentFilter, setDeploymentFilter] = useState<DeploymentFilter>('all')
+  const [viewMode, setViewMode] = useState<'tree' | 'table'>(() => {
+    return (localStorage.getItem('rules-view-mode') as 'tree' | 'table') || 'table'
+  })
 
   // Selection state
   const [selectedRules, setSelectedRules] = useState<Set<string>>(new Set())
@@ -55,6 +58,11 @@ export default function RulesPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Persist view mode changes
+  useEffect(() => {
+    localStorage.setItem('rules-view-mode', viewMode)
+  }, [viewMode])
 
   const loadData = async () => {
     setIsLoading(true)
@@ -234,6 +242,24 @@ export default function RulesPage() {
             <SelectItem value="not_deployed">Not Deployed</SelectItem>
           </SelectContent>
         </Select>
+        <div className="flex items-center gap-1">
+          <Button
+            variant={viewMode === 'tree' ? 'default' : 'outline'}
+            size="icon"
+            onClick={() => setViewMode('tree')}
+            title="Tree view"
+          >
+            <FolderTree className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'table' ? 'default' : 'outline'}
+            size="icon"
+            onClick={() => setViewMode('table')}
+            title="Table view"
+          >
+            <TableIcon className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -248,7 +274,7 @@ export default function RulesPage() {
         <div className="text-center py-8 text-muted-foreground">
           {search ? 'No rules match your search' : 'No rules found. Create your first rule!'}
         </div>
-      ) : (
+      ) : viewMode === 'table' ? (
         <div className="border rounded-lg">
           <Table>
             <TableHeader>
@@ -319,6 +345,10 @@ export default function RulesPage() {
               ))}
             </TableBody>
           </Table>
+        </div>
+      ) : (
+        <div className="text-muted-foreground text-center py-8 border rounded-lg">
+          Tree view coming soon...
         </div>
       )}
 
