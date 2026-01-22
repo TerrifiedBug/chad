@@ -3,14 +3,15 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
 from opensearchpy import OpenSearch
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional
 from app.db.session import get_db
+from app.models.audit_log import AuditLog
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
@@ -18,6 +19,7 @@ from app.models.rule_exception import RuleException
 from app.models.user import User
 from app.schemas.bulk import BulkOperationRequest, BulkOperationResult
 from app.schemas.rule import (
+    LogMatchResult,
     RuleCreate,
     RuleDeployResponse,
     RuleDetailResponse,
@@ -30,7 +32,6 @@ from app.schemas.rule import (
     RuleValidateRequest,
     RuleValidateResponse,
     ValidationErrorItem,
-    LogMatchResult,
 )
 from app.schemas.rule_exception import (
     RuleExceptionCreate,
@@ -60,6 +61,15 @@ class RuleCommentResponse(BaseModel):
     user_email: str | None
     content: str
     created_at: datetime
+
+
+class ActivityItem(BaseModel):
+    """Activity timeline item for a rule."""
+
+    type: str  # 'version', 'deploy', 'undeploy', 'comment'
+    timestamp: datetime
+    user_email: str | None
+    data: dict
 
 
 @router.get("", response_model=list[RuleResponse])
@@ -1129,3 +1139,82 @@ async def create_rule_comment(
         content=comment.content,
         created_at=comment.created_at,
     )
+
+
+# Rule Activity Timeline Endpoint
+
+
+@router.get("/{rule_id}/activity", response_model=list[ActivityItem])
+async def get_rule_activity(
+    rule_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Get unified activity timeline for a rule."""
+    # First verify rule exists
+    rule_result = await db.execute(select(Rule).where(Rule.id == rule_id))
+    if rule_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    activities: list[ActivityItem] = []
+
+    # Get versions (from RuleVersion model)
+    versions_result = await db.execute(
+        select(RuleVersion)
+        .where(RuleVersion.rule_id == rule_id)
+        .options(selectinload(RuleVersion.author))
+        .order_by(RuleVersion.version_number.desc())
+    )
+    for v in versions_result.scalars():
+        activities.append(
+            ActivityItem(
+                type="version",
+                timestamp=v.created_at,
+                user_email=v.author.email if v.author else None,
+                data={
+                    "version_number": v.version_number,
+                    "yaml_content": v.yaml_content,
+                },
+            )
+        )
+
+    # Get comments
+    comments_result = await db.execute(
+        select(RuleComment)
+        .where(RuleComment.rule_id == rule_id)
+        .options(selectinload(RuleComment.user))
+    )
+    for c in comments_result.scalars():
+        activities.append(
+            ActivityItem(
+                type="comment",
+                timestamp=c.created_at,
+                user_email=c.user.email if c.user else None,
+                data={"content": c.content, "id": str(c.id)},
+            )
+        )
+
+    # Get deploy/undeploy events from audit log
+    # Join with User to get email
+    audit_result = await db.execute(
+        select(AuditLog, User)
+        .outerjoin(User, AuditLog.user_id == User.id)
+        .where(
+            AuditLog.resource_id == str(rule_id),
+            AuditLog.action.in_(["rule.deploy", "rule.undeploy"]),
+        )
+    )
+    for a, user in audit_result:
+        activities.append(
+            ActivityItem(
+                type="deploy" if a.action == "rule.deploy" else "undeploy",
+                timestamp=a.created_at,
+                user_email=user.email if user else None,
+                data=a.details or {},
+            )
+        )
+
+    # Sort by timestamp descending
+    activities.sort(key=lambda x: x.timestamp, reverse=True)
+
+    return activities
