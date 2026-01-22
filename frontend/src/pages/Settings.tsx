@@ -87,6 +87,11 @@ export default function SettingsPage() {
   const [ssoAnalystValues, setSsoAnalystValues] = useState('')
   const [ssoViewerValues, setSsoViewerValues] = useState('')
 
+  // SigmaHQ sync settings
+  const [sigmahqSyncEnabled, setSigmahqSyncEnabled] = useState(false)
+  const [sigmahqSyncInterval, setSigmahqSyncInterval] = useState(24)
+  const [sigmahqLastSync, setSigmahqLastSync] = useState<string | null>(null)
+
   // OpenSearch settings
   const [osStatus, setOsStatus] = useState<OpenSearchStatusResponse | null>(null)
   const [osConnectionStatus, setOsConnectionStatus] = useState<{
@@ -165,6 +170,14 @@ export default function SettingsPage() {
         setSsoAdminValues((sso.admin_values as string) || '')
         setSsoAnalystValues((sso.analyst_values as string) || '')
         setSsoViewerValues((sso.viewer_values as string) || '')
+      }
+
+      // SigmaHQ sync settings
+      if (settings.sigmahq_sync && typeof settings.sigmahq_sync === 'object') {
+        const sigmahq = settings.sigmahq_sync as Record<string, unknown>
+        setSigmahqSyncEnabled((sigmahq.enabled as boolean) || false)
+        setSigmahqSyncInterval((sigmahq.interval_hours as number) || 24)
+        setSigmahqLastSync((sigmahq.last_sync as string) || null)
       }
     } catch (err) {
       // Settings may not exist yet, that's okay
@@ -337,6 +350,24 @@ export default function SettingsPage() {
     }
   }
 
+  const saveSigmahqSync = async () => {
+    setIsSaving(true)
+    setError('')
+    setSuccess('')
+    try {
+      await settingsApiExtended.update('sigmahq_sync', {
+        enabled: sigmahqSyncEnabled,
+        interval_hours: sigmahqSyncInterval,
+      })
+      setSuccess('SigmaHQ sync settings saved')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const saveAppUrl = async () => {
     setIsSaving(true)
     setError('')
@@ -397,6 +428,7 @@ export default function SettingsPage() {
           <TabsTrigger value="session">Session</TabsTrigger>
           <TabsTrigger value="sso">SSO</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
+          <TabsTrigger value="sigmahq">SigmaHQ</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-4">
@@ -901,6 +933,80 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="sigmahq" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>SigmaHQ Auto-Sync</CardTitle>
+              <CardDescription>
+                Configure automatic synchronization of the SigmaHQ rules repository.
+                When enabled, CHAD will periodically pull the latest rules from SigmaHQ.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Enable Auto-Sync</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically sync SigmaHQ rules repository on a schedule
+                  </p>
+                </div>
+                <Switch
+                  checked={sigmahqSyncEnabled}
+                  onCheckedChange={setSigmahqSyncEnabled}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="sync-interval">Sync Interval (hours)</Label>
+                <Select
+                  value={sigmahqSyncInterval.toString()}
+                  onValueChange={(v) => setSigmahqSyncInterval(parseInt(v))}
+                  disabled={!sigmahqSyncEnabled}
+                >
+                  <SelectTrigger id="sync-interval" className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover">
+                    <SelectItem value="6">Every 6 hours</SelectItem>
+                    <SelectItem value="12">Every 12 hours</SelectItem>
+                    <SelectItem value="24">Daily (24 hours)</SelectItem>
+                    <SelectItem value="48">Every 2 days</SelectItem>
+                    <SelectItem value="168">Weekly</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  How often to check for new rules in the SigmaHQ repository
+                </p>
+              </div>
+
+              {sigmahqLastSync && (
+                <div className="text-sm text-muted-foreground">
+                  Last synced: {new Date(sigmahqLastSync).toLocaleString()}
+                </div>
+              )}
+
+              <div className="pt-4 border-t">
+                <p className="text-sm text-muted-foreground mb-4">
+                  You can also manually sync at any time from the SigmaHQ browser page.
+                </p>
+                <Button onClick={saveSigmahqSync} disabled={isSaving}>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
