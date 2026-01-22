@@ -98,6 +98,18 @@ export type OpenSearchTestResponse = {
 
 export type OpenSearchStatusResponse = {
   configured: boolean
+  config?: {
+    host: string
+    port: number
+    username?: string
+    password?: string
+    use_ssl: boolean
+  }
+}
+
+export type WebhookTestResponse = {
+  success: boolean
+  error?: string | null
 }
 
 // Settings API
@@ -108,6 +120,12 @@ export const settingsApi = {
     api.post<{ success: boolean }>('/settings/opensearch', config),
   getOpenSearchStatus: () =>
     api.get<OpenSearchStatusResponse>('/settings/opensearch/status'),
+  testWebhook: (url: string, provider: string) =>
+    api.post<WebhookTestResponse>('/settings/webhooks/test', { url, provider }),
+  getAppUrl: () =>
+    api.get<{ url: string }>('/settings/app-url'),
+  setAppUrl: (url: string) =>
+    api.put<{ success: boolean }>('/settings/app-url', { url }),
 }
 
 // Rule types
@@ -127,6 +145,7 @@ export type Rule = {
   updated_at: string
   deployed_at: string | null
   deployed_version: number | null
+  last_edited_by: string | null
 }
 
 export type RuleVersion = {
@@ -350,6 +369,7 @@ export type UserInfo = {
   role: string
   is_active: boolean
   created_at: string
+  auth_method: 'local' | 'sso'
 }
 
 export type UserCreate = {
@@ -376,4 +396,136 @@ export const settingsApiExtended = {
     api.get<Record<string, unknown>>('/settings'),
   update: <T>(key: string, value: T) =>
     api.put<{ success: boolean }>(`/settings/${key}`, value),
+}
+
+// SSO types
+export type SsoStatus = {
+  enabled: boolean
+  configured: boolean
+  provider_name: string
+}
+
+// Current user type
+export type CurrentUser = {
+  id: string
+  email: string
+  role: 'admin' | 'analyst' | 'viewer'
+  is_active: boolean
+  auth_method: 'local' | 'sso'
+  must_change_password: boolean
+}
+
+// Auth API
+export const authApi = {
+  getSsoStatus: () =>
+    api.get<SsoStatus>('/auth/sso/status'),
+  getMe: () =>
+    api.get<CurrentUser>('/auth/me'),
+  // SSO login is handled by redirect, not API call
+  getSsoLoginUrl: () => `${API_BASE}/auth/sso/login`,
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post<{ message: string }>('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+}
+
+// SigmaHQ types
+export type SigmaHQStatus = {
+  cloned: boolean
+  commit_hash: string | null
+  rule_count: number | null
+  repo_url: string | null
+}
+
+export type SigmaHQSyncResponse = {
+  success: boolean
+  message: string
+  commit_hash: string | null
+  rule_count: number | null
+  error: string | null
+}
+
+export type SigmaHQCategory = {
+  count: number
+  children: Record<string, SigmaHQCategory>
+}
+
+export type SigmaHQCategoryTree = {
+  categories: Record<string, SigmaHQCategory>
+}
+
+export type SigmaHQRule = {
+  title: string
+  status: string
+  severity: string
+  description: string
+  tags: string[]
+  path: string
+  filename: string
+}
+
+export type SigmaHQRulesListResponse = {
+  rules: SigmaHQRule[]
+  total: number
+}
+
+export type SigmaHQRuleContent = {
+  path: string
+  content: string
+  metadata: Record<string, unknown> | null
+}
+
+// SigmaHQ API
+export const sigmahqApi = {
+  getStatus: () =>
+    api.get<SigmaHQStatus>('/sigmahq/status'),
+  sync: () =>
+    api.post<SigmaHQSyncResponse>('/sigmahq/sync'),
+  getCategories: () =>
+    api.get<SigmaHQCategoryTree>('/sigmahq/rules'),
+  listRulesInCategory: (categoryPath: string) =>
+    api.get<SigmaHQRulesListResponse>(`/sigmahq/rules/list/${categoryPath}`),
+  getRuleContent: (rulePath: string) =>
+    api.get<SigmaHQRuleContent>(`/sigmahq/rules/${rulePath}`),
+  searchRules: (query: string, limit: number = 100) =>
+    api.post<SigmaHQRulesListResponse>('/sigmahq/search', { query, limit }),
+  importRule: (rulePath: string, indexPatternId: string) =>
+    api.post<{ success: boolean; rule_id: string; title: string; message: string }>(
+      '/sigmahq/import',
+      { rule_path: rulePath, index_pattern_id: indexPatternId }
+    ),
+}
+
+// API Key types
+export type APIKey = {
+  id: string
+  name: string
+  description: string | null
+  key_prefix: string
+  user_id: string
+  expires_at: string | null
+  last_used_at: string | null
+  is_active: boolean
+  created_at: string
+}
+
+export type APIKeyCreate = {
+  name: string
+  description?: string
+  expires_at?: string
+}
+
+export type APIKeyCreateResponse = APIKey & {
+  key: string // Only returned on creation
+}
+
+// API Keys API
+export const apiKeysApi = {
+  list: () => api.get<APIKey[]>('/api-keys'),
+  create: (data: APIKeyCreate) => api.post<APIKeyCreateResponse>('/api-keys', data),
+  get: (id: string) => api.get<APIKey>(`/api-keys/${id}`),
+  update: (id: string, data: { name?: string; description?: string; is_active?: boolean }) =>
+    api.patch<APIKey>(`/api-keys/${id}`, data),
+  delete: (id: string) => api.delete(`/api-keys/${id}`),
 }

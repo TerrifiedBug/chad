@@ -1,7 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import { Header } from '@/components/Header'
+import { AdminRoute } from '@/components/AdminRoute'
 import SetupPage from '@/pages/Setup'
 import LoginPage from '@/pages/Login'
 import OpenSearchWizard from '@/pages/OpenSearchWizard'
@@ -13,9 +14,13 @@ import AlertsPage from '@/pages/Alerts'
 import AlertDetailPage from '@/pages/AlertDetail'
 import SettingsPage from '@/pages/Settings'
 import UsersPage from '@/pages/Users'
+import ChangePasswordPage from '@/pages/ChangePassword'
+import ApiKeysPage from '@/pages/ApiKeys'
+import SigmaHQPage from '@/pages/SigmaHQ'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading, user } = useAuth()
+  const location = useLocation()
 
   if (isLoading) {
     return <div className="flex h-screen items-center justify-center">Loading...</div>
@@ -23,6 +28,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
+  }
+
+  // Force password change for local users who must change their password
+  if (user?.must_change_password && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
   }
 
   return <>{children}</>
@@ -130,21 +140,51 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/settings" element={
-        <ProtectedRoute>
+        <AdminRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <SettingsPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AdminRoute>
       } />
       <Route path="/settings/users" element={
-        <ProtectedRoute>
+        <AdminRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <UsersPage />
+            </main>
+          </div>
+        </AdminRoute>
+      } />
+      <Route path="/change-password" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <ChangePasswordPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/api-keys" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <ApiKeysPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/sigmahq" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <SigmaHQPage />
             </main>
           </div>
         </ProtectedRoute>
