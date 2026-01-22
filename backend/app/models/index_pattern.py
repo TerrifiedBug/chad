@@ -15,8 +15,8 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "index_patterns"
 
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    pattern: Mapped[str] = mapped_column(String(255), nullable=False)
-    percolator_index: Mapped[str] = mapped_column(String(255), nullable=False)
+    pattern: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    percolator_index: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     auth_token: Mapped[str] = mapped_column(
         String(64), nullable=False, default=generate_auth_token

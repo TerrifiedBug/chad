@@ -3,12 +3,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from opensearchpy import OpenSearch
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client, require_admin
 from app.db.session import get_db
 from app.models.index_pattern import IndexPattern, generate_auth_token
+from app.models.rule import Rule
 from app.models.user import User
 from app.schemas.index_pattern import (
     IndexPatternCreate,
@@ -47,6 +48,26 @@ async def create_index_pattern(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Index pattern with this name already exists",
+        )
+
+    # Check for duplicate pattern
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.pattern == pattern_data.pattern)
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An index pattern with this pattern already exists",
+        )
+
+    # Check for duplicate percolator_index
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.percolator_index == pattern_data.percolator_index)
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An index pattern with this percolator index already exists",
         )
 
     pattern = IndexPattern(**pattern_data.model_dump())
@@ -105,6 +126,34 @@ async def update_index_pattern(
                 detail="Index pattern with this name already exists",
             )
 
+    # Check for duplicate pattern if pattern is being updated
+    if "pattern" in update_data:
+        existing = await db.execute(
+            select(IndexPattern).where(
+                IndexPattern.pattern == update_data["pattern"],
+                IndexPattern.id != pattern_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An index pattern with this pattern already exists",
+            )
+
+    # Check for duplicate percolator_index if percolator_index is being updated
+    if "percolator_index" in update_data:
+        existing = await db.execute(
+            select(IndexPattern).where(
+                IndexPattern.percolator_index == update_data["percolator_index"],
+                IndexPattern.id != pattern_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An index pattern with this percolator index already exists",
+            )
+
     for field, value in update_data.items():
         setattr(pattern, field, value)
 
@@ -126,6 +175,18 @@ async def delete_index_pattern(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Index pattern not found",
+        )
+
+    # Check if any rules are using this index pattern
+    rule_count_result = await db.execute(
+        select(func.count()).select_from(Rule).where(Rule.index_pattern_id == pattern_id)
+    )
+    rule_count = rule_count_result.scalar()
+
+    if rule_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete index pattern: {rule_count} rule{'s' if rule_count != 1 else ''} {'are' if rule_count != 1 else 'is'} using this pattern. Reassign or delete the rules first.",
         )
 
     await db.delete(pattern)
