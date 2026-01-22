@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, OpenSearchStatusResponse } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -106,10 +106,15 @@ export default function SettingsPage() {
   } | null>(null)
   const [osConnectionLoading, setOsConnectionLoading] = useState(false)
 
+  // Role permissions
+  const [permissions, setPermissions] = useState<Record<string, Record<string, boolean>>>({})
+  const [permissionDescriptions, setPermissionDescriptions] = useState<Record<string, string>>({})
+
   useEffect(() => {
     loadSettings()
     loadOpenSearchStatus()
     loadAppUrl()
+    loadPermissions()
   }, [])
 
   // Check OpenSearch connection when the tab is selected
@@ -206,6 +211,16 @@ export default function SettingsPage() {
       setOsStatus(status)
     } catch (err) {
       console.log('Failed to load OpenSearch status')
+    }
+  }
+
+  const loadPermissions = async () => {
+    try {
+      const data = await permissionsApi.getAll()
+      setPermissions(data.roles)
+      setPermissionDescriptions(data.descriptions)
+    } catch (err) {
+      console.error('Failed to load permissions:', err)
     }
   }
 
@@ -458,6 +473,7 @@ export default function SettingsPage() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="permissions">Permissions</TabsTrigger>
           <TabsTrigger value="sso">SSO</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="sigmahq">SigmaHQ</TabsTrigger>
@@ -746,6 +762,61 @@ export default function SettingsPage() {
                 <Save className="mr-2 h-4 w-4" />
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="permissions" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Role Permissions</CardTitle>
+              <CardDescription>
+                Configure what each role can do. Admin permissions cannot be modified.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {['analyst', 'viewer'].map((role) => (
+                  <div key={role} className="space-y-4">
+                    <h3 className="font-medium capitalize text-lg border-b pb-2">{role}</h3>
+                    <div className="grid gap-3">
+                      {Object.entries(permissionDescriptions).map(([perm, desc]) => (
+                        <div key={perm} className="flex items-center justify-between py-2">
+                          <div className="space-y-0.5">
+                            <Label className="text-sm font-medium">
+                              {perm.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                            </Label>
+                            <p className="text-xs text-muted-foreground">{desc}</p>
+                          </div>
+                          <Switch
+                            checked={permissions[role]?.[perm] ?? false}
+                            onCheckedChange={async (checked) => {
+                              try {
+                                await permissionsApi.update(role, perm, checked)
+                                setPermissions((prev) => ({
+                                  ...prev,
+                                  [role]: { ...prev[role], [perm]: checked },
+                                }))
+                                setSuccess(`Permission updated for ${role}`)
+                                setTimeout(() => setSuccess(''), 3000)
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error ? err.message : 'Failed to update permission'
+                                )
+                              }
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {Object.keys(permissionDescriptions).length === 0 && (
+                  <p className="text-muted-foreground text-sm">
+                    No permissions configured. The permissions API may not be available.
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

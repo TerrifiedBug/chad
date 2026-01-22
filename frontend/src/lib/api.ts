@@ -639,3 +639,17 @@ export const auditApi = {
   getResourceTypes: () =>
     api.get<{ resource_types: string[] }>('/audit/resource-types'),
 }
+
+// Permissions types
+export type PermissionsResponse = {
+  roles: Record<string, Record<string, boolean>>
+  descriptions: Record<string, string>
+}
+
+// Permissions API
+export const permissionsApi = {
+  getAll: () =>
+    api.get<PermissionsResponse>('/permissions'),
+  update: (role: string, permission: string, granted: boolean) =>
+    api.put<{ success: boolean }>('/permissions', { role, permission, granted }),
+}
