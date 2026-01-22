@@ -30,6 +30,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 
 // Password complexity validation
 function validatePasswordComplexity(password: string) {
@@ -76,6 +77,11 @@ export default function UsersPage() {
   const [isResettingPassword, setIsResettingPassword] = useState(false)
   const [tempPassword, setTempPassword] = useState('')
   const [passwordCopied, setPasswordCopied] = useState(false)
+
+  // Delete confirmation state
+  const [userToDelete, setUserToDelete] = useState<UserInfo | null>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Password complexity
   const passwordComplexity = validatePasswordComplexity(newPassword)
@@ -130,14 +136,24 @@ export default function UsersPage() {
     }
   }
 
-  const deleteUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) return
+  const openDeleteDialog = (user: UserInfo) => {
+    setUserToDelete(user)
+    setIsDeleteDialogOpen(true)
+  }
 
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return
+
+    setIsDeleting(true)
     try {
-      await usersApi.delete(userId)
+      await usersApi.delete(userToDelete.id)
+      setIsDeleteDialogOpen(false)
+      setUserToDelete(null)
       loadUsers()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -389,7 +405,7 @@ export default function UsersPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => deleteUser(user.id)}
+                        onClick={() => openDeleteDialog(user)}
                         className="text-destructive hover:text-destructive"
                         title="Delete user"
                       >
@@ -538,6 +554,17 @@ export default function UsersPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete User Confirmation Modal */}
+      <DeleteConfirmModal
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title="Delete User"
+        description="Are you sure you want to delete this user? This action cannot be undone."
+        itemName={userToDelete?.email}
+        onConfirm={confirmDeleteUser}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }
