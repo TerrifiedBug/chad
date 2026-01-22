@@ -7,6 +7,8 @@ from app.api.index_patterns import router as index_patterns_router
 from app.api.logs import router as logs_router
 from app.api.rules import router as rules_router
 from app.api.settings import router as settings_router
+from app.api.stats import router as stats_router
+from app.api.users import router as users_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -38,3 +40,5 @@ app.include_router(index_patterns_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(alerts_router, prefix="/api")
 app.include_router(logs_router, prefix="/api")
+app.include_router(stats_router, prefix="/api")
+app.include_router(users_router, prefix="/api")

@@ -5,11 +5,14 @@ import { Header } from '@/components/Header'
 import SetupPage from '@/pages/Setup'
 import LoginPage from '@/pages/Login'
 import OpenSearchWizard from '@/pages/OpenSearchWizard'
+import Dashboard from '@/pages/Dashboard'
 import RulesPage from '@/pages/Rules'
 import RuleEditorPage from '@/pages/RuleEditor'
 import IndexPatternsPage from '@/pages/IndexPatterns'
 import AlertsPage from '@/pages/Alerts'
 import AlertDetailPage from '@/pages/AlertDetail'
+import SettingsPage from '@/pages/Settings'
+import UsersPage from '@/pages/Users'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -61,11 +64,7 @@ function AppRoutes() {
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
-              <h1 className="text-2xl font-bold">Welcome to CHAD</h1>
-              <p className="text-muted-foreground mt-2">
-                Select <strong>Rules</strong> to manage detection rules or{' '}
-                <strong>Index Patterns</strong> to configure target indices.
-              </p>
+              <Dashboard />
             </main>
           </div>
         </ProtectedRoute>
@@ -126,6 +125,36 @@ function AppRoutes() {
             <Header />
             <main className="px-6 py-8">
               <AlertDetailPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/settings" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <SettingsPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/settings/users" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <UsersPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/opensearch-wizard" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <OpenSearchWizard />
             </main>
           </div>
         </ProtectedRoute>

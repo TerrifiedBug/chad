@@ -59,6 +59,19 @@ class ApiClient {
       throw new Error(error.detail || 'Request failed')
     }
   }
+
+  async put<T>(path: string, data: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      throw new Error(error.detail || 'Request failed')
+    }
+    return response.json()
+  }
 }
 
 export const api = new ApiClient()
@@ -295,4 +308,72 @@ export const alertsApi = {
     api.get<AlertCountsResponse>('/alerts/counts'),
   updateStatus: (id: string, status: AlertStatus) =>
     api.patch<{ success: boolean; status: AlertStatus }>(`/alerts/${id}/status`, { status }),
+}
+
+// Dashboard stats types
+export type RecentAlert = {
+  alert_id: string
+  rule_title: string
+  severity: string
+  status: string
+  created_at: string
+}
+
+export type DashboardStats = {
+  rules: {
+    total: number
+    by_status: Record<string, number>
+    deployed: number
+  }
+  alerts: {
+    total: number
+    by_status: Record<string, number>
+    by_severity: Record<string, number>
+    today: number
+  }
+  recent_alerts: RecentAlert[]
+  generated_at: string
+}
+
+// Stats API
+export const statsApi = {
+  getDashboard: () =>
+    api.get<DashboardStats>('/stats/dashboard'),
+  getHealth: () =>
+    api.get<{ status: string; opensearch?: unknown; error?: string }>('/stats/health'),
+}
+
+// User types
+export type UserInfo = {
+  id: string
+  email: string
+  role: string
+  is_active: boolean
+  created_at: string
+}
+
+export type UserCreate = {
+  email: string
+  password: string
+  role: string
+}
+
+// Users API
+export const usersApi = {
+  list: async (): Promise<UserInfo[]> => {
+    const response = await api.get<{ users: UserInfo[] }>('/users')
+    return response.users
+  },
+  create: (data: UserCreate) =>
+    api.post<UserInfo>('/users', data),
+  delete: (userId: string) =>
+    api.delete(`/users/${userId}`),
+}
+
+// Extended Settings API
+export const settingsApiExtended = {
+  getAll: () =>
+    api.get<Record<string, unknown>>('/settings'),
+  update: <T>(key: string, value: T) =>
+    api.put<{ success: boolean }>(`/settings/${key}`, value),
 }

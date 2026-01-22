@@ -98,3 +98,79 @@ async def get_opensearch_status(
     setting = result.scalar_one_or_none()
 
     return OpenSearchStatusResponse(configured=setting is not None)
+
+
+# General settings endpoints
+@router.get("")
+async def list_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Get all configurable settings (admin only)."""
+    result = await db.execute(select(Setting))
+    settings = result.scalars().all()
+
+    # Convert to dict, hiding sensitive values
+    return {s.key: _mask_sensitive(s.key, s.value) for s in settings}
+
+
+@router.put("/{key}")
+async def update_setting(
+    key: str,
+    value: dict,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Update a setting (admin only)."""
+    # Don't allow updating opensearch via this endpoint (use dedicated endpoint)
+    if key == "opensearch":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use /settings/opensearch endpoint to update OpenSearch config",
+        )
+
+    result = await db.execute(select(Setting).where(Setting.key == key))
+    setting = result.scalar_one_or_none()
+
+    # Encrypt sensitive values
+    encrypted_value = _encrypt_sensitive(key, value)
+
+    if setting:
+        setting.value = encrypted_value
+    else:
+        setting = Setting(key=key, value=encrypted_value)
+        db.add(setting)
+
+    await db.commit()
+    return {"success": True}
+
+
+def _mask_sensitive(key: str, value: dict | None) -> dict | None:
+    """Mask sensitive values in settings."""
+    if value is None:
+        return None
+
+    sensitive_keys = {"password", "secret", "token", "api_key", "client_secret"}
+    if isinstance(value, dict):
+        return {
+            k: "********" if any(s in k.lower() for s in sensitive_keys) else v
+            for k, v in value.items()
+        }
+    return value
+
+
+def _encrypt_sensitive(key: str, value: dict) -> dict:
+    """Encrypt sensitive fields in settings value."""
+    if not isinstance(value, dict):
+        return value
+
+    sensitive_fields = {"password", "secret", "token", "api_key", "client_secret"}
+    result = {}
+
+    for k, v in value.items():
+        if any(s in k.lower() for s in sensitive_fields) and v and isinstance(v, str):
+            result[k] = encrypt(v)
+        else:
+            result[k] = v
+
+    return result
