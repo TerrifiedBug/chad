@@ -316,6 +316,7 @@ export default function RulesPage() {
             value={filters.search}
             onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
             className="pl-10"
+            aria-label="Search rules"
           />
         </div>
 
@@ -423,13 +424,14 @@ export default function RulesPage() {
         </DropdownMenu>
 
         {/* Deployed select */}
+        <label className="sr-only" htmlFor="deployed-filter">Deployment status</label>
         <Select
           value={filters.deployed}
           onValueChange={(value) =>
             setFilters((prev) => ({ ...prev, deployed: value as Filters['deployed'] }))
           }
         >
-          <SelectTrigger className="w-[140px]">
+          <SelectTrigger id="deployed-filter" className="w-[140px]">
             <SelectValue placeholder="Deployed" />
           </SelectTrigger>
           <SelectContent>
@@ -446,6 +448,8 @@ export default function RulesPage() {
             size="icon"
             onClick={() => setViewMode('tree')}
             title="Tree view"
+            aria-label="Tree view"
+            aria-pressed={viewMode === 'tree'}
           >
             <FolderTree className="h-4 w-4" />
           </Button>
@@ -454,6 +458,8 @@ export default function RulesPage() {
             size="icon"
             onClick={() => setViewMode('table')}
             title="Table view"
+            aria-label="Table view"
+            aria-pressed={viewMode === 'table'}
           >
             <TableIcon className="h-4 w-4" />
           </Button>
@@ -467,46 +473,66 @@ export default function RulesPage() {
           {filters.search && (
             <Badge variant="secondary" className="gap-1">
               Search: {filters.search}
-              <X
-                className="h-3 w-3 cursor-pointer"
+              <button
+                type="button"
                 onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
-              />
+                className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
+                aria-label={`Remove search filter: ${filters.search}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           )}
           {filters.indexPattern.map((id) => (
             <Badge key={id} variant="secondary" className="gap-1">
               {indexPatterns[id]?.name || id}
-              <X
-                className="h-3 w-3 cursor-pointer"
+              <button
+                type="button"
                 onClick={() => toggleFilter('indexPattern', id)}
-              />
+                className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
+                aria-label={`Remove index pattern filter: ${indexPatterns[id]?.name || id}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           ))}
           {filters.severity.map((sev) => (
             <Badge key={sev} variant="secondary" className="gap-1">
               {capitalize(sev)}
-              <X
-                className="h-3 w-3 cursor-pointer"
+              <button
+                type="button"
                 onClick={() => toggleFilter('severity', sev)}
-              />
+                className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
+                aria-label={`Remove severity filter: ${capitalize(sev)}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           ))}
           {filters.status.map((status) => (
             <Badge key={status} variant="secondary" className="gap-1">
               {capitalize(status)}
-              <X
-                className="h-3 w-3 cursor-pointer"
+              <button
+                type="button"
                 onClick={() => toggleFilter('status', status)}
-              />
+                className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
+                aria-label={`Remove status filter: ${capitalize(status)}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           ))}
           {filters.deployed !== 'any' && (
             <Badge variant="secondary" className="gap-1">
               {filters.deployed === 'yes' ? 'Deployed' : 'Not Deployed'}
-              <X
-                className="h-3 w-3 cursor-pointer"
+              <button
+                type="button"
                 onClick={() => setFilters((prev) => ({ ...prev, deployed: 'any' }))}
-              />
+                className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
+                aria-label={`Remove deployment filter: ${filters.deployed === 'yes' ? 'Deployed' : 'Not Deployed'}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           )}
           <Button variant="ghost" size="sm" onClick={clearFilters} className="h-6 px-2 text-xs">
@@ -538,6 +564,7 @@ export default function RulesPage() {
                   <Checkbox
                     checked={selectedRules.size === filteredRules.length && filteredRules.length > 0}
                     onCheckedChange={selectAll}
+                    aria-label="Select all rules"
                   />
                 </TableHead>
                 <TableHead>Title</TableHead>
@@ -566,6 +593,7 @@ export default function RulesPage() {
                         e.stopPropagation()
                         toggleRuleSelection(rule.id, index, e.shiftKey)
                       }}
+                      aria-label={`Select rule: ${rule.title}`}
                     />
                   </TableCell>
                   <TableCell className="font-medium">{rule.title}</TableCell>
