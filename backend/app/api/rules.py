@@ -1149,6 +1149,8 @@ async def get_rule_activity(
     rule_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
+    skip: int = 0,
+    limit: int = 50,
 ):
     """Get unified activity timeline for a rule."""
     # First verify rule exists
@@ -1173,7 +1175,7 @@ async def get_rule_activity(
                 user_email=v.author.email if v.author else None,
                 data={
                     "version_number": v.version_number,
-                    "yaml_content": v.yaml_content,
+                    # yaml_content excluded - can be fetched via /rules/{rule_id}/versions/{version} endpoint
                 },
             )
         )
@@ -1217,4 +1219,5 @@ async def get_rule_activity(
     # Sort by timestamp descending
     activities.sort(key=lambda x: x.timestamp, reverse=True)
 
-    return activities
+    # Apply pagination
+    return activities[skip:skip + limit]
