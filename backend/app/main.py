@@ -4,6 +4,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.alerts import router as alerts_router
 from app.api.api_keys import router as api_keys_router
+from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
 from app.api.external import router as external_router
 from app.api.index_patterns import router as index_patterns_router
@@ -55,5 +56,6 @@ app.include_router(logs_router, prefix="/api")
 app.include_router(stats_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(api_keys_router, prefix="/api")
+app.include_router(audit_router, prefix="/api")
 app.include_router(external_router, prefix="/api")
 app.include_router(sigmahq_router, prefix="/api")
