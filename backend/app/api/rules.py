@@ -34,6 +34,7 @@ from app.schemas.rule_exception import (
     RuleExceptionResponse,
     RuleExceptionUpdate,
 )
+from app.services.audit import audit_log
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
 from app.services.sigma import sigma_service
@@ -122,6 +123,8 @@ async def create_rule(
 
     await db.commit()
     await db.refresh(rule)
+    await audit_log(db, current_user.id, "rule.create", "rule", str(rule.id), {"title": rule.title})
+    await db.commit()
     return rule
 
 
@@ -195,6 +198,8 @@ async def update_rule(
 
     await db.commit()
     await db.refresh(rule)
+    await audit_log(db, current_user.id, "rule.update", "rule", str(rule.id), {"title": rule.title})
+    await db.commit()
 
     # If status changed and rule is deployed, sync to OpenSearch
     if "status" in update_data and rule.deployed_at is not None and os_client is not None:
@@ -215,7 +220,7 @@ async def update_rule(
 async def delete_rule(
     rule_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     result = await db.execute(select(Rule).where(Rule.id == rule_id))
     rule = result.scalar_one_or_none()
@@ -226,6 +231,8 @@ async def delete_rule(
             detail="Rule not found",
         )
 
+    # Capture details before delete
+    await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), {"title": rule.title})
     await db.delete(rule)
     await db.commit()
 
@@ -355,7 +362,7 @@ async def deploy_rule(
     rule_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
     Deploy a rule to its OpenSearch percolator index.
@@ -425,6 +432,8 @@ async def deploy_rule(
 
     await db.commit()
     await db.refresh(rule)
+    await audit_log(db, current_user.id, "rule.deploy", "rule", str(rule.id), {"title": rule.title, "percolator_index": percolator_index})
+    await db.commit()
 
     return RuleDeployResponse(
         success=True,
@@ -440,7 +449,7 @@ async def undeploy_rule(
     rule_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Remove a rule from its percolator index."""
     # Fetch rule with index pattern
@@ -472,6 +481,8 @@ async def undeploy_rule(
     rule.deployed_at = None
     rule.deployed_version = None
 
+    await db.commit()
+    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title})
     await db.commit()
 
     return RuleUndeployResponse(
@@ -540,6 +551,8 @@ async def rollback_rule(
     # Update rule content
     rule.yaml_content = target_version.yaml_content
 
+    await db.commit()
+    await audit_log(db, current_user.id, "rule.rollback", "rule", str(rule.id), {"title": rule.title, "from_version": version_number, "to_version": new_version_number})
     await db.commit()
 
     # If rule was deployed, redeploy with new content
@@ -628,6 +641,8 @@ async def create_rule_exception(
     db.add(exception)
     await db.commit()
     await db.refresh(exception)
+    await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field})
+    await db.commit()
     return exception
 
 
@@ -640,7 +655,7 @@ async def update_rule_exception(
     exception_id: UUID,
     exception_data: RuleExceptionUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Update an exception (change fields or toggle active state)."""
     result = await db.execute(
@@ -660,6 +675,8 @@ async def update_rule_exception(
 
     await db.commit()
     await db.refresh(exception)
+    await audit_log(db, current_user.id, "exception.update", "rule_exception", str(exception.id), {"rule_id": str(rule_id)})
+    await db.commit()
     return exception
 
 
@@ -671,7 +688,7 @@ async def delete_rule_exception(
     rule_id: UUID,
     exception_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Delete an exception."""
     result = await db.execute(
@@ -685,5 +702,7 @@ async def delete_rule_exception(
     if exception is None:
         raise HTTPException(status_code=404, detail="Exception not found")
 
+    # Capture details before delete
+    await audit_log(db, current_user.id, "exception.delete", "rule_exception", str(exception_id), {"rule_id": str(rule_id)})
     await db.delete(exception)
     await db.commit()
