@@ -1,5 +1,6 @@
 """User management API (admin only)."""
 
+import secrets
 from typing import Annotated
 from uuid import UUID
 
@@ -20,6 +21,16 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     role: str = "analyst"
+
+
+class UserUpdate(BaseModel):
+    role: str | None = None
+    is_active: bool | None = None
+
+
+class PasswordResetResponse(BaseModel):
+    temporary_password: str
+    message: str
 
 
 class UserResponse(BaseModel):
@@ -150,3 +161,96 @@ async def delete_user(
     await db.delete(user)
     await db.commit()
     return {"success": True}
+
+
+@router.patch("/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: UUID,
+    data: UserUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Update a user's role or active status (admin only)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Check if user is SSO (no password_hash)
+    is_sso_user = user.password_hash is None
+
+    # SSO users cannot have their role changed (role comes from IdP)
+    if data.role is not None and is_sso_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change role for SSO users. Role is managed by the identity provider.",
+        )
+
+    # Validate role if provided
+    if data.role is not None:
+        try:
+            role = UserRole(data.role)
+            user.role = role
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role. Must be one of: {[r.value for r in UserRole]}",
+            )
+
+    # Update is_active if provided (allowed for both local and SSO users)
+    if data.is_active is not None:
+        user.is_active = data.is_active
+
+    await db.commit()
+    await db.refresh(user)
+
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        role=user.role.value,
+        is_active=user.is_active,
+        created_at=user.created_at.isoformat(),
+        auth_method="local" if user.password_hash else "sso",
+    )
+
+
+@router.post("/{user_id}/reset-password", response_model=PasswordResetResponse)
+async def reset_user_password(
+    user_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Reset a user's password and generate a temporary password (admin only)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Check if user is SSO (no password_hash)
+    if user.password_hash is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot reset password for SSO users. Authentication is managed by the identity provider.",
+        )
+
+    # Generate temporary password
+    temporary_password = secrets.token_urlsafe(12)
+
+    # Hash and update the password
+    user.password_hash = bcrypt.hash(temporary_password)
+    user.must_change_password = True
+
+    await db.commit()
+
+    return PasswordResetResponse(
+        temporary_password=temporary_password,
+        message="Password reset successful. User must change password on next login.",
+    )
