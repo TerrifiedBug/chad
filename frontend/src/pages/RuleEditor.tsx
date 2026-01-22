@@ -31,6 +31,7 @@ import {
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock } from 'lucide-react'
+import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -92,6 +93,11 @@ export default function RuleEditorPage() {
   const [newExceptionValue, setNewExceptionValue] = useState('')
   const [newExceptionReason, setNewExceptionReason] = useState('')
   const [isAddingException, setIsAddingException] = useState(false)
+
+  // Exception delete confirmation state
+  const [exceptionToDelete, setExceptionToDelete] = useState<RuleException | null>(null)
+  const [isDeleteExceptionDialogOpen, setIsDeleteExceptionDialogOpen] = useState(false)
+  const [isDeletingException, setIsDeletingException] = useState(false)
 
   // Snooze state
   const [snoozeUntil, setSnoozeUntil] = useState<string | null>(null)
@@ -389,13 +395,23 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleDeleteException = async (exceptionId: string) => {
-    if (!id) return
+  const openDeleteExceptionDialog = (exception: RuleException) => {
+    setExceptionToDelete(exception)
+    setIsDeleteExceptionDialogOpen(true)
+  }
+
+  const confirmDeleteException = async () => {
+    if (!id || !exceptionToDelete) return
+    setIsDeletingException(true)
     try {
-      await rulesApi.deleteException(id, exceptionId)
-      setExceptions((prev) => prev.filter((e) => e.id !== exceptionId))
+      await rulesApi.deleteException(id, exceptionToDelete.id)
+      setExceptions((prev) => prev.filter((e) => e.id !== exceptionToDelete.id))
+      setIsDeleteExceptionDialogOpen(false)
+      setExceptionToDelete(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete exception')
+    } finally {
+      setIsDeletingException(false)
     }
   }
 
@@ -794,7 +810,7 @@ export default function RuleEditorPage() {
                               variant="ghost"
                               size="icon"
                               className="h-6 w-6"
-                              onClick={() => handleDeleteException(exception.id)}
+                              onClick={() => openDeleteExceptionDialog(exception)}
                             >
                               <Trash2 className="h-3 w-3 text-destructive" />
                             </Button>
@@ -867,6 +883,17 @@ export default function RuleEditorPage() {
           )}
         </div>
       </div>
+
+      {/* Exception Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        open={isDeleteExceptionDialogOpen}
+        onOpenChange={setIsDeleteExceptionDialogOpen}
+        title="Delete Exception"
+        description="Are you sure you want to delete this exception? This action cannot be undone."
+        itemName={exceptionToDelete ? `${exceptionToDelete.field} ${operatorLabels[exceptionToDelete.operator]} ${exceptionToDelete.value}` : undefined}
+        onConfirm={confirmDeleteException}
+        isDeleting={isDeletingException}
+      />
     </div>
   )
 }
