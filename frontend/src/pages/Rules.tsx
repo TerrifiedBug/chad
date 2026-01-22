@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { rulesApi, indexPatternsApi, Rule, IndexPattern } from '@/lib/api'
+import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -18,11 +18,20 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { FolderTree, Plus, Search, Table as TableIcon } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ChevronDown, FolderTree, Plus, Search, Table as TableIcon, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -34,16 +43,35 @@ const severityColors: Record<string, string> = {
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-type DeploymentFilter = 'all' | 'deployed' | 'not_deployed'
+// Severity options
+const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
+
+// Rule status options
+const RULE_STATUSES: RuleStatus[] = ['enabled', 'disabled', 'snoozed']
+
+// Filter types
+type Filters = {
+  indexPattern: string[]
+  severity: string[]
+  status: string[]
+  deployed: 'any' | 'yes' | 'no'
+  search: string
+}
 
 export default function RulesPage() {
   const navigate = useNavigate()
   const [rules, setRules] = useState<Rule[]>([])
   const [indexPatterns, setIndexPatterns] = useState<Record<string, IndexPattern>>({})
+  const [indexPatternsList, setIndexPatternsList] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-  const [deploymentFilter, setDeploymentFilter] = useState<DeploymentFilter>('all')
+  const [filters, setFilters] = useState<Filters>({
+    indexPattern: [],
+    severity: [],
+    status: [],
+    deployed: 'any',
+    search: '',
+  })
   const [viewMode, setViewMode] = useState<'tree' | 'table'>(() => {
     return (localStorage.getItem('rules-view-mode') as 'tree' | 'table') || 'table'
   })
@@ -80,6 +108,7 @@ export default function RulesPage() {
         patternsMap[p.id] = p
       })
       setIndexPatterns(patternsMap)
+      setIndexPatternsList(patternsData)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rules')
     } finally {
@@ -87,14 +116,71 @@ export default function RulesPage() {
     }
   }
 
-  const filteredRules = rules.filter((rule) => {
-    const matchesSearch = rule.title.toLowerCase().includes(search.toLowerCase())
-    const matchesDeployment =
-      deploymentFilter === 'all' ||
-      (deploymentFilter === 'deployed' && rule.deployed_at !== null) ||
-      (deploymentFilter === 'not_deployed' && rule.deployed_at === null)
-    return matchesSearch && matchesDeployment
-  })
+  // Memoized filtered rules based on all filters
+  const filteredRules = useMemo(() => {
+    return rules.filter((rule) => {
+      // Index pattern filter
+      if (filters.indexPattern.length > 0 && !filters.indexPattern.includes(rule.index_pattern_id)) {
+        return false
+      }
+      // Severity filter
+      if (filters.severity.length > 0 && !filters.severity.includes(rule.severity)) {
+        return false
+      }
+      // Status filter
+      if (filters.status.length > 0 && !filters.status.includes(rule.status)) {
+        return false
+      }
+      // Deployed filter
+      if (filters.deployed === 'yes' && !rule.deployed_at) {
+        return false
+      }
+      if (filters.deployed === 'no' && rule.deployed_at) {
+        return false
+      }
+      // Search filter
+      if (filters.search && !rule.title.toLowerCase().includes(filters.search.toLowerCase())) {
+        return false
+      }
+      return true
+    })
+  }, [rules, filters])
+
+  // Check if any filters are active
+  const hasActiveFilters = useMemo(() => {
+    return (
+      filters.indexPattern.length > 0 ||
+      filters.severity.length > 0 ||
+      filters.status.length > 0 ||
+      filters.deployed !== 'any' ||
+      filters.search !== ''
+    )
+  }, [filters])
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({
+      indexPattern: [],
+      severity: [],
+      status: [],
+      deployed: 'any',
+      search: '',
+    })
+  }
+
+  // Toggle multi-select filter value
+  const toggleFilter = <K extends keyof Filters>(
+    key: K,
+    value: Filters[K] extends string[] ? string : never
+  ) => {
+    setFilters((prev) => {
+      const currentValues = prev[key] as string[]
+      const newValues = currentValues.includes(value)
+        ? currentValues.filter((v) => v !== value)
+        : [...currentValues, value]
+      return { ...prev, [key]: newValues }
+    })
+  }
 
   // Toggle single selection with shift+click support
   const toggleRuleSelection = (ruleId: string, index: number, shiftKey: boolean) => {
@@ -220,30 +306,141 @@ export default function RulesPage() {
         </Button>
       </div>
 
-      <div className="flex gap-4">
-        <div className="relative flex-1 max-w-sm">
+      {/* Filter Bar */}
+      <div className="flex flex-wrap gap-3 items-center">
+        {/* Search input */}
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search rules..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={filters.search}
+            onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
             className="pl-10"
           />
         </div>
+
+        {/* Index Pattern multi-select */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              Index Pattern
+              {filters.indexPattern.length > 0 && (
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                  {filters.indexPattern.length}
+                </Badge>
+              )}
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuLabel>Index Patterns</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {indexPatternsList.length === 0 ? (
+              <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                No index patterns
+              </div>
+            ) : (
+              indexPatternsList.map((pattern) => (
+                <DropdownMenuCheckboxItem
+                  key={pattern.id}
+                  checked={filters.indexPattern.includes(pattern.id)}
+                  onCheckedChange={() => toggleFilter('indexPattern', pattern.id)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {pattern.name}
+                </DropdownMenuCheckboxItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Severity multi-select */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              Severity
+              {filters.severity.length > 0 && (
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                  {filters.severity.length}
+                </Badge>
+              )}
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Severity Levels</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {SEVERITIES.map((severity) => (
+              <DropdownMenuCheckboxItem
+                key={severity}
+                checked={filters.severity.includes(severity)}
+                onCheckedChange={() => toggleFilter('severity', severity)}
+                onSelect={(e) => e.preventDefault()}
+              >
+                <span
+                  className={cn(
+                    'mr-2 inline-block w-2 h-2 rounded-full',
+                    severity === 'critical' && 'bg-red-500',
+                    severity === 'high' && 'bg-orange-500',
+                    severity === 'medium' && 'bg-yellow-500',
+                    severity === 'low' && 'bg-blue-500',
+                    severity === 'informational' && 'bg-gray-500'
+                  )}
+                />
+                {capitalize(severity)}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Status multi-select */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              Status
+              {filters.status.length > 0 && (
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                  {filters.status.length}
+                </Badge>
+              )}
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Rule Status</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {RULE_STATUSES.map((status) => (
+              <DropdownMenuCheckboxItem
+                key={status}
+                checked={filters.status.includes(status)}
+                onCheckedChange={() => toggleFilter('status', status)}
+                onSelect={(e) => e.preventDefault()}
+              >
+                {capitalize(status)}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Deployed select */}
         <Select
-          value={deploymentFilter}
-          onValueChange={(value) => setDeploymentFilter(value as DeploymentFilter)}
+          value={filters.deployed}
+          onValueChange={(value) =>
+            setFilters((prev) => ({ ...prev, deployed: value as Filters['deployed'] }))
+          }
         >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Deployed" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Rules</SelectItem>
-            <SelectItem value="deployed">Deployed</SelectItem>
-            <SelectItem value="not_deployed">Not Deployed</SelectItem>
+            <SelectItem value="any">Any</SelectItem>
+            <SelectItem value="yes">Deployed</SelectItem>
+            <SelectItem value="no">Not Deployed</SelectItem>
           </SelectContent>
         </Select>
-        <div className="flex items-center gap-1">
+
+        {/* View mode toggle */}
+        <div className="flex items-center gap-1 ml-auto">
           <Button
             variant={viewMode === 'tree' ? 'default' : 'outline'}
             size="icon"
@@ -263,6 +460,61 @@ export default function RulesPage() {
         </div>
       </div>
 
+      {/* Active filters display */}
+      {hasActiveFilters && (
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-sm text-muted-foreground">Active filters:</span>
+          {filters.search && (
+            <Badge variant="secondary" className="gap-1">
+              Search: {filters.search}
+              <X
+                className="h-3 w-3 cursor-pointer"
+                onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
+              />
+            </Badge>
+          )}
+          {filters.indexPattern.map((id) => (
+            <Badge key={id} variant="secondary" className="gap-1">
+              {indexPatterns[id]?.name || id}
+              <X
+                className="h-3 w-3 cursor-pointer"
+                onClick={() => toggleFilter('indexPattern', id)}
+              />
+            </Badge>
+          ))}
+          {filters.severity.map((sev) => (
+            <Badge key={sev} variant="secondary" className="gap-1">
+              {capitalize(sev)}
+              <X
+                className="h-3 w-3 cursor-pointer"
+                onClick={() => toggleFilter('severity', sev)}
+              />
+            </Badge>
+          ))}
+          {filters.status.map((status) => (
+            <Badge key={status} variant="secondary" className="gap-1">
+              {capitalize(status)}
+              <X
+                className="h-3 w-3 cursor-pointer"
+                onClick={() => toggleFilter('status', status)}
+              />
+            </Badge>
+          ))}
+          {filters.deployed !== 'any' && (
+            <Badge variant="secondary" className="gap-1">
+              {filters.deployed === 'yes' ? 'Deployed' : 'Not Deployed'}
+              <X
+                className="h-3 w-3 cursor-pointer"
+                onClick={() => setFilters((prev) => ({ ...prev, deployed: 'any' }))}
+              />
+            </Badge>
+          )}
+          <Button variant="ghost" size="sm" onClick={clearFilters} className="h-6 px-2 text-xs">
+            Clear all
+          </Button>
+        </div>
+      )}
+
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
           {error}
@@ -273,7 +525,9 @@ export default function RulesPage() {
         <div className="text-center py-8 text-muted-foreground">Loading...</div>
       ) : filteredRules.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          {search ? 'No rules match your search' : 'No rules found. Create your first rule!'}
+          {hasActiveFilters
+            ? 'No rules match your filters'
+            : 'No rules found. Create your first rule!'}
         </div>
       ) : viewMode === 'table' ? (
         <div className="border rounded-lg">
