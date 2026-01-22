@@ -15,6 +15,7 @@ from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleStatus, RuleVersion
 from app.models.rule_exception import RuleException
 from app.models.user import User
+from app.schemas.bulk import BulkOperationRequest, BulkOperationResult
 from app.schemas.rule import (
     RuleCreate,
     RuleDeployResponse,
@@ -785,3 +786,262 @@ async def delete_rule_exception(
     await audit_log(db, current_user.id, "exception.delete", "rule_exception", str(exception_id), {"rule_id": str(rule_id)})
     await db.delete(exception)
     await db.commit()
+
+
+# Bulk Operations Endpoints
+
+
+@router.post("/bulk/enable", response_model=BulkOperationResult)
+async def bulk_enable_rules(
+    data: BulkOperationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Enable multiple rules."""
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                old_status = rule.status
+                rule.status = RuleStatus.ENABLED
+                rule.snooze_until = None
+                success.append(rule_id)
+
+                # Sync status to OpenSearch if deployed
+                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.ENABLED:
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                    percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_enable", "rule", None,
+        {"count": len(success), "rule_ids": success}
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/bulk/disable", response_model=BulkOperationResult)
+async def bulk_disable_rules(
+    data: BulkOperationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Disable multiple rules."""
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                old_status = rule.status
+                rule.status = RuleStatus.DISABLED
+                rule.snooze_until = None
+                success.append(rule_id)
+
+                # Sync status to OpenSearch if deployed
+                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.DISABLED:
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                    percolator.update_rule_status(percolator_index, str(rule.id), enabled=False)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_disable", "rule", None,
+        {"count": len(success), "rule_ids": success}
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/bulk/delete", response_model=BulkOperationResult)
+async def bulk_delete_rules(
+    data: BulkOperationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Delete multiple rules."""
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                # Undeploy from OpenSearch if deployed
+                if rule.deployed_at is not None and os_client is not None:
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                    percolator.undeploy_rule(percolator_index, str(rule.id))
+
+                await db.delete(rule)
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_delete", "rule", None,
+        {"count": len(success), "rule_ids": success}
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/bulk/deploy", response_model=BulkOperationResult)
+async def bulk_deploy_rules(
+    data: BulkOperationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Deploy multiple rules to OpenSearch."""
+    import yaml
+
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                # Translate rule to OpenSearch query
+                translation = sigma_service.translate_and_validate(rule.yaml_content)
+                if not translation.success:
+                    errors_str = ", ".join(e.message for e in (translation.errors or []))
+                    failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
+                    continue
+
+                # Deploy to percolator
+                percolator = PercolatorService(os_client)
+                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+
+                # Ensure the percolator index exists
+                percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
+
+                # Extract rule metadata from YAML
+                parsed_rule = yaml.safe_load(rule.yaml_content)
+                tags = parsed_rule.get("tags", [])
+
+                # Deploy the rule - extract inner query for percolator
+                percolator_query = translation.query.get("query", translation.query)
+
+                percolator.deploy_rule(
+                    percolator_index=percolator_index,
+                    rule_id=str(rule.id),
+                    query=percolator_query,
+                    title=rule.title,
+                    severity=rule.severity,
+                    tags=tags,
+                    enabled=(rule.status == RuleStatus.ENABLED),
+                )
+
+                # Update rule deployment tracking
+                now = datetime.now(timezone.utc)
+                current_version = rule.versions[0].version_number if rule.versions else 1
+                rule.deployed_at = now
+                rule.deployed_version = current_version
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_deploy", "rule", None,
+        {"count": len(success), "rule_ids": success}
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/bulk/undeploy", response_model=BulkOperationResult)
+async def bulk_undeploy_rules(
+    data: BulkOperationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Undeploy multiple rules from OpenSearch."""
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                if rule.deployed_at is None:
+                    # Rule not deployed, but count as success
+                    success.append(rule_id)
+                    continue
+
+                # Remove from percolator
+                percolator = PercolatorService(os_client)
+                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                percolator.undeploy_rule(percolator_index, str(rule.id))
+
+                # Clear deployment tracking
+                rule.deployed_at = None
+                rule.deployed_version = None
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_undeploy", "rule", None,
+        {"count": len(success), "rule_ids": success}
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
