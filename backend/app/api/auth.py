@@ -16,6 +16,11 @@ from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, SetupRequest, TokenResponse
 from app.services.audit import audit_log
+from app.services.rate_limit import (
+    is_account_locked,
+    record_failed_attempt,
+    clear_failed_attempts,
+)
 from app.services.settings import get_app_url, get_setting
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -159,18 +164,90 @@ async def initial_setup(
 @router.post("/login", response_model=TokenResponse)
 async def login(
     request: LoginRequest,
+    http_request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(select(User).where(User.email == request.email))
+    # Normalize email to lowercase
+    email = request.email.lower()
+    ip_address = http_request.client.host if http_request.client else "unknown"
+
+    # Check if account is locked due to too many failed attempts
+    locked, lockout_minutes = await is_account_locked(db, email)
+    if locked:
+        await audit_log(
+            db,
+            None,
+            "auth.lockout_login_attempt",
+            "user",
+            None,
+            {"email": email, "ip_address": ip_address},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Account temporarily locked due to too many failed login attempts. Try again in {lockout_minutes} minutes.",
+        )
+
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
+    # Check credentials - user doesn't exist or no password hash (SSO user)
     if user is None or user.password_hash is None:
+        # Record failed attempt
+        await record_failed_attempt(db, email, ip_address)
+        await audit_log(
+            db,
+            None,
+            "auth.login_failed",
+            "user",
+            None,
+            {"email": email, "ip_address": ip_address, "reason": "invalid_credentials"},
+        )
+
+        # Check if this attempt triggered a lockout
+        locked_now, _ = await is_account_locked(db, email)
+        if locked_now:
+            await audit_log(
+                db,
+                None,
+                "auth.lockout",
+                "user",
+                None,
+                {"email": email, "ip_address": ip_address},
+            )
+
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
 
+    # Verify password
     if not verify_password(request.password, user.password_hash):
+        # Record failed attempt
+        await record_failed_attempt(db, email, ip_address)
+        await audit_log(
+            db,
+            user.id,
+            "auth.login_failed",
+            "user",
+            str(user.id),
+            {"email": email, "ip_address": ip_address, "reason": "invalid_credentials"},
+        )
+
+        # Check if this attempt triggered a lockout
+        locked_now, _ = await is_account_locked(db, email)
+        if locked_now:
+            await audit_log(
+                db,
+                user.id,
+                "auth.lockout",
+                "user",
+                str(user.id),
+                {"email": email, "ip_address": ip_address},
+            )
+
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -181,6 +258,9 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is inactive",
         )
+
+    # Clear failed attempts on successful login
+    await clear_failed_attempts(db, email)
 
     # Generate token with dynamic timeout
     access_token = await create_token_with_dynamic_timeout(str(user.id), db)
