@@ -13,6 +13,7 @@ from app.db.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.index_pattern import IndexPattern
+    from app.models.rule_exception import RuleException
     from app.models.user import User
 
 
@@ -48,6 +49,9 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     creator: Mapped["User"] = relationship("User")
     versions: Mapped[list["RuleVersion"]] = relationship(
         "RuleVersion", back_populates="rule", order_by="desc(RuleVersion.version_number)"
+    )
+    exceptions: Mapped[list["RuleException"]] = relationship(
+        "RuleException", back_populates="rule", cascade="all, delete-orphan"
     )
 
 
