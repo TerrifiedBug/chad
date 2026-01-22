@@ -19,6 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Plus, Search } from 'lucide-react'
+import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -44,6 +45,10 @@ export default function RulesPage() {
   // Selection state
   const [selectedRules, setSelectedRules] = useState<Set<string>>(new Set())
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
+
+  // Bulk operation state
+  const [isBulkOperating, setIsBulkOperating] = useState(false)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -121,6 +126,69 @@ export default function RulesPage() {
   const clearSelection = () => {
     setSelectedRules(new Set())
     setLastSelectedIndex(null)
+  }
+
+  // Bulk action handler
+  const handleBulkAction = async (action: 'enable' | 'disable' | 'deploy' | 'undeploy' | 'delete') => {
+    if (selectedRules.size === 0) return
+
+    if (action === 'delete') {
+      setShowBulkDeleteConfirm(true)
+      return
+    }
+
+    setIsBulkOperating(true)
+    try {
+      const ruleIds = Array.from(selectedRules)
+      let result
+
+      switch (action) {
+        case 'enable':
+          result = await rulesApi.bulkEnable(ruleIds)
+          break
+        case 'disable':
+          result = await rulesApi.bulkDisable(ruleIds)
+          break
+        case 'deploy':
+          result = await rulesApi.bulkDeploy(ruleIds)
+          break
+        case 'undeploy':
+          result = await rulesApi.bulkUndeploy(ruleIds)
+          break
+      }
+
+      if (result && result.failed.length > 0) {
+        setError(`${result.success.length} succeeded, ${result.failed.length} failed`)
+      }
+
+      clearSelection()
+      loadData() // Refresh the list
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk operation failed')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
+  // Handler for confirmed bulk delete
+  const handleBulkDelete = async () => {
+    setShowBulkDeleteConfirm(false)
+    setIsBulkOperating(true)
+    try {
+      const ruleIds = Array.from(selectedRules)
+      const result = await rulesApi.bulkDelete(ruleIds)
+
+      if (result.failed.length > 0) {
+        setError(`${result.success.length} deleted, ${result.failed.length} failed`)
+      }
+
+      clearSelection()
+      loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk delete failed')
+    } finally {
+      setIsBulkOperating(false)
+    }
   }
 
   const formatDate = (dateStr: string) => {
@@ -232,6 +300,45 @@ export default function RulesPage() {
           </Table>
         </div>
       )}
+
+      {/* Bulk Action Bar - shown when items are selected */}
+      {selectedRules.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg p-4 flex items-center gap-4 z-50">
+          <span className="text-sm font-medium">
+            {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''} selected
+          </span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction('enable')} disabled={isBulkOperating}>
+              Enable
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction('disable')} disabled={isBulkOperating}>
+              Disable
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction('deploy')} disabled={isBulkOperating}>
+              Deploy
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating}>
+              Undeploy
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')} disabled={isBulkOperating}>
+              Delete
+            </Button>
+          </div>
+          <Button size="sm" variant="ghost" onClick={clearSelection}>
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation */}
+      <DeleteConfirmModal
+        open={showBulkDeleteConfirm}
+        onOpenChange={setShowBulkDeleteConfirm}
+        title="Delete Rules"
+        description={`Are you sure you want to delete ${selectedRules.size} rule${selectedRules.size > 1 ? 's' : ''}? This action cannot be undone.`}
+        onConfirm={handleBulkDelete}
+        isDeleting={isBulkOperating}
+      />
     </div>
   )
 }
