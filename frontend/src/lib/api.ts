@@ -244,6 +244,12 @@ export type RuleDeployResponse = {
   deployed_at: string
 }
 
+// Bulk operation result type
+export type BulkOperationResult = {
+  success: string[]
+  failed: { id: string; error: string }[]
+}
+
 // Rules API
 export const rulesApi = {
   list: (status?: RuleStatus) =>
@@ -283,6 +289,17 @@ export const rulesApi = {
     ),
   unsnooze: (id: string) =>
     api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`),
+  // Bulk operations
+  bulkEnable: (ruleIds: string[]) =>
+    api.post<BulkOperationResult>('/rules/bulk/enable', { rule_ids: ruleIds }),
+  bulkDisable: (ruleIds: string[]) =>
+    api.post<BulkOperationResult>('/rules/bulk/disable', { rule_ids: ruleIds }),
+  bulkDelete: (ruleIds: string[]) =>
+    api.post<BulkOperationResult>('/rules/bulk/delete', { rule_ids: ruleIds }),
+  bulkDeploy: (ruleIds: string[]) =>
+    api.post<BulkOperationResult>('/rules/bulk/deploy', { rule_ids: ruleIds }),
+  bulkUndeploy: (ruleIds: string[]) =>
+    api.post<BulkOperationResult>('/rules/bulk/undeploy', { rule_ids: ruleIds }),
 }
 
 // Index Pattern types
