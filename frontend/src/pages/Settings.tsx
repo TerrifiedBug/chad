@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse } from '@/lib/api'
+import WebhooksSettings from '@/pages/WebhooksSettings'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Save, Send, Trash2, Users, FileText, XCircle } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Save, Users, FileText, XCircle } from 'lucide-react'
 import { useVersion } from '@/hooks/use-version'
 import {
   Select,
@@ -44,46 +45,11 @@ async function downloadWithAuth(url: string, filename: string) {
   window.URL.revokeObjectURL(downloadUrl)
 }
 
-type WebhookProvider = 'generic' | 'discord' | 'slack'
-
-type Webhook = {
-  url: string
-  name: string
-  provider: WebhookProvider
-  severity_filter: 'all' | 'critical' | 'high' | 'medium' | 'low'
-  enabled: boolean
-}
-
-const providerInfo: Record<WebhookProvider, { label: string; placeholder: string; help: string }> = {
-  generic: {
-    label: 'Generic Webhook',
-    placeholder: 'https://api.example.com/webhook',
-    help: 'Raw alert JSON will be POST-ed to this URL',
-  },
-  discord: {
-    label: 'Discord',
-    placeholder: 'https://discord.com/api/webhooks/...',
-    help: 'Discord webhook URL from Server Settings > Integrations',
-  },
-  slack: {
-    label: 'Slack',
-    placeholder: 'https://hooks.slack.com/services/...',
-    help: 'Slack webhook URL from your Slack app configuration',
-  },
-}
-
 export default function SettingsPage() {
   const { showToast } = useToast()
   const { version, updateAvailable, latestVersion, releaseUrl, loading: versionLoading, checkForUpdates } = useVersion()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-
-  // Webhook settings
-  const [webhooks, setWebhooks] = useState<Webhook[]>([])
-  const [webhooksEnabled, setWebhooksEnabled] = useState(false)
-  const [testingWebhook, setTestingWebhook] = useState<number | null>(null)
-  const [webhookTestResults, setWebhookTestResults] = useState<Record<number, { success: boolean; error?: string }>>({})
-
 
   // Session settings
   const [sessionTimeout, setSessionTimeout] = useState(480)
@@ -182,28 +148,6 @@ export default function SettingsPage() {
   const loadSettings = async () => {
     try {
       const settings = await settingsApiExtended.getAll()
-
-      // Webhook
-      if (settings.webhooks && typeof settings.webhooks === 'object') {
-        const webhookSettings = settings.webhooks as Record<string, unknown>
-        setWebhooksEnabled((webhookSettings.enabled as boolean) || false)
-        if (Array.isArray(webhookSettings.webhooks)) {
-          // Ensure provider field exists (migration for older configs)
-          setWebhooks((webhookSettings.webhooks as Webhook[]).map(w => ({
-            ...w,
-            provider: w.provider || 'generic',
-          })))
-        } else if (webhookSettings.global_url) {
-          // Migrate legacy single webhook
-          setWebhooks([{
-            url: webhookSettings.global_url as string,
-            name: 'Default Webhook',
-            provider: 'generic',
-            severity_filter: 'all',
-            enabled: true,
-          }])
-        }
-      }
 
       // Session
       if (settings.session && typeof settings.session === 'object') {
@@ -323,79 +267,6 @@ export default function SettingsPage() {
       })
     } finally {
       setOsConnectionLoading(false)
-    }
-  }
-
-  const addWebhook = () => {
-    setWebhooks([
-      ...webhooks,
-      {
-        url: '',
-        name: `Webhook ${webhooks.length + 1}`,
-        provider: 'generic',
-        severity_filter: 'all',
-        enabled: true,
-      },
-    ])
-  }
-
-  const updateWebhook = (index: number, updates: Partial<Webhook>) => {
-    setWebhooks(webhooks.map((w, i) => (i === index ? { ...w, ...updates } : w)))
-  }
-
-  const removeWebhook = (index: number) => {
-    setWebhooks(webhooks.filter((_, i) => i !== index))
-    // Clear test result for removed webhook
-    const newResults = { ...webhookTestResults }
-    delete newResults[index]
-    setWebhookTestResults(newResults)
-  }
-
-  const testWebhook = async (index: number) => {
-    const webhook = webhooks[index]
-    if (!webhook.url) {
-      setWebhookTestResults(prev => ({
-        ...prev,
-        [index]: { success: false, error: 'Please enter a webhook URL' },
-      }))
-      return
-    }
-
-    setTestingWebhook(index)
-    setWebhookTestResults(prev => {
-      const newResults = { ...prev }
-      delete newResults[index]
-      return newResults
-    })
-
-    try {
-      const result = await settingsApi.testWebhook(webhook.url, webhook.provider)
-      setWebhookTestResults(prev => ({
-        ...prev,
-        [index]: { success: result.success, error: result.error || undefined },
-      }))
-    } catch (err) {
-      setWebhookTestResults(prev => ({
-        ...prev,
-        [index]: { success: false, error: err instanceof Error ? err.message : 'Test failed' },
-      }))
-    } finally {
-      setTestingWebhook(null)
-    }
-  }
-
-  const saveWebhooks = async () => {
-    setIsSaving(true)
-    try {
-      await settingsApiExtended.update('webhooks', {
-        enabled: webhooksEnabled,
-        webhooks: webhooks,
-      })
-      showToast('Webhook settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
-    } finally {
-      setIsSaving(false)
     }
   }
 
@@ -632,165 +503,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="webhooks" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Webhook Notifications</CardTitle>
-              <CardDescription>
-                Configure webhook endpoints for alert notifications
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Enable Webhooks</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Send notifications when alerts are created
-                  </p>
-                </div>
-                <Switch
-                  checked={webhooksEnabled}
-                  onCheckedChange={setWebhooksEnabled}
-                />
-              </div>
-
-              {webhooksEnabled && (
-                <div className="space-y-4 pt-4 border-t">
-                  {webhooks.map((webhook, index) => (
-                    <div
-                      key={index}
-                      className="p-4 border rounded-lg space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={webhook.enabled}
-                            onCheckedChange={(checked) =>
-                              updateWebhook(index, { enabled: checked })
-                            }
-                          />
-                          <Input
-                            value={webhook.name}
-                            onChange={(e) =>
-                              updateWebhook(index, { name: e.target.value })
-                            }
-                            placeholder="Webhook name"
-                            className="w-48"
-                          />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => testWebhook(index)}
-                            disabled={testingWebhook === index}
-                          >
-                            {testingWebhook === index ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Send className="h-4 w-4" />
-                            )}
-                            <span className="ml-1">Test</span>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeWebhook(index)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      {webhookTestResults[index] && (
-                        <div
-                          className={`text-sm px-3 py-2 rounded-md ${
-                            webhookTestResults[index].success
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                              : 'bg-destructive/10 text-destructive'
-                          }`}
-                        >
-                          {webhookTestResults[index].success
-                            ? 'Test notification sent successfully!'
-                            : `Test failed: ${webhookTestResults[index].error}`}
-                        </div>
-                      )}
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                          <Label>Provider</Label>
-                          <Select
-                            value={webhook.provider}
-                            onValueChange={(value) =>
-                              updateWebhook(index, {
-                                provider: value as WebhookProvider,
-                              })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="z-50 bg-popover">
-                              <SelectItem value="generic">Generic</SelectItem>
-                              <SelectItem value="discord">Discord</SelectItem>
-                              <SelectItem value="slack">Slack</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Minimum Severity</Label>
-                          <Select
-                            value={webhook.severity_filter}
-                            onValueChange={(value) =>
-                              updateWebhook(index, {
-                                severity_filter: value as Webhook['severity_filter'],
-                              })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="z-50 bg-popover">
-                              <SelectItem value="all">All Severities</SelectItem>
-                              <SelectItem value="low">Low and above</SelectItem>
-                              <SelectItem value="medium">Medium and above</SelectItem>
-                              <SelectItem value="high">High and above</SelectItem>
-                              <SelectItem value="critical">Critical only</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div></div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Webhook URL</Label>
-                        <Input
-                          value={webhook.url}
-                          onChange={(e) =>
-                            updateWebhook(index, { url: e.target.value })
-                          }
-                          placeholder={providerInfo[webhook.provider].placeholder}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          {providerInfo[webhook.provider].help}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-
-                  <Button
-                    variant="outline"
-                    onClick={addWebhook}
-                    className="w-full"
-                  >
-                    <Plus className="mr-2 h-4 w-4" /> Add Webhook
-                  </Button>
-                </div>
-              )}
-
-              <Button onClick={saveWebhooks} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? 'Saving...' : 'Save'}
-              </Button>
-            </CardContent>
-          </Card>
+          <WebhooksSettings />
         </TabsContent>
 
         <TabsContent value="security" className="mt-4 space-y-6">
@@ -1781,7 +1494,7 @@ export default function SettingsPage() {
                 <h3 className="font-medium">Resources</h3>
                 <div className="grid gap-2">
                   <a
-                    href="https://github.com/YOUR_ORG/chad"
+                    href="https://github.com/TerrifiedBug/chad"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -1790,7 +1503,7 @@ export default function SettingsPage() {
                     GitHub Repository
                   </a>
                   <a
-                    href="https://github.com/YOUR_ORG/chad/releases"
+                    href="https://github.com/TerrifiedBug/chad/releases"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -1799,7 +1512,7 @@ export default function SettingsPage() {
                     Release Notes / Changelog
                   </a>
                   <a
-                    href="https://github.com/YOUR_ORG/chad/issues"
+                    href="https://github.com/TerrifiedBug/chad/issues"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
