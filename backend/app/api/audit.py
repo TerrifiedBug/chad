@@ -1,7 +1,11 @@
+import csv
+import json
 from datetime import datetime
+from io import StringIO
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,3 +111,82 @@ async def list_resource_types(
     result = await db.execute(select(AuditLog.resource_type).distinct())
     types = [row[0] for row in result.all()]
     return {"resource_types": sorted(types)}
+
+
+@router.get("/export")
+async def export_audit_logs(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    action: str | None = Query(None),
+    resource_type: str | None = Query(None),
+    start_date: datetime | None = Query(None),
+    end_date: datetime | None = Query(None),
+):
+    """Export audit logs in CSV or JSON format."""
+    query = select(AuditLog).order_by(AuditLog.created_at.desc())
+
+    if action:
+        query = query.where(AuditLog.action == action)
+    if resource_type:
+        query = query.where(AuditLog.resource_type == resource_type)
+    if start_date:
+        query = query.where(AuditLog.created_at >= start_date)
+    if end_date:
+        query = query.where(AuditLog.created_at <= end_date)
+
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    # Get user emails for display
+    user_ids = {log.user_id for log in logs if log.user_id}
+    users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+    users = {str(u.id): u.email for u in users_result.scalars().all()}
+
+    if format == "json":
+        data = []
+        for log in logs:
+            user_email = users.get(str(log.user_id)) if log.user_id else None
+            if not user_email and log.details:
+                user_email = log.details.get("user_email") or log.details.get("email")
+            data.append({
+                "id": str(log.id),
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": str(log.resource_id) if log.resource_id else None,
+                "user_email": user_email,
+                "ip_address": log.ip_address,
+                "details": log.details,
+                "created_at": log.created_at.isoformat(),
+            })
+        return StreamingResponse(
+            iter([json.dumps(data, indent=2)]),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=audit_logs.json"},
+        )
+    else:
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(
+            ["ID", "Action", "Resource Type", "Resource ID", "User", "IP", "Details", "Created At"]
+        )
+        for log in logs:
+            user_email = users.get(str(log.user_id)) if log.user_id else None
+            if not user_email and log.details:
+                user_email = log.details.get("user_email") or log.details.get("email")
+            writer.writerow([
+                str(log.id),
+                log.action,
+                log.resource_type,
+                str(log.resource_id) if log.resource_id else "",
+                user_email or "",
+                log.ip_address or "",
+                json.dumps(log.details) if log.details else "",
+                log.created_at.isoformat(),
+            ])
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=audit_logs.csv"},
+        )

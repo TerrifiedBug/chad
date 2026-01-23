@@ -28,7 +28,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, ChevronLeft, ChevronRight, Eye, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eye, RefreshCw } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const PAGE_SIZE = 50
 
@@ -146,18 +152,66 @@ export default function AuditLogPage() {
     setCurrentPage(0)
   }
 
+  const handleExport = async (format: 'csv' | 'json') => {
+    try {
+      const filters: {
+        action?: string
+        resource_type?: string
+        start_date?: string
+        end_date?: string
+      } = {}
+
+      if (actionFilter !== 'all') filters.action = actionFilter
+      if (resourceTypeFilter !== 'all') filters.resource_type = resourceTypeFilter
+      if (dateRange?.from) filters.start_date = dateRange.from.toISOString()
+      if (dateRange?.to) {
+        const end = new Date(dateRange.to)
+        end.setHours(23, 59, 59, 999)
+        filters.end_date = end.toISOString()
+      }
+
+      const blob = await auditApi.export(format, filters)
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `audit_logs.${format}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError('Export failed')
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link to="/settings">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold">Audit Log</h1>
-          <p className="text-muted-foreground">View system activity and changes</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link to="/settings">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">Audit Log</h1>
+            <p className="text-muted-foreground">View system activity and changes</p>
+          </div>
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline">
+              <Download className="mr-2 h-4 w-4" /> Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => handleExport('csv')}>
+              Export as CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport('json')}>
+              Export as JSON
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Filters */}

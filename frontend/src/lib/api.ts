@@ -765,6 +765,27 @@ export const auditApi = {
     api.get<{ actions: string[] }>('/audit/actions'),
   getResourceTypes: () =>
     api.get<{ resource_types: string[] }>('/audit/resource-types'),
+  export: async (
+    format: 'csv' | 'json',
+    filters: {
+      action?: string
+      resource_type?: string
+      start_date?: string
+      end_date?: string
+    }
+  ): Promise<Blob> => {
+    const params = new URLSearchParams({ format })
+    if (filters.action) params.set('action', filters.action)
+    if (filters.resource_type) params.set('resource_type', filters.resource_type)
+    if (filters.start_date) params.set('start_date', filters.start_date)
+    if (filters.end_date) params.set('end_date', filters.end_date)
+
+    const response = await fetch(`${API_BASE}/audit/export?${params}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('chad-token')}` },
+    })
+    if (!response.ok) throw new Error('Export failed')
+    return response.blob()
+  },
 }
 
 // Permissions types
