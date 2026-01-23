@@ -17,6 +17,7 @@ from app.core.security import get_password_hash, verify_password
 from app.db.session import get_db
 from app.models.api_key import APIKey, generate_api_key
 from app.models.user import User
+from app.services.audit import audit_log
 from app.schemas.api_key import (
     APIKeyCreate,
     APIKeyCreateResponse,
@@ -70,6 +71,9 @@ async def create_api_key(
     db.add(api_key)
     await db.commit()
     await db.refresh(api_key)
+
+    await audit_log(db, current_user.id, "api_key.create", "api_key", str(api_key.id), {"name": api_key.name})
+    await db.commit()
 
     # Return the response with the raw key (only time it's shown)
     return APIKeyCreateResponse(
@@ -134,6 +138,7 @@ async def update_api_key(
     if data.is_active is not None:
         api_key.is_active = data.is_active
 
+    await audit_log(db, current_user.id, "api_key.update", "api_key", str(api_key.id), {"name": api_key.name, "is_active": api_key.is_active})
     await db.commit()
     await db.refresh(api_key)
 
@@ -158,7 +163,9 @@ async def delete_api_key(
     if not api_key:
         raise HTTPException(status_code=404, detail="API key not found")
 
+    name = api_key.name  # Capture before delete
     await db.delete(api_key)
+    await audit_log(db, current_user.id, "api_key.delete", "api_key", str(key_id), {"name": name})
     await db.commit()
 
     return {"message": "API key deleted"}

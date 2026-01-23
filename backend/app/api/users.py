@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import validate_password_complexity
 from app.api.deps import get_db, require_admin
 from app.models.user import User, UserRole
+from app.services.audit import audit_log
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -76,7 +77,7 @@ async def list_users(
 async def create_user(
     data: UserCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_admin)],
 ):
     """Create a new user (admin only)."""
     # Check if email already exists
@@ -113,6 +114,9 @@ async def create_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    await audit_log(db, current_user.id, "user.create", "user", str(user.id), {"email": user.email, "role": role.value})
+    await db.commit()
 
     return UserResponse(
         id=user.id,
@@ -158,7 +162,9 @@ async def delete_user(
                 detail="Cannot delete the last admin user",
             )
 
+    email = user.email  # Capture before delete
     await db.delete(user)
+    await audit_log(db, current_user.id, "user.delete", "user", str(user_id), {"email": email})
     await db.commit()
     return {"success": True}
 
@@ -168,7 +174,7 @@ async def update_user(
     user_id: UUID,
     data: UserUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_admin)],
 ):
     """Update a user's role or active status (admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -205,6 +211,7 @@ async def update_user(
     if data.is_active is not None:
         user.is_active = data.is_active
 
+    await audit_log(db, current_user.id, "user.update", "user", str(user_id), {"email": user.email, "role": data.role, "is_active": data.is_active})
     await db.commit()
     await db.refresh(user)
 
@@ -222,7 +229,7 @@ async def update_user(
 async def reset_user_password(
     user_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_admin)],
 ):
     """Reset a user's password and generate a temporary password (admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -248,6 +255,7 @@ async def reset_user_password(
     user.password_hash = bcrypt.hash(temporary_password)
     user.must_change_password = True
 
+    await audit_log(db, current_user.id, "user.password_reset", "user", str(user_id), {"email": user.email})
     await db.commit()
 
     return PasswordResetResponse(

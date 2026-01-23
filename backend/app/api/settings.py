@@ -10,6 +10,7 @@ from app.core.encryption import encrypt
 from app.db.session import get_db
 from app.models.setting import Setting
 from app.models.user import User
+from app.services.audit import audit_log
 from app.services.opensearch import validate_opensearch_connection
 from app.services.settings import get_setting, set_setting
 from app.services.webhooks import get_app_url_for_webhooks, send_webhook
@@ -140,6 +141,7 @@ async def save_opensearch_config(
         setting = Setting(key="opensearch", value=config_value)
         db.add(setting)
 
+    await audit_log(db, current_user.id, "settings.update", "settings", "opensearch", {"host": config.host, "port": config.port})
     await db.commit()
 
     return {"success": True}
@@ -204,6 +206,8 @@ async def set_app_url(
         raise HTTPException(400, "URL must start with http:// or https://")
 
     await set_setting(db, "app_url", {"url": url})
+    await audit_log(db, current_user.id, "settings.update", "settings", "app_url", {"url": url})
+    await db.commit()
     return {"success": True}
 
 
@@ -212,7 +216,7 @@ async def update_setting(
     key: str,
     value: dict,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_admin)],
 ):
     """Update a setting (admin only)."""
     # Don't allow updating opensearch via this endpoint (use dedicated endpoint)
@@ -241,6 +245,9 @@ async def update_setting(
         setting = Setting(key=key, value=encrypted_value)
         db.add(setting)
 
+    # Log setting change without sensitive values
+    masked_value = _mask_sensitive(key, value)
+    await audit_log(db, current_user.id, "settings.update", "settings", key, {"value": masked_value})
     await db.commit()
     return {"success": True}
 

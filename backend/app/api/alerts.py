@@ -4,9 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from opensearchpy import OpenSearch
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client
+from app.db.session import get_db
 from app.models.user import User
+from app.services.audit import audit_log
 from app.schemas.alert import (
     AlertCountsResponse,
     AlertListResponse,
@@ -74,6 +77,7 @@ async def update_alert_status(
     alert_id: str,
     update: AlertStatusUpdate,
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     index_pattern: str = Query("chad-alerts-*"),
 ):
@@ -105,5 +109,8 @@ async def update_alert_status(
 
     if not success:
         raise HTTPException(500, "Failed to update alert status")
+
+    await audit_log(db, current_user.id, "alert.status_update", "alert", alert_id, {"status": update.status})
+    await db.commit()
 
     return {"success": True, "status": update.status}
