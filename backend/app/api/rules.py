@@ -399,11 +399,22 @@ async def validate_rule(
         # Get fields from OpenSearch index
         index_fields = get_index_fields(opensearch, index_pattern.pattern)
 
-        # Check if all rule fields exist in index
+        # Get field mappings for this index pattern
+        sigma_fields = list(result.fields or set())
+        field_mappings = await resolve_mappings(db, sigma_fields, request.index_pattern_id)
+
+        # Check if all rule fields exist in index OR have a valid mapping
         missing_fields = []
-        for field in result.fields or set():
-            if field not in index_fields:
-                missing_fields.append(field)
+        for field in sigma_fields:
+            # Check if field exists directly in index
+            if field in index_fields:
+                continue
+            # Check if field has a mapping to a field that exists in index
+            mapped_field = field_mappings.get(field)
+            if mapped_field and mapped_field in index_fields:
+                continue
+            # Field is unmapped or mapped to non-existent field
+            missing_fields.append(field)
 
         if missing_fields:
             return RuleValidateResponse(
