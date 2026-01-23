@@ -807,19 +807,15 @@ All other configuration managed in GUI:
 - External API alerts: Implement OpenSearch query for `/external/alerts`
 - Better delete confirmation: Styled modal instead of browser confirm()
 
-**Phase 7 (UX Polish + Security + Quality of Life):**
-- Version history UI: Activity panel with diff view, rollback, and comments timeline
-- Rules list redesign: Tree view by index pattern + table view toggle, filters, bulk actions
-- Rate limiting: Per-account lockout (configurable attempts/duration), all failed logins audited
-- Role permissions: 7 configurable permissions per role (admin/analyst/viewer)
-- Audit to OpenSearch: Optional dual-write to `chad-audit-logs` index
-- Bulk operations: Multi-select enable/disable/delete/deploy/undeploy with shift+click
-- Rule comments: Unified activity timeline with versions, deploys, and comments
-- Export/backup: Single rule YAML, bulk ZIP, config JSON (no secrets)
-- OIDC role management: Allow role changes when OIDC role mapping disabled
-- YAML auto-formatting: Format button using ruamel.yaml (preserves comments)
-- Dialog standards: All modals use Tailwind/shadcn, errors shown within dialogs
-- Audit logging gaps: Review and add missing audit events (settings changes, etc.)
+**Phase 7 (UX Polish + Security + Deferred v1.1):**
+- Version history UI: Diff view and rollback from rule editor
+- Improved rules list: SigmaHQ browser style with tree by index pattern.
+- Rate limiting: IP-based rate limiting + account lockout (5 attempts → 15 min)
+- Configurable role permissions: Toggle permissions per fixed role (admin/analyst/viewer)
+- Audit logs to OpenSearch: Optional dual-write to `chad-audit-logs` index
+- Bulk operations: Multi-select enable/disable/delete
+- Rule comments: Unified timeline with versions
+- Export: Single, bulk, full config backup
 
 ### v1.2 - Detection Quality
 
@@ -884,18 +880,14 @@ Documented for potential future releases:
 | Edit local users | v1.1 | Admin can change role, reset password, disable |
 | External API alerts | v1.1 | OpenSearch query for /external/alerts endpoint |
 | Delete confirmation | v1.1 | Styled modal instead of browser confirm() |
-| Version history UI | v1.1+ | Activity panel with diff view, rollback, comments (Phase 7) |
-| Rules list redesign | v1.1+ | Tree/table view toggle, filters, bulk selection (Phase 7) |
-| Rate limiting | v1.1+ | Per-account lockout, configurable, all attempts audited (Phase 7) |
-| Role permissions | v1.1+ | 7 configurable permissions per role (Phase 7) |
+| Version history UI | v1.1+ | Diff view and rollback from rule editor (Phase 7) |
+| Rules list redesign | v1.1+ | SigmaHQ browser style with tree by index pattern (Phase 7) |
+| Rate limiting | v1.1+ | IP rate limiting + account lockout (Phase 7) |
+| Role permissions | v1.1+ | Configurable permissions per fixed role (Phase 7) |
 | Audit to OpenSearch | v1.1+ | Optional dual-write to chad-audit-logs (Phase 7) |
-| Bulk operations | v1.1+ | Enable/disable/delete/deploy/undeploy with shift+click (Phase 7) |
-| Rule comments | v1.1+ | Activity timeline with versions, deploys, comments (Phase 7) |
-| Export/backup | v1.1+ | Single YAML, bulk ZIP, config JSON (Phase 7) |
-| OIDC role management | v1.1+ | Edit roles when OIDC mapping disabled (Phase 7) |
-| YAML auto-format | v1.1+ | Format button using ruamel.yaml (Phase 7) |
-| Dialog standards | v1.1+ | All Tailwind modals, errors in dialogs (Phase 7) |
-| Audit logging gaps | v1.1+ | All settings changes audited (Phase 7) |
+| Bulk operations | v1.1+ | Multi-select enable/disable/delete (Phase 7) |
+| Rule comments | v1.1+ | Unified timeline with versions (Phase 7) |
+| Export/backup | v1.1+ | Single, bulk, full config (Phase 7) |
 | Historical dry-run | v1.2 | Test against time range |
 | Threshold alerting | v1.2 | Count-based aggregation |
 | ATT&CK map | v1.2 | Basic coverage visualization |
@@ -929,25 +921,16 @@ Phase 6 quick wins added:
 - **External API Alerts**: Implement OpenSearch query for `/external/alerts`
 - **Delete Confirmation**: Styled modal instead of browser confirm()
 
-Phase 7 designs added (12 features):
+Phase 7 designs added:
 
-**Core Features:**
-- **Rate Limiting**: Per-account lockout with PostgreSQL storage, configurable max_attempts (default 5) and lockout_minutes (default 15), all failed logins + lockout events audited
-- **Bulk Operations**: Enable/disable/delete/deploy/undeploy selected rules, checkbox + shift+click selection, floating action bar
-- **Version History UI**: Renamed to "Activity" panel, unified timeline with versions (inline diff), deploy events, and comments, restore creates new version
-- **Export/Backup**: Single rule YAML download, bulk rules ZIP, config JSON backup (index patterns, webhooks, settings, role permissions - no secrets)
-- **Audit to OpenSearch**: Setting toggle for dual-write to `chad-audit-logs` index, same schema as PostgreSQL
-- **Role Permissions**: 7 permissions (manage_users, manage_rules, deploy_rules, manage_settings, manage_api_keys, view_audit, manage_sigmahq), configurable per role in Settings
-- **Rules List Redesign**: Tree view (by index pattern) + table view toggle, filters (index pattern, severity, status, sigma status, deployed), remember last view preference
-- **Rule Comments**: Stored in `rule_comments` table, displayed in Activity panel timeline, no edit/delete for audit integrity
+- **Version History UI**: Diff view and rollback from rule editor
+- **Rules List Redesign**: SigmaHQ browser style with tree by index pattern
+- **Rate Limiting**: IP rate limiting + account lockout (5 attempts → 15 min)
+- **Role Permissions**: Configurable permissions per fixed role
+- **Audit to OpenSearch**: Optional dual-write to `chad-audit-logs` index
+- **Deferred v1.1**: Bulk operations, rule comments, export/backup
 
-**Quality of Life:**
-- **OIDC Role Management**: Allow admin to change OIDC user roles when role mapping is disabled
-- **YAML Auto-formatting**: Format button in rule editor using ruamel.yaml (preserves comments)
-- **Dialog Standards**: All delete confirmations use DeleteConfirmModal, no browser confirm()/alert(), errors displayed within dialogs using local state
-- **Audit Logging Gaps**: Review all endpoints, ensure all settings changes are audited
-
-New tables: `login_attempts`, `rule_comments`, `role_permissions`
+New design sections: Log Shipping Authentication, User Management Enhancements, Rate Limiting & Brute Force Protection, Role Permissions, Rules List Redesign
 
 ### 2026-01-22 (Phase 5)
 
