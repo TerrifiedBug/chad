@@ -17,6 +17,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', exact: true },
   { href: '/alerts', label: 'Alerts' },
   { href: '/rules', label: 'Rules' },
+  { href: '/attack', label: 'ATT&CK' },
   { href: '/sigmahq', label: 'SigmaHQ' },
   { href: '/health', label: 'Health', adminOnly: true },
   { href: '/index-patterns', label: 'Index Patterns', adminOnly: true },

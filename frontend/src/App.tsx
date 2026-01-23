@@ -21,6 +21,7 @@ import SigmaHQPage from '@/pages/SigmaHQ'
 import AuditLogPage from '@/pages/AuditLog'
 import HealthPage from '@/pages/Health'
 import FieldMappingsPage from '@/pages/FieldMappings'
+import AttackMatrixPage from '@/pages/AttackMatrix'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -222,6 +223,16 @@ function AppRoutes() {
             </main>
           </div>
         </AdminRoute>
+      } />
+      <Route path="/attack" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <AttackMatrixPage />
+            </main>
+          </div>
+        </ProtectedRoute>
       } />
       <Route path="/opensearch-wizard" element={
         <ProtectedRoute>
