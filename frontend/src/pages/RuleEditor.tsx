@@ -914,6 +914,21 @@ export default function RuleEditorPage() {
                       </code>
                     ))}
                   </div>
+                  {indexPatternId && (
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="mt-2 h-auto p-0 text-xs"
+                      onClick={() =>
+                        navigate(
+                          `/field-mappings?index_pattern_id=${indexPatternId}&fields=${detectedFields.join(',')}`
+                        )
+                      }
+                    >
+                      <Link2 className="h-3 w-3 mr-1" />
+                      Configure Field Mappings
+                    </Button>
+                  )}
                 </details>
               )}
 
