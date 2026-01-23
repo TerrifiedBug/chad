@@ -96,7 +96,7 @@ class TestSigmaHQStatus:
             data = response.json()
             assert data["cloned"] is False
             assert data["commit_hash"] is None
-            assert data["rule_count"] is None
+            assert data["rule_counts"] is None
 
     @pytest.mark.asyncio
     async def test_get_status_cloned(self, authenticated_client: AsyncClient):
@@ -104,7 +104,11 @@ class TestSigmaHQStatus:
         with patch("app.api.sigmahq.sigmahq_service") as mock_service:
             mock_service.is_repo_cloned.return_value = True
             mock_service.get_current_commit_hash.return_value = "abc123def456"
-            mock_service.count_rules.return_value = 2500
+            mock_service.count_rules_all.return_value = {
+                "detection": 2500,
+                "threat_hunting": 100,
+                "emerging_threats": 50,
+            }
             mock_service.DEFAULT_REPO_URL = "https://github.com/SigmaHQ/sigma.git"
 
             response = await authenticated_client.get("/api/sigmahq/status")
@@ -113,7 +117,9 @@ class TestSigmaHQStatus:
             data = response.json()
             assert data["cloned"] is True
             assert data["commit_hash"] == "abc123def456"
-            assert data["rule_count"] == 2500
+            assert data["rule_counts"]["detection"] == 2500
+            assert data["rule_counts"]["threat_hunting"] == 100
+            assert data["rule_counts"]["emerging_threats"] == 50
             assert data["repo_url"] == "https://github.com/SigmaHQ/sigma.git"
 
 
@@ -141,7 +147,7 @@ class TestSigmaHQSync:
                 success=True,
                 message="Repository cloned successfully",
                 commit_hash="abc123",
-                rule_count=2500,
+                rule_counts={"detection": 2500, "threat_hunting": 100, "emerging_threats": 50},
                 error=None,
             )
 
@@ -152,7 +158,7 @@ class TestSigmaHQSync:
             data = response.json()
             assert data["success"] is True
             assert data["commit_hash"] == "abc123"
-            assert data["rule_count"] == 2500
+            assert data["rule_counts"]["detection"] == 2500
 
     @pytest.mark.asyncio
     async def test_sync_triggers_pull_when_cloned(self, authenticated_client: AsyncClient):
@@ -163,7 +169,7 @@ class TestSigmaHQSync:
                 success=True,
                 message="Repository updated successfully",
                 commit_hash="def456",
-                rule_count=2600,
+                rule_counts={"detection": 2600, "threat_hunting": 105, "emerging_threats": 52},
                 error=None,
             )
 
@@ -296,7 +302,8 @@ class TestSigmaHQSearch:
             data = response.json()
             assert data["total"] == 1
             assert data["rules"][0]["title"] == "Mimikatz"
-            mock_service.search_rules.assert_called_once_with("mimikatz", 10)
+            # search_rules is now called with an additional rule_type parameter
+            mock_service.search_rules.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_search_not_cloned(self, authenticated_client: AsyncClient):

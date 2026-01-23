@@ -1,13 +1,20 @@
 # backend/app/schemas/sigmahq.py
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 
+class SigmaHQRuleType(str, Enum):
+    DETECTION = "detection"
+    THREAT_HUNTING = "threat_hunting"
+    EMERGING_THREATS = "emerging_threats"
+
+
 class SigmaHQStatusResponse(BaseModel):
     cloned: bool
     commit_hash: str | None = None
-    rule_count: int | None = None
+    rule_counts: dict[str, int] | None = None
     repo_url: str | None = None
 
 
@@ -15,7 +22,7 @@ class SigmaHQSyncResponse(BaseModel):
     success: bool
     message: str
     commit_hash: str | None = None
-    rule_count: int | None = None
+    rule_counts: dict[str, int] | None = None
     error: str | None = None
 
 
@@ -47,6 +54,7 @@ class SigmaHQRuleContentResponse(BaseModel):
 class SigmaHQImportRequest(BaseModel):
     rule_path: str
     index_pattern_id: UUID
+    rule_type: SigmaHQRuleType = SigmaHQRuleType.DETECTION
 
 
 class SigmaHQImportResponse(BaseModel):
@@ -59,3 +67,4 @@ class SigmaHQImportResponse(BaseModel):
 class SigmaHQSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     limit: int = Field(default=100, ge=1, le=1000)
+    rule_type: SigmaHQRuleType = SigmaHQRuleType.DETECTION

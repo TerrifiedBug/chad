@@ -1,14 +1,13 @@
 # backend/app/api/sigmahq.py
 from typing import Annotated
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_admin
 from app.db.session import get_db
-from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
+from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion, SigmaHQType
 from app.models.user import User
 from app.schemas.sigmahq import (
     SigmaHQCategoryTree,
@@ -16,11 +15,12 @@ from app.schemas.sigmahq import (
     SigmaHQImportResponse,
     SigmaHQRuleContentResponse,
     SigmaHQRulesListResponse,
+    SigmaHQRuleType,
     SigmaHQSearchRequest,
     SigmaHQStatusResponse,
     SigmaHQSyncResponse,
 )
-from app.services.sigmahq import sigmahq_service
+from app.services.sigmahq import RuleType, sigmahq_service
 
 router = APIRouter(prefix="/sigmahq", tags=["sigmahq"])
 
@@ -38,7 +38,7 @@ async def get_status(
     return SigmaHQStatusResponse(
         cloned=True,
         commit_hash=sigmahq_service.get_current_commit_hash(),
-        rule_count=sigmahq_service.count_rules(),
+        rule_counts=sigmahq_service.count_rules_all(),
         repo_url=sigmahq_service.DEFAULT_REPO_URL,
     )
 
@@ -57,14 +57,20 @@ async def sync_repo(
         success=result.success,
         message=result.message,
         commit_hash=result.commit_hash,
-        rule_count=result.rule_count,
+        rule_counts=result.rule_counts,
         error=result.error,
     )
+
+
+def _schema_to_service_rule_type(schema_type: SigmaHQRuleType) -> RuleType:
+    """Convert schema RuleType to service RuleType."""
+    return RuleType(schema_type.value)
 
 
 @router.get("/rules", response_model=SigmaHQCategoryTree)
 async def get_category_tree(
     _: Annotated[User, Depends(get_current_user)],
+    rule_type: SigmaHQRuleType = Query(default=SigmaHQRuleType.DETECTION),
 ):
     """Get the category tree structure of SigmaHQ rules."""
     if not sigmahq_service.is_repo_cloned():
@@ -73,13 +79,15 @@ async def get_category_tree(
             detail="SigmaHQ repository not cloned. Sync first.",
         )
 
-    return SigmaHQCategoryTree(categories=sigmahq_service.get_category_tree())
+    service_rule_type = _schema_to_service_rule_type(rule_type)
+    return SigmaHQCategoryTree(categories=sigmahq_service.get_category_tree(service_rule_type))
 
 
 @router.get("/rules/list/{category_path:path}", response_model=SigmaHQRulesListResponse)
 async def list_rules_in_category(
     category_path: str,
     _: Annotated[User, Depends(get_current_user)],
+    rule_type: SigmaHQRuleType = Query(default=SigmaHQRuleType.DETECTION),
 ):
     """List rules in a specific category."""
     if not sigmahq_service.is_repo_cloned():
@@ -88,7 +96,8 @@ async def list_rules_in_category(
             detail="SigmaHQ repository not cloned. Sync first.",
         )
 
-    rules = sigmahq_service.list_rules_in_category(category_path)
+    service_rule_type = _schema_to_service_rule_type(rule_type)
+    rules = sigmahq_service.list_rules_in_category(category_path, service_rule_type)
     return SigmaHQRulesListResponse(rules=rules, total=len(rules))
 
 
@@ -96,6 +105,7 @@ async def list_rules_in_category(
 async def get_rule_content(
     rule_path: str,
     _: Annotated[User, Depends(get_current_user)],
+    rule_type: SigmaHQRuleType = Query(default=SigmaHQRuleType.DETECTION),
 ):
     """Get the content of a specific SigmaHQ rule."""
     if not sigmahq_service.is_repo_cloned():
@@ -104,7 +114,8 @@ async def get_rule_content(
             detail="SigmaHQ repository not cloned. Sync first.",
         )
 
-    content = sigmahq_service.get_rule_content(rule_path)
+    service_rule_type = _schema_to_service_rule_type(rule_type)
+    content = sigmahq_service.get_rule_content(rule_path, service_rule_type)
 
     if content is None:
         raise HTTPException(
@@ -137,8 +148,14 @@ async def search_rules(
             detail="SigmaHQ repository not cloned. Sync first.",
         )
 
-    rules = sigmahq_service.search_rules(request.query, request.limit)
+    service_rule_type = _schema_to_service_rule_type(request.rule_type)
+    rules = sigmahq_service.search_rules(request.query, request.limit, service_rule_type)
     return SigmaHQRulesListResponse(rules=rules, total=len(rules))
+
+
+def _schema_to_model_sigmahq_type(schema_type: SigmaHQRuleType) -> SigmaHQType:
+    """Convert schema SigmaHQRuleType to model SigmaHQType."""
+    return SigmaHQType(schema_type.value)
 
 
 @router.post("/import", response_model=SigmaHQImportResponse)
@@ -154,7 +171,8 @@ async def import_rule(
             detail="SigmaHQ repository not cloned. Sync first.",
         )
 
-    content = sigmahq_service.get_rule_content(request.rule_path)
+    service_rule_type = _schema_to_service_rule_type(request.rule_type)
+    content = sigmahq_service.get_rule_content(request.rule_path, service_rule_type)
 
     if content is None:
         raise HTTPException(
@@ -172,6 +190,7 @@ async def import_rule(
         )
 
     # Create the rule in CHAD
+    sigmahq_type = _schema_to_model_sigmahq_type(request.rule_type)
     rule = Rule(
         title=metadata.get("title", "Imported Rule"),
         description=metadata.get("description", f"Imported from SigmaHQ: {request.rule_path}"),
@@ -182,6 +201,7 @@ async def import_rule(
         created_by=current_user.id,
         source=RuleSource.SIGMAHQ,
         sigmahq_path=request.rule_path,
+        sigmahq_type=sigmahq_type,
     )
     db.add(rule)
     await db.flush()

@@ -5,7 +5,8 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,6 +30,12 @@ class RuleSource(str, Enum):
     SIGMAHQ = "sigmahq"
 
 
+class SigmaHQType(str, Enum):
+    DETECTION = "detection"
+    THREAT_HUNTING = "threat_hunting"
+    EMERGING_THREATS = "emerging_threats"
+
+
 class Rule(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "rules"
 
@@ -50,6 +57,7 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     # Source tracking
     source: Mapped[RuleSource] = mapped_column(String(50), default=RuleSource.USER)
     sigmahq_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sigmahq_type: Mapped[SigmaHQType | None] = mapped_column(String(50), nullable=True)
 
     # Threshold alerting configuration
     threshold_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -65,16 +73,16 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    index_pattern: Mapped["IndexPattern"] = relationship("IndexPattern")
-    creator: Mapped["User"] = relationship("User")
-    versions: Mapped[list["RuleVersion"]] = relationship(
+    index_pattern: Mapped[IndexPattern] = relationship("IndexPattern")
+    creator: Mapped[User] = relationship("User")
+    versions: Mapped[list[RuleVersion]] = relationship(
         "RuleVersion", back_populates="rule", order_by="desc(RuleVersion.version_number)",
         cascade="all, delete-orphan", passive_deletes=True
     )
-    exceptions: Mapped[list["RuleException"]] = relationship(
+    exceptions: Mapped[list[RuleException]] = relationship(
         "RuleException", back_populates="rule", cascade="all, delete-orphan"
     )
-    comments: Mapped[list["RuleComment"]] = relationship(
+    comments: Mapped[list[RuleComment]] = relationship(
         "RuleComment", cascade="all, delete-orphan", passive_deletes=True
     )
 
@@ -95,5 +103,5 @@ class RuleVersion(Base, UUIDMixin):
     )
 
     # Relationships
-    rule: Mapped["Rule"] = relationship("Rule", back_populates="versions")
-    author: Mapped["User"] = relationship("User")
+    rule: Mapped[Rule] = relationship("Rule", back_populates="versions")
+    author: Mapped[User] = relationship("User")

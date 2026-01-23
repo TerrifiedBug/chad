@@ -7,6 +7,7 @@ import {
   SigmaHQCategory,
   SigmaHQRule,
   SigmaHQRuleContent,
+  SigmaHQRuleType,
   IndexPattern,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -35,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ChevronRight,
   ChevronDown,
@@ -46,6 +48,7 @@ import {
   Loader2,
   GitBranch,
   X,
+  Zap,
 } from 'lucide-react'
 
 const severityColors: Record<string, string> = {
@@ -142,6 +145,9 @@ function CategoryTreeItem({
 export default function SigmaHQPage() {
   const navigate = useNavigate()
 
+  // Rule type state (for tabs)
+  const [ruleType, setRuleType] = useState<SigmaHQRuleType>('detection')
+
   // Status state
   const [status, setStatus] = useState<SigmaHQStatus | null>(null)
   const [isLoadingStatus, setIsLoadingStatus] = useState(true)
@@ -176,35 +182,52 @@ export default function SigmaHQPage() {
   const [importError, setImportError] = useState('')
   const [importSuccess, setImportSuccess] = useState('')
 
-  // Load status on mount
-  useEffect(() => {
-    loadStatus()
-    loadIndexPatterns()
+  // Define loadCategories first (no dependencies)
+  const loadCategories = useCallback(async (type: SigmaHQRuleType) => {
+    try {
+      const data = await sigmahqApi.getCategories(type)
+      setCategories(data.categories)
+    } catch (err) {
+      console.error('Failed to load categories:', err)
+    }
   }, [])
 
-  const loadStatus = async () => {
+  // Load status depends on loadCategories
+  const loadStatus = useCallback(async () => {
     setIsLoadingStatus(true)
     try {
       const data = await sigmahqApi.getStatus()
       setStatus(data)
       if (data.cloned) {
-        loadCategories()
+        loadCategories(ruleType)
       }
     } catch (err) {
       console.error('Failed to load SigmaHQ status:', err)
     } finally {
       setIsLoadingStatus(false)
     }
-  }
+  }, [loadCategories, ruleType])
 
-  const loadCategories = async () => {
-    try {
-      const data = await sigmahqApi.getCategories()
-      setCategories(data.categories)
-    } catch (err) {
-      console.error('Failed to load categories:', err)
+  // Load status on mount
+  useEffect(() => {
+    loadStatus()
+    loadIndexPatterns()
+  }, [loadStatus])
+
+  // Reload categories when rule type changes
+  useEffect(() => {
+    if (status?.cloned) {
+      // Clear current state when switching rule types
+      setSelectedPath(null)
+      setExpandedPaths(new Set())
+      setRules([])
+      setSelectedRule(null)
+      setRuleContent(null)
+      setSearchQuery('')
+      setIsSearchActive(false)
+      loadCategories(ruleType)
     }
-  }
+  }, [ruleType, status?.cloned, loadCategories])
 
   const loadIndexPatterns = async () => {
     try {
@@ -256,7 +279,7 @@ export default function SigmaHQPage() {
     setIsLoadingRules(true)
     setRulesError('')
     try {
-      const data = await sigmahqApi.listRulesInCategory(path)
+      const data = await sigmahqApi.listRulesInCategory(path, ruleType)
       setRules(data.rules)
     } catch (err) {
       setRulesError(err instanceof Error ? err.message : 'Failed to load rules')
@@ -270,7 +293,7 @@ export default function SigmaHQPage() {
     setSelectedRule(rule)
     setIsLoadingContent(true)
     try {
-      const content = await sigmahqApi.getRuleContent(rule.path)
+      const content = await sigmahqApi.getRuleContent(rule.path, ruleType)
       setRuleContent(content)
     } catch (err) {
       console.error('Failed to load rule content:', err)
@@ -297,7 +320,7 @@ export default function SigmaHQPage() {
       setRulesError('')
 
       try {
-        const data = await sigmahqApi.searchRules(query.trim(), 100)
+        const data = await sigmahqApi.searchRules(query.trim(), 100, ruleType)
         setRules(data.rules)
       } catch (err) {
         setRulesError(err instanceof Error ? err.message : 'Search failed')
@@ -306,7 +329,7 @@ export default function SigmaHQPage() {
         setIsSearching(false)
       }
     },
-    []
+    [ruleType]
   )
 
   // Debounced search
@@ -342,7 +365,7 @@ export default function SigmaHQPage() {
     setImportSuccess('')
 
     try {
-      const result = await sigmahqApi.importRule(selectedRule.path, selectedIndexPatternId)
+      const result = await sigmahqApi.importRule(selectedRule.path, selectedIndexPatternId, ruleType)
       if (result.success) {
         setImportSuccess(`Rule "${result.title}" imported successfully!`)
         setTimeout(() => {
@@ -434,7 +457,11 @@ export default function SigmaHQPage() {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted-foreground">
-            {status.rule_count?.toLocaleString()} rules
+            {status.rule_counts && (
+              <>
+                {Object.values(status.rule_counts).reduce((a, b) => a + b, 0).toLocaleString()} total rules
+              </>
+            )}
             {status.commit_hash && (
               <span className="ml-2 font-mono text-xs">
                 @ {status.commit_hash.substring(0, 7)}
@@ -458,6 +485,38 @@ export default function SigmaHQPage() {
         </div>
       )}
 
+      {/* Rule type tabs */}
+      <Tabs value={ruleType} onValueChange={(v) => setRuleType(v as SigmaHQRuleType)}>
+        <TabsList>
+          <TabsTrigger value="detection">
+            Detection Rules
+            {status.rule_counts?.detection !== undefined && (
+              <span className="ml-1.5 text-xs text-muted-foreground">
+                ({status.rule_counts.detection.toLocaleString()})
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="threat_hunting">
+            <Search className="mr-1.5 h-3.5 w-3.5" />
+            Threat Hunting
+            {status.rule_counts?.threat_hunting !== undefined && (
+              <span className="ml-1.5 text-xs text-muted-foreground">
+                ({status.rule_counts.threat_hunting.toLocaleString()})
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="emerging_threats">
+            <Zap className="mr-1.5 h-3.5 w-3.5" />
+            Emerging Threats
+            {status.rule_counts?.emerging_threats !== undefined && (
+              <span className="ml-1.5 text-xs text-muted-foreground">
+                ({status.rule_counts.emerging_threats.toLocaleString()})
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Search bar */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -478,7 +537,7 @@ export default function SigmaHQPage() {
       </div>
 
       {/* Main content - 3 column layout */}
-      <div className="grid grid-cols-12 gap-4 h-[calc(100vh-280px)] min-h-[500px]">
+      <div className="grid grid-cols-12 gap-4 h-[calc(100vh-340px)] min-h-[500px]">
         {/* Category tree */}
         <div className="col-span-3 border rounded-lg overflow-auto">
           <div className="p-3 border-b bg-muted/50">
@@ -616,6 +675,16 @@ export default function SigmaHQPage() {
                     >
                       {selectedRule.status}
                     </span>
+                    {ruleType === 'threat_hunting' && (
+                      <Badge variant="secondary" className="text-xs">
+                        <Search className="mr-1 h-3 w-3" /> Hunting
+                      </Badge>
+                    )}
+                    {ruleType === 'emerging_threats' && (
+                      <Badge variant="secondary" className="text-xs">
+                        <Zap className="mr-1 h-3 w-3" /> Emerging
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-sm text-muted-foreground">{selectedRule.description}</p>
                   {selectedRule.tags.length > 0 && (

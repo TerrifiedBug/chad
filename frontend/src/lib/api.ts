@@ -188,6 +188,7 @@ export type RuleComment = {
 // Rule types
 export type RuleStatus = 'deployed' | 'undeployed' | 'snoozed'
 export type RuleSource = 'user' | 'sigmahq'
+export type SigmaHQRuleType = 'detection' | 'threat_hunting' | 'emerging_threats'
 
 export type Rule = {
   id: string
@@ -209,6 +210,7 @@ export type Rule = {
   last_edited_by: string | null
   source: RuleSource
   sigmahq_path: string | null
+  sigmahq_type: SigmaHQRuleType | null
   // Threshold alerting
   threshold_enabled: boolean
   threshold_count: number | null
@@ -624,7 +626,7 @@ export const authApi = {
 export type SigmaHQStatus = {
   cloned: boolean
   commit_hash: string | null
-  rule_count: number | null
+  rule_counts: Record<string, number> | null
   repo_url: string | null
 }
 
@@ -632,7 +634,7 @@ export type SigmaHQSyncResponse = {
   success: boolean
   message: string
   commit_hash: string | null
-  rule_count: number | null
+  rule_counts: Record<string, number> | null
   error: string | null
 }
 
@@ -672,18 +674,18 @@ export const sigmahqApi = {
     api.get<SigmaHQStatus>('/sigmahq/status'),
   sync: () =>
     api.post<SigmaHQSyncResponse>('/sigmahq/sync'),
-  getCategories: () =>
-    api.get<SigmaHQCategoryTree>('/sigmahq/rules'),
-  listRulesInCategory: (categoryPath: string) =>
-    api.get<SigmaHQRulesListResponse>(`/sigmahq/rules/list/${categoryPath}`),
-  getRuleContent: (rulePath: string) =>
-    api.get<SigmaHQRuleContent>(`/sigmahq/rules/${rulePath}`),
-  searchRules: (query: string, limit: number = 100) =>
-    api.post<SigmaHQRulesListResponse>('/sigmahq/search', { query, limit }),
-  importRule: (rulePath: string, indexPatternId: string) =>
+  getCategories: (ruleType: SigmaHQRuleType = 'detection') =>
+    api.get<SigmaHQCategoryTree>(`/sigmahq/rules?rule_type=${ruleType}`),
+  listRulesInCategory: (categoryPath: string, ruleType: SigmaHQRuleType = 'detection') =>
+    api.get<SigmaHQRulesListResponse>(`/sigmahq/rules/list/${categoryPath}?rule_type=${ruleType}`),
+  getRuleContent: (rulePath: string, ruleType: SigmaHQRuleType = 'detection') =>
+    api.get<SigmaHQRuleContent>(`/sigmahq/rules/${rulePath}?rule_type=${ruleType}`),
+  searchRules: (query: string, limit: number = 100, ruleType: SigmaHQRuleType = 'detection') =>
+    api.post<SigmaHQRulesListResponse>('/sigmahq/search', { query, limit, rule_type: ruleType }),
+  importRule: (rulePath: string, indexPatternId: string, ruleType: SigmaHQRuleType = 'detection') =>
     api.post<{ success: boolean; rule_id: string; title: string; message: string }>(
       '/sigmahq/import',
-      { rule_path: rulePath, index_pattern_id: indexPatternId }
+      { rule_path: rulePath, index_pattern_id: indexPatternId, rule_type: ruleType }
     ),
 }
 
