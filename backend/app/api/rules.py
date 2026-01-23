@@ -397,22 +397,22 @@ async def test_rule(
             ],
         )
 
-    # Use a dedicated test percolator index
-    test_index = "chad-test-percolator"
+    # Use a unique test percolator index per request (cleaned up after)
+    test_index = f"chad-test-{uuid_module.uuid4()}"
 
-    # Ensure test index exists with percolator mapping
+    # Create test index with percolator mapping and dynamic fields
     try:
-        if not os_client.indices.exists(index=test_index):
-            os_client.indices.create(
-                index=test_index,
-                body={
-                    "mappings": {
-                        "properties": {
-                            "query": {"type": "percolator"},
-                        }
+        os_client.indices.create(
+            index=test_index,
+            body={
+                "mappings": {
+                    "dynamic": True,  # Allow dynamic field mapping for test documents
+                    "properties": {
+                        "query": {"type": "percolator"},
                     }
                 }
-            )
+            }
+        )
     except Exception as e:
         return RuleTestResponse(
             matches=[],
@@ -424,8 +424,8 @@ async def test_rule(
             ],
         )
 
-    # Index the test query temporarily
-    temp_id = f"test-{uuid_module.uuid4()}"
+    # Index the test query
+    temp_id = "test-query"
     percolator_query = result.query.get("query", result.query)
 
     try:
@@ -475,9 +475,9 @@ async def test_rule(
         )
 
     finally:
-        # Always clean up temporary percolator document
+        # Always clean up temporary test index
         try:
-            os_client.delete(index=test_index, id=temp_id, ignore=[404])
+            os_client.indices.delete(index=test_index, ignore=[404])
         except Exception:
             pass  # Best effort cleanup
 
