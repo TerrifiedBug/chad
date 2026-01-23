@@ -53,49 +53,62 @@ class PercolatorService:
         self, index_name: str, source_index_pattern: str | None = None
     ) -> None:
         """
-        Create percolator index if it doesn't exist.
+        Create percolator index if it doesn't exist, and sync field mappings from source.
 
         If source_index_pattern is provided, copies field mappings from the source
         indices so percolator queries can be validated against the correct fields.
+        This also updates mappings on existing percolator indices to handle new fields.
         """
-        if self.client.indices.exists(index=index_name):
-            return
+        index_exists = self.client.indices.exists(index=index_name)
 
-        # Start with base mapping
-        mapping = {
-            "settings": {
-                "index.mapping.total_fields.limit": 10000,
-            },
-            "mappings": {
-                "dynamic": True,
-                "properties": {
-                    "query": {"type": "percolator"},
-                    "rule_id": {"type": "keyword"},
-                    "rule_title": {"type": "text"},
-                    "severity": {"type": "keyword"},
-                    "tags": {"type": "keyword"},
-                    "enabled": {"type": "boolean"},
-                    "created_at": {"type": "date"},
-                    "updated_at": {"type": "date"},
+        if not index_exists:
+            # Start with base mapping for new index
+            mapping = {
+                "settings": {
+                    "index.mapping.total_fields.limit": 10000,
+                },
+                "mappings": {
+                    "dynamic": True,
+                    "properties": {
+                        "query": {"type": "percolator"},
+                        "rule_id": {"type": "keyword"},
+                        "rule_title": {"type": "text"},
+                        "severity": {"type": "keyword"},
+                        "tags": {"type": "keyword"},
+                        "enabled": {"type": "boolean"},
+                        "created_at": {"type": "date"},
+                        "updated_at": {"type": "date"},
+                    }
                 }
             }
-        }
 
-        # Copy field mappings from source index if provided
-        if source_index_pattern:
+            # Copy field mappings from source index if provided
+            if source_index_pattern:
+                try:
+                    source_mappings = self.client.indices.get_mapping(index=source_index_pattern)
+                    if source_mappings:
+                        first_index = list(source_mappings.keys())[0]
+                        source_props = source_mappings[first_index].get("mappings", {}).get("properties", {})
+                        mapping["mappings"]["properties"].update(source_props)
+                except Exception:
+                    pass
+
+            self.client.indices.create(index=index_name, body=mapping)
+        elif source_index_pattern:
+            # Index exists - update mappings to include any new fields from source
             try:
                 source_mappings = self.client.indices.get_mapping(index=source_index_pattern)
                 if source_mappings:
-                    # Get mappings from first matching index
                     first_index = list(source_mappings.keys())[0]
                     source_props = source_mappings[first_index].get("mappings", {}).get("properties", {})
-                    # Merge source properties into our mapping
-                    mapping["mappings"]["properties"].update(source_props)
+                    if source_props:
+                        self.client.indices.put_mapping(
+                            index=index_name,
+                            body={"properties": source_props}
+                        )
             except Exception:
-                # If we can't get source mappings, continue without them
+                # If mapping update fails, continue - deployment will fail with clear error
                 pass
-
-        self.client.indices.create(index=index_name, body=mapping)
 
     def deploy_rule(
         self,
