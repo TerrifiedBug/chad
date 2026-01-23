@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft } from 'lucide-react'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
 
@@ -270,6 +270,28 @@ export default function RuleEditorPage() {
     )
     if (updatedYaml !== yamlContent) {
       setYamlContent(updatedYaml)
+    }
+  }
+
+  const formatYaml = () => {
+    try {
+      const parsed = yaml.load(yamlContent)
+      if (!parsed || typeof parsed !== 'object') {
+        setError('Cannot format: invalid YAML structure')
+        return
+      }
+      // Re-dump with consistent formatting
+      const formatted = yaml.dump(parsed, {
+        indent: 2,
+        lineWidth: -1, // Don't wrap lines
+        quotingType: "'",
+        forceQuotes: false,
+        noRefs: true,
+      })
+      setYamlContent(formatted)
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? `Format failed: ${err.message}` : 'Format failed')
     }
   }
 
@@ -647,6 +669,18 @@ export default function RuleEditorPage() {
           </div>
 
           <div className="border rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between bg-muted/50 px-3 py-1.5 border-b">
+              <span className="text-xs text-muted-foreground">Sigma YAML</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={formatYaml}
+                className="h-6 text-xs"
+              >
+                <AlignLeft className="h-3 w-3 mr-1" />
+                Format
+              </Button>
+            </div>
             <YamlEditor
               value={yamlContent}
               onChange={handleYamlChange}
