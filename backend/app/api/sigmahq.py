@@ -8,7 +8,7 @@ import yaml
 
 from app.api.deps import get_current_user, require_admin
 from app.db.session import get_db
-from app.models.rule import Rule, RuleSource, RuleVersion
+from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.user import User
 from app.schemas.sigmahq import (
     SigmaHQCategoryTree,
@@ -177,7 +177,7 @@ async def import_rule(
         description=metadata.get("description", f"Imported from SigmaHQ: {request.rule_path}"),
         yaml_content=content,
         severity=metadata.get("level", "medium"),
-        status="disabled",  # Always start disabled
+        status=RuleStatus.ENABLED,  # Start enabled but not deployed
         index_pattern_id=request.index_pattern_id,
         created_by=current_user.id,
         source=RuleSource.SIGMAHQ,
