@@ -301,13 +301,14 @@ export default function RulesPage() {
 
     // Add the rule_ids as a JSON body - need to use fetch instead for JSON
     try {
+      const token = localStorage.getItem('chad-token')
       const response = await fetch('/api/export/rules/bulk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ rule_ids: ruleIds }),
-        credentials: 'include',
       })
 
       if (!response.ok) {
@@ -629,7 +630,6 @@ export default function RulesPage() {
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selectedRules.has(rule.id)}
-                      onCheckedChange={() => toggleRuleSelection(rule.id, index, false)}
                       onClick={(e: React.MouseEvent) => {
                         e.stopPropagation()
                         toggleRuleSelection(rule.id, index, e.shiftKey)

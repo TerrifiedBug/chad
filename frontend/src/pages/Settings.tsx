@@ -22,6 +22,26 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+// Helper to download files with auth
+async function downloadWithAuth(url: string, filename: string) {
+  const token = localStorage.getItem('chad-token')
+  const response = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) {
+    throw new Error(`Download failed: ${response.statusText}`)
+  }
+  const blob = await response.blob()
+  const downloadUrl = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = downloadUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(downloadUrl)
+}
+
 type WebhookProvider = 'generic' | 'discord' | 'slack'
 
 type Webhook = {
@@ -1252,7 +1272,13 @@ export default function SettingsPage() {
                 Export all rules in your library as a ZIP archive containing individual YAML files.
               </p>
               <Button
-                onClick={() => window.location.href = '/api/export/rules'}
+                onClick={async () => {
+                  try {
+                    await downloadWithAuth('/api/export/rules', `chad-rules-${new Date().toISOString().slice(0, 10)}.zip`)
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Export failed')
+                  }
+                }}
               >
                 Export All Rules (ZIP)
               </Button>
@@ -1272,7 +1298,13 @@ export default function SettingsPage() {
                 Sensitive data like OpenSearch credentials and API tokens are excluded for security.
               </p>
               <Button
-                onClick={() => window.location.href = '/api/export/config'}
+                onClick={async () => {
+                  try {
+                    await downloadWithAuth('/api/export/config', `chad-config-${new Date().toISOString().slice(0, 10)}.json`)
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Export failed')
+                  }
+                }}
               >
                 Export Configuration (JSON)
               </Button>

@@ -596,7 +596,26 @@ export default function RuleEditorPage() {
           {!isNew && (
             <Button
               variant="outline"
-              onClick={() => window.location.href = `/api/export/rules/${id}`}
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem('chad-token')
+                  const response = await fetch(`/api/export/rules/${id}`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  })
+                  if (!response.ok) throw new Error('Export failed')
+                  const blob = await response.blob()
+                  const url = window.URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `${title.replace(/[^a-z0-9-_]/gi, '_')}.yml`
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  window.URL.revokeObjectURL(url)
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Export failed')
+                }
+              }}
             >
               <Download className="h-4 w-4 mr-2" />
               Export
