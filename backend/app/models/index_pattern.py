@@ -1,7 +1,7 @@
 import secrets
 
 from sqlalchemy import String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
 
@@ -20,4 +20,9 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     auth_token: Mapped[str] = mapped_column(
         String(64), nullable=False, default=generate_auth_token
+    )
+
+    # Relationships
+    field_mappings = relationship(
+        "FieldMapping", back_populates="index_pattern", cascade="all, delete-orphan"
     )
