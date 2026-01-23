@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, Link2 } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
+import { MapFieldsModal } from '@/components/MapFieldsModal'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -135,6 +136,9 @@ export default function RuleEditorPage() {
     fields: string[]
     indexPatternId: string
   }>({ open: false, fields: [], indexPatternId: '' })
+
+  // Map fields modal state
+  const [mapFieldsModalOpen, setMapFieldsModalOpen] = useState(false)
 
   useEffect(() => {
     loadIndexPatterns()
@@ -914,21 +918,6 @@ export default function RuleEditorPage() {
                       </code>
                     ))}
                   </div>
-                  {indexPatternId && (
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="mt-2 h-auto p-0 text-xs"
-                      onClick={() =>
-                        navigate(
-                          `/field-mappings?index_pattern_id=${indexPatternId}&fields=${detectedFields.join(',')}`
-                        )
-                      }
-                    >
-                      <Link2 className="h-3 w-3 mr-1" />
-                      Configure Field Mappings
-                    </Button>
-                  )}
                 </details>
               )}
 
@@ -1220,12 +1209,10 @@ export default function RuleEditorPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="h-5 w-5" />
-              Unmapped Fields Detected
+              Deploy Failed
             </DialogTitle>
             <DialogDescription>
-              The following Sigma fields are not found in the target index and
-              have no field mappings configured. You need to create field
-              mappings to deploy this rule.
+              The following Sigma fields have no mapping to your log fields:
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -1240,29 +1227,30 @@ export default function RuleEditorPage() {
               ))}
             </div>
           </div>
-          <DialogFooter className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() =>
-                setUnmappedFieldsDialog((prev) => ({ ...prev, open: false }))
-              }
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="justify-center">
             <Button
               onClick={() => {
-                // Navigate to field mappings page with the index pattern pre-selected
-                navigate(
-                  `/field-mappings?index_pattern_id=${unmappedFieldsDialog.indexPatternId}&fields=${unmappedFieldsDialog.fields.join(',')}`
-                )
+                setUnmappedFieldsDialog((prev) => ({ ...prev, open: false }))
+                setMapFieldsModalOpen(true)
               }}
             >
-              <Link2 className="h-4 w-4 mr-2" />
-              Configure Field Mappings
+              Map Fields
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Map Fields Modal */}
+      <MapFieldsModal
+        open={mapFieldsModalOpen}
+        onOpenChange={setMapFieldsModalOpen}
+        unmappedFields={unmappedFieldsDialog.fields}
+        indexPatternId={unmappedFieldsDialog.indexPatternId}
+        onMappingsSaved={() => {
+          // Re-validate to update detected fields and try deploy again
+          validateRule()
+        }}
+      />
     </div>
   )
 }

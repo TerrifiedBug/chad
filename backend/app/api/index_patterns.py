@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,8 @@ from app.schemas.index_pattern import (
     IndexPatternValidateResponse,
 )
 from app.services.audit import audit_log
-from app.services.opensearch import validate_index_pattern
+from app.utils.request import get_client_ip
+from app.services.opensearch import get_index_fields, validate_index_pattern
 
 router = APIRouter(prefix="/index-patterns", tags=["index-patterns"])
 
@@ -196,6 +197,7 @@ async def delete_index_pattern(
 @router.post("/{pattern_id}/regenerate-token", response_model=IndexPatternTokenResponse)
 async def regenerate_auth_token(
     pattern_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_admin)],
 ):
@@ -227,10 +229,40 @@ async def regenerate_auth_token(
         "index_pattern",
         str(pattern.id),
         {"name": pattern.name},
+        ip_address=get_client_ip(request),
     )
     await db.commit()
 
     return IndexPatternTokenResponse(auth_token=pattern.auth_token)
+
+
+@router.get("/{pattern_id}/fields", response_model=list[str])
+async def get_index_pattern_fields(
+    pattern_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Get available fields from an index pattern's OpenSearch index.
+
+    Returns a list of field names that can be used as mapping targets.
+    """
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == pattern_id)
+    )
+    pattern = result.scalar_one_or_none()
+    if pattern is None:
+        raise HTTPException(status_code=404, detail="Index pattern not found")
+
+    try:
+        fields = get_index_fields(opensearch, pattern.pattern)
+        return sorted(fields)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to get index fields: {e}",
+        )
 
 
 @router.post("/validate", response_model=IndexPatternValidateResponse)

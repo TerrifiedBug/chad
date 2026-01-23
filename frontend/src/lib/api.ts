@@ -435,6 +435,8 @@ export const indexPatternsApi = {
     api.post<IndexPatternValidateResponse>('/index-patterns/validate', { pattern }),
   regenerateToken: (id: string) =>
     api.post<{ auth_token: string }>(`/index-patterns/${id}/regenerate-token`),
+  getFields: (id: string) =>
+    api.get<string[]>(`/index-patterns/${id}/fields`),
 }
 
 // Alert types
