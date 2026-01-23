@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, GitCommit, Rocket, MessageSquare, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,6 +18,16 @@ export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPa
   const [isLoading, setIsLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const activityItems = useMemo(
+    () => activities.filter(a => a.type !== 'version'),
+    [activities]
+  )
+
+  const versionItems = useMemo(
+    () => activities.filter(a => a.type === 'version'),
+    [activities]
+  )
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -115,11 +125,11 @@ export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPa
           <div className="flex-1 overflow-auto p-4 space-y-4">
             {isLoading ? (
               <div className="text-center text-muted-foreground">Loading...</div>
-            ) : activities.filter(a => a.type !== 'version').length === 0 ? (
+            ) : activityItems.length === 0 ? (
               <div className="text-center text-muted-foreground">No activity yet</div>
             ) : (
-              activities.filter(a => a.type !== 'version').map((activity, idx) => (
-                <div key={idx} className="flex gap-3">
+              activityItems.map((activity) => (
+                <div key={`${activity.type}-${activity.timestamp}`} className="flex gap-3">
                   <div className="flex-shrink-0 mt-1">
                     {activity.type === 'deploy' && <Rocket className="h-4 w-4 text-green-500" />}
                     {activity.type === 'undeploy' && <Rocket className="h-4 w-4 text-orange-500" />}
@@ -175,11 +185,11 @@ export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPa
         <TabsContent value="versions" className="flex-1 overflow-auto p-4 space-y-3 mt-0">
           {isLoading ? (
             <div className="text-center text-muted-foreground">Loading...</div>
-          ) : activities.filter(a => a.type === 'version').length === 0 ? (
+          ) : versionItems.length === 0 ? (
             <div className="text-center text-muted-foreground">No versions yet</div>
           ) : (
-            activities.filter(a => a.type === 'version').map((activity, idx) => (
-              <div key={idx} className="flex gap-3 items-start">
+            versionItems.map((activity) => (
+              <div key={`version-${activity.data.version_number}`} className="flex gap-3 items-start">
                 <div className="flex-shrink-0 mt-1">
                   <GitCommit className="h-4 w-4 text-blue-500" />
                 </div>
