@@ -5,12 +5,59 @@ Usage:
     from app.services.audit import audit_log
     await audit_log(db, user_id, "rule.create", "rule", rule.id, {"title": rule.title})
 """
+import logging
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
+from app.models.setting import Setting
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+
+async def _get_opensearch_client_for_audit(db: AsyncSession):
+    """Get OpenSearch client for audit logging if configured and enabled."""
+    from app.core.encryption import decrypt
+    from app.services.opensearch import create_client
+
+    # Check if audit to OpenSearch is enabled
+    audit_setting = await db.execute(
+        select(Setting).where(Setting.key == "audit_opensearch_enabled")
+    )
+    audit_enabled = audit_setting.scalar_one_or_none()
+    if not audit_enabled or not audit_enabled.value.get("enabled", False):
+        return None
+
+    # Get OpenSearch config
+    os_setting = await db.execute(select(Setting).where(Setting.key == "opensearch"))
+    setting = os_setting.scalar_one_or_none()
+    if not setting:
+        return None
+
+    config = setting.value
+    password = config.get("password")
+    if password:
+        try:
+            password = decrypt(password)
+        except Exception:
+            pass
+
+    try:
+        return create_client(
+            host=config["host"],
+            port=config["port"],
+            username=config.get("username"),
+            password=password,
+            use_ssl=config.get("use_ssl", True),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to create OpenSearch client for audit: {e}")
+        return None
 
 
 async def audit_log(
@@ -35,8 +82,18 @@ async def audit_log(
     Returns:
         Created AuditLog entry
     """
+    # Get user email for denormalization
+    user_email = None
+    if user_id:
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if user:
+            user_email = user.email
+
+    # Create PostgreSQL record
     log = AuditLog(
         user_id=user_id,
+        user_email=user_email,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
@@ -44,4 +101,25 @@ async def audit_log(
     )
     db.add(log)
     # Don't commit here - let the caller manage the transaction
+
+    # Optionally write to OpenSearch (non-blocking)
+    try:
+        os_client = await _get_opensearch_client_for_audit(db)
+        if os_client:
+            os_client.index(
+                index="chad-audit-logs",
+                body={
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "user_id": str(user_id) if user_id else None,
+                    "user_email": user_email,
+                    "action": action,
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                    "details": details,
+                },
+            )
+    except Exception as e:
+        # Log warning but don't fail the operation
+        logger.warning(f"Failed to write audit to OpenSearch: {e}")
+
     return log
