@@ -16,6 +16,7 @@ from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, SetupRequest, TokenResponse
 from app.services.audit import audit_log
+from app.utils.request import get_client_ip
 from app.services.rate_limit import (
     is_account_locked,
     record_failed_attempt,
@@ -169,7 +170,7 @@ async def login(
 ):
     # Normalize email to lowercase
     email = request.email.lower()
-    ip_address = http_request.client.host if http_request.client else "unknown"
+    ip_address = get_client_ip(http_request)
 
     # Check if account is locked due to too many failed attempts
     locked, lockout_minutes = await is_account_locked(db, email)
@@ -264,7 +265,7 @@ async def login(
 
     # Generate token with dynamic timeout
     access_token = await create_token_with_dynamic_timeout(str(user.id), db)
-    await audit_log(db, user.id, "user.login", "user", str(user.id), {"email": user.email, "auth_method": "local"})
+    await audit_log(db, user.id, "user.login", "user", str(user.id), {"email": user.email, "auth_method": "local"}, ip_address=ip_address)
     await db.commit()
     return TokenResponse(access_token=access_token)
 

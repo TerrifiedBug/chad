@@ -67,6 +67,7 @@ async def audit_log(
     resource_type: str,
     resource_id: str | None = None,
     details: dict[str, Any] | None = None,
+    ip_address: str | None = None,
 ) -> AuditLog:
     """
     Create an audit log entry.
@@ -90,13 +91,20 @@ async def audit_log(
         if user:
             user_email = user.email
 
+    # Build details dict with ip_address and user_email
+    log_details = details.copy() if details else {}
+    if ip_address:
+        log_details["ip_address"] = ip_address
+    if user_email:
+        log_details["user_email"] = user_email
+
     # Create PostgreSQL record (user_email stored in details for reference)
     log = AuditLog(
         user_id=user_id,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
-        details={**(details or {}), "user_email": user_email} if user_email else details,
+        details=log_details if log_details else None,
     )
     db.add(log)
     # Don't commit here - let the caller manage the transaction
@@ -114,6 +122,7 @@ async def audit_log(
                     "action": action,
                     "resource_type": resource_type,
                     "resource_id": resource_id,
+                    "ip_address": ip_address,
                     "details": details,
                 },
             )
