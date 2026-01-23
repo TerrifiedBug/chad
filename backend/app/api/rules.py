@@ -400,13 +400,17 @@ async def test_rule(
     # Use a unique test percolator index per request (cleaned up after)
     test_index = f"chad-test-{uuid_module.uuid4()}"
 
-    # Create test index with percolator mapping and dynamic fields
+    # Create test index with percolator mapping
+    # map_unmapped_fields_as_text allows queries to reference fields not in mapping
     try:
         os_client.indices.create(
             index=test_index,
             body={
+                "settings": {
+                    "index.percolator.map_unmapped_fields_as_text": True,
+                },
                 "mappings": {
-                    "dynamic": True,  # Allow dynamic field mapping for test documents
+                    "dynamic": True,
                     "properties": {
                         "query": {"type": "percolator"},
                     }
