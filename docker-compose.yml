@@ -30,6 +30,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - chad_data:/data
 
   frontend:
     image: ghcr.io/${GITHUB_REPOSITORY:-local}/chad-frontend:${VERSION:-latest}
@@ -40,3 +42,4 @@ services:
 
 volumes:
   pgdata:
+  chad_data:
