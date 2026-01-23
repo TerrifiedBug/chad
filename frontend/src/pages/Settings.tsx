@@ -117,6 +117,11 @@ export default function SettingsPage() {
   const [sigmahqSyncInterval, setSigmahqSyncInterval] = useState(24)
   const [sigmahqLastSync, setSigmahqLastSync] = useState<string | null>(null)
 
+  // ATT&CK sync settings
+  const [attackSyncEnabled, setAttackSyncEnabled] = useState(false)
+  const [attackSyncInterval, setAttackSyncInterval] = useState(168)
+  const [attackLastSync, setAttackLastSync] = useState<string | null>(null)
+
   // OpenSearch settings
   const [osStatus, setOsStatus] = useState<OpenSearchStatusResponse | null>(null)
   const [osConnectionStatus, setOsConnectionStatus] = useState<{
@@ -235,6 +240,14 @@ export default function SettingsPage() {
         setSigmahqSyncEnabled((sigmahq.enabled as boolean) || false)
         setSigmahqSyncInterval((sigmahq.interval_hours as number) || 24)
         setSigmahqLastSync((sigmahq.last_sync as string) || null)
+      }
+
+      // ATT&CK sync settings
+      if (settings.attack_sync && typeof settings.attack_sync === 'object') {
+        const attack = settings.attack_sync as Record<string, unknown>
+        setAttackSyncEnabled((attack.enabled as boolean) || false)
+        setAttackSyncInterval((attack.interval_hours as number) || 168)
+        setAttackLastSync((attack.last_sync as string) || null)
       }
 
       // Audit OpenSearch settings
@@ -461,6 +474,21 @@ export default function SettingsPage() {
     }
   }
 
+  const saveAttackSync = async () => {
+    setIsSaving(true)
+    try {
+      await settingsApiExtended.update('attack_sync', {
+        enabled: attackSyncEnabled,
+        interval_hours: attackSyncInterval,
+      })
+      showToast('ATT&CK sync settings saved')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const saveAuditOpenSearch = async () => {
     setIsSaving(true)
     try {
@@ -564,7 +592,7 @@ export default function SettingsPage() {
           <TabsTrigger value="sso">SSO</TabsTrigger>
           <TabsTrigger value="ai">AI</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
-          <TabsTrigger value="sigmahq">SigmaHQ</TabsTrigger>
+          <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
           <TabsTrigger value="export">Export</TabsTrigger>
         </TabsList>
 
@@ -1474,7 +1502,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="sigmahq" className="mt-4">
+        <TabsContent value="background-sync" className="mt-4 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>SigmaHQ Auto-Sync</CardTitle>
@@ -1498,13 +1526,13 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="sync-interval">Sync Interval (hours)</Label>
+                <Label htmlFor="sigmahq-sync-interval">Sync Interval</Label>
                 <Select
                   value={sigmahqSyncInterval.toString()}
                   onValueChange={(v) => setSigmahqSyncInterval(parseInt(v))}
                   disabled={!sigmahqSyncEnabled}
                 >
-                  <SelectTrigger id="sync-interval" className="w-48">
+                  <SelectTrigger id="sigmahq-sync-interval" className="w-48">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="z-50 bg-popover">
@@ -1531,6 +1559,77 @@ export default function SettingsPage() {
                   You can also manually sync at any time from the SigmaHQ browser page.
                 </p>
                 <Button onClick={saveSigmahqSync} disabled={isSaving}>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>MITRE ATT&CK Auto-Sync</CardTitle>
+              <CardDescription>
+                Configure automatic synchronization of the MITRE ATT&CK Enterprise framework.
+                When enabled, CHAD will periodically update technique data from the ATT&CK STIX repository.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Enable Auto-Sync</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically sync ATT&CK techniques on a schedule
+                  </p>
+                </div>
+                <Switch
+                  checked={attackSyncEnabled}
+                  onCheckedChange={setAttackSyncEnabled}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="attack-sync-interval">Sync Interval</Label>
+                <Select
+                  value={attackSyncInterval.toString()}
+                  onValueChange={(v) => setAttackSyncInterval(parseInt(v))}
+                  disabled={!attackSyncEnabled}
+                >
+                  <SelectTrigger id="attack-sync-interval" className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover">
+                    <SelectItem value="24">Daily</SelectItem>
+                    <SelectItem value="168">Weekly</SelectItem>
+                    <SelectItem value="336">Every 2 weeks</SelectItem>
+                    <SelectItem value="720">Monthly</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  How often to check for ATT&CK framework updates (weekly recommended)
+                </p>
+              </div>
+
+              {attackLastSync && (
+                <div className="text-sm text-muted-foreground">
+                  Last synced: {new Date(attackLastSync).toLocaleString()}
+                </div>
+              )}
+
+              <div className="pt-4 border-t">
+                <p className="text-sm text-muted-foreground mb-4">
+                  You can also manually sync from the ATT&CK Matrix page.
+                </p>
+                <Button onClick={saveAttackSync} disabled={isSaving}>
                   {isSaving ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
