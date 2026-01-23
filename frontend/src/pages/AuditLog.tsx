@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { DateRange } from 'react-day-picker'
 import { auditApi, AuditLogEntry, AuditLogListResponse } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { DateRangePicker } from '@/components/ui/date-range-picker'
 import {
   Select,
   SelectContent,
@@ -43,8 +44,7 @@ export default function AuditLogPage() {
   // Current filters
   const [actionFilter, setActionFilter] = useState<string>('all')
   const [resourceTypeFilter, setResourceTypeFilter] = useState<string>('all')
-  const [startDate, setStartDate] = useState<string>('')
-  const [endDate, setEndDate] = useState<string>('')
+  const [dateRange, setDateRange] = useState<DateRange | undefined>()
   const [currentPage, setCurrentPage] = useState(0)
 
   // Detail dialog
@@ -57,7 +57,7 @@ export default function AuditLogPage() {
 
   useEffect(() => {
     loadAuditLogs()
-  }, [actionFilter, resourceTypeFilter, startDate, endDate, currentPage])
+  }, [actionFilter, resourceTypeFilter, dateRange, currentPage])
 
   const loadFilterOptions = async () => {
     try {
@@ -82,10 +82,10 @@ export default function AuditLogPage() {
       }
       if (actionFilter !== 'all') params.action = actionFilter
       if (resourceTypeFilter !== 'all') params.resource_type = resourceTypeFilter
-      if (startDate) params.start_date = new Date(startDate).toISOString()
-      if (endDate) {
+      if (dateRange?.from) params.start_date = dateRange.from.toISOString()
+      if (dateRange?.to) {
         // Set end date to end of day
-        const end = new Date(endDate)
+        const end = new Date(dateRange.to)
         end.setHours(23, 59, 59, 999)
         params.end_date = end.toISOString()
       }
@@ -142,8 +142,7 @@ export default function AuditLogPage() {
   const resetFilters = () => {
     setActionFilter('all')
     setResourceTypeFilter('all')
-    setStartDate('')
-    setEndDate('')
+    setDateRange(undefined)
     setCurrentPage(0)
   }
 
@@ -167,7 +166,7 @@ export default function AuditLogPage() {
           <CardTitle className="text-lg">Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>Action</Label>
               <Select value={actionFilter} onValueChange={(v) => { setActionFilter(v); setCurrentPage(0); }}>
@@ -201,19 +200,10 @@ export default function AuditLogPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Start Date</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => { setStartDate(e.target.value); setCurrentPage(0); }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>End Date</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => { setEndDate(e.target.value); setCurrentPage(0); }}
+              <Label>Date Range</Label>
+              <DateRangePicker
+                value={dateRange}
+                onChange={(range) => { setDateRange(range); setCurrentPage(0); }}
               />
             </div>
             <div className="flex items-end gap-2">
