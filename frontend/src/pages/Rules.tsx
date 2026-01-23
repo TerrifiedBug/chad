@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus, RuleSource } from '@/lib/api'
+import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -26,6 +26,7 @@ import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -79,6 +80,10 @@ export default function RulesPage() {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [showBulkSnooze, setShowBulkSnooze] = useState(false)
 
+  // Deployment eligibility state
+  const [deploymentEligibility, setDeploymentEligibility] = useState<DeploymentEligibilityResult | null>(null)
+  const [isCheckingEligibility, setIsCheckingEligibility] = useState(false)
+
   useEffect(() => {
     loadData()
   }, [])
@@ -87,6 +92,29 @@ export default function RulesPage() {
   useEffect(() => {
     localStorage.setItem('rules-view-mode', viewMode)
   }, [viewMode])
+
+  // Check deployment eligibility when selection changes
+  useEffect(() => {
+    if (selectedRules.size === 0) {
+      setDeploymentEligibility(null)
+      return
+    }
+
+    const checkEligibility = async () => {
+      setIsCheckingEligibility(true)
+      try {
+        const result = await rulesApi.checkDeploymentEligibility(Array.from(selectedRules))
+        setDeploymentEligibility(result)
+      } catch (err) {
+        console.error('Failed to check deployment eligibility', err)
+        setDeploymentEligibility(null)
+      } finally {
+        setIsCheckingEligibility(false)
+      }
+    }
+
+    checkEligibility()
+  }, [selectedRules])
 
   const loadData = async () => {
     setIsLoading(true)
@@ -753,48 +781,66 @@ export default function RulesPage() {
 
       {/* Bulk Action Bar - shown when items are selected */}
       {selectedRules.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg p-4 flex items-center gap-4 z-50">
-          <span className="text-sm font-medium">
-            {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''} selected
-          </span>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => handleBulkAction('deploy')} disabled={isBulkOperating}>
-              <Rocket className="mr-2 h-4 w-4" /> Deploy
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating}>
-              <X className="mr-2 h-4 w-4" /> Undeploy
-            </Button>
-            <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline" disabled={isBulkOperating}>
-                  <Clock className="mr-2 h-4 w-4" /> Snooze
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="z-[60]">
-                <DropdownMenuLabel>Snooze Duration</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => handleBulkSnooze(1)}>1 hour</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleBulkSnooze(4)}>4 hours</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleBulkSnooze(8)}>8 hours</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleBulkSnooze(24)}>24 hours</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleBulkSnooze(168)}>1 week</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating}>
-              <RotateCcw className="mr-2 h-4 w-4" /> Unsnooze
-            </Button>
-            <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')} disabled={isBulkOperating}>
-              <Trash2 className="mr-2 h-4 w-4" /> Delete
-            </Button>
-            <Button size="sm" variant="outline" onClick={handleBulkExport} disabled={isBulkOperating}>
-              Export
+        <TooltipProvider>
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg p-4 flex items-center gap-4 z-50">
+            <span className="text-sm font-medium">
+              {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''} selected
+            </span>
+            <div className="flex gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleBulkAction('deploy')}
+                      disabled={isBulkOperating || isCheckingEligibility || (deploymentEligibility?.ineligible?.length ?? 0) > 0}
+                    >
+                      <Rocket className="mr-2 h-4 w-4" /> Deploy
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {(deploymentEligibility?.ineligible?.length ?? 0) > 0 && (
+                  <TooltipContent>
+                    {deploymentEligibility!.ineligible.length} of {selectedRules.size} rules have unmapped fields
+                  </TooltipContent>
+                )}
+              </Tooltip>
+              <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating}>
+                <X className="mr-2 h-4 w-4" /> Undeploy
+              </Button>
+              <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" disabled={isBulkOperating}>
+                    <Clock className="mr-2 h-4 w-4" /> Snooze
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="z-[60]">
+                  <DropdownMenuLabel>Snooze Duration</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => handleBulkSnooze(1)}>1 hour</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkSnooze(4)}>4 hours</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkSnooze(8)}>8 hours</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkSnooze(24)}>24 hours</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkSnooze(168)}>1 week</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating}>
+                <RotateCcw className="mr-2 h-4 w-4" /> Unsnooze
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')} disabled={isBulkOperating}>
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleBulkExport} disabled={isBulkOperating}>
+                Export
+              </Button>
+            </div>
+            <Button size="sm" variant="ghost" onClick={clearSelection}>
+              Cancel
             </Button>
           </div>
-          <Button size="sm" variant="ghost" onClick={clearSelection}>
-            Cancel
-          </Button>
-        </div>
+        </TooltipProvider>
       )}
 
       {/* Bulk Delete Confirmation */}

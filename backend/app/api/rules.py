@@ -57,6 +57,20 @@ class SnoozeRequest(BaseModel):
     indefinite: bool = False
 
 
+class DeploymentEligibilityRequest(BaseModel):
+    rule_ids: list[UUID]
+
+
+class IneligibleRule(BaseModel):
+    id: UUID
+    reason: str
+
+
+class DeploymentEligibilityResponse(BaseModel):
+    eligible: list[UUID]
+    ineligible: list[IneligibleRule]
+
+
 class RuleCommentCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=10000)
 
@@ -460,6 +474,82 @@ async def validate_rule(
         opensearch_query=result.query,
         fields=list(result.fields or set()),
     )
+
+
+@router.post("/check-deployment-eligibility", response_model=DeploymentEligibilityResponse)
+async def check_deployment_eligibility(
+    request: DeploymentEligibilityRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    opensearch: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Check which rules can be deployed (have all fields mapped)."""
+    eligible: list[UUID] = []
+    ineligible: list[IneligibleRule] = []
+
+    for rule_id in request.rule_ids:
+        rule = await db.get(Rule, rule_id)
+        if not rule:
+            ineligible.append(IneligibleRule(id=rule_id, reason="Rule not found"))
+            continue
+
+        # Check field mappings
+        index_pattern = await db.get(IndexPattern, rule.index_pattern_id)
+        if not index_pattern:
+            ineligible.append(IneligibleRule(id=rule_id, reason="Index pattern not found"))
+            continue
+
+        try:
+            # Get detected fields from rule
+            result = sigma_service.translate_and_validate(rule.yaml_content)
+            if not result.success:
+                errors_str = ", ".join(e.message for e in (result.errors or []))
+                ineligible.append(IneligibleRule(id=rule_id, reason=f"Invalid rule: {errors_str}"))
+                continue
+
+            detected_fields = list(result.fields or set())
+
+            if not detected_fields:
+                # No fields to check, rule is eligible
+                eligible.append(rule_id)
+                continue
+
+            # Get fields from the OpenSearch index
+            try:
+                if opensearch:
+                    index_fields = set(get_index_fields(opensearch, index_pattern.pattern))
+                else:
+                    index_fields = set()
+            except Exception:
+                index_fields = set()
+
+            # Check mappings - resolve field mappings for this rule
+            mappings = await resolve_mappings(db, detected_fields, rule.index_pattern_id)
+
+            # Find unmapped fields (fields that don't exist in index AND have no valid mapping)
+            unmapped = []
+            for field in detected_fields:
+                # Field is OK if it has a mapping AND the target exists, OR it exists directly
+                if field in mappings and mappings[field] is not None:
+                    target_field = mappings[field]
+                    if target_field in index_fields:
+                        continue  # Has a valid mapping to an existing field
+                    # Mapping target doesn't exist - still unmapped
+                elif field in index_fields:
+                    continue  # Exists directly in index
+                unmapped.append(field)
+
+            if unmapped:
+                ineligible.append(IneligibleRule(
+                    id=rule_id,
+                    reason=f"Unmapped fields: {', '.join(unmapped)}"
+                ))
+            else:
+                eligible.append(rule_id)
+        except Exception as e:
+            ineligible.append(IneligibleRule(id=rule_id, reason=str(e)))
+
+    return DeploymentEligibilityResponse(eligible=eligible, ineligible=ineligible)
 
 
 @router.post("/test", response_model=RuleTestResponse)

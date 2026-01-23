@@ -306,6 +306,17 @@ export type BulkOperationResult = {
   failed: { id: string; error: string }[]
 }
 
+// Deployment eligibility types
+export type IneligibleRule = {
+  id: string
+  reason: string
+}
+
+export type DeploymentEligibilityResult = {
+  eligible: string[]
+  ineligible: IneligibleRule[]
+}
+
 // Rules API
 export const rulesApi = {
   list: (params?: { status?: RuleStatus; source?: RuleSource }) => {
@@ -377,6 +388,8 @@ export const rulesApi = {
     api.post<BulkOperationResult>('/rules/bulk/deploy', { rule_ids: ruleIds }),
   bulkUndeploy: (ruleIds: string[]) =>
     api.post<BulkOperationResult>('/rules/bulk/undeploy', { rule_ids: ruleIds }),
+  checkDeploymentEligibility: (ruleIds: string[]) =>
+    api.post<DeploymentEligibilityResult>('/rules/check-deployment-eligibility', { rule_ids: ruleIds }),
   // Activity and comments
   getActivity: (ruleId: string, skip?: number, limit?: number) => {
     const params = new URLSearchParams()
