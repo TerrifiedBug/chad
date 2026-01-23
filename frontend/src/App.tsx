@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
+import { ToastProvider } from '@/components/ui/toast-provider'
 import { Header } from '@/components/Header'
 import { AdminRoute } from '@/components/AdminRoute'
 import SetupPage from '@/pages/Setup'
@@ -218,9 +219,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="chad-ui-theme">
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </ToastProvider>
     </ThemeProvider>
   )
 }

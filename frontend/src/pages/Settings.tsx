@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse } from '@/lib/api'
+import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -71,10 +72,9 @@ const providerInfo: Record<WebhookProvider, { label: string; placeholder: string
 }
 
 export default function SettingsPage() {
+  const { showToast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   // Webhook settings
   const [webhooks, setWebhooks] = useState<Webhook[]>([])
@@ -339,17 +339,14 @@ export default function SettingsPage() {
 
   const saveWebhooks = async () => {
     setIsSaving(true)
-    setError('')
-    setSuccess('')
     try {
       await settingsApiExtended.update('webhooks', {
         enabled: webhooksEnabled,
         webhooks: webhooks,
       })
-      setSuccess('Webhook settings saved')
-      setTimeout(() => setSuccess(''), 3000)
+      showToast('Webhook settings saved')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -357,16 +354,13 @@ export default function SettingsPage() {
 
   const saveSession = async () => {
     setIsSaving(true)
-    setError('')
-    setSuccess('')
     try {
       await settingsApiExtended.update('session', {
         timeout_minutes: sessionTimeout,
       })
-      setSuccess('Session settings saved')
-      setTimeout(() => setSuccess(''), 3000)
+      showToast('Session settings saved')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -374,18 +368,15 @@ export default function SettingsPage() {
 
   const saveRateLimiting = async () => {
     setIsSaving(true)
-    setError('')
-    setSuccess('')
     try {
       await settingsApiExtended.update('rate_limiting', {
         enabled: rateLimitEnabled,
         max_attempts: rateLimitMaxAttempts,
         lockout_minutes: rateLimitLockoutMinutes,
       })
-      setSuccess('Rate limiting settings saved')
-      setTimeout(() => setSuccess(''), 3000)
+      showToast('Rate limiting settings saved')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -393,8 +384,6 @@ export default function SettingsPage() {
 
   const saveSso = async () => {
     setIsSaving(true)
-    setError('')
-    setSuccess('')
     try {
       // Build SSO config - only include client_secret if it was changed
       const ssoConfig: Record<string, unknown> = {
@@ -416,11 +405,10 @@ export default function SettingsPage() {
       }
 
       await settingsApiExtended.update('sso', ssoConfig)
-      setSuccess('SSO settings saved')
+      showToast('SSO settings saved')
       setSsoClientSecret('') // Clear the secret field after save
-      setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -428,17 +416,14 @@ export default function SettingsPage() {
 
   const saveSigmahqSync = async () => {
     setIsSaving(true)
-    setError('')
-    setSuccess('')
     try {
       await settingsApiExtended.update('sigmahq_sync', {
         enabled: sigmahqSyncEnabled,
         interval_hours: sigmahqSyncInterval,
       })
-      setSuccess('SigmaHQ sync settings saved')
-      setTimeout(() => setSuccess(''), 3000)
+      showToast('SigmaHQ sync settings saved')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -446,16 +431,13 @@ export default function SettingsPage() {
 
   const saveAuditOpenSearch = async () => {
     setIsSaving(true)
-    setError('')
-    setSuccess('')
     try {
       await settingsApiExtended.update('audit_opensearch_enabled', {
         enabled: auditOpenSearchEnabled,
       })
-      setSuccess('Audit log settings saved')
-      setTimeout(() => setSuccess(''), 3000)
+      showToast('Audit log settings saved')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -463,14 +445,11 @@ export default function SettingsPage() {
 
   const saveAppUrl = async () => {
     setIsSaving(true)
-    setError('')
-    setSuccess('')
     try {
       await settingsApi.setAppUrl(appUrl)
-      setSuccess('Application URL saved')
-      setTimeout(() => setSuccess(''), 3000)
+      showToast('Application URL saved')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -502,17 +481,6 @@ export default function SettingsPage() {
           </Button>
         </div>
       </div>
-
-      {error && (
-        <div className="bg-destructive/10 text-destructive p-3 rounded-md">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 p-3 rounded-md">
-          {success}
-        </div>
-      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
@@ -844,11 +812,11 @@ export default function SettingsPage() {
                                   ...prev,
                                   [role]: { ...prev[role], [perm]: checked },
                                 }))
-                                setSuccess(`Permission updated for ${role}`)
-                                setTimeout(() => setSuccess(''), 3000)
+                                showToast(`Permission updated for ${role}`)
                               } catch (err) {
-                                setError(
-                                  err instanceof Error ? err.message : 'Failed to update permission'
+                                showToast(
+                                  err instanceof Error ? err.message : 'Failed to update permission',
+                                  'error'
                                 )
                               }
                             }}
@@ -1276,7 +1244,7 @@ export default function SettingsPage() {
                   try {
                     await downloadWithAuth('/api/export/rules', `chad-rules-${new Date().toISOString().slice(0, 10)}.zip`)
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Export failed')
+                    showToast(err instanceof Error ? err.message : 'Export failed', 'error')
                   }
                 }}
               >
@@ -1302,7 +1270,7 @@ export default function SettingsPage() {
                   try {
                     await downloadWithAuth('/api/export/config', `chad-config-${new Date().toISOString().slice(0, 10)}.json`)
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Export failed')
+                    showToast(err instanceof Error ? err.message : 'Export failed', 'error')
                   }
                 }}
               >
