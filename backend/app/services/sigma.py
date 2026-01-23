@@ -181,12 +181,27 @@ class SigmaService:
         """
         fields: set[str] = set()
 
+        def extract_from_item(item) -> None:
+            """Recursively extract fields from detection items."""
+            # Check if this item has a field attribute
+            if hasattr(item, "field") and item.field:
+                fields.add(str(item.field))
+
+            # Handle nested detection items (AND/OR groups)
+            if hasattr(item, "detection_items"):
+                for nested_item in item.detection_items:
+                    extract_from_item(nested_item)
+
+            # Handle plain detection items with field mappings
+            if hasattr(item, "detection_item"):
+                extract_from_item(item.detection_item)
+
         # rule.detection.detections is a dict of named detection items
         for detection_name, detection in rule.detection.detections.items():
-            # Each detection has detection_items list
-            for item in detection.detection_items:
-                if hasattr(item, "field") and item.field:
-                    fields.add(item.field)
+            # Each detection can have detection_items
+            if hasattr(detection, "detection_items"):
+                for item in detection.detection_items:
+                    extract_from_item(item)
 
         return fields
 

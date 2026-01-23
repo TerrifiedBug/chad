@@ -82,6 +82,7 @@ export default function RuleEditorPage() {
   const [isValidating, setIsValidating] = useState(false)
   const [isValid, setIsValid] = useState<boolean | null>(null)
   const [generatedQuery, setGeneratedQuery] = useState<Record<string, unknown> | null>(null)
+  const [detectedFields, setDetectedFields] = useState<string[]>([])
 
   // Test state
   const [sampleLog, setSampleLog] = useState('{\n  "CommandLine": "cmd.exe /c whoami"\n}')
@@ -221,11 +222,13 @@ export default function RuleEditorPage() {
       setValidationErrors(result.errors)
       setIsValid(result.valid)
       setGeneratedQuery(result.opensearch_query || null)
+      setDetectedFields(result.fields || [])
     } catch (err) {
       setValidationErrors([
         { type: 'error', message: err instanceof Error ? err.message : 'Validation failed' },
       ])
       setIsValid(false)
+      setDetectedFields([])
     } finally {
       setIsValidating(false)
     }
@@ -893,6 +896,30 @@ export default function RuleEditorPage() {
                       </span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {isValid && detectedFields.length > 0 && (
+                <details className="mt-4" open>
+                  <summary className="text-sm text-muted-foreground cursor-pointer">
+                    Detected Fields ({detectedFields.length})
+                  </summary>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {detectedFields.map((field) => (
+                      <code
+                        key={field}
+                        className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono"
+                      >
+                        {field}
+                      </code>
+                    ))}
+                  </div>
+                </details>
+              )}
+
+              {isValid && detectedFields.length === 0 && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  No detection fields found in rule
                 </div>
               )}
 
