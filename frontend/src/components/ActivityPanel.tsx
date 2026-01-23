@@ -5,19 +5,24 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { rulesApi, ActivityItem } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
+import { RestoreDiffModal } from './RestoreDiffModal'
 
 interface ActivityPanelProps {
   ruleId: string
+  currentYaml: string
+  currentVersion: number
   isOpen: boolean
   onClose: () => void
   onRestore: (versionNumber: number) => void
 }
 
-export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPanelProps) {
+export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onClose, onRestore }: ActivityPanelProps) {
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [restoreTarget, setRestoreTarget] = useState<{ versionNumber: number; yaml: string } | null>(null)
+  const [isRestoring, setIsRestoring] = useState(false)
 
   const activityItems = useMemo(
     () => activities.filter(a => a.type !== 'version'),
@@ -89,6 +94,21 @@ export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPa
       console.error('Failed to add comment:', err)
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleRestoreClick = (versionNumber: number, yaml: string) => {
+    setRestoreTarget({ versionNumber, yaml })
+  }
+
+  const handleRestoreConfirm = async () => {
+    if (!restoreTarget) return
+    setIsRestoring(true)
+    try {
+      await onRestore(restoreTarget.versionNumber)
+      setRestoreTarget(null)
+    } finally {
+      setIsRestoring(false)
     }
   }
 
@@ -207,7 +227,7 @@ export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPa
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs"
-                  onClick={() => onRestore(Number(activity.data.version_number))}
+                  onClick={() => handleRestoreClick(Number(activity.data.version_number), String(activity.data.yaml_content))}
                 >
                   <RotateCcw className="h-3 w-3 mr-1" />
                   Restore
@@ -218,6 +238,19 @@ export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPa
         </TabsContent>
       </Tabs>
     </div>
+
+      {restoreTarget && (
+        <RestoreDiffModal
+          isOpen={!!restoreTarget}
+          onClose={() => setRestoreTarget(null)}
+          onConfirm={handleRestoreConfirm}
+          currentYaml={currentYaml}
+          targetYaml={restoreTarget.yaml}
+          targetVersion={restoreTarget.versionNumber}
+          currentVersion={currentVersion}
+          isRestoring={isRestoring}
+        />
+      )}
     </>
   )
 }
