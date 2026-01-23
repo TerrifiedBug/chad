@@ -5,6 +5,11 @@ from app.models.field_mapping import FieldMapping, MappingOrigin
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
 from app.models.login_attempt import LoginAttempt
+from app.models.notification_settings import (
+    AlertNotificationSetting,
+    SystemNotificationSetting,
+    Webhook,
+)
 from app.models.role_permission import DEFAULT_ROLE_PERMISSIONS, RolePermission
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
@@ -14,6 +19,7 @@ from app.models.threshold_state import ThresholdMatch
 from app.models.user import User, UserRole
 
 __all__ = [
+    "AlertNotificationSetting",
     "APIKey",
     "AttackTechnique",
     "AuditLog",
@@ -33,7 +39,9 @@ __all__ = [
     "RuleStatus",
     "RuleVersion",
     "Setting",
+    "SystemNotificationSetting",
     "ThresholdMatch",
     "User",
     "UserRole",
+    "Webhook",
 ]
