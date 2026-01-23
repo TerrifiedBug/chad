@@ -7,7 +7,6 @@ import yaml
 from sigma.backends.opensearch import OpensearchLuceneBackend
 from sigma.collection import SigmaCollection
 from sigma.exceptions import SigmaError
-from sigma.pipelines.base import Pipeline
 from sigma.processing.pipeline import ProcessingItem, ProcessingPipeline
 from sigma.processing.transformations import FieldMappingTransformation
 from sigma.rule import SigmaRule
@@ -137,7 +136,7 @@ class SigmaService:
         return errors
 
     def translate_to_opensearch(
-        self, rule: SigmaRule, pipeline: Pipeline | None = None
+        self, rule: SigmaRule, pipeline: ProcessingPipeline | None = None
     ) -> dict[str, Any]:
         """
         Convert a SigmaRule to OpenSearch percolator query DSL.
@@ -152,12 +151,14 @@ class SigmaService:
         # Create a collection with single rule
         collection = SigmaCollection(init_rules=[rule])
 
-        # Apply pipeline if provided
+        # Use backend with pipeline if provided, otherwise use default backend
         if pipeline:
-            collection = pipeline.apply(collection)
+            backend = OpensearchLuceneBackend(processing_pipeline=pipeline)
+        else:
+            backend = self._backend
 
         # Convert to OpenSearch query
-        queries = self._backend.convert(collection)
+        queries = backend.convert(collection)
 
         if not queries:
             return {"query": {"match_none": {}}}
