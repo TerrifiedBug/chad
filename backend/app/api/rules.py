@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field
@@ -10,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional
-from app.utils.request import get_client_ip
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.index_pattern import IndexPattern
@@ -41,11 +41,13 @@ from app.schemas.rule_exception import (
     RuleExceptionResponse,
     RuleExceptionUpdate,
 )
+from app.services.attack_sync import update_rule_attack_mappings
 from app.services.audit import audit_log
 from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
 from app.services.sigma import sigma_service
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/rules", tags=["rules"])
 
@@ -184,6 +186,17 @@ async def create_rule(
 
     await db.commit()
     await db.refresh(rule)
+
+    # Update ATT&CK mappings from tags
+    try:
+        parsed = yaml.safe_load(rule_data.yaml_content)
+        if parsed and isinstance(parsed, dict):
+            tags = parsed.get("tags", [])
+            await update_rule_attack_mappings(db, rule.id, tags)
+            await db.commit()
+    except Exception:
+        pass  # Don't fail rule creation if tag parsing fails
+
     await audit_log(db, current_user.id, "rule.create", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
     await db.commit()
     return rule
@@ -305,6 +318,18 @@ async def update_rule(
 
     await db.commit()
     await db.refresh(rule)
+
+    # Update ATT&CK mappings if yaml_content changed
+    if "yaml_content" in update_data:
+        try:
+            parsed = yaml.safe_load(update_data["yaml_content"])
+            if parsed and isinstance(parsed, dict):
+                tags = parsed.get("tags", [])
+                await update_rule_attack_mappings(db, rule.id, tags)
+                await db.commit()
+        except Exception:
+            pass  # Don't fail rule update if tag parsing fails
+
     await audit_log(db, current_user.id, "rule.update", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
     await db.commit()
 
@@ -670,7 +695,6 @@ async def deploy_rule(
     percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
 
     # Extract rule metadata from YAML for the percolator doc
-    import yaml
     parsed_rule = yaml.safe_load(rule.yaml_content)
     tags = parsed_rule.get("tags", [])
 
@@ -689,7 +713,7 @@ async def deploy_rule(
     )
 
     # Update rule deployment tracking
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     current_version = rule.versions[0].version_number if rule.versions else 1
     rule.deployed_at = now
     rule.deployed_version = current_version
@@ -848,7 +872,6 @@ async def rollback_rule(
                 percolator = PercolatorService(os_client)
                 percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
 
-                import yaml
                 parsed_rule = yaml.safe_load(rule.yaml_content)
                 tags = parsed_rule.get("tags", [])
 
@@ -913,7 +936,7 @@ async def snooze_rule(
         rule.status = RuleStatus.SNOOZED
         snooze_until = None
     else:
-        snooze_until = datetime.now(timezone.utc) + timedelta(hours=snooze_request.hours)
+        snooze_until = datetime.now(UTC) + timedelta(hours=snooze_request.hours)
         rule.snooze_until = snooze_until
         rule.snooze_indefinite = False
         rule.status = RuleStatus.SNOOZED
@@ -1202,8 +1225,6 @@ async def bulk_deploy_rules(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Deploy multiple rules to OpenSearch."""
-    import yaml
-
     success = []
     failed = []
 
@@ -1265,7 +1286,7 @@ async def bulk_deploy_rules(
                 )
 
                 # Update rule deployment tracking
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 current_version = rule.versions[0].version_number if rule.versions else 1
                 rule.deployed_at = now
                 rule.deployed_version = current_version
