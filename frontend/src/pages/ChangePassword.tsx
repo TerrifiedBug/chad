@@ -40,6 +40,7 @@ export default function ChangePasswordPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [isTransitioning, setIsTransitioning] = useState(false)
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -48,6 +49,25 @@ export default function ChangePasswordPage() {
   const isForced = user?.must_change_password
   const complexity = validatePasswordComplexity(newPassword)
   const allRequirementsMet = Object.values(complexity).every(Boolean)
+
+  // Show success screen while transitioning to prevent flash
+  if (isTransitioning) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Check className="h-5 w-5 text-green-600" />
+              Password Changed
+            </CardTitle>
+            <CardDescription>
+              Your password has been updated successfully. Redirecting...
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    )
+  }
 
   // SSO users should not be able to access this page
   if (user?.auth_method === 'sso') {
@@ -92,15 +112,13 @@ export default function ChangePasswordPage() {
     try {
       await authApi.changePassword(currentPassword, newPassword)
       setSuccess('Password changed successfully')
-      setCurrentPassword('')
-      setNewPassword('')
-      setConfirmPassword('')
+      setIsTransitioning(true)
       // Refresh user data to clear must_change_password flag
       if (refreshUser) {
         await refreshUser()
       }
       // Redirect after a short delay
-      setTimeout(() => navigate('/'), 2000)
+      setTimeout(() => navigate('/'), 1500)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to change password')
     } finally {
