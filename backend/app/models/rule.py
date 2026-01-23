@@ -43,7 +43,7 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     deployed_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Source tracking
-    source: Mapped[RuleSource] = mapped_column(default=RuleSource.USER)
+    source: Mapped[RuleSource] = mapped_column(String(50), default=RuleSource.USER)
     sigmahq_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     index_pattern_id: Mapped[uuid.UUID] = mapped_column(
