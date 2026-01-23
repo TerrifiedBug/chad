@@ -1,3 +1,6 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -20,12 +23,35 @@ from app.api.sigmahq import router as sigmahq_router
 from app.api.stats import router as stats_router
 from app.api.users import router as users_router
 from app.core.config import settings
+from app.services.scheduler import scheduler_service
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application startup and shutdown."""
+    # Startup
+    logger.info("Starting scheduler service")
+    scheduler_service.start()
+    try:
+        await scheduler_service.sync_jobs_from_settings()
+    except Exception as e:
+        logger.warning(f"Failed to sync scheduler jobs on startup: {e}")
+
+    yield
+
+    # Shutdown
+    logger.info("Stopping scheduler service")
+    scheduler_service.stop()
+
 
 app = FastAPI(
     title=settings.APP_NAME,
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Session middleware (required for OAuth state)
