@@ -899,7 +899,7 @@ export default function RuleEditorPage() {
                 </div>
               )}
 
-              {isValid && detectedFields.length > 0 && (
+              {detectedFields.length > 0 && (
                 <details className="mt-4" open>
                   <summary className="text-sm text-muted-foreground cursor-pointer">
                     Detected Fields ({detectedFields.length})
@@ -917,7 +917,7 @@ export default function RuleEditorPage() {
                 </details>
               )}
 
-              {isValid && detectedFields.length === 0 && (
+              {isValid !== null && detectedFields.length === 0 && (
                 <div className="mt-2 text-xs text-muted-foreground">
                   No detection fields found in rule
                 </div>
