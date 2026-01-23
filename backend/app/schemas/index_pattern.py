@@ -9,6 +9,10 @@ class IndexPatternBase(BaseModel):
     pattern: str
     percolator_index: str
     description: str | None = None
+    health_no_data_minutes: int | None = None
+    health_error_rate_percent: float | None = None
+    health_latency_ms: int | None = None
+    health_alerting_enabled: bool = True
 
 
 class IndexPatternCreate(IndexPatternBase):
@@ -20,6 +24,10 @@ class IndexPatternUpdate(BaseModel):
     pattern: str | None = None
     percolator_index: str | None = None
     description: str | None = None
+    health_no_data_minutes: int | None = None
+    health_error_rate_percent: float | None = None
+    health_latency_ms: int | None = None
+    health_alerting_enabled: bool | None = None
 
 
 class IndexPatternResponse(IndexPatternBase):

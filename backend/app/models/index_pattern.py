@@ -1,6 +1,6 @@
 import secrets
 
-from sqlalchemy import String, Text
+from sqlalchemy import Boolean, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
@@ -21,6 +21,18 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     auth_token: Mapped[str] = mapped_column(
         String(64), nullable=False, default=generate_auth_token
     )
+
+    # Health alerting thresholds (nullable = use global defaults)
+    health_no_data_minutes: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )  # Minutes of no data before alerting (default: 15)
+    health_error_rate_percent: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # Error rate percentage threshold (default: 5.0)
+    health_latency_ms: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )  # Latency threshold in ms (default: 1000)
+    health_alerting_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships
     field_mappings = relationship(
