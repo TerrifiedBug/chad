@@ -26,7 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, FolderTree, Plus, Search, Table as TableIcon, X } from 'lucide-react'
+import { ChevronDown, FileCode, FileText, FolderTree, Plus, Search, Table as TableIcon, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { RulesTreeView } from '@/components/RulesTreeView'
@@ -646,6 +646,7 @@ export default function RulesPage() {
                   />
                 </TableHead>
                 <TableHead>Title</TableHead>
+                <TableHead>Source</TableHead>
                 <TableHead>Severity</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Index Pattern</TableHead>
@@ -674,6 +675,21 @@ export default function RulesPage() {
                     />
                   </TableCell>
                   <TableCell className="font-medium">{rule.title}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      {rule.source === 'sigmahq' ? (
+                        <>
+                          <FileCode className="h-4 w-4 text-blue-500" />
+                          <span className="text-xs text-muted-foreground">SigmaHQ</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">User</span>
+                        </>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <span
                       className={`px-2 py-1 rounded text-xs font-medium ${

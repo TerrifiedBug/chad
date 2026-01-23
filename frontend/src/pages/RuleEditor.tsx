@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText } from 'lucide-react'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
 
@@ -108,6 +108,10 @@ export default function RuleEditorPage() {
   // Activity panel state
   const [isActivityOpen, setIsActivityOpen] = useState(false)
 
+  // Rule source state (for existing rules)
+  const [ruleSource, setRuleSource] = useState<'user' | 'sigmahq'>('user')
+  const [sigmahqPath, setSigmahqPath] = useState<string | null>(null)
+
   useEffect(() => {
     loadIndexPatterns()
     if (!isNew) {
@@ -171,6 +175,9 @@ export default function RuleEditorPage() {
       if (rule.versions && rule.versions.length > 0) {
         setCurrentVersion(rule.versions[0].version_number)
       }
+      // Track rule source
+      setRuleSource(rule.source as 'user' | 'sigmahq' || 'user')
+      setSigmahqPath(rule.sigmahq_path || null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule')
     } finally {
@@ -537,10 +544,24 @@ export default function RuleEditorPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">
-              {isNew ? 'Create Rule' : 'Edit Rule'}
-              {!isNew && <span className="text-sm font-normal text-muted-foreground ml-2">v{currentVersion}</span>}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">
+                {isNew ? 'Create Rule' : 'Edit Rule'}
+                {!isNew && <span className="text-sm font-normal text-muted-foreground ml-2">v{currentVersion}</span>}
+              </h1>
+              {!isNew && ruleSource === 'sigmahq' && (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs" title={sigmahqPath ? `Imported from: ${sigmahqPath}` : 'Imported from SigmaHQ'}>
+                  <FileCode className="h-3 w-3" />
+                  SigmaHQ
+                </div>
+              )}
+              {!isNew && ruleSource === 'user' && (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded text-xs">
+                  <FileText className="h-3 w-3" />
+                  User-created
+                </div>
+              )}
+            </div>
             {!isNew && deployedAt && (
               <p className={`text-xs ${deployedVersion === currentVersion ? 'text-green-600' : 'text-yellow-600'}`}>
                 {deployedVersion === currentVersion

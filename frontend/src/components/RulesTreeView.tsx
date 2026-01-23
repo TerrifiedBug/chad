@@ -182,7 +182,7 @@ export function RulesTreeView({
                             </div>
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent side="right">
+                        <TooltipContent side="top" align="start">
                           <p>{getLastEditedText(rule)}</p>
                         </TooltipContent>
                       </Tooltip>

@@ -371,6 +371,12 @@ export default function AuditLogPage() {
                     <p className="font-mono text-sm">{selectedEntry.user_id}</p>
                   </div>
                 )}
+                {selectedEntry.details?.ip_address && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">IP Address:</span>
+                    <p className="font-mono text-sm">{String(selectedEntry.details.ip_address)}</p>
+                  </div>
+                )}
               </div>
               {selectedEntry.details && Object.keys(selectedEntry.details).length > 0 && (
                 <div>

@@ -1242,7 +1242,7 @@ async def get_rule_activity(
                 user_email=v.author.email if v.author else None,
                 data={
                     "version_number": v.version_number,
-                    # yaml_content excluded - can be fetched via /rules/{rule_id}/versions/{version} endpoint
+                    "yaml_content": v.yaml_content,
                 },
             )
         )
