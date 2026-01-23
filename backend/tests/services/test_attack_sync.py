@@ -243,8 +243,8 @@ class TestAttackSyncService:
         """Test sync handles network errors gracefully."""
         service = AttackSyncService()
 
-        with patch("app.services.attack_sync.MitreAttackData") as mock_mitre:
-            mock_mitre.side_effect = Exception("Network error")
+        with patch.object(service, "_fetch_attack_data") as mock_fetch:
+            mock_fetch.side_effect = Exception("Network error")
 
             result = await service.sync(test_session)
 
@@ -256,41 +256,30 @@ class TestAttackSyncService:
         """Test sync properly processes ATT&CK data."""
         service = AttackSyncService()
 
-        # Mock MitreAttackData
-        with patch("app.services.attack_sync.MitreAttackData") as mock_mitre:
-            mock_attack_data = MagicMock()
+        # Mock technique data
+        mock_technique = {
+            "name": "Command and Scripting Interpreter",
+            "description": "Test description",
+            "external_references": [
+                {
+                    "source_name": "mitre-attack",
+                    "external_id": "T1059",
+                    "url": "https://attack.mitre.org/techniques/T1059",
+                }
+            ],
+            "kill_chain_phases": [
+                {"kill_chain_name": "mitre-attack", "phase_name": "execution"}
+            ],
+            "x_mitre_platforms": ["Windows", "Linux"],
+            "x_mitre_data_sources": ["Process: Process Creation"],
+        }
 
-            # Mock technique data
-            mock_technique = {
-                "name": "Command and Scripting Interpreter",
-                "description": "Test description",
-                "external_references": [
-                    {
-                        "source_name": "mitre-attack",
-                        "external_id": "T1059",
-                        "url": "https://attack.mitre.org/techniques/T1059",
-                    }
-                ],
-                "kill_chain_phases": [
-                    {"kill_chain_name": "mitre-attack", "phase_name": "execution"}
-                ],
-                "x_mitre_platforms": ["Windows", "Linux"],
-                "x_mitre_data_sources": ["Process: Process Creation"],
-            }
-
-            # Mock tactic data
-            mock_tactic = {
-                "kill_chain_phases": [
-                    {"kill_chain_name": "mitre-attack", "phase_name": "execution"}
-                ],
-                "external_references": [
-                    {"source_name": "mitre-attack", "external_id": "TA0002"}
-                ],
-            }
-
-            mock_attack_data.get_techniques.return_value = [mock_technique]
-            mock_attack_data.get_tactics.return_value = [mock_tactic]
-            mock_mitre.return_value = mock_attack_data
+        # Mock the _fetch_attack_data method
+        with patch.object(service, "_fetch_attack_data") as mock_fetch:
+            mock_fetch.return_value = (
+                [mock_technique],
+                {"execution": "TA0002"},  # tactic_id_map
+            )
 
             result = await service.sync(test_session)
 
@@ -314,21 +303,17 @@ class TestAttackSyncService:
         """Test sync skips revoked techniques."""
         service = AttackSyncService()
 
-        with patch("app.services.attack_sync.MitreAttackData") as mock_mitre:
-            mock_attack_data = MagicMock()
+        # Revoked technique
+        mock_technique = {
+            "name": "Revoked Technique",
+            "revoked": True,
+            "external_references": [
+                {"source_name": "mitre-attack", "external_id": "T0001"}
+            ],
+        }
 
-            # Revoked technique
-            mock_technique = {
-                "name": "Revoked Technique",
-                "revoked": True,
-                "external_references": [
-                    {"source_name": "mitre-attack", "external_id": "T0001"}
-                ],
-            }
-
-            mock_attack_data.get_techniques.return_value = [mock_technique]
-            mock_attack_data.get_tactics.return_value = []
-            mock_mitre.return_value = mock_attack_data
+        with patch.object(service, "_fetch_attack_data") as mock_fetch:
+            mock_fetch.return_value = ([mock_technique], {})
 
             result = await service.sync(test_session)
 
@@ -348,37 +333,27 @@ class TestAttackSyncService:
         """Test sync properly handles sub-techniques."""
         service = AttackSyncService()
 
-        with patch("app.services.attack_sync.MitreAttackData") as mock_mitre:
-            mock_attack_data = MagicMock()
+        # Sub-technique
+        mock_technique = {
+            "name": "PowerShell",
+            "description": "PowerShell sub-technique",
+            "external_references": [
+                {
+                    "source_name": "mitre-attack",
+                    "external_id": "T1059.001",
+                    "url": "https://attack.mitre.org/techniques/T1059/001",
+                }
+            ],
+            "kill_chain_phases": [
+                {"kill_chain_name": "mitre-attack", "phase_name": "execution"}
+            ],
+        }
 
-            # Sub-technique
-            mock_technique = {
-                "name": "PowerShell",
-                "description": "PowerShell sub-technique",
-                "external_references": [
-                    {
-                        "source_name": "mitre-attack",
-                        "external_id": "T1059.001",
-                        "url": "https://attack.mitre.org/techniques/T1059/001",
-                    }
-                ],
-                "kill_chain_phases": [
-                    {"kill_chain_name": "mitre-attack", "phase_name": "execution"}
-                ],
-            }
-
-            mock_tactic = {
-                "kill_chain_phases": [
-                    {"kill_chain_name": "mitre-attack", "phase_name": "execution"}
-                ],
-                "external_references": [
-                    {"source_name": "mitre-attack", "external_id": "TA0002"}
-                ],
-            }
-
-            mock_attack_data.get_techniques.return_value = [mock_technique]
-            mock_attack_data.get_tactics.return_value = [mock_tactic]
-            mock_mitre.return_value = mock_attack_data
+        with patch.object(service, "_fetch_attack_data") as mock_fetch:
+            mock_fetch.return_value = (
+                [mock_technique],
+                {"execution": "TA0002"},
+            )
 
             result = await service.sync(test_session)
 

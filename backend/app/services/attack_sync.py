@@ -4,6 +4,7 @@ ATT&CK data synchronization service.
 Fetches MITRE ATT&CK Enterprise Matrix data using the official mitreattack-python library
 and caches it in the local database.
 """
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -51,6 +52,31 @@ class AttackSyncService:
         "impact": "Impact",
     }
 
+    def _fetch_attack_data(self) -> tuple[list[dict], dict[str, str]]:
+        """
+        Fetch ATT&CK data synchronously (runs in thread pool).
+
+        Returns tuple of (techniques, tactic_id_map).
+        """
+        attack_data = MitreAttackData("enterprise-attack")
+        techniques = attack_data.get_techniques(remove_revoked_deprecated=True)
+
+        # Build tactic ID map
+        tactic_id_map = {}
+        tactics = attack_data.get_tactics()
+        for tactic in tactics:
+            short_names = [
+                phase.get("phase_name")
+                for phase in tactic.get("kill_chain_phases", [])
+                if phase.get("kill_chain_name") == "mitre-attack"
+            ]
+            for short_name in short_names:
+                for ref in tactic.get("external_references", []):
+                    if ref.get("source_name") == "mitre-attack":
+                        tactic_id_map[short_name] = ref.get("external_id")
+
+        return techniques, tactic_id_map
+
     async def sync(self, db: AsyncSession) -> SyncResult:
         """
         Fetch latest ATT&CK Enterprise data and update the database.
@@ -60,13 +86,10 @@ class AttackSyncService:
         try:
             logger.info("Starting ATT&CK data sync")
 
-            # Fetch data from MITRE (downloads STIX bundle)
-            attack_data = MitreAttackData("enterprise-attack")
+            # Fetch data from MITRE in thread pool (synchronous HTTP call)
+            techniques, tactic_id_map = await asyncio.to_thread(self._fetch_attack_data)
 
             techniques_count = 0
-
-            # Get all techniques and their relationships
-            techniques = attack_data.get_techniques(remove_revoked_deprecated=True)
 
             for technique in techniques:
                 # Skip if revoked or deprecated
@@ -100,8 +123,8 @@ class AttackSyncService:
                     if tactic_short_name not in self.TACTIC_DISPLAY_NAMES:
                         continue
 
-                    # Get tactic ID from the tactic object
-                    tactic_id = self._get_tactic_id(attack_data, tactic_short_name)
+                    # Get tactic ID from the pre-built map
+                    tactic_id = tactic_id_map.get(tactic_short_name)
                     if not tactic_id:
                         continue
 
@@ -156,24 +179,6 @@ class AttackSyncService:
                 message="ATT&CK sync failed",
                 error=str(e),
             )
-
-    def _get_tactic_id(self, attack_data: MitreAttackData, tactic_short_name: str) -> str | None:
-        """Get the official tactic ID (e.g., TA0002) for a tactic short name."""
-        tactics = attack_data.get_tactics()
-        for tactic in tactics:
-            # Check kill_chain_phases for matching phase_name
-            short_names = [
-                phase.get("phase_name")
-                for phase in tactic.get("kill_chain_phases", [])
-                if phase.get("kill_chain_name") == "mitre-attack"
-            ]
-            if tactic_short_name in short_names:
-                # Get external ID
-                for ref in tactic.get("external_references", []):
-                    if ref.get("source_name") == "mitre-attack":
-                        return ref.get("external_id")
-        return None
-
 
 # Tag parsing for rule-to-technique mapping
 TECHNIQUE_PATTERN = re.compile(r"attack\.t(\d{4})(?:\.(\d{3}))?", re.IGNORECASE)
