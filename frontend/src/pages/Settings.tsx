@@ -14,7 +14,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { CheckCircle2, Loader2, Plus, Save, Send, Trash2, Users, FileText, XCircle } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Save, Send, Trash2, Users, FileText, XCircle } from 'lucide-react'
+import { useVersion } from '@/hooks/use-version'
 import {
   Select,
   SelectContent,
@@ -73,6 +74,7 @@ const providerInfo: Record<WebhookProvider, { label: string; placeholder: string
 
 export default function SettingsPage() {
   const { showToast } = useToast()
+  const { version, updateAvailable, latestVersion, releaseUrl, loading: versionLoading, checkForUpdates } = useVersion()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -594,6 +596,10 @@ export default function SettingsPage() {
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
           <TabsTrigger value="export">Export</TabsTrigger>
+          <TabsTrigger value="about" className="flex items-center gap-1">
+            About
+            {updateAvailable && <span className="h-2 w-2 rounded-full bg-red-500" />}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-4">
@@ -1696,6 +1702,121 @@ export default function SettingsPage() {
               >
                 Export Configuration (JSON)
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="about" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>About CHAD</CardTitle>
+              <CardDescription>
+                Cyber Hunting And Detection - A Sigma rule management and alerting platform
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Version Info */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Current Version</p>
+                    <p className="text-2xl font-bold">
+                      {versionLoading ? (
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                      ) : (
+                        `v${version || 'Unknown'}`
+                      )}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={checkForUpdates}
+                    disabled={versionLoading}
+                  >
+                    {versionLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    Check for Updates
+                  </Button>
+                </div>
+
+                {/* Update Available Banner */}
+                {updateAvailable && latestVersion && (
+                  <div className="p-4 border rounded-lg bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="font-medium text-green-800 dark:text-green-200">
+                          Update Available
+                        </p>
+                        <p className="text-sm text-green-700 dark:text-green-300">
+                          Version {latestVersion} is now available. You are running {version}.
+                        </p>
+                      </div>
+                      {releaseUrl && (
+                        <Button variant="default" asChild>
+                          <a href={releaseUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            View Release
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* No Update Available */}
+                {!updateAvailable && !versionLoading && version && (
+                  <div className="p-4 border rounded-lg bg-muted/50">
+                    <p className="text-sm text-muted-foreground">
+                      You are running the latest version of CHAD.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Links */}
+              <div className="space-y-2 pt-4 border-t">
+                <h3 className="font-medium">Resources</h3>
+                <div className="grid gap-2">
+                  <a
+                    href="https://github.com/YOUR_ORG/chad"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    GitHub Repository
+                  </a>
+                  <a
+                    href="https://github.com/YOUR_ORG/chad/releases"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Release Notes / Changelog
+                  </a>
+                  <a
+                    href="https://github.com/YOUR_ORG/chad/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Report an Issue
+                  </a>
+                </div>
+              </div>
+
+              {/* Credits */}
+              <div className="space-y-2 pt-4 border-t">
+                <h3 className="font-medium">Built With</h3>
+                <p className="text-sm text-muted-foreground">
+                  CHAD uses pySigma for Sigma rule processing and OpenSearch for detection and alerting.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

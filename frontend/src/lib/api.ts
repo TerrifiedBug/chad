@@ -112,6 +112,18 @@ export type WebhookTestResponse = {
   error?: string | null
 }
 
+// Version types
+export type VersionResponse = {
+  version: string
+}
+
+export type UpdateCheckResponse = {
+  current: string
+  latest: string | null
+  update_available: boolean
+  release_url?: string | null
+}
+
 // Settings API
 export const settingsApi = {
   testOpenSearch: (config: OpenSearchConfig) =>
@@ -128,6 +140,11 @@ export const settingsApi = {
     api.get<{ url: string }>('/settings/app-url'),
   setAppUrl: (url: string) =>
     api.put<{ success: boolean }>('/settings/app-url', { url }),
+  // Version endpoints
+  getVersion: () =>
+    api.get<VersionResponse>('/settings/version'),
+  checkForUpdates: () =>
+    api.get<UpdateCheckResponse>('/settings/version/check'),
 }
 
 // Exception types

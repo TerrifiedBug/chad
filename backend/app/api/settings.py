@@ -1,3 +1,4 @@
+from datetime import UTC
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -6,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_admin
-from app.core.encryption import encrypt
-from app.utils.request import get_client_ip
+from app.core.config import APP_VERSION
+from app.core.encryption import decrypt, encrypt
 from app.db.session import get_db
 from app.models.setting import Setting
 from app.models.user import User
@@ -15,9 +16,73 @@ from app.services.audit import audit_log
 from app.services.opensearch import validate_opensearch_connection
 from app.services.settings import get_setting, set_setting
 from app.services.webhooks import get_app_url_for_webhooks, send_webhook
-from app.core.encryption import decrypt
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+# Version response models
+class VersionResponse(BaseModel):
+    version: str
+
+
+class UpdateCheckResponse(BaseModel):
+    current: str
+    latest: str | None
+    update_available: bool
+    release_url: str | None = None
+
+
+@router.get("/version", response_model=VersionResponse)
+async def get_version():
+    """Get current application version."""
+    return VersionResponse(version=APP_VERSION)
+
+
+@router.get("/version/check", response_model=UpdateCheckResponse)
+async def check_for_updates():
+    """Check GitHub for latest version."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.github.com/repos/YOUR_ORG/chad/releases/latest",
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                latest = data.get("tag_name", "").lstrip("v")
+                # Simple version comparison - check if different and latest is "greater"
+                update_available = False
+                if latest and latest != APP_VERSION:
+                    # Basic semver comparison (works for most cases)
+                    try:
+                        current_parts = [int(x) for x in APP_VERSION.split("-")[0].split(".")]
+                        latest_parts = [int(x) for x in latest.split("-")[0].split(".")]
+                        # Pad to same length
+                        while len(current_parts) < 3:
+                            current_parts.append(0)
+                        while len(latest_parts) < 3:
+                            latest_parts.append(0)
+                        update_available = latest_parts > current_parts
+                    except (ValueError, AttributeError):
+                        # If parsing fails, just check if they're different
+                        update_available = latest != APP_VERSION
+                return UpdateCheckResponse(
+                    current=APP_VERSION,
+                    latest=latest,
+                    update_available=update_available,
+                    release_url=data.get("html_url"),
+                )
+    except Exception:
+        pass
+
+    return UpdateCheckResponse(
+        current=APP_VERSION,
+        latest=None,
+        update_available=False,
+    )
 
 
 class OpenSearchConfig(BaseModel):
@@ -84,10 +149,10 @@ async def test_webhook(
     current_user: Annotated[User, Depends(require_admin)],
 ):
     """Test a webhook by sending a sample alert notification."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     # Create a test alert payload
-    test_alert_id = "test-" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    test_alert_id = "test-" + datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     test_alert = {
         "alert_id": test_alert_id,
         "rule_id": "test-rule",
@@ -95,7 +160,7 @@ async def test_webhook(
         "severity": "informational",
         "status": "new",
         "tags": ["test", "webhook-verification"],
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     # Build alert URL if APP_URL is configured
@@ -128,8 +193,9 @@ async def test_ai_connection(
     current_user: Annotated[User, Depends(require_admin)],
 ):
     """Test AI provider connection with a simple request."""
-    import httpx
     import json as json_module
+
+    import httpx
 
     ai_settings = await get_setting(db, "ai")
     if not ai_settings:

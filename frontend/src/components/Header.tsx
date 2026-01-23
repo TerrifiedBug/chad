@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
+import { useVersion } from '@/hooks/use-version'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import {
@@ -27,6 +28,7 @@ const navItems = [
 
 export function Header() {
   const { isAuthenticated, isAdmin, user, logout } = useAuth()
+  const { version, updateAvailable } = useVersion()
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -37,8 +39,13 @@ export function Header() {
     <header className="border-b">
       <div className="flex h-16 w-full items-center justify-between px-6">
         <div className="flex items-center gap-8">
-          <Link to="/" className="text-xl font-bold">
+          <Link to="/" className="text-xl font-bold flex items-center gap-2">
             CHAD
+            {version && (
+              <span className="text-xs text-muted-foreground font-normal">
+                v{version}
+              </span>
+            )}
           </Link>
           {isAuthenticated && (
             <nav className="flex items-center gap-6">
@@ -51,11 +58,14 @@ export function Header() {
                     key={item.href}
                     to={item.href}
                     className={cn(
-                      'text-sm font-medium transition-colors hover:text-primary',
+                      'text-sm font-medium transition-colors hover:text-primary flex items-center',
                       isActive ? 'text-foreground' : 'text-muted-foreground'
                     )}
                   >
                     {item.label}
+                    {item.href === '/settings' && updateAvailable && (
+                      <span className="ml-1 h-2 w-2 rounded-full bg-red-500" />
+                    )}
                   </Link>
                 )
               })}

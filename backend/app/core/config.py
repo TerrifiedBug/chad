@@ -1,4 +1,9 @@
+import os
+
 from pydantic_settings import BaseSettings
+
+# Application version - read from environment or default to dev
+APP_VERSION = os.getenv("CHAD_VERSION", "0.0.0-dev")
 
 
 class Settings(BaseSettings):
