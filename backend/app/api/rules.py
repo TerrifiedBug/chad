@@ -31,6 +31,7 @@ from app.schemas.rule import (
     RuleUpdate,
     RuleValidateRequest,
     RuleValidateResponse,
+    RuleVersionResponse,
     ValidationErrorItem,
 )
 from app.schemas.rule_exception import (
@@ -1221,3 +1222,42 @@ async def get_rule_activity(
 
     # Apply pagination
     return activities[skip:skip + limit]
+
+
+# Rule Version Endpoint
+
+
+@router.get("/{rule_id}/versions/{version_number}", response_model=RuleVersionResponse)
+async def get_rule_version(
+    rule_id: UUID,
+    version_number: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Get a specific version of a rule by version number."""
+    # Verify rule exists
+    rule_result = await db.execute(select(Rule).where(Rule.id == rule_id))
+    if rule_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    # Get the specific version
+    version_result = await db.execute(
+        select(RuleVersion).where(
+            RuleVersion.rule_id == rule_id,
+            RuleVersion.version_number == version_number,
+        )
+    )
+    version = version_result.scalar_one_or_none()
+
+    if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Version {version_number} not found for this rule"
+        )
+
+    return RuleVersionResponse(
+        id=version.id,
+        version_number=version.version_number,
+        yaml_content=version.yaml_content,
+        created_at=version.created_at,
+    )
