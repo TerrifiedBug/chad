@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import {
   rulesApi,
   indexPatternsApi,
@@ -28,11 +28,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, Copy } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -59,10 +60,21 @@ detection:
 level: medium
 `
 
+// Location state for cloning rules
+interface LocationState {
+  yamlContent?: string
+  indexPatternId?: string
+  title?: string
+}
+
 export default function RuleEditorPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
+  const location = useLocation()
   const isNew = !id || id === 'new'
+
+  // Get clone state from navigation (if cloning a rule)
+  const cloneState = location.state as LocationState | null
 
   // Form state
   const [title, setTitle] = useState('')
@@ -122,6 +134,10 @@ export default function RuleEditorPage() {
   // Activity panel state
   const [isActivityOpen, setIsActivityOpen] = useState(false)
 
+  // Delete rule confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeletingRule, setIsDeletingRule] = useState(false)
+
   // Rule source state (for existing rules)
   const [ruleSource, setRuleSource] = useState<'user' | 'sigmahq'>('user')
   const [sigmahqPath, setSigmahqPath] = useState<string | null>(null)
@@ -149,6 +165,29 @@ export default function RuleEditorPage() {
       loadExceptions()
     }
   }, [id])
+
+  // Handle clone state from navigation
+  useEffect(() => {
+    if (isNew && cloneState) {
+      if (cloneState.yamlContent) {
+        setYamlContent(cloneState.yamlContent)
+      }
+      if (cloneState.title) {
+        setTitle(cloneState.title)
+        // Also update the title in YAML
+        if (cloneState.yamlContent) {
+          const updatedYaml = cloneState.yamlContent.replace(
+            /^title:\s*.+$/m,
+            `title: ${cloneState.title}`
+          )
+          setYamlContent(updatedYaml)
+        }
+      }
+      if (cloneState.indexPatternId) {
+        setIndexPatternId(cloneState.indexPatternId)
+      }
+    }
+  }, [isNew, cloneState])
 
   // Load exceptions when rule ID is available
   const loadExceptions = async () => {
@@ -569,6 +608,42 @@ export default function RuleEditorPage() {
     }
   }
 
+  // Clone rule handler
+  const handleClone = () => {
+    // Navigate to new rule with current content
+    navigate('/rules/new', {
+      state: {
+        yamlContent,
+        indexPatternId,
+        title: `${title} (Copy)`
+      }
+    })
+  }
+
+  // Export YAML handler
+  const handleExportYaml = () => {
+    const blob = new Blob([yamlContent], { type: 'text/yaml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${title.replace(/[^a-z0-9-_]/gi, '_')}.yml`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Delete rule handler
+  const handleDeleteRule = async () => {
+    if (!id) return
+    setIsDeletingRule(true)
+    try {
+      await rulesApi.delete(id)
+      navigate('/rules')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete rule')
+      setIsDeletingRule(false)
+    }
+  }
+
   const formatSnoozeExpiry = (iso: string) => {
     const date = new Date(iso)
     return date.toLocaleString()
@@ -704,32 +779,28 @@ export default function RuleEditorPage() {
             </Button>
           )}
           {!isNew && (
-            <Button
-              variant="outline"
-              onClick={async () => {
-                try {
-                  const token = localStorage.getItem('chad-token')
-                  const response = await fetch(`/api/export/rules/${id}`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {},
-                  })
-                  if (!response.ok) throw new Error('Export failed')
-                  const blob = await response.blob()
-                  const url = window.URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `${title.replace(/[^a-z0-9-_]/gi, '_')}.yml`
-                  document.body.appendChild(a)
-                  a.click()
-                  document.body.removeChild(a)
-                  window.URL.revokeObjectURL(url)
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Export failed')
-                }
-              }}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  More Actions <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="z-50 bg-popover">
+                <DropdownMenuItem onClick={handleClone}>
+                  <Copy className="mr-2 h-4 w-4" /> Clone Rule
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportYaml}>
+                  <Download className="mr-2 h-4 w-4" /> Export YAML
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete Rule
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {!isNew && (
             deployedAt ? (
@@ -1253,6 +1324,17 @@ export default function RuleEditorPage() {
         itemName={exceptionToDelete ? `${exceptionToDelete.field} ${operatorLabels[exceptionToDelete.operator]} ${exceptionToDelete.value}` : undefined}
         onConfirm={confirmDeleteException}
         isDeleting={isDeletingException}
+      />
+
+      {/* Rule Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Rule"
+        description="Are you sure you want to delete this rule? This action cannot be undone."
+        itemName={title}
+        onConfirm={handleDeleteRule}
+        isDeleting={isDeletingRule}
       />
 
       {/* Activity Panel */}
