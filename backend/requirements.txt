@@ -25,6 +25,9 @@ email-validator==2.1.1
 pysigma>=0.11.0
 pysigma-backend-opensearch>=1.0.0
 
+# MITRE ATT&CK
+mitreattack-python>=3.0.0
+
 # OpenSearch client
 opensearch-py==2.5.0
 
