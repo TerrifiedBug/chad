@@ -19,6 +19,8 @@ import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
 import SigmaHQPage from '@/pages/SigmaHQ'
 import AuditLogPage from '@/pages/AuditLog'
+import HealthPage from '@/pages/Health'
+import FieldMappingsPage from '@/pages/FieldMappings'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -200,6 +202,26 @@ function AppRoutes() {
             </main>
           </div>
         </ProtectedRoute>
+      } />
+      <Route path="/health" element={
+        <AdminRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <HealthPage />
+            </main>
+          </div>
+        </AdminRoute>
+      } />
+      <Route path="/field-mappings" element={
+        <AdminRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <FieldMappingsPage />
+            </main>
+          </div>
+        </AdminRoute>
       } />
       <Route path="/opensearch-wizard" element={
         <ProtectedRoute>

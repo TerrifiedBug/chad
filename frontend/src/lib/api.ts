@@ -746,6 +746,62 @@ export type AITestResponse = {
   error?: string | null
 }
 
+// Field Mapping types
+export type MappingOrigin = 'manual' | 'ai_suggested'
+
+export type FieldMapping = {
+  id: string
+  sigma_field: string
+  target_field: string
+  index_pattern_id: string | null
+  origin: MappingOrigin
+  confidence: number | null
+  created_by: string
+  created_at: string
+}
+
+export type FieldMappingCreate = {
+  sigma_field: string
+  target_field: string
+  index_pattern_id?: string | null
+  origin?: MappingOrigin
+  confidence?: number | null
+}
+
+export type FieldMappingUpdate = {
+  target_field?: string
+  origin?: MappingOrigin
+  confidence?: number | null
+}
+
+export type AISuggestion = {
+  sigma_field: string
+  target_field: string | null
+  confidence: number
+  reason: string
+}
+
+// Field Mappings API
+export const fieldMappingsApi = {
+  list: (indexPatternId?: string | null) =>
+    api.get<FieldMapping[]>(
+      `/field-mappings${indexPatternId ? `?index_pattern_id=${indexPatternId}` : ''}`
+    ),
+  listGlobal: () =>
+    api.get<FieldMapping[]>('/field-mappings?index_pattern_id='),
+  create: (data: FieldMappingCreate) =>
+    api.post<FieldMapping>('/field-mappings', data),
+  update: (id: string, data: FieldMappingUpdate) =>
+    api.put<FieldMapping>(`/field-mappings/${id}`, data),
+  delete: (id: string) =>
+    api.delete(`/field-mappings/${id}`),
+  suggest: (data: {
+    index_pattern_id: string
+    sigma_fields: string[]
+    logsource?: Record<string, string>
+  }) => api.post<AISuggestion[]>('/field-mappings/suggest', data),
+}
+
 // Health types
 export type HealthStatus = 'healthy' | 'warning' | 'critical'
 
