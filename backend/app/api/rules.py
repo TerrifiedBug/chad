@@ -658,10 +658,13 @@ async def deploy_rule(
         # Check for unmapped fields that don't exist in the index
         unmapped_fields = []
         for sigma_field in sigma_fields:
-            # Field is OK if: it has a mapping OR it exists in the index
+            # Field is OK if it has a mapping AND the target exists, OR it exists directly
             if sigma_field in field_mappings_dict:
-                continue  # Has a mapping
-            if sigma_field in index_fields:
+                target_field = field_mappings_dict[sigma_field]
+                if target_field in index_fields:
+                    continue  # Has a valid mapping to an existing field
+                # Mapping target doesn't exist - still unmapped
+            elif sigma_field in index_fields:
                 continue  # Exists directly in index
             unmapped_fields.append(sigma_field)
 
