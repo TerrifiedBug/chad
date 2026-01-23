@@ -84,12 +84,19 @@ export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPa
   if (!isOpen) return null
 
   return (
-    <div
-      className="fixed right-0 top-0 h-full w-96 bg-background border-l shadow-lg z-50 flex flex-col"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Rule activity panel"
-    >
+    <>
+      {/* Overlay for click-to-close */}
+      <div
+        className="fixed inset-0 bg-black/20 z-40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        className="fixed right-0 top-16 h-[calc(100%-4rem)] w-96 bg-background border-l shadow-lg z-40 flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Rule activity panel"
+      >
       <div className="flex items-center justify-between p-4 border-b">
         <h2 className="font-semibold">Activity</h2>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close activity panel">
@@ -177,5 +184,6 @@ export function ActivityPanel({ ruleId, isOpen, onClose, onRestore }: ActivityPa
         </Button>
       </div>
     </div>
+    </>
   )
 }

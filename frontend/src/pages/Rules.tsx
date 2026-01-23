@@ -648,13 +648,26 @@ export default function RulesPage() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        rule.deployed_at ? 'bg-green-500 text-white' : 'bg-gray-500 text-white'
-                      }`}
-                    >
-                      {rule.deployed_at ? 'Deployed' : 'Not Deployed'}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
+                          rule.status === 'disabled'
+                            ? 'bg-gray-400 text-white'
+                            : rule.status === 'snoozed'
+                            ? 'bg-yellow-500 text-white'
+                            : 'bg-blue-500 text-white'
+                        }`}
+                      >
+                        {rule.status === 'disabled' ? 'Disabled' : rule.status === 'snoozed' ? 'Snoozed' : 'Enabled'}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
+                          rule.deployed_at ? 'bg-green-600 text-white' : 'bg-gray-500 text-white'
+                        }`}
+                      >
+                        {rule.deployed_at ? 'Deployed' : 'Not Deployed'}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell>
                     {indexPatterns[rule.index_pattern_id]?.name || 'Unknown'}

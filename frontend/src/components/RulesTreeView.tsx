@@ -115,18 +115,30 @@ export function RulesTreeView({
                     >
                       <FileText className="h-4 w-4 text-muted-foreground" />
                       <span
-                        className={cn(rule.status === 'disabled' && 'text-muted-foreground')}
+                        className={cn(rule.status === 'disabled' && 'text-muted-foreground line-through')}
                       >
                         {rule.title}
                       </span>
-                      <div
-                        className={cn('w-2 h-2 rounded-full ml-auto', getSeverityColor(rule.severity))}
-                      />
-                      {rule.deployed_at && (
-                        <Badge variant="outline" className="text-xs">
-                          deployed
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-1 ml-auto">
+                        <div
+                          className={cn('w-2 h-2 rounded-full', getSeverityColor(rule.severity))}
+                        />
+                        {rule.status === 'disabled' && (
+                          <Badge variant="secondary" className="text-xs bg-gray-400 text-white">
+                            disabled
+                          </Badge>
+                        )}
+                        {rule.status === 'snoozed' && (
+                          <Badge variant="secondary" className="text-xs bg-yellow-500 text-white">
+                            snoozed
+                          </Badge>
+                        )}
+                        {rule.deployed_at && (
+                          <Badge variant="outline" className="text-xs">
+                            deployed
+                          </Badge>
+                        )}
+                      </div>
                     </button>
                   )
                 })}
