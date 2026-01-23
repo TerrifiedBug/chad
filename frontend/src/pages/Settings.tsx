@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -133,6 +133,18 @@ export default function SettingsPage() {
   const [permissions, setPermissions] = useState<Record<string, Record<string, boolean>>>({})
   const [permissionDescriptions, setPermissionDescriptions] = useState<Record<string, string>>({})
 
+  // AI settings
+  const [aiSettings, setAiSettings] = useState<AISettings>({
+    ai_provider: 'disabled',
+    ai_ollama_url: 'http://localhost:11434',
+    ai_ollama_model: 'llama3',
+    ai_openai_model: 'gpt-4o',
+    ai_anthropic_model: 'claude-sonnet-4-20250514',
+    ai_allow_log_samples: false,
+  })
+  const [aiOpenAIKey, setAiOpenAIKey] = useState('')
+  const [aiAnthropicKey, setAiAnthropicKey] = useState('')
+
   useEffect(() => {
     loadSettings()
     loadOpenSearchStatus()
@@ -225,6 +237,19 @@ export default function SettingsPage() {
       if (settings.audit_opensearch_enabled && typeof settings.audit_opensearch_enabled === 'object') {
         const auditOs = settings.audit_opensearch_enabled as Record<string, unknown>
         setAuditOpenSearchEnabled((auditOs.enabled as boolean) || false)
+      }
+
+      // AI settings
+      if (settings.ai && typeof settings.ai === 'object') {
+        const ai = settings.ai as Record<string, unknown>
+        setAiSettings({
+          ai_provider: (ai.ai_provider as AIProvider) || 'disabled',
+          ai_ollama_url: (ai.ai_ollama_url as string) || 'http://localhost:11434',
+          ai_ollama_model: (ai.ai_ollama_model as string) || 'llama3',
+          ai_openai_model: (ai.ai_openai_model as string) || 'gpt-4o',
+          ai_anthropic_model: (ai.ai_anthropic_model as string) || 'claude-sonnet-4-20250514',
+          ai_allow_log_samples: (ai.ai_allow_log_samples as boolean) || false,
+        })
       }
     } catch (err) {
       // Settings may not exist yet, that's okay
@@ -443,6 +468,25 @@ export default function SettingsPage() {
     }
   }
 
+  const saveAiSettings = async () => {
+    setIsSaving(true)
+    try {
+      const update: AISettingsUpdate = {
+        ...aiSettings,
+        ...(aiOpenAIKey && { ai_openai_key: aiOpenAIKey }),
+        ...(aiAnthropicKey && { ai_anthropic_key: aiAnthropicKey }),
+      }
+      await settingsApiExtended.update('ai', update)
+      showToast('AI settings saved')
+      setAiOpenAIKey('')
+      setAiAnthropicKey('')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const saveAppUrl = async () => {
     setIsSaving(true)
     try {
@@ -489,6 +533,7 @@ export default function SettingsPage() {
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
           <TabsTrigger value="sso">SSO</TabsTrigger>
+          <TabsTrigger value="ai">AI</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="sigmahq">SigmaHQ</TabsTrigger>
           <TabsTrigger value="export">Export</TabsTrigger>
@@ -1023,6 +1068,174 @@ export default function SettingsPage() {
               )}
 
               <Button onClick={saveSso} disabled={isSaving}>
+                <Save className="mr-2 h-4 w-4" />
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ai" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>AI Field Mapping</CardTitle>
+              <CardDescription>
+                Configure AI providers to suggest field mappings between Sigma rules and your log data
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>AI Provider</Label>
+                <Select
+                  value={aiSettings.ai_provider}
+                  onValueChange={(value) =>
+                    setAiSettings({ ...aiSettings, ai_provider: value as AIProvider })
+                  }
+                >
+                  <SelectTrigger className="w-64">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover">
+                    <SelectItem value="disabled">Disabled</SelectItem>
+                    <SelectItem value="ollama">Ollama (Local)</SelectItem>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                    <SelectItem value="anthropic">Anthropic</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choose an AI provider for generating field mapping suggestions
+                </p>
+              </div>
+
+              {aiSettings.ai_provider === 'ollama' && (
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="space-y-2">
+                    <Label htmlFor="ollama-url">Ollama URL</Label>
+                    <Input
+                      id="ollama-url"
+                      value={aiSettings.ai_ollama_url}
+                      onChange={(e) =>
+                        setAiSettings({ ...aiSettings, ai_ollama_url: e.target.value })
+                      }
+                      placeholder="http://localhost:11434"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      URL of your local Ollama instance
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ollama-model">Model</Label>
+                    <Input
+                      id="ollama-model"
+                      value={aiSettings.ai_ollama_model}
+                      onChange={(e) =>
+                        setAiSettings({ ...aiSettings, ai_ollama_model: e.target.value })
+                      }
+                      placeholder="llama3"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Ollama model name (e.g., llama3, mistral, codellama)
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <div className="space-y-0.5">
+                      <Label>Allow Log Samples</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Include sample log data to improve mapping accuracy
+                      </p>
+                    </div>
+                    <Switch
+                      checked={aiSettings.ai_allow_log_samples}
+                      onCheckedChange={(checked) =>
+                        setAiSettings({ ...aiSettings, ai_allow_log_samples: checked })
+                      }
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Since Ollama runs locally, log samples stay on your machine
+                  </p>
+                </div>
+              )}
+
+              {aiSettings.ai_provider === 'openai' && (
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="space-y-2">
+                    <Label htmlFor="openai-key">API Key</Label>
+                    <Input
+                      id="openai-key"
+                      type="password"
+                      value={aiOpenAIKey}
+                      onChange={(e) => setAiOpenAIKey(e.target.value)}
+                      placeholder="Enter new key to change"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Leave blank to keep existing key
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="openai-model">Model</Label>
+                    <Select
+                      value={aiSettings.ai_openai_model}
+                      onValueChange={(value) =>
+                        setAiSettings({ ...aiSettings, ai_openai_model: value })
+                      }
+                    >
+                      <SelectTrigger id="openai-model" className="w-64">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="z-50 bg-popover">
+                        <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                        <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
+                        <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
+                    <strong>Privacy:</strong> Only field names are sent to OpenAI. Log samples are never sent to cloud providers.
+                  </div>
+                </div>
+              )}
+
+              {aiSettings.ai_provider === 'anthropic' && (
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="space-y-2">
+                    <Label htmlFor="anthropic-key">API Key</Label>
+                    <Input
+                      id="anthropic-key"
+                      type="password"
+                      value={aiAnthropicKey}
+                      onChange={(e) => setAiAnthropicKey(e.target.value)}
+                      placeholder="Enter new key to change"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Leave blank to keep existing key
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="anthropic-model">Model</Label>
+                    <Select
+                      value={aiSettings.ai_anthropic_model}
+                      onValueChange={(value) =>
+                        setAiSettings({ ...aiSettings, ai_anthropic_model: value })
+                      }
+                    >
+                      <SelectTrigger id="anthropic-model" className="w-64">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="z-50 bg-popover">
+                        <SelectItem value="claude-sonnet-4-20250514">Claude Sonnet 4</SelectItem>
+                        <SelectItem value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</SelectItem>
+                        <SelectItem value="claude-3-haiku-20240307">Claude 3 Haiku</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
+                    <strong>Privacy:</strong> Only field names are sent to Anthropic. Log samples are never sent to cloud providers.
+                  </div>
+                </div>
+              )}
+
+              <Button onClick={saveAiSettings} disabled={isSaving}>
                 <Save className="mr-2 h-4 w-4" />
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>

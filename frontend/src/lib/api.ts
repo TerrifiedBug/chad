@@ -184,7 +184,7 @@ export type RuleComment = {
 }
 
 // Rule types
-export type RuleStatus = 'enabled' | 'snoozed'
+export type RuleStatus = 'deployed' | 'undeployed' | 'snoozed'
 export type RuleSource = 'user' | 'sigmahq'
 
 export type Rule = {
@@ -202,9 +202,16 @@ export type Rule = {
   updated_at: string
   deployed_at: string | null
   deployed_version: number | null
+  current_version: number
+  needs_redeploy: boolean
   last_edited_by: string | null
   source: RuleSource
   sigmahq_path: string | null
+  // Threshold alerting
+  threshold_enabled: boolean
+  threshold_count: number | null
+  threshold_window_minutes: number | null
+  threshold_group_by: string | null
 }
 
 export type RuleVersion = {
@@ -226,6 +233,11 @@ export type RuleCreate = {
   severity?: string
   status?: RuleStatus
   index_pattern_id: string
+  // Threshold alerting
+  threshold_enabled?: boolean
+  threshold_count?: number | null
+  threshold_window_minutes?: number | null
+  threshold_group_by?: string | null
 }
 
 export type RuleUpdate = Partial<RuleCreate> & {
@@ -655,6 +667,7 @@ export type AuditLogEntry = {
   resource_type: string
   resource_id: string | null
   details: Record<string, unknown> | null
+  ip_address: string | null
   created_at: string
 }
 
@@ -704,4 +717,62 @@ export const permissionsApi = {
     api.get<PermissionsResponse>('/permissions'),
   update: (role: string, permission: string, granted: boolean) =>
     api.put<{ success: boolean }>('/permissions', { role, permission, granted }),
+}
+
+// AI Settings types
+export type AIProvider = 'disabled' | 'ollama' | 'openai' | 'anthropic'
+
+export type AISettings = {
+  ai_provider: AIProvider
+  ai_ollama_url: string
+  ai_ollama_model: string
+  ai_openai_model: string
+  ai_anthropic_model: string
+  ai_allow_log_samples: boolean
+  // Keys are write-only, not returned by GET
+}
+
+export type AISettingsUpdate = AISettings & {
+  ai_openai_key?: string
+  ai_anthropic_key?: string
+}
+
+// Health types
+export type HealthStatus = 'healthy' | 'warning' | 'critical'
+
+export type IndexHealth = {
+  index_pattern_id: string
+  index_pattern_name: string
+  pattern: string
+  status: HealthStatus
+  issues: string[]
+  latest: {
+    queue_depth: number
+    avg_latency_ms: number
+    logs_per_minute: number
+    alerts_per_hour: number
+  }
+  totals_24h: {
+    logs_received: number
+    logs_errored: number
+    alerts_generated: number
+  }
+}
+
+export type HealthHistoryPoint = {
+  timestamp: string
+  logs_received: number
+  queue_depth: number
+  avg_latency_ms: number
+  alerts_generated: number
+}
+
+// Health API
+export const healthApi = {
+  listIndices: () =>
+    api.get<IndexHealth[]>('/health/indices'),
+  getIndex: (id: string, hours = 24) =>
+    api.get<IndexHealth>(`/health/indices/${id}?hours=${hours}`),
+  getHistory: (id: string, hours = 24) =>
+    api.get<HealthHistoryPoint[]>(`/health/indices/${id}/history?hours=${hours}`),
 }
