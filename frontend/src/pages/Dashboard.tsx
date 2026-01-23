@@ -75,33 +75,11 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Overview of your detection system
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {['critical', 'high', 'medium', 'low', 'informational'].map(sev => {
-            const count = stats?.alerts.by_severity?.[sev] || 0
-            const isActive = severityFilter === sev
-            return (
-              <button
-                key={sev}
-                onClick={() => setSeverityFilter(isActive ? null : sev)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all ${
-                  isActive
-                    ? 'bg-primary/10 scale-105'
-                    : 'hover:bg-muted'
-                }`}
-              >
-                <Badge className={severityColors[sev]}>{capitalize(sev)}</Badge>
-                <span className={`font-mono text-sm ${isActive ? 'font-semibold' : ''}`}>{count}</span>
-              </button>
-            )
-          })}
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-muted-foreground">
+          Overview of your detection system
+        </p>
       </div>
 
       {/* Stats Cards */}
@@ -165,18 +143,32 @@ export default function Dashboard() {
 
       {/* Recent Alerts */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle>Recent Alerts</CardTitle>
           <div className="flex items-center gap-2">
-            <CardTitle>Recent Alerts</CardTitle>
-            {severityFilter && (
-              <Badge className={severityColors[severityFilter]}>
-                {capitalize(severityFilter)}
-              </Badge>
-            )}
+            {['critical', 'high', 'medium', 'low', 'informational'].map(sev => {
+              const count = stats?.alerts.by_severity?.[sev] || 0
+              const isActive = severityFilter === sev
+              return (
+                <button
+                  key={sev}
+                  onClick={() => setSeverityFilter(isActive ? null : sev)}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-xs transition-all ${
+                    isActive
+                      ? 'ring-2 ring-primary ring-offset-1'
+                      : 'hover:bg-muted'
+                  }`}
+                >
+                  <Badge className={`${severityColors[sev]} text-xs`}>
+                    {count}
+                  </Badge>
+                </button>
+              )
+            })}
+            <Link to="/alerts" className="text-sm text-primary hover:underline ml-2">
+              View all
+            </Link>
           </div>
-          <Link to="/alerts" className="text-sm text-primary hover:underline">
-            View all
-          </Link>
         </CardHeader>
         <CardContent>
           {(() => {
