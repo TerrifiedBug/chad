@@ -23,6 +23,11 @@ class RuleStatus(str, Enum):
     SNOOZED = "snoozed"
 
 
+class RuleSource(str, Enum):
+    USER = "user"
+    SIGMAHQ = "sigmahq"
+
+
 class Rule(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "rules"
 
@@ -36,6 +41,10 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     # Deployment tracking
     deployed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deployed_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Source tracking
+    source: Mapped[RuleSource] = mapped_column(default=RuleSource.USER)
+    sigmahq_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     index_pattern_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("index_patterns.id"), nullable=False

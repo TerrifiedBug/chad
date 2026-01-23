@@ -8,7 +8,7 @@ import yaml
 
 from app.api.deps import get_current_user, require_admin
 from app.db.session import get_db
-from app.models.rule import Rule, RuleVersion
+from app.models.rule import Rule, RuleSource, RuleVersion
 from app.models.user import User
 from app.schemas.sigmahq import (
     SigmaHQCategoryTree,
@@ -180,6 +180,8 @@ async def import_rule(
         status="disabled",  # Always start disabled
         index_pattern_id=request.index_pattern_id,
         created_by=current_user.id,
+        source=RuleSource.SIGMAHQ,
+        sigmahq_path=request.rule_path,
     )
     db.add(rule)
     await db.flush()

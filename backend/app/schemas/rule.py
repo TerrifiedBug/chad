@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models.rule import RuleStatus
+from app.models.rule import RuleSource, RuleStatus
 from app.schemas.index_pattern import IndexPatternResponse
 
 
@@ -48,6 +48,8 @@ class RuleResponse(RuleBase):
     deployed_at: datetime | None = None
     deployed_version: int | None = None
     last_edited_by: str | None = None  # Email of user who last edited
+    source: RuleSource = RuleSource.USER
+    sigmahq_path: str | None = None
 
     class Config:
         from_attributes = True

@@ -166,8 +166,26 @@ export type RuleExceptionUpdate = {
   is_active?: boolean
 }
 
+// Activity types
+export type ActivityItem = {
+  type: 'version' | 'deploy' | 'undeploy' | 'comment'
+  timestamp: string
+  user_email: string | null
+  data: Record<string, unknown>
+}
+
+export type RuleComment = {
+  id: string
+  rule_id: string
+  user_id: string | null
+  user_email: string | null
+  content: string
+  created_at: string
+}
+
 // Rule types
 export type RuleStatus = 'enabled' | 'disabled' | 'snoozed'
+export type RuleSource = 'user' | 'sigmahq'
 
 export type Rule = {
   id: string
@@ -184,6 +202,8 @@ export type Rule = {
   deployed_at: string | null
   deployed_version: number | null
   last_edited_by: string | null
+  source: RuleSource
+  sigmahq_path: string | null
 }
 
 export type RuleVersion = {
@@ -252,8 +272,13 @@ export type BulkOperationResult = {
 
 // Rules API
 export const rulesApi = {
-  list: (status?: RuleStatus) =>
-    api.get<Rule[]>(`/rules${status ? `?status_filter=${status}` : ''}`),
+  list: (params?: { status?: RuleStatus; source?: RuleSource }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.status) searchParams.set('status_filter', params.status)
+    if (params?.source) searchParams.set('source_filter', params.source)
+    const query = searchParams.toString()
+    return api.get<Rule[]>(`/rules${query ? `?${query}` : ''}`)
+  },
   get: (id: string) =>
     api.get<RuleDetail>(`/rules/${id}`),
   create: (data: RuleCreate) =>
@@ -300,6 +325,17 @@ export const rulesApi = {
     api.post<BulkOperationResult>('/rules/bulk/deploy', { rule_ids: ruleIds }),
   bulkUndeploy: (ruleIds: string[]) =>
     api.post<BulkOperationResult>('/rules/bulk/undeploy', { rule_ids: ruleIds }),
+  // Activity and comments
+  getActivity: (ruleId: string, skip?: number, limit?: number) => {
+    const params = new URLSearchParams()
+    params.set('skip', String(skip || 0))
+    params.set('limit', String(limit || 50))
+    return api.get<ActivityItem[]>(`/rules/${ruleId}/activity?${params.toString()}`)
+  },
+  addComment: (ruleId: string, content: string) =>
+    api.post<RuleComment>(`/rules/${ruleId}/comments`, { content }),
+  getVersion: (ruleId: string, versionNumber: number) =>
+    api.get<RuleVersion>(`/rules/${ruleId}/versions/${versionNumber}`),
 }
 
 // Index Pattern types

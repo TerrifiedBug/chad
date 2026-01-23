@@ -13,7 +13,7 @@ from app.api.deps import get_current_user, get_opensearch_client, get_opensearch
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.index_pattern import IndexPattern
-from app.models.rule import Rule, RuleStatus, RuleVersion
+from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
 from app.models.rule_exception import RuleException
 from app.models.user import User
@@ -78,6 +78,7 @@ async def list_rules(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
     status_filter: RuleStatus | None = None,
+    source_filter: RuleSource | None = None,
     skip: int = 0,
     limit: int = 100,
 ):
@@ -92,6 +93,8 @@ async def list_rules(
     )
     if status_filter:
         query = query.where(Rule.status == status_filter)
+    if source_filter:
+        query = query.where(Rule.source == source_filter)
     result = await db.execute(query)
     rules = result.scalars().all()
 
@@ -113,6 +116,8 @@ async def list_rules(
             "deployed_version": rule.deployed_version,
             "index_pattern_id": rule.index_pattern_id,
             "last_edited_by": None,
+            "source": rule.source,
+            "sigmahq_path": rule.sigmahq_path,
         }
         # Get the latest version's author (versions are already sorted desc by version_number)
         if rule.versions:
