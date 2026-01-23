@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus } from '@/lib/api'
+import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus, RuleSource } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -55,6 +55,7 @@ type Filters = {
   severity: string[]
   status: string[]
   deployed: 'any' | 'yes' | 'no'
+  source: RuleSource | 'all'
   search: string
 }
 
@@ -70,6 +71,7 @@ export default function RulesPage() {
     severity: [],
     status: [],
     deployed: 'any',
+    source: 'all',
     search: '',
   })
   const [viewMode, setViewMode] = useState<'tree' | 'table'>(() => {
@@ -138,6 +140,10 @@ export default function RulesPage() {
       if (filters.deployed === 'no' && rule.deployed_at) {
         return false
       }
+      // Source filter
+      if (filters.source !== 'all' && rule.source !== filters.source) {
+        return false
+      }
       // Search filter
       if (filters.search && !rule.title.toLowerCase().includes(filters.search.toLowerCase())) {
         return false
@@ -153,6 +159,7 @@ export default function RulesPage() {
       filters.severity.length > 0 ||
       filters.status.length > 0 ||
       filters.deployed !== 'any' ||
+      filters.source !== 'all' ||
       filters.search !== ''
     )
   }, [filters])
@@ -164,6 +171,7 @@ export default function RulesPage() {
       severity: [],
       status: [],
       deployed: 'any',
+      source: 'all',
       search: '',
     })
   }
@@ -480,6 +488,24 @@ export default function RulesPage() {
           </SelectContent>
         </Select>
 
+        {/* Source select */}
+        <label className="sr-only" htmlFor="source-filter">Rule source</label>
+        <Select
+          value={filters.source}
+          onValueChange={(value) =>
+            setFilters((prev) => ({ ...prev, source: value as RuleSource | 'all' }))
+          }
+        >
+          <SelectTrigger id="source-filter" className="w-[140px]">
+            <SelectValue placeholder="Source" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sources</SelectItem>
+            <SelectItem value="user">User-created</SelectItem>
+            <SelectItem value="sigmahq">SigmaHQ</SelectItem>
+          </SelectContent>
+        </Select>
+
         {/* View mode toggle */}
         <div className="flex items-center gap-1 ml-auto">
           <Button
@@ -569,6 +595,19 @@ export default function RulesPage() {
                 onClick={() => setFilters((prev) => ({ ...prev, deployed: 'any' }))}
                 className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
                 aria-label={`Remove deployment filter: ${filters.deployed === 'yes' ? 'Deployed' : 'Not Deployed'}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {filters.source !== 'all' && (
+            <Badge variant="secondary" className="gap-1">
+              {filters.source === 'user' ? 'User-created' : 'SigmaHQ'}
+              <button
+                type="button"
+                onClick={() => setFilters((prev) => ({ ...prev, source: 'all' }))}
+                className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
+                aria-label={`Remove source filter: ${filters.source === 'user' ? 'User-created' : 'SigmaHQ'}`}
               >
                 <X className="h-3 w-3" />
               </button>
