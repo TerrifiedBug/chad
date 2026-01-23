@@ -48,7 +48,8 @@ router = APIRouter(prefix="/rules", tags=["rules"])
 
 
 class SnoozeRequest(BaseModel):
-    hours: int = Field(ge=1, le=168)  # 1 hour to 1 week
+    hours: int | None = Field(default=None, ge=1, le=168)  # None allowed if indefinite
+    indefinite: bool = False
 
 
 class RuleCommentCreate(BaseModel):
@@ -109,6 +110,7 @@ async def list_rules(
             "severity": rule.severity,
             "status": rule.status,
             "snooze_until": rule.snooze_until,
+            "snooze_indefinite": rule.snooze_indefinite,
             "created_by": rule.created_by,
             "created_at": rule.created_at,
             "updated_at": rule.updated_at,
@@ -634,7 +636,11 @@ async def snooze_rule(
     current_user: Annotated[User, Depends(get_current_user)],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
-    """Snooze a rule for the specified number of hours."""
+    """Snooze a rule for the specified number of hours or indefinitely."""
+    # Validate request
+    if not request.indefinite and request.hours is None:
+        raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
+
     result = await db.execute(
         select(Rule)
         .where(Rule.id == rule_id)
@@ -645,9 +651,16 @@ async def snooze_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")
 
-    snooze_until = datetime.now(timezone.utc) + timedelta(hours=request.hours)
-    rule.status = RuleStatus.SNOOZED
-    rule.snooze_until = snooze_until
+    if request.indefinite:
+        rule.snooze_until = None
+        rule.snooze_indefinite = True
+        rule.status = RuleStatus.SNOOZED
+        snooze_until = None
+    else:
+        snooze_until = datetime.now(timezone.utc) + timedelta(hours=request.hours)
+        rule.snooze_until = snooze_until
+        rule.snooze_indefinite = False
+        rule.status = RuleStatus.SNOOZED
 
     # Update percolator if deployed
     if rule.deployed_at is not None and os_client is not None:
@@ -656,12 +669,16 @@ async def snooze_rule(
         percolator.update_rule_status(percolator_index, str(rule.id), enabled=False)
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.snooze", "rule", str(rule.id), {"title": rule.title, "hours": request.hours})
+    await audit_log(
+        db, current_user.id, "rule.snooze", "rule", str(rule.id),
+        {"title": rule.title, "hours": request.hours, "indefinite": request.indefinite}
+    )
     await db.commit()
 
     return {
         "success": True,
-        "snooze_until": snooze_until.isoformat(),
+        "snooze_until": snooze_until.isoformat() if snooze_until else None,
+        "snooze_indefinite": request.indefinite,
         "status": "snoozed",
     }
 
@@ -673,7 +690,7 @@ async def unsnooze_rule(
     current_user: Annotated[User, Depends(get_current_user)],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
-    """Cancel snooze and re-enable rule."""
+    """Remove snooze from a rule."""
     result = await db.execute(
         select(Rule)
         .where(Rule.id == rule_id)
@@ -686,6 +703,7 @@ async def unsnooze_rule(
 
     rule.status = RuleStatus.ENABLED
     rule.snooze_until = None
+    rule.snooze_indefinite = False
 
     # Update percolator if deployed
     if rule.deployed_at is not None and os_client is not None:
@@ -828,7 +846,7 @@ async def bulk_enable_rules(
     current_user: Annotated[User, Depends(get_current_user)],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
-    """Enable multiple rules."""
+    """Enable multiple rules (also clears any snooze)."""
     success = []
     failed = []
 
@@ -844,6 +862,7 @@ async def bulk_enable_rules(
                 old_status = rule.status
                 rule.status = RuleStatus.ENABLED
                 rule.snooze_until = None
+                rule.snooze_indefinite = False
                 success.append(rule_id)
 
                 # Sync status to OpenSearch if deployed
@@ -859,51 +878,6 @@ async def bulk_enable_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_enable", "rule", None,
-        {"count": len(success), "rule_ids": success}
-    )
-    await db.commit()
-
-    return BulkOperationResult(success=success, failed=failed)
-
-
-@router.post("/bulk/disable", response_model=BulkOperationResult)
-async def bulk_disable_rules(
-    data: BulkOperationRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
-):
-    """Disable multiple rules."""
-    success = []
-    failed = []
-
-    for rule_id in data.rule_ids:
-        try:
-            result = await db.execute(
-                select(Rule)
-                .where(Rule.id == rule_id)
-                .options(selectinload(Rule.index_pattern))
-            )
-            rule = result.scalar_one_or_none()
-            if rule:
-                old_status = rule.status
-                rule.status = RuleStatus.DISABLED
-                rule.snooze_until = None
-                success.append(rule_id)
-
-                # Sync status to OpenSearch if deployed
-                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.DISABLED:
-                    percolator = PercolatorService(os_client)
-                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-                    percolator.update_rule_status(percolator_index, str(rule.id), enabled=False)
-            else:
-                failed.append({"id": rule_id, "error": "Rule not found"})
-        except Exception as e:
-            failed.append({"id": rule_id, "error": str(e)})
-
-    await db.commit()
-    await audit_log(
-        db, current_user.id, "rule.bulk_disable", "rule", None,
         {"count": len(success), "rule_ids": success}
     )
     await db.commit()

@@ -59,7 +59,8 @@ export default function RuleEditorPage() {
   const [severity, setSeverity] = useState('medium')
   const [indexPatternId, setIndexPatternId] = useState('')
   const [description, setDescription] = useState('')
-  const [status, setStatus] = useState<'enabled' | 'disabled' | 'snoozed'>('disabled')
+  const [status, setStatus] = useState<'enabled' | 'snoozed'>('enabled')
+  const [snoozeIndefinite, setSnoozeIndefinite] = useState(false)
 
   // UI state
   const [indexPatterns, setIndexPatterns] = useState<IndexPattern[]>([])
@@ -163,7 +164,8 @@ export default function RuleEditorPage() {
       setDescription(rule.description || '')
       setDeployedAt(rule.deployed_at)
       setDeployedVersion(rule.deployed_version)
-      setStatus(rule.status as 'enabled' | 'disabled' | 'snoozed')
+      setStatus(rule.status as 'enabled' | 'snoozed')
+      setSnoozeIndefinite(rule.snooze_indefinite || false)
       setSnoozeUntil(rule.snooze_until)
       // Get current version from versions array (sorted desc by version_number)
       if (rule.versions && rule.versions.length > 0) {
@@ -446,9 +448,25 @@ export default function RuleEditorPage() {
     if (!id) return
     setIsSnoozing(true)
     try {
-      const result = await rulesApi.snooze(id, hours)
+      const result = await rulesApi.snooze(id, hours, false)
       setStatus('snoozed')
       setSnoozeUntil(result.snooze_until)
+      setSnoozeIndefinite(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to snooze rule')
+    } finally {
+      setIsSnoozing(false)
+    }
+  }
+
+  const handleSnoozeIndefinite = async () => {
+    if (!id) return
+    setIsSnoozing(true)
+    try {
+      const result = await rulesApi.snooze(id, undefined, true)
+      setStatus('snoozed')
+      setSnoozeUntil(null)
+      setSnoozeIndefinite(result.snooze_indefinite)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to snooze rule')
     } finally {
@@ -463,6 +481,7 @@ export default function RuleEditorPage() {
       await rulesApi.unsnooze(id)
       setStatus('enabled')
       setSnoozeUntil(null)
+      setSnoozeIndefinite(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unsnooze rule')
     } finally {
@@ -538,11 +557,11 @@ export default function RuleEditorPage() {
         <div className="flex items-center gap-2">
           {!isNew && (
             <div className="flex items-center gap-2 mr-4">
-              {status === 'snoozed' && snoozeUntil ? (
+              {status === 'snoozed' ? (
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-yellow-500" />
                   <span className="text-sm text-yellow-600">
-                    Snoozed until {formatSnoozeExpiry(snoozeUntil)}
+                    {snoozeIndefinite ? 'Snoozed indefinitely' : snoozeUntil ? `Snoozed until ${formatSnoozeExpiry(snoozeUntil)}` : 'Snoozed'}
                   </span>
                   <Button
                     variant="outline"
@@ -555,13 +574,7 @@ export default function RuleEditorPage() {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <Switch
-                    checked={status === 'enabled'}
-                    onCheckedChange={(checked) => setStatus(checked ? 'enabled' : 'disabled')}
-                  />
-                  <Label className="text-sm">
-                    {status === 'enabled' ? 'Enabled' : 'Disabled'}
-                  </Label>
+                  <span className="text-sm text-green-600 font-medium">Enabled</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" disabled={isSnoozing}>
@@ -575,6 +588,7 @@ export default function RuleEditorPage() {
                       <DropdownMenuItem onClick={() => handleSnooze(8)}>8 hours</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleSnooze(24)}>24 hours</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleSnooze(168)}>1 week</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnoozeIndefinite()}>Indefinitely</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

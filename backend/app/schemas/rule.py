@@ -16,7 +16,7 @@ class RuleBase(BaseModel):
 
 
 class RuleCreate(RuleBase):
-    status: RuleStatus = RuleStatus.DISABLED
+    status: RuleStatus = RuleStatus.ENABLED
 
 
 class RuleUpdate(BaseModel):
@@ -42,6 +42,7 @@ class RuleResponse(RuleBase):
     id: UUID
     status: RuleStatus
     snooze_until: datetime | None
+    snooze_indefinite: bool = False
     created_by: UUID
     created_at: datetime
     updated_at: datetime

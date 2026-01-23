@@ -47,7 +47,7 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
 // Rule status options
-const RULE_STATUSES: RuleStatus[] = ['enabled', 'disabled', 'snoozed']
+const RULE_STATUSES: RuleStatus[] = ['enabled', 'snoozed']
 
 // Filter types
 type Filters = {
@@ -226,7 +226,7 @@ export default function RulesPage() {
   }
 
   // Bulk action handler
-  const handleBulkAction = async (action: 'enable' | 'disable' | 'deploy' | 'undeploy' | 'delete') => {
+  const handleBulkAction = async (action: 'enable' | 'deploy' | 'undeploy' | 'delete') => {
     if (selectedRules.size === 0) return
 
     if (action === 'delete') {
@@ -242,9 +242,6 @@ export default function RulesPage() {
       switch (action) {
         case 'enable':
           result = await rulesApi.bulkEnable(ruleIds)
-          break
-        case 'disable':
-          result = await rulesApi.bulkDisable(ruleIds)
           break
         case 'deploy':
           result = await rulesApi.bulkDeploy(ruleIds)
@@ -651,14 +648,12 @@ export default function RulesPage() {
                     <div className="flex flex-col gap-1">
                       <span
                         className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
-                          rule.status === 'disabled'
-                            ? 'bg-gray-400 text-white'
-                            : rule.status === 'snoozed'
+                          rule.status === 'snoozed'
                             ? 'bg-yellow-500 text-white'
                             : 'bg-blue-500 text-white'
                         }`}
                       >
-                        {rule.status === 'disabled' ? 'Disabled' : rule.status === 'snoozed' ? 'Snoozed' : 'Enabled'}
+                        {rule.status === 'snoozed' ? (rule.snooze_indefinite ? 'Snoozed (Indefinite)' : 'Snoozed') : 'Enabled'}
                       </span>
                       <span
                         className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
@@ -701,10 +696,7 @@ export default function RulesPage() {
           </span>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => handleBulkAction('enable')} disabled={isBulkOperating}>
-              Enable
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => handleBulkAction('disable')} disabled={isBulkOperating}>
-              Disable
+              Enable / Unsnooze
             </Button>
             <Button size="sm" variant="outline" onClick={() => handleBulkAction('deploy')} disabled={isBulkOperating}>
               Deploy

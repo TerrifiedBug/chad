@@ -184,7 +184,7 @@ export type RuleComment = {
 }
 
 // Rule types
-export type RuleStatus = 'enabled' | 'disabled' | 'snoozed'
+export type RuleStatus = 'enabled' | 'snoozed'
 export type RuleSource = 'user' | 'sigmahq'
 
 export type Rule = {
@@ -195,6 +195,7 @@ export type Rule = {
   severity: string
   status: RuleStatus
   snooze_until: string | null
+  snooze_indefinite: boolean
   index_pattern_id: string
   created_by: string
   created_at: string
@@ -307,18 +308,16 @@ export const rulesApi = {
   deleteException: (ruleId: string, exceptionId: string) =>
     api.delete(`/rules/${ruleId}/exceptions/${exceptionId}`),
   // Snooze
-  snooze: (id: string, hours: number) =>
-    api.post<{ success: boolean; snooze_until: string; status: string }>(
+  snooze: (id: string, hours?: number, indefinite?: boolean) =>
+    api.post<{ success: boolean; snooze_until: string | null; snooze_indefinite: boolean; status: string }>(
       `/rules/${id}/snooze`,
-      { hours }
+      { hours, indefinite: indefinite ?? false }
     ),
   unsnooze: (id: string) =>
     api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`),
   // Bulk operations
   bulkEnable: (ruleIds: string[]) =>
     api.post<BulkOperationResult>('/rules/bulk/enable', { rule_ids: ruleIds }),
-  bulkDisable: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/disable', { rule_ids: ruleIds }),
   bulkDelete: (ruleIds: string[]) =>
     api.post<BulkOperationResult>('/rules/bulk/delete', { rule_ids: ruleIds }),
   bulkDeploy: (ruleIds: string[]) =>

@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 class RuleStatus(str, Enum):
     ENABLED = "enabled"
-    DISABLED = "disabled"
     SNOOZED = "snoozed"
 
 
@@ -35,8 +34,9 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     yaml_content: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String(50), default="medium")
-    status: Mapped[RuleStatus] = mapped_column(default=RuleStatus.DISABLED)
+    status: Mapped[RuleStatus] = mapped_column(default=RuleStatus.ENABLED)
     snooze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snooze_indefinite: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Deployment tracking
     deployed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
