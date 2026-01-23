@@ -15,11 +15,12 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, FileCode, FileText, FolderTree, Plus, Search, Table as TableIcon, X } from 'lucide-react'
+import { ChevronDown, Clock, FileCode, FileText, FolderTree, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { RulesTreeView } from '@/components/RulesTreeView'
@@ -76,6 +77,7 @@ export default function RulesPage() {
   // Bulk operation state
   const [isBulkOperating, setIsBulkOperating] = useState(false)
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+  const [showBulkSnooze, setShowBulkSnooze] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -216,7 +218,7 @@ export default function RulesPage() {
   }
 
   // Bulk action handler
-  const handleBulkAction = async (action: 'enable' | 'deploy' | 'undeploy' | 'delete') => {
+  const handleBulkAction = async (action: 'deploy' | 'undeploy' | 'unsnooze' | 'delete') => {
     if (selectedRules.size === 0) return
 
     if (action === 'delete') {
@@ -230,14 +232,15 @@ export default function RulesPage() {
       let result
 
       switch (action) {
-        case 'enable':
-          result = await rulesApi.bulkEnable(ruleIds)
-          break
         case 'deploy':
           result = await rulesApi.bulkDeploy(ruleIds)
           break
         case 'undeploy':
           result = await rulesApi.bulkUndeploy(ruleIds)
+          break
+        case 'unsnooze':
+          // bulkEnable clears snooze and sets status to deployed
+          result = await rulesApi.bulkEnable(ruleIds)
           break
       }
 
@@ -249,6 +252,34 @@ export default function RulesPage() {
       loadData() // Refresh the list
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bulk operation failed')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
+  // Bulk snooze handler
+  const handleBulkSnooze = async (hours?: number, indefinite?: boolean) => {
+    if (selectedRules.size === 0) return
+
+    setShowBulkSnooze(false)
+    setIsBulkOperating(true)
+    try {
+      const ruleIds = Array.from(selectedRules)
+      const results = await Promise.allSettled(
+        ruleIds.map((id) => rulesApi.snooze(id, hours, indefinite))
+      )
+
+      const succeeded = results.filter((r) => r.status === 'fulfilled').length
+      const failed = results.filter((r) => r.status === 'rejected').length
+
+      if (failed > 0) {
+        setError(`${succeeded} snoozed, ${failed} failed`)
+      }
+
+      clearSelection()
+      loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk snooze failed')
     } finally {
       setIsBulkOperating(false)
     }
@@ -727,17 +758,34 @@ export default function RulesPage() {
             {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''} selected
           </span>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => handleBulkAction('enable')} disabled={isBulkOperating}>
-              Enable / Unsnooze
-            </Button>
             <Button size="sm" variant="outline" onClick={() => handleBulkAction('deploy')} disabled={isBulkOperating}>
-              Deploy
+              <Rocket className="mr-2 h-4 w-4" /> Deploy
             </Button>
             <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating}>
-              Undeploy
+              <X className="mr-2 h-4 w-4" /> Undeploy
+            </Button>
+            <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" disabled={isBulkOperating}>
+                  <Clock className="mr-2 h-4 w-4" /> Snooze
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="z-[60]">
+                <DropdownMenuLabel>Snooze Duration</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleBulkSnooze(1)}>1 hour</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkSnooze(4)}>4 hours</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkSnooze(8)}>8 hours</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkSnooze(24)}>24 hours</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkSnooze(168)}>1 week</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating}>
+              <RotateCcw className="mr-2 h-4 w-4" /> Unsnooze
             </Button>
             <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')} disabled={isBulkOperating}>
-              Delete
+              <Trash2 className="mr-2 h-4 w-4" /> Delete
             </Button>
             <Button size="sm" variant="outline" onClick={handleBulkExport} disabled={isBulkOperating}>
               Export
