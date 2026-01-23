@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,15 +8,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Sparkles, Check, X } from 'lucide-react'
+import { Loader2, Sparkles, Check, X, Search } from 'lucide-react'
 import {
   fieldMappingsApi,
   indexPatternsApi,
@@ -26,6 +20,7 @@ import {
 type MappingEntry = {
   sigmaField: string
   targetField: string
+  searchValue: string
   confidence?: number
   reason?: string
 }
@@ -53,6 +48,8 @@ export function MapFieldsModal({
   const [isSuggestingAI, setIsSuggestingAI] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Load available fields from index when modal opens
   useEffect(() => {
@@ -86,17 +83,50 @@ export function MapFieldsModal({
       unmappedFields.map((field) => ({
         sigmaField: field,
         targetField: '',
+        searchValue: '',
       }))
     )
+    setActiveDropdown(null)
   }
 
-  const handleFieldChange = (sigmaField: string, targetField: string) => {
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setActiveDropdown(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleFieldChange = (sigmaField: string, targetField: string, searchValue?: string) => {
     setMappings((prev) =>
       prev.map((m) =>
         m.sigmaField === sigmaField
-          ? { ...m, targetField, confidence: undefined, reason: undefined }
+          ? { ...m, targetField, searchValue: searchValue ?? targetField, confidence: undefined, reason: undefined }
           : m
       )
+    )
+  }
+
+  const handleSearchChange = (sigmaField: string, searchValue: string) => {
+    setMappings((prev) =>
+      prev.map((m) =>
+        m.sigmaField === sigmaField
+          ? { ...m, searchValue, targetField: searchValue }
+          : m
+      )
+    )
+  }
+
+  const getFilteredFields = (searchValue: string) => {
+    if (!searchValue) return availableFields
+    return availableFields.filter((f) =>
+      f.toLowerCase().includes(searchValue.toLowerCase())
     )
   }
 
@@ -119,6 +149,7 @@ export function MapFieldsModal({
             return {
               ...m,
               targetField: suggestion.target_field,
+              searchValue: suggestion.target_field,
               confidence: suggestion.confidence,
               reason: suggestion.reason,
             }
@@ -231,29 +262,60 @@ export function MapFieldsModal({
                         </code>
                       </td>
                       <td className="p-3">
-                        <Select
-                          value={mapping.targetField || '__none__'}
-                          onValueChange={(value) =>
-                            handleFieldChange(
-                              mapping.sigmaField,
-                              value === '__none__' ? '' : value
-                            )
-                          }
+                        <div
+                          ref={activeDropdown === mapping.sigmaField ? dropdownRef : undefined}
+                          className="relative"
                         >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select field..." />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-60">
-                            <SelectItem value="__none__">
-                              <span className="text-muted-foreground">Not mapped</span>
-                            </SelectItem>
-                            {availableFields.map((field) => (
-                              <SelectItem key={field} value={field}>
-                                {field}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              value={mapping.searchValue}
+                              onChange={(e) => {
+                                handleSearchChange(mapping.sigmaField, e.target.value)
+                                setActiveDropdown(mapping.sigmaField)
+                              }}
+                              onFocus={() => setActiveDropdown(mapping.sigmaField)}
+                              placeholder="Search fields..."
+                              className="pl-8 h-9 text-sm font-mono"
+                            />
+                          </div>
+                          {activeDropdown === mapping.sigmaField && availableFields.length > 0 && (
+                            <div className="absolute z-50 mt-1 w-full bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
+                              {(() => {
+                                const filtered = getFilteredFields(mapping.searchValue)
+                                if (filtered.length === 0) {
+                                  return (
+                                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                                      No matching fields
+                                    </div>
+                                  )
+                                }
+                                return (
+                                  <>
+                                    {filtered.slice(0, 100).map((field) => (
+                                      <button
+                                        key={field}
+                                        type="button"
+                                        className="w-full px-3 py-1.5 text-left text-sm font-mono hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground outline-none"
+                                        onClick={() => {
+                                          handleFieldChange(mapping.sigmaField, field, field)
+                                          setActiveDropdown(null)
+                                        }}
+                                      >
+                                        {field}
+                                      </button>
+                                    ))}
+                                    {filtered.length > 100 && (
+                                      <div className="px-3 py-1.5 text-xs text-muted-foreground border-t">
+                                        Showing first 100 of {filtered.length} matches
+                                      </div>
+                                    )}
+                                  </>
+                                )
+                              })()}
+                            </div>
+                          )}
+                        </div>
                         {mapping.confidence !== undefined && mapping.reason && (
                           <div className="text-xs text-muted-foreground mt-1">
                             AI: {mapping.reason} ({Math.round(mapping.confidence * 100)}%)

@@ -4,7 +4,7 @@ Role permissions API endpoints.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.models.user import User
 from app.models.role_permission import PERMISSION_DESCRIPTIONS
 from app.services.permissions import get_all_role_permissions, set_role_permission
 from app.services.audit import audit_log
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/permissions", tags=["permissions"])
 
@@ -42,6 +43,7 @@ async def get_permissions(
 @router.put("")
 async def update_permission(
     data: PermissionUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_admin)],
 ):
@@ -70,7 +72,8 @@ async def update_permission(
     await set_role_permission(db, data.role, data.permission, data.granted)
     await audit_log(
         db, current_user.id, "permission.update", "role_permission", None,
-        {"role": data.role, "permission": data.permission, "granted": data.granted}
+        {"role": data.role, "permission": data.permission, "granted": data.granted},
+        ip_address=get_client_ip(request),
     )
 
     return {"success": True}

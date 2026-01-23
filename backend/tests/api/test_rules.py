@@ -3,6 +3,56 @@
 import pytest
 from httpx import AsyncClient
 
+from app.models.index_pattern import IndexPattern
+from app.models.rule import RuleStatus
+
+
+class TestStatusModelSimplification:
+    """Test the new DEPLOYED/UNDEPLOYED/SNOOZED status model."""
+
+    @pytest.mark.asyncio
+    async def test_cannot_snooze_undeployed_rule(self, authenticated_client: AsyncClient, test_session):
+        """Snooze should fail for undeployed rules."""
+        # Create index pattern first
+        pattern = IndexPattern(
+            name="test-snooze-pattern",
+            pattern="test-snooze-*",
+            percolator_index="percolator-test-snooze"
+        )
+        test_session.add(pattern)
+        await test_session.commit()
+        await test_session.refresh(pattern)
+
+        # Create rule (starts as undeployed)
+        response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Snooze Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "severity": "medium",
+                "index_pattern_id": str(pattern.id)
+            }
+        )
+        assert response.status_code == 201
+        rule_id = response.json()["id"]
+
+        # Try to snooze - should fail because rule is undeployed
+        response = await authenticated_client.post(
+            f"/api/rules/{rule_id}/snooze",
+            json={"hours": 24}
+        )
+        assert response.status_code == 400
+        assert "cannot snooze" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_status_enum_values(self):
+        """Verify the new status enum values exist."""
+        assert hasattr(RuleStatus, 'DEPLOYED')
+        assert hasattr(RuleStatus, 'UNDEPLOYED')
+        assert hasattr(RuleStatus, 'SNOOZED')
+        # Old values should not exist
+        assert not hasattr(RuleStatus, 'ENABLED')
+
 
 class TestRuleValidation:
     """Tests for POST /rules/validate endpoint."""

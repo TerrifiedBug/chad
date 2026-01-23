@@ -14,6 +14,7 @@ class AuditLogEntry(BaseModel):
     resource_type: str
     resource_id: str | None
     details: dict | None
+    ip_address: str | None = None
     created_at: datetime
 
 

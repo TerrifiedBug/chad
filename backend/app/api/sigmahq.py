@@ -177,7 +177,7 @@ async def import_rule(
         description=metadata.get("description", f"Imported from SigmaHQ: {request.rule_path}"),
         yaml_content=content,
         severity=metadata.get("level", "medium"),
-        status=RuleStatus.ENABLED,  # Start enabled but not deployed
+        status=RuleStatus.UNDEPLOYED,  # Start undeployed until explicitly deployed
         index_pattern_id=request.index_pattern_id,
         created_by=current_user.id,
         source=RuleSource.SIGMAHQ,

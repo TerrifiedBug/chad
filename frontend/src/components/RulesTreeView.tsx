@@ -166,17 +166,25 @@ export function RulesTreeView({
                                 {severityConf.label}
                               </Badge>
 
-                              {/* Deployed badge */}
-                              {rule.deployed_at && (
-                                <Badge variant="outline" className="text-xs">
+                              {/* Status badge */}
+                              {rule.status === 'deployed' && (
+                                <Badge variant="outline" className="text-xs border-green-500 text-green-600">
                                   Deployed
                                 </Badge>
                               )}
-
-                              {/* Snoozed badge with duration */}
+                              {rule.status === 'undeployed' && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Undeployed
+                                </Badge>
+                              )}
                               {rule.status === 'snoozed' && (
                                 <Badge className="text-xs bg-yellow-500 text-black">
                                   Snoozed {snoozeDisplay}
+                                </Badge>
+                              )}
+                              {rule.needs_redeploy && (
+                                <Badge variant="outline" className="text-xs border-orange-500 text-orange-600">
+                                  Needs Redeploy
                                 </Badge>
                               )}
                             </div>

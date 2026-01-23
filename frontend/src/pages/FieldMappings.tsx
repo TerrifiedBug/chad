@@ -36,15 +36,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Globe, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { Globe, Loader2, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 
 export default function FieldMappingsPage() {
   const { showToast } = useToast()
@@ -62,6 +55,13 @@ export default function FieldMappingsPage() {
   const [formTargetField, setFormTargetField] = useState('')
   const [formScope, setFormScope] = useState<'global' | 'index'>('global')
   const [isSaving, setIsSaving] = useState(false)
+
+  // Available fields for target field dropdown
+  const [availableFields, setAvailableFields] = useState<string[]>([])
+  const [isLoadingFields, setIsLoadingFields] = useState(false)
+  const [fieldSearch, setFieldSearch] = useState('')
+  const [showFieldDropdown, setShowFieldDropdown] = useState(false)
+  const fieldDropdownRef = useRef<HTMLDivElement>(null)
 
   // Delete confirmation
   const [deleteMapping, setDeleteMapping] = useState<FieldMapping | null>(null)
@@ -136,21 +136,72 @@ export default function FieldMappingsPage() {
     }
   }
 
+  const loadAvailableFields = async (indexPatternId: string) => {
+    setIsLoadingFields(true)
+    try {
+      const fields = await indexPatternsApi.getFields(indexPatternId)
+      setAvailableFields(fields.sort())
+    } catch (err) {
+      // Silent fail - user can still type manually
+      setAvailableFields([])
+    } finally {
+      setIsLoadingFields(false)
+    }
+  }
+
   const openAddModal = () => {
     setEditingMapping(null)
     setFormSigmaField('')
     setFormTargetField('')
+    setFieldSearch('')
+    setShowFieldDropdown(false)
     setFormScope(activeTab === 'global' ? 'global' : 'index')
     setShowModal(true)
+    // Load available fields if on an index tab
+    if (activeTab !== 'global') {
+      loadAvailableFields(activeTab)
+    } else {
+      setAvailableFields([])
+    }
   }
 
   const openEditModal = (mapping: FieldMapping) => {
     setEditingMapping(mapping)
     setFormSigmaField(mapping.sigma_field)
     setFormTargetField(mapping.target_field)
+    setFieldSearch(mapping.target_field)
+    setShowFieldDropdown(false)
     setFormScope(mapping.index_pattern_id ? 'index' : 'global')
     setShowModal(true)
+    // Load available fields if editing an index-specific mapping
+    if (mapping.index_pattern_id) {
+      loadAvailableFields(mapping.index_pattern_id)
+    } else if (activeTab !== 'global') {
+      // For global mappings being edited while on an index tab, show that index's fields
+      loadAvailableFields(activeTab)
+    } else {
+      setAvailableFields([])
+    }
   }
+
+  // Filter available fields based on search
+  const filteredFields = availableFields.filter((f) =>
+    f.toLowerCase().includes(fieldSearch.toLowerCase())
+  )
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        fieldDropdownRef.current &&
+        !fieldDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowFieldDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleSave = async () => {
     if (!formSigmaField.trim() || !formTargetField.trim()) {
@@ -449,31 +500,66 @@ export default function FieldMappingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="target-field">Target Field (in your logs)</Label>
-              <Input
-                id="target-field"
-                value={formTargetField}
-                onChange={(e) => setFormTargetField(e.target.value)}
-                placeholder="e.g., src_ip"
-              />
+              <Label htmlFor="target-field">Target Field</Label>
+              {activeTab !== 'global' || editingMapping?.index_pattern_id ? (
+                <div ref={fieldDropdownRef} className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="target-field"
+                      value={fieldSearch}
+                      onChange={(e) => {
+                        setFieldSearch(e.target.value)
+                        setFormTargetField(e.target.value)
+                        setShowFieldDropdown(true)
+                      }}
+                      onFocus={() => setShowFieldDropdown(true)}
+                      placeholder="Search fields..."
+                      className="pl-9"
+                    />
+                    {isLoadingFields && (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  {showFieldDropdown && availableFields.length > 0 && (
+                    <div className="absolute z-50 mt-1 w-full bg-popover border rounded-md shadow-md max-h-60 overflow-y-auto">
+                      {filteredFields.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          No matching fields
+                        </div>
+                      ) : (
+                        filteredFields.slice(0, 100).map((field) => (
+                          <button
+                            key={field}
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm font-mono hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground outline-none"
+                            onClick={() => {
+                              setFormTargetField(field)
+                              setFieldSearch(field)
+                              setShowFieldDropdown(false)
+                            }}
+                          >
+                            {field}
+                          </button>
+                        ))
+                      )}
+                      {filteredFields.length > 100 && (
+                        <div className="px-3 py-2 text-xs text-muted-foreground border-t">
+                          Showing first 100 of {filteredFields.length} matches
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Input
+                  id="target-field"
+                  value={formTargetField}
+                  onChange={(e) => setFormTargetField(e.target.value)}
+                  placeholder="e.g., src_ip"
+                />
+              )}
             </div>
-            {!editingMapping && activeTab !== 'global' && (
-              <div className="space-y-2">
-                <Label>Scope</Label>
-                <Select
-                  value={formScope}
-                  onValueChange={(v) => setFormScope(v as 'global' | 'index')}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="index">This index pattern only</SelectItem>
-                    <SelectItem value="global">Global (all index patterns)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowModal(false)}>

@@ -244,20 +244,21 @@ export default function AuditLogPage() {
               <TableHead>Action</TableHead>
               <TableHead>Resource Type</TableHead>
               <TableHead>Resource ID</TableHead>
+              <TableHead>IP Address</TableHead>
               <TableHead className="w-[100px]">Details</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={7} className="text-center py-8">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : !auditData || auditData.items.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No audit log entries found
@@ -276,6 +277,9 @@ export default function AuditLogPage() {
                   <TableCell>{formatResourceType(entry.resource_type)}</TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {entry.resource_id ? entry.resource_id.slice(0, 8) + '...' : '-'}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground">
+                    {entry.ip_address || '-'}
                   </TableCell>
                   <TableCell>
                     <Button
@@ -371,12 +375,12 @@ export default function AuditLogPage() {
                     <p className="font-mono text-sm">{selectedEntry.user_id}</p>
                   </div>
                 )}
-                {selectedEntry.details?.ip_address && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">IP Address:</span>
-                    <p className="font-mono text-sm">{String(selectedEntry.details.ip_address)}</p>
-                  </div>
-                )}
+                <div className="col-span-2">
+                  <span className="text-muted-foreground">IP Address:</span>
+                  <p className="font-mono text-sm">
+                    {selectedEntry.ip_address || (selectedEntry.details?.ip_address ? String(selectedEntry.details.ip_address) : '-')}
+                  </p>
+                </div>
               </div>
               {selectedEntry.details && Object.keys(selectedEntry.details).length > 0 && (
                 <div>

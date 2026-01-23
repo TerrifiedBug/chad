@@ -91,20 +91,19 @@ async def audit_log(
         if user:
             user_email = user.email
 
-    # Build details dict with ip_address and user_email
+    # Build details dict with user_email (ip_address now has dedicated column)
     log_details = details.copy() if details else {}
-    if ip_address:
-        log_details["ip_address"] = ip_address
     if user_email:
         log_details["user_email"] = user_email
 
-    # Create PostgreSQL record (user_email stored in details for reference)
+    # Create PostgreSQL record
     log = AuditLog(
         user_id=user_id,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
         details=log_details if log_details else None,
+        ip_address=ip_address,
     )
     db.add(log)
     # Don't commit here - let the caller manage the transaction

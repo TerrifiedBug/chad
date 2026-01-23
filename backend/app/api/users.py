@@ -4,7 +4,7 @@ import secrets
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from passlib.hash import bcrypt
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import validate_password_complexity
 from app.api.deps import get_db, require_admin
+from app.utils.request import get_client_ip
 from app.models.user import User, UserRole
 from app.services.audit import audit_log
 
@@ -76,6 +77,7 @@ async def list_users(
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     data: UserCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_admin)],
 ):
@@ -115,7 +117,7 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
 
-    await audit_log(db, current_user.id, "user.create", "user", str(user.id), {"email": user.email, "role": role.value})
+    await audit_log(db, current_user.id, "user.create", "user", str(user.id), {"email": user.email, "role": role.value}, ip_address=get_client_ip(request))
     await db.commit()
 
     return UserResponse(
@@ -131,6 +133,7 @@ async def create_user(
 @router.delete("/{user_id}")
 async def delete_user(
     user_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_admin)],
 ):
@@ -164,7 +167,7 @@ async def delete_user(
 
     email = user.email  # Capture before delete
     await db.delete(user)
-    await audit_log(db, current_user.id, "user.delete", "user", str(user_id), {"email": email})
+    await audit_log(db, current_user.id, "user.delete", "user", str(user_id), {"email": email}, ip_address=get_client_ip(request))
     await db.commit()
     return {"success": True}
 
@@ -173,6 +176,7 @@ async def delete_user(
 async def update_user(
     user_id: UUID,
     data: UserUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_admin)],
 ):
@@ -211,7 +215,7 @@ async def update_user(
     if data.is_active is not None:
         user.is_active = data.is_active
 
-    await audit_log(db, current_user.id, "user.update", "user", str(user_id), {"email": user.email, "role": data.role, "is_active": data.is_active})
+    await audit_log(db, current_user.id, "user.update", "user", str(user_id), {"email": user.email, "role": data.role, "is_active": data.is_active}, ip_address=get_client_ip(request))
     await db.commit()
     await db.refresh(user)
 
@@ -228,6 +232,7 @@ async def update_user(
 @router.post("/{user_id}/reset-password", response_model=PasswordResetResponse)
 async def reset_user_password(
     user_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_admin)],
 ):
@@ -255,7 +260,7 @@ async def reset_user_password(
     user.password_hash = bcrypt.hash(temporary_password)
     user.must_change_password = True
 
-    await audit_log(db, current_user.id, "user.password_reset", "user", str(user_id), {"email": user.email})
+    await audit_log(db, current_user.id, "user.password_reset", "user", str(user_id), {"email": user.email}, ip_address=get_client_ip(request))
     await db.commit()
 
     return PasswordResetResponse(

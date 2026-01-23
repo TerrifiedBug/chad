@@ -8,12 +8,13 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID as PyUUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.security import get_password_hash, verify_password
+from app.utils.request import get_client_ip
 from app.db.session import get_db
 from app.models.api_key import APIKey, generate_api_key
 from app.models.user import User
@@ -45,6 +46,7 @@ async def list_api_keys(
 @router.post("", response_model=APIKeyCreateResponse)
 async def create_api_key(
     data: APIKeyCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -72,7 +74,7 @@ async def create_api_key(
     await db.commit()
     await db.refresh(api_key)
 
-    await audit_log(db, current_user.id, "api_key.create", "api_key", str(api_key.id), {"name": api_key.name})
+    await audit_log(db, current_user.id, "api_key.create", "api_key", str(api_key.id), {"name": api_key.name}, ip_address=get_client_ip(request))
     await db.commit()
 
     # Return the response with the raw key (only time it's shown)
@@ -115,6 +117,7 @@ async def get_api_key(
 async def update_api_key(
     key_id: PyUUID,
     data: APIKeyUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -138,7 +141,7 @@ async def update_api_key(
     if data.is_active is not None:
         api_key.is_active = data.is_active
 
-    await audit_log(db, current_user.id, "api_key.update", "api_key", str(api_key.id), {"name": api_key.name, "is_active": api_key.is_active})
+    await audit_log(db, current_user.id, "api_key.update", "api_key", str(api_key.id), {"name": api_key.name, "is_active": api_key.is_active}, ip_address=get_client_ip(request))
     await db.commit()
     await db.refresh(api_key)
 
@@ -148,6 +151,7 @@ async def update_api_key(
 @router.delete("/{key_id}")
 async def delete_api_key(
     key_id: PyUUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -165,7 +169,7 @@ async def delete_api_key(
 
     name = api_key.name  # Capture before delete
     await db.delete(api_key)
-    await audit_log(db, current_user.id, "api_key.delete", "api_key", str(key_id), {"name": name})
+    await audit_log(db, current_user.id, "api_key.delete", "api_key", str(key_id), {"name": name}, ip_address=get_client_ip(request))
     await db.commit()
 
     return {"message": "API key deleted"}

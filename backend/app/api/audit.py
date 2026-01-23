@@ -74,6 +74,7 @@ async def list_audit_logs(
                 resource_type=log.resource_type,
                 resource_id=log.resource_id,
                 details=log.details,
+                ip_address=log.ip_address,
                 created_at=log.created_at,
             )
         )

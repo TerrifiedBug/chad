@@ -2,12 +2,13 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client
 from app.db.session import get_db
+from app.utils.request import get_client_ip
 from app.models.user import User
 from app.services.audit import audit_log
 from app.schemas.alert import (
@@ -76,6 +77,7 @@ async def get_alert(
 async def update_alert_status(
     alert_id: str,
     update: AlertStatusUpdate,
+    request: Request,
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -110,7 +112,7 @@ async def update_alert_status(
     if not success:
         raise HTTPException(500, "Failed to update alert status")
 
-    await audit_log(db, current_user.id, "alert.status_update", "alert", alert_id, {"status": update.status})
+    await audit_log(db, current_user.id, "alert.status_update", "alert", alert_id, {"status": update.status}, ip_address=get_client_ip(request))
     await db.commit()
 
     return {"success": True, "status": update.status}

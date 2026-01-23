@@ -16,6 +16,87 @@ from app.models.audit_log import AuditLog
 from app.models.user import User, UserRole
 
 
+class TestIPAddressLogging:
+    """Test IP address capture in audit logs."""
+
+    @pytest.mark.asyncio
+    async def test_audit_log_has_ip_address_column(self):
+        """Verify AuditLog model has ip_address field."""
+        assert hasattr(AuditLog, 'ip_address')
+
+    @pytest.mark.asyncio
+    async def test_audit_log_captures_ip_from_request(
+        self, authenticated_client: AsyncClient, test_session: AsyncSession
+    ):
+        """Audit logs should capture client IP address from X-Forwarded-For header."""
+        # Make a request that triggers an audit log with X-Forwarded-For header
+        from app.models.index_pattern import IndexPattern
+
+        # Create index pattern first
+        pattern = IndexPattern(
+            name="test-ip-pattern",
+            pattern="test-ip-*",
+            percolator_index="percolator-test-ip"
+        )
+        test_session.add(pattern)
+        await test_session.commit()
+        await test_session.refresh(pattern)
+
+        # Create a rule (which triggers audit log)
+        response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test IP Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "severity": "medium",
+                "index_pattern_id": str(pattern.id)
+            },
+            headers={"X-Forwarded-For": "192.168.1.100, 10.0.0.1"}
+        )
+        assert response.status_code == 201
+
+        # Query audit log to verify IP was captured
+        from sqlalchemy import select, desc
+        result = await test_session.execute(
+            select(AuditLog)
+            .where(AuditLog.action == "rule.create")
+            .order_by(desc(AuditLog.created_at))
+            .limit(1)
+        )
+        log = result.scalar_one_or_none()
+        assert log is not None
+        assert log.ip_address == "192.168.1.100"  # First IP in X-Forwarded-For
+
+    @pytest.mark.asyncio
+    async def test_audit_log_ip_in_response(
+        self, authenticated_client: AsyncClient, test_session: AsyncSession
+    ):
+        """Audit log API response should include ip_address field."""
+        # Create an audit log with IP address
+        log = AuditLog(
+            id=uuid.uuid4(),
+            user_id=None,
+            action="test.action",
+            resource_type="test",
+            resource_id=None,
+            details={},
+            ip_address="10.20.30.40"
+        )
+        test_session.add(log)
+        await test_session.commit()
+
+        # Query the audit API
+        response = await authenticated_client.get("/api/audit")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) >= 1
+
+        # Find our test log
+        test_log = next((item for item in data["items"] if item["action"] == "test.action"), None)
+        assert test_log is not None
+        assert test_log["ip_address"] == "10.20.30.40"
+
+
 @pytest_asyncio.fixture(scope="function")
 async def non_admin_user(test_session: AsyncSession) -> User:
     """Create a non-admin test user."""

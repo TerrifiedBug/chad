@@ -52,7 +52,7 @@ detection:
     condition: selection
 """,
         severity="high",
-        status=RuleStatus.ENABLED,
+        status=RuleStatus.DEPLOYED,
         index_pattern_id=test_index_pattern.id,
         created_by=test_user.id,
     )
@@ -363,7 +363,7 @@ class TestUpdateRuleException:
             description="Another test rule",
             yaml_content="title: Other\nlevel: low\n",
             severity="low",
-            status=RuleStatus.ENABLED,
+            status=RuleStatus.DEPLOYED,
             index_pattern_id=test_index_pattern.id,
             created_by=test_user.id,
         )
@@ -438,7 +438,7 @@ class TestDeleteRuleException:
             description="Another test rule",
             yaml_content="title: Other\nlevel: low\n",
             severity="low",
-            status=RuleStatus.ENABLED,
+            status=RuleStatus.DEPLOYED,
             index_pattern_id=test_index_pattern.id,
             created_by=test_user.id,
         )

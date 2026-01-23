@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,8 +19,9 @@ if TYPE_CHECKING:
 
 
 class RuleStatus(str, Enum):
-    ENABLED = "enabled"
-    SNOOZED = "snoozed"
+    DEPLOYED = "deployed"      # Active in percolator, matching logs
+    UNDEPLOYED = "undeployed"  # Not in percolator, not matching
+    SNOOZED = "snoozed"        # In percolator but alerts suppressed
 
 
 class RuleSource(str, Enum):
@@ -35,7 +36,10 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     yaml_content: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String(50), default="medium")
-    status: Mapped[RuleStatus] = mapped_column(default=RuleStatus.ENABLED)
+    status: Mapped[RuleStatus] = mapped_column(
+        SAEnum(RuleStatus, values_callable=lambda e: [m.value for m in e]),
+        default=RuleStatus.UNDEPLOYED
+    )
     snooze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     snooze_indefinite: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -46,6 +50,12 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     # Source tracking
     source: Mapped[RuleSource] = mapped_column(String(50), default=RuleSource.USER)
     sigmahq_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Threshold alerting configuration
+    threshold_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    threshold_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    threshold_window_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    threshold_group_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     index_pattern_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("index_patterns.id"), nullable=False

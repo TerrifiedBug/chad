@@ -4,13 +4,6 @@ import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus, RuleSource 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Table,
   TableBody,
   TableCell,
@@ -47,14 +40,13 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
 // Rule status options
-const RULE_STATUSES: RuleStatus[] = ['enabled', 'snoozed']
+const RULE_STATUSES: RuleStatus[] = ['deployed', 'undeployed', 'snoozed']
 
 // Filter types
 type Filters = {
   indexPattern: string[]
   severity: string[]
   status: string[]
-  deployed: 'any' | 'yes' | 'no'
   source: RuleSource | 'all'
   search: string
 }
@@ -70,7 +62,6 @@ export default function RulesPage() {
     indexPattern: [],
     severity: [],
     status: [],
-    deployed: 'any',
     source: 'all',
     search: '',
   })
@@ -133,13 +124,6 @@ export default function RulesPage() {
       if (filters.status.length > 0 && !filters.status.includes(rule.status)) {
         return false
       }
-      // Deployed filter
-      if (filters.deployed === 'yes' && !rule.deployed_at) {
-        return false
-      }
-      if (filters.deployed === 'no' && rule.deployed_at) {
-        return false
-      }
       // Source filter
       if (filters.source !== 'all' && rule.source !== filters.source) {
         return false
@@ -158,7 +142,6 @@ export default function RulesPage() {
       filters.indexPattern.length > 0 ||
       filters.severity.length > 0 ||
       filters.status.length > 0 ||
-      filters.deployed !== 'any' ||
       filters.source !== 'all' ||
       filters.search !== ''
     )
@@ -170,7 +153,6 @@ export default function RulesPage() {
       indexPattern: [],
       severity: [],
       status: [],
-      deployed: 'any',
       source: 'all',
       search: '',
     })
@@ -470,41 +452,45 @@ export default function RulesPage() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Deployed select */}
-        <label className="sr-only" htmlFor="deployed-filter">Deployment status</label>
-        <Select
-          value={filters.deployed}
-          onValueChange={(value) =>
-            setFilters((prev) => ({ ...prev, deployed: value as Filters['deployed'] }))
-          }
-        >
-          <SelectTrigger id="deployed-filter" className="w-[140px]">
-            <SelectValue placeholder="Deployed" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">Any</SelectItem>
-            <SelectItem value="yes">Deployed</SelectItem>
-            <SelectItem value="no">Not Deployed</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {/* Source select */}
-        <label className="sr-only" htmlFor="source-filter">Rule source</label>
-        <Select
-          value={filters.source}
-          onValueChange={(value) =>
-            setFilters((prev) => ({ ...prev, source: value as RuleSource | 'all' }))
-          }
-        >
-          <SelectTrigger id="source-filter" className="w-[140px]">
-            <SelectValue placeholder="Source" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Sources</SelectItem>
-            <SelectItem value="user">User-created</SelectItem>
-            <SelectItem value="sigmahq">SigmaHQ</SelectItem>
-          </SelectContent>
-        </Select>
+        {/* Source dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              Source
+              {filters.source !== 'all' && (
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                  1
+                </Badge>
+              )}
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Rule Source</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={filters.source === 'all'}
+              onCheckedChange={() => setFilters((prev) => ({ ...prev, source: 'all' }))}
+              onSelect={(e) => e.preventDefault()}
+            >
+              All Sources
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={filters.source === 'user'}
+              onCheckedChange={() => setFilters((prev) => ({ ...prev, source: 'user' }))}
+              onSelect={(e) => e.preventDefault()}
+            >
+              User-created
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={filters.source === 'sigmahq'}
+              onCheckedChange={() => setFilters((prev) => ({ ...prev, source: 'sigmahq' }))}
+              onSelect={(e) => e.preventDefault()}
+            >
+              SigmaHQ
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* View mode toggle */}
         <div className="flex items-center gap-1 ml-auto">
@@ -587,19 +573,6 @@ export default function RulesPage() {
               </button>
             </Badge>
           ))}
-          {filters.deployed !== 'any' && (
-            <Badge variant="secondary" className="gap-1">
-              {filters.deployed === 'yes' ? 'Deployed' : 'Not Deployed'}
-              <button
-                type="button"
-                onClick={() => setFilters((prev) => ({ ...prev, deployed: 'any' }))}
-                className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
-                aria-label={`Remove deployment filter: ${filters.deployed === 'yes' ? 'Deployed' : 'Not Deployed'}`}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          )}
           {filters.source !== 'all' && (
             <Badge variant="secondary" className="gap-1">
               {filters.source === 'user' ? 'User-created' : 'SigmaHQ'}
@@ -700,23 +673,27 @@ export default function RulesPage() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
                       <span
                         className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
-                          rule.status === 'snoozed'
+                          rule.status === 'deployed'
+                            ? 'bg-green-600 text-white'
+                            : rule.status === 'snoozed'
                             ? 'bg-yellow-500 text-white'
-                            : 'bg-blue-500 text-white'
+                            : 'bg-gray-500 text-white'
                         }`}
                       >
-                        {rule.status === 'snoozed' ? (rule.snooze_indefinite ? 'Snoozed (Indefinite)' : 'Snoozed') : 'Enabled'}
+                        {rule.status === 'deployed'
+                          ? 'Deployed'
+                          : rule.status === 'snoozed'
+                          ? (rule.snooze_indefinite ? 'Snoozed (Indefinite)' : 'Snoozed')
+                          : 'Undeployed'}
                       </span>
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
-                          rule.deployed_at ? 'bg-green-600 text-white' : 'bg-gray-500 text-white'
-                        }`}
-                      >
-                        {rule.deployed_at ? 'Deployed' : 'Not Deployed'}
-                      </span>
+                      {rule.needs_redeploy && (
+                        <span className="px-2 py-0.5 rounded text-xs font-medium border border-orange-500 text-orange-600">
+                          Needs Redeploy
+                        </span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>

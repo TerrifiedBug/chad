@@ -1,16 +1,14 @@
-FROM node:20-alpine
-
+# Build stage
+FROM node:20-alpine AS build
 WORKDIR /app
-
-# Install dependencies
 COPY package*.json ./
-RUN npm install
-
-# Copy application code
+RUN npm ci
 COPY . .
+RUN npm run build
 
-# Expose dev server port
-EXPOSE 3000
-
-# Default command (overridden in docker-compose for dev)
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Production stage
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
