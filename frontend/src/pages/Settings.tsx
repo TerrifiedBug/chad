@@ -106,6 +106,9 @@ export default function SettingsPage() {
   } | null>(null)
   const [osConnectionLoading, setOsConnectionLoading] = useState(false)
 
+  // Audit to OpenSearch
+  const [auditOpenSearchEnabled, setAuditOpenSearchEnabled] = useState(false)
+
   // Role permissions
   const [permissions, setPermissions] = useState<Record<string, Record<string, boolean>>>({})
   const [permissionDescriptions, setPermissionDescriptions] = useState<Record<string, string>>({})
@@ -196,6 +199,12 @@ export default function SettingsPage() {
         setSigmahqSyncEnabled((sigmahq.enabled as boolean) || false)
         setSigmahqSyncInterval((sigmahq.interval_hours as number) || 24)
         setSigmahqLastSync((sigmahq.last_sync as string) || null)
+      }
+
+      // Audit OpenSearch settings
+      if (settings.audit_opensearch_enabled && typeof settings.audit_opensearch_enabled === 'object') {
+        const auditOs = settings.audit_opensearch_enabled as Record<string, unknown>
+        setAuditOpenSearchEnabled((auditOs.enabled as boolean) || false)
       }
     } catch (err) {
       // Settings may not exist yet, that's okay
@@ -407,6 +416,23 @@ export default function SettingsPage() {
         interval_hours: sigmahqSyncInterval,
       })
       setSuccess('SigmaHQ sync settings saved')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const saveAuditOpenSearch = async () => {
+    setIsSaving(true)
+    setError('')
+    setSuccess('')
+    try {
+      await settingsApiExtended.update('audit_opensearch_enabled', {
+        enabled: auditOpenSearchEnabled,
+      })
+      setSuccess('Audit log settings saved')
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -1099,6 +1125,42 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle>Audit Log Storage</CardTitle>
+              <CardDescription>
+                Store audit logs in OpenSearch for advanced search and long-term retention
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Write Audit Logs to OpenSearch</Label>
+                  <p className="text-sm text-muted-foreground">
+                    In addition to the database, also write audit events to the <code className="text-xs bg-muted px-1 py-0.5 rounded">chad-audit-logs</code> index
+                  </p>
+                </div>
+                <Switch
+                  checked={auditOpenSearchEnabled}
+                  onCheckedChange={setAuditOpenSearchEnabled}
+                  disabled={!osStatus?.configured}
+                  aria-label="Enable audit log storage in OpenSearch"
+                />
+              </div>
+
+              {!osStatus?.configured && (
+                <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                  OpenSearch must be configured to enable this feature.
+                </p>
+              )}
+
+              <Button onClick={saveAuditOpenSearch} disabled={isSaving || !osStatus?.configured}>
+                <Save className="mr-2 h-4 w-4" />
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
