@@ -259,12 +259,12 @@ export default function AttackMatrixPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Index:</span>
-              <Select value={selectedIndexPattern} onValueChange={setSelectedIndexPattern}>
+              <Select value={selectedIndexPattern || 'all'} onValueChange={(v) => setSelectedIndexPattern(v === 'all' ? '' : v)}>
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="All indices" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All indices</SelectItem>
+                  <SelectItem value="all">All indices</SelectItem>
                   {indexPatterns.map((ip) => (
                     <SelectItem key={ip.id} value={ip.id}>
                       {ip.name}
