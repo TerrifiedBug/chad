@@ -405,12 +405,20 @@ def _mask_sensitive(key: str, value: dict | None) -> dict | None:
     if value is None:
         return None
 
-    sensitive_keys = {"password", "secret", "token", "api_key", "client_secret"}
+    # Patterns to match in field names (substring match)
+    sensitive_patterns = {"password", "secret", "token", "api_key", "client_secret"}
+    # Specific field names that should be masked
+    sensitive_exact = {"ai_openai_key", "ai_anthropic_key"}
+
     if isinstance(value, dict):
-        return {
-            k: "********" if any(s in k.lower() for s in sensitive_keys) else v
-            for k, v in value.items()
-        }
+        result = {}
+        for k, v in value.items():
+            is_sensitive = (
+                k.lower() in sensitive_exact
+                or any(s in k.lower() for s in sensitive_patterns)
+            )
+            result[k] = "********" if is_sensitive and v else v
+        return result
     return value
 
 
@@ -419,11 +427,18 @@ def _encrypt_sensitive(key: str, value: dict) -> dict:
     if not isinstance(value, dict):
         return value
 
-    sensitive_fields = {"password", "secret", "token", "api_key", "client_secret"}
+    # Patterns to match in field names (substring match)
+    sensitive_patterns = {"password", "secret", "token", "api_key", "client_secret"}
+    # Specific field names that should be encrypted
+    sensitive_exact = {"ai_openai_key", "ai_anthropic_key"}
     result = {}
 
     for k, v in value.items():
-        if any(s in k.lower() for s in sensitive_fields) and v and isinstance(v, str):
+        is_sensitive = (
+            k.lower() in sensitive_exact
+            or any(s in k.lower() for s in sensitive_patterns)
+        )
+        if is_sensitive and v and isinstance(v, str):
             result[k] = encrypt(v)
         else:
             result[k] = v
