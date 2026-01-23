@@ -253,11 +253,17 @@ export type ValidationError = {
   field?: string
 }
 
+export type FieldMappingInfo = {
+  sigma_field: string
+  target_field: string | null
+}
+
 export type RuleValidateResponse = {
   valid: boolean
   errors: ValidationError[]
   opensearch_query?: Record<string, unknown>
   fields: string[]
+  field_mappings?: FieldMappingInfo[]
 }
 
 export type LogMatchResult = {

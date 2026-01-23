@@ -10,6 +10,7 @@ import {
   ExceptionOperator,
   RuleExceptionCreate,
   DeploymentUnmappedFieldsError,
+  FieldMappingInfo,
 } from '@/lib/api'
 import { YamlEditor } from '@/components/YamlEditor'
 import { Button } from '@/components/ui/button'
@@ -84,6 +85,7 @@ export default function RuleEditorPage() {
   const [isValid, setIsValid] = useState<boolean | null>(null)
   const [generatedQuery, setGeneratedQuery] = useState<Record<string, unknown> | null>(null)
   const [detectedFields, setDetectedFields] = useState<string[]>([])
+  const [fieldMappings, setFieldMappings] = useState<FieldMappingInfo[]>([])
 
   // Test state
   const [sampleLog, setSampleLog] = useState('{\n  "CommandLine": "cmd.exe /c whoami"\n}')
@@ -227,12 +229,14 @@ export default function RuleEditorPage() {
       setIsValid(result.valid)
       setGeneratedQuery(result.opensearch_query || null)
       setDetectedFields(result.fields || [])
+      setFieldMappings(result.field_mappings || [])
     } catch (err) {
       setValidationErrors([
         { type: 'error', message: err instanceof Error ? err.message : 'Validation failed' },
       ])
       setIsValid(false)
       setDetectedFields([])
+      setFieldMappings([])
     } finally {
       setIsValidating(false)
     }
@@ -917,28 +921,49 @@ export default function RuleEditorPage() {
                       </div>
                     ) : null}
 
-                    {/* Detected Fields with color coding */}
-                    {detectedFields.length > 0 && (
+                    {/* Detected Fields with arrow notation for mappings */}
+                    {(fieldMappings.length > 0 || detectedFields.length > 0) && (
                       <div className="mt-4">
                         <div className="text-sm text-muted-foreground mb-2">
-                          Detected Fields ({detectedFields.length})
+                          Detected Fields ({fieldMappings.length || detectedFields.length})
                         </div>
-                        <div className="flex flex-wrap gap-1">
-                          {detectedFields.map((field) => {
-                            const isUnmapped = unmappedFieldNames.has(field)
-                            return (
-                              <code
-                                key={field}
-                                className={`px-1.5 py-0.5 rounded text-xs font-mono ${
-                                  isUnmapped
-                                    ? 'bg-destructive/10 text-destructive'
-                                    : 'bg-green-500/10 text-green-600'
-                                }`}
-                              >
-                                {field}
-                              </code>
-                            )
-                          })}
+                        <div className="space-y-1">
+                          {fieldMappings.length > 0 ? (
+                            fieldMappings.map((mapping) => (
+                              <div key={mapping.sigma_field} className="flex items-center gap-2">
+                                <code className="text-xs bg-muted px-1 rounded">{mapping.sigma_field}</code>
+                                <span className="text-muted-foreground">→</span>
+                                {mapping.target_field ? (
+                                  <code className="text-xs bg-green-100 dark:bg-green-900 px-1 rounded">
+                                    {mapping.target_field}
+                                  </code>
+                                ) : (
+                                  <span className="text-xs text-destructive flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3" /> Not mapped
+                                  </span>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            // Fallback to simple field list if no mapping info available
+                            <div className="flex flex-wrap gap-1">
+                              {detectedFields.map((field) => {
+                                const isUnmapped = unmappedFieldNames.has(field)
+                                return (
+                                  <code
+                                    key={field}
+                                    className={`px-1.5 py-0.5 rounded text-xs font-mono ${
+                                      isUnmapped
+                                        ? 'bg-destructive/10 text-destructive'
+                                        : 'bg-green-500/10 text-green-600'
+                                    }`}
+                                  >
+                                    {field}
+                                  </code>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                         {/* Map Fields button below detected fields */}
                         {hasFieldErrors && indexPatternId && (

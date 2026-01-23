@@ -91,11 +91,17 @@ class ValidationErrorItem(BaseModel):
     field: str | None = None
 
 
+class FieldMappingInfo(BaseModel):
+    sigma_field: str
+    target_field: str | None  # None if unmapped
+
+
 class RuleValidateResponse(BaseModel):
     valid: bool
     errors: list[ValidationErrorItem] = []
     opensearch_query: dict | None = None
     fields: list[str] = []
+    field_mappings: list[FieldMappingInfo] = []
 
 
 # Sample log testing schemas

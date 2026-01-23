@@ -20,6 +20,7 @@ from app.models.rule_exception import RuleException
 from app.models.user import User
 from app.schemas.bulk import BulkOperationRequest, BulkOperationResult
 from app.schemas.rule import (
+    FieldMappingInfo,
     LogMatchResult,
     RuleCreate,
     RuleDeployResponse,
@@ -91,6 +92,23 @@ class ActivityItem(BaseModel):
     timestamp: datetime
     user_email: str | None
     data: dict
+
+
+def build_field_mapping_info(
+    sigma_fields: list[str],
+    field_mappings: dict[str, str],
+    index_fields: set[str],
+) -> list[FieldMappingInfo]:
+    """Build field mapping info for all sigma fields with consistent logic."""
+    result = []
+    for field in sigma_fields:
+        if field in field_mappings and field_mappings[field] in index_fields:
+            result.append(FieldMappingInfo(sigma_field=field, target_field=field_mappings[field]))
+        elif field in index_fields:
+            result.append(FieldMappingInfo(sigma_field=field, target_field=field))
+        else:
+            result.append(FieldMappingInfo(sigma_field=field, target_field=None))
+    return result
 
 
 @router.get("", response_model=list[RuleResponse])
@@ -456,6 +474,7 @@ async def validate_rule(
             missing_fields.append(field)
 
         if missing_fields:
+            field_mapping_info = build_field_mapping_info(sigma_fields, field_mappings, index_fields)
             return RuleValidateResponse(
                 valid=False,
                 errors=[
@@ -467,8 +486,18 @@ async def validate_rule(
                     for field in missing_fields
                 ],
                 fields=list(result.fields or set()),
+                field_mappings=field_mapping_info,
             )
 
+        field_mapping_info = build_field_mapping_info(sigma_fields, field_mappings, index_fields)
+        return RuleValidateResponse(
+            valid=True,
+            opensearch_query=result.query,
+            fields=list(result.fields or set()),
+            field_mappings=field_mapping_info,
+        )
+
+    # No index pattern provided - just validate syntax
     return RuleValidateResponse(
         valid=True,
         opensearch_query=result.query,
