@@ -4,12 +4,15 @@ Unified scheduler service for background sync jobs.
 Uses APScheduler to manage scheduled tasks for:
 - ATT&CK data sync
 - SigmaHQ repository sync
+- Health monitoring checks
 """
+
 import logging
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -41,9 +44,7 @@ class SchedulerService:
         """Lazy initialization of database engine."""
         if self._engine is None:
             self._engine = create_async_engine(app_settings.DATABASE_URL)
-            self._session_factory = async_sessionmaker(
-                self._engine, class_=AsyncSession, expire_on_commit=False
-            )
+            self._session_factory = async_sessionmaker(self._engine, class_=AsyncSession, expire_on_commit=False)
         return self._engine
 
     async def _get_session(self) -> AsyncSession:
@@ -116,10 +117,25 @@ class SchedulerService:
             else:
                 self._remove_job("sigmahq_sync")
 
+            # Add health check job (runs every minute)
+            self._schedule_health_check()
+
             logger.info("Scheduler jobs synced from settings")
 
         finally:
             await session.close()
+
+    def _schedule_health_check(self):
+        """Schedule the health monitoring job."""
+        scheduler.add_job(
+            self._run_health_check,
+            trigger=IntervalTrigger(minutes=1),
+            id="health_check",
+            name="health_check monitoring",
+            replace_existing=True,
+            misfire_grace_time=60,  # 1 minute grace period
+        )
+        logger.info("Scheduled health_check job (every 1 minute)")
 
     def _schedule_job(self, job_id: str, func, frequency: str):
         """Schedule or reschedule a job."""
@@ -217,6 +233,21 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Scheduled SigmaHQ sync failed: {e}")
+        finally:
+            await session.close()
+
+    async def _run_health_check(self):
+        """Execute health monitoring check."""
+        from app.services.health_monitor import check_index_health
+
+        logger.debug("Running scheduled health check")
+        session = await self._get_session()
+        try:
+            issues = await check_index_health(session)
+            if issues:
+                logger.info(f"Health check found {len(issues)} issues")
+        except Exception as e:
+            logger.error(f"Scheduled health check failed: {e}")
         finally:
             await session.close()
 

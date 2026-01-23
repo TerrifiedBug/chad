@@ -6,7 +6,7 @@ and alert severity settings.
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -60,7 +60,7 @@ async def send_system_notification(
             {
                 "type": "system",
                 "event": event_type,
-                "timestamp": datetime.now(datetime.UTC).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 **payload,
             },
         )
@@ -112,7 +112,7 @@ async def send_alert_notification(
         "alert_id": str(alert_id),
         "rule_title": rule_title,
         "severity": severity,
-        "timestamp": datetime.now(datetime.UTC).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "matched_log": matched_log,
     }
     if alert_url:
