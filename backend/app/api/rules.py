@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional
+from app.utils.request import get_client_ip
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.index_pattern import IndexPattern
@@ -40,6 +41,7 @@ from app.schemas.rule_exception import (
     RuleExceptionUpdate,
 )
 from app.services.audit import audit_log
+from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
 from app.services.sigma import sigma_service
@@ -89,6 +91,7 @@ async def list_rules(
         .options(
             selectinload(Rule.versions).selectinload(RuleVersion.author)
         )
+        .order_by(Rule.updated_at.desc())
         .offset(skip)
         .limit(limit)
     )
@@ -99,9 +102,17 @@ async def list_rules(
     result = await db.execute(query)
     rules = result.scalars().all()
 
-    # Build response with last_edited_by
+    # Build response with last_edited_by and needs_redeploy
     responses = []
     for rule in rules:
+        # Calculate current version and needs_redeploy
+        current_version = rule.versions[0].version_number if rule.versions else 1
+        needs_redeploy = (
+            rule.deployed_at is not None and
+            rule.deployed_version is not None and
+            rule.deployed_version != current_version
+        )
+
         rule_dict = {
             "id": rule.id,
             "title": rule.title,
@@ -116,10 +127,16 @@ async def list_rules(
             "updated_at": rule.updated_at,
             "deployed_at": rule.deployed_at,
             "deployed_version": rule.deployed_version,
+            "current_version": current_version,
+            "needs_redeploy": needs_redeploy,
             "index_pattern_id": rule.index_pattern_id,
             "last_edited_by": None,
             "source": rule.source,
             "sigmahq_path": rule.sigmahq_path,
+            "threshold_enabled": rule.threshold_enabled,
+            "threshold_count": rule.threshold_count,
+            "threshold_window_minutes": rule.threshold_window_minutes,
+            "threshold_group_by": rule.threshold_group_by,
         }
         # Get the latest version's author (versions are already sorted desc by version_number)
         if rule.versions:
@@ -134,6 +151,7 @@ async def list_rules(
 
 @router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule(
+    request: Request,
     rule_data: RuleCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -146,6 +164,10 @@ async def create_rule(
         status=rule_data.status,
         index_pattern_id=rule_data.index_pattern_id,
         created_by=current_user.id,
+        threshold_enabled=rule_data.threshold_enabled,
+        threshold_count=rule_data.threshold_count,
+        threshold_window_minutes=rule_data.threshold_window_minutes,
+        threshold_group_by=rule_data.threshold_group_by,
     )
     db.add(rule)
     await db.flush()  # Flush to get the rule.id
@@ -161,7 +183,7 @@ async def create_rule(
 
     await db.commit()
     await db.refresh(rule)
-    await audit_log(db, current_user.id, "rule.create", "rule", str(rule.id), {"title": rule.title})
+    await audit_log(db, current_user.id, "rule.create", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
     await db.commit()
     return rule
 
@@ -175,7 +197,10 @@ async def get_rule(
     result = await db.execute(
         select(Rule)
         .where(Rule.id == rule_id)
-        .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
+        .options(
+            selectinload(Rule.index_pattern),
+            selectinload(Rule.versions).selectinload(RuleVersion.author),
+        )
     )
     rule = result.scalar_one_or_none()
 
@@ -184,13 +209,56 @@ async def get_rule(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Rule not found",
         )
-    return rule
+
+    # Compute current_version and needs_redeploy
+    current_version = rule.versions[0].version_number if rule.versions else 1
+    needs_redeploy = (
+        rule.deployed_at is not None
+        and rule.deployed_version is not None
+        and rule.deployed_version != current_version
+    )
+
+    # Get last editor email
+    last_edited_by = None
+    if rule.versions:
+        last_version = rule.versions[0]
+        if last_version.author:
+            last_edited_by = last_version.author.email
+
+    return RuleDetailResponse(
+        id=rule.id,
+        title=rule.title,
+        description=rule.description,
+        yaml_content=rule.yaml_content,
+        severity=rule.severity,
+        index_pattern_id=rule.index_pattern_id,
+        status=rule.status,
+        snooze_until=rule.snooze_until,
+        snooze_indefinite=rule.snooze_indefinite,
+        created_by=rule.created_by,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+        deployed_at=rule.deployed_at,
+        deployed_version=rule.deployed_version,
+        current_version=current_version,
+        needs_redeploy=needs_redeploy,
+        last_edited_by=last_edited_by,
+        source=rule.source,
+        sigmahq_path=rule.sigmahq_path,
+        index_pattern=rule.index_pattern,
+        versions=rule.versions,
+        threshold_enabled=rule.threshold_enabled,
+        threshold_count=rule.threshold_count,
+        threshold_window_minutes=rule.threshold_window_minutes,
+        threshold_group_by=rule.threshold_group_by,
+    )
 
 
 @router.patch("/{rule_id}", response_model=RuleResponse)
 async def update_rule(
     rule_id: UUID,
     rule_data: RuleUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
@@ -236,7 +304,7 @@ async def update_rule(
 
     await db.commit()
     await db.refresh(rule)
-    await audit_log(db, current_user.id, "rule.update", "rule", str(rule.id), {"title": rule.title})
+    await audit_log(db, current_user.id, "rule.update", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
     await db.commit()
 
     # If status changed and rule is deployed, sync to OpenSearch
@@ -248,7 +316,7 @@ async def update_rule(
             percolator.update_rule_status(
                 percolator_index,
                 str(rule.id),
-                enabled=(new_status == RuleStatus.ENABLED),
+                enabled=(new_status == RuleStatus.DEPLOYED),
             )
 
     return rule
@@ -257,6 +325,7 @@ async def update_rule(
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rule(
     rule_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -270,7 +339,7 @@ async def delete_rule(
         )
 
     # Capture details before delete
-    await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), {"title": rule.title})
+    await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), {"title": rule.title}, ip_address=get_client_ip(request))
     await db.delete(rule)
     await db.commit()
 
@@ -489,6 +558,7 @@ async def test_rule(
 @router.post("/{rule_id}/deploy", response_model=RuleDeployResponse)
 async def deploy_rule(
     rule_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -499,10 +569,11 @@ async def deploy_rule(
     Process:
     1. Fetch rule and index pattern from DB
     2. Parse Sigma YAML with pySigma
-    3. Translate to OpenSearch query
-    4. Ensure percolator index exists
-    5. Index the percolator document
-    6. Update rule.deployed_at timestamp
+    3. Resolve field mappings (Sigma fields → log fields)
+    4. Translate to OpenSearch query with field mappings applied
+    5. Ensure percolator index exists
+    6. Index the percolator document
+    7. Update rule.deployed_at timestamp
     """
     # Fetch rule with index pattern
     result = await db.execute(
@@ -518,8 +589,29 @@ async def deploy_rule(
             detail="Rule not found",
         )
 
-    # Translate rule to OpenSearch query
-    translation = sigma_service.translate_and_validate(rule.yaml_content)
+    # First validate the rule
+    validation = sigma_service.translate_and_validate(rule.yaml_content)
+    if not validation.success:
+        errors_str = ", ".join(e.message for e in (validation.errors or []))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to translate rule: {errors_str}",
+        )
+
+    # Extract fields and resolve mappings
+    sigma_fields = list(validation.fields or set())
+    field_mappings_dict: dict[str, str] = {}
+
+    if sigma_fields and rule.index_pattern_id:
+        # Resolve field mappings (per-index overrides global)
+        resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
+        # Build dict of only mapped fields (exclude None values)
+        field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
+
+    # Translate rule with field mappings applied
+    translation = sigma_service.translate_with_mappings(
+        rule.yaml_content, field_mappings_dict if field_mappings_dict else None
+    )
     if not translation.success:
         errors_str = ", ".join(e.message for e in (translation.errors or []))
         raise HTTPException(
@@ -550,7 +642,7 @@ async def deploy_rule(
         title=rule.title,
         severity=rule.severity,
         tags=tags,
-        enabled=(rule.status == RuleStatus.ENABLED),
+        enabled=(rule.status == RuleStatus.DEPLOYED),
     )
 
     # Update rule deployment tracking
@@ -558,10 +650,13 @@ async def deploy_rule(
     current_version = rule.versions[0].version_number if rule.versions else 1
     rule.deployed_at = now
     rule.deployed_version = current_version
+    # Set status to DEPLOYED (unless already snoozed)
+    if rule.status != RuleStatus.SNOOZED:
+        rule.status = RuleStatus.DEPLOYED
 
     await db.commit()
     await db.refresh(rule)
-    await audit_log(db, current_user.id, "rule.deploy", "rule", str(rule.id), {"title": rule.title, "percolator_index": percolator_index})
+    await audit_log(db, current_user.id, "rule.deploy", "rule", str(rule.id), {"title": rule.title, "percolator_index": percolator_index}, ip_address=get_client_ip(request))
     await db.commit()
 
     return RuleDeployResponse(
@@ -576,6 +671,7 @@ async def deploy_rule(
 @router.post("/{rule_id}/undeploy", response_model=RuleUndeployResponse)
 async def undeploy_rule(
     rule_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -606,12 +702,15 @@ async def undeploy_rule(
     percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
     was_deleted = percolator.undeploy_rule(percolator_index, str(rule.id))
 
-    # Clear deployment tracking
+    # Clear deployment tracking and set status to UNDEPLOYED
     rule.deployed_at = None
     rule.deployed_version = None
+    rule.status = RuleStatus.UNDEPLOYED
+    rule.snooze_until = None
+    rule.snooze_indefinite = False
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title})
+    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
     await db.commit()
 
     return RuleUndeployResponse(
@@ -624,6 +723,7 @@ async def undeploy_rule(
 async def rollback_rule(
     rule_id: UUID,
     version_number: int,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -681,35 +781,49 @@ async def rollback_rule(
     rule.yaml_content = target_version.yaml_content
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.rollback", "rule", str(rule.id), {"title": rule.title, "from_version": version_number, "to_version": new_version_number})
+    await audit_log(db, current_user.id, "rule.rollback", "rule", str(rule.id), {"title": rule.title, "from_version": version_number, "to_version": new_version_number}, ip_address=get_client_ip(request))
     await db.commit()
 
     # If rule was deployed, redeploy with new content
     if rule.deployed_at is not None:
-        translation = sigma_service.translate_and_validate(rule.yaml_content)
-        if translation.success:
-            percolator = PercolatorService(os_client)
-            percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+        # First validate the rule
+        validation = sigma_service.translate_and_validate(rule.yaml_content)
+        if validation.success:
+            # Extract fields and resolve mappings
+            sigma_fields = list(validation.fields or set())
+            field_mappings_dict: dict[str, str] = {}
 
-            import yaml
-            parsed_rule = yaml.safe_load(rule.yaml_content)
-            tags = parsed_rule.get("tags", [])
+            if sigma_fields and rule.index_pattern_id:
+                resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
+                field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
 
-            # Extract inner query for percolator
-            percolator_query = translation.query.get("query", translation.query)
-
-            percolator.deploy_rule(
-                percolator_index=percolator_index,
-                rule_id=str(rule.id),
-                query=percolator_query,
-                title=rule.title,
-                severity=rule.severity,
-                tags=tags,
-                enabled=(rule.status == RuleStatus.ENABLED),
+            # Translate with field mappings
+            translation = sigma_service.translate_with_mappings(
+                rule.yaml_content, field_mappings_dict if field_mappings_dict else None
             )
+            if translation.success:
+                percolator = PercolatorService(os_client)
+                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
 
-            rule.deployed_version = new_version_number
-            await db.commit()
+                import yaml
+                parsed_rule = yaml.safe_load(rule.yaml_content)
+                tags = parsed_rule.get("tags", [])
+
+                # Extract inner query for percolator
+                percolator_query = translation.query.get("query", translation.query)
+
+                percolator.deploy_rule(
+                    percolator_index=percolator_index,
+                    rule_id=str(rule.id),
+                    query=percolator_query,
+                    title=rule.title,
+                    severity=rule.severity,
+                    tags=tags,
+                    enabled=(rule.status == RuleStatus.DEPLOYED),
+                )
+
+                rule.deployed_version = new_version_number
+                await db.commit()
 
     return RuleRollbackResponse(
         success=True,
@@ -722,14 +836,15 @@ async def rollback_rule(
 @router.post("/{rule_id}/snooze")
 async def snooze_rule(
     rule_id: UUID,
-    request: SnoozeRequest,
+    snooze_request: SnoozeRequest,
+    http_request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
     """Snooze a rule for the specified number of hours or indefinitely."""
     # Validate request
-    if not request.indefinite and request.hours is None:
+    if not snooze_request.indefinite and snooze_request.hours is None:
         raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
 
     result = await db.execute(
@@ -742,13 +857,20 @@ async def snooze_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")
 
-    if request.indefinite:
+    # Cannot snooze undeployed rules
+    if rule.status == RuleStatus.UNDEPLOYED:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot snooze an undeployed rule. Deploy the rule first."
+        )
+
+    if snooze_request.indefinite:
         rule.snooze_until = None
         rule.snooze_indefinite = True
         rule.status = RuleStatus.SNOOZED
         snooze_until = None
     else:
-        snooze_until = datetime.now(timezone.utc) + timedelta(hours=request.hours)
+        snooze_until = datetime.now(timezone.utc) + timedelta(hours=snooze_request.hours)
         rule.snooze_until = snooze_until
         rule.snooze_indefinite = False
         rule.status = RuleStatus.SNOOZED
@@ -762,14 +884,15 @@ async def snooze_rule(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.snooze", "rule", str(rule.id),
-        {"title": rule.title, "hours": request.hours, "indefinite": request.indefinite}
+        {"title": rule.title, "hours": snooze_request.hours, "indefinite": snooze_request.indefinite},
+        ip_address=get_client_ip(http_request)
     )
     await db.commit()
 
     return {
         "success": True,
         "snooze_until": snooze_until.isoformat() if snooze_until else None,
-        "snooze_indefinite": request.indefinite,
+        "snooze_indefinite": snooze_request.indefinite,
         "status": "snoozed",
     }
 
@@ -777,6 +900,7 @@ async def snooze_rule(
 @router.post("/{rule_id}/unsnooze")
 async def unsnooze_rule(
     rule_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
@@ -792,7 +916,7 @@ async def unsnooze_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")
 
-    rule.status = RuleStatus.ENABLED
+    rule.status = RuleStatus.DEPLOYED
     rule.snooze_until = None
     rule.snooze_indefinite = False
 
@@ -803,7 +927,7 @@ async def unsnooze_rule(
         percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title})
+    await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
     await db.commit()
 
     return {"success": True, "status": "enabled"}
@@ -840,6 +964,7 @@ async def list_rule_exceptions(
 async def create_rule_exception(
     rule_id: UUID,
     exception_data: RuleExceptionCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -860,7 +985,7 @@ async def create_rule_exception(
     db.add(exception)
     await db.commit()
     await db.refresh(exception)
-    await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field})
+    await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field}, ip_address=get_client_ip(request))
     await db.commit()
     return exception
 
@@ -873,6 +998,7 @@ async def update_rule_exception(
     rule_id: UUID,
     exception_id: UUID,
     exception_data: RuleExceptionUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -894,7 +1020,7 @@ async def update_rule_exception(
 
     await db.commit()
     await db.refresh(exception)
-    await audit_log(db, current_user.id, "exception.update", "rule_exception", str(exception.id), {"rule_id": str(rule_id)})
+    await audit_log(db, current_user.id, "exception.update", "rule_exception", str(exception.id), {"rule_id": str(rule_id)}, ip_address=get_client_ip(request))
     await db.commit()
     return exception
 
@@ -906,6 +1032,7 @@ async def update_rule_exception(
 async def delete_rule_exception(
     rule_id: UUID,
     exception_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -922,7 +1049,7 @@ async def delete_rule_exception(
         raise HTTPException(status_code=404, detail="Exception not found")
 
     # Capture details before delete
-    await audit_log(db, current_user.id, "exception.delete", "rule_exception", str(exception_id), {"rule_id": str(rule_id)})
+    await audit_log(db, current_user.id, "exception.delete", "rule_exception", str(exception_id), {"rule_id": str(rule_id)}, ip_address=get_client_ip(request))
     await db.delete(exception)
     await db.commit()
 
@@ -933,6 +1060,7 @@ async def delete_rule_exception(
 @router.post("/bulk/enable", response_model=BulkOperationResult)
 async def bulk_enable_rules(
     data: BulkOperationRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
@@ -951,13 +1079,13 @@ async def bulk_enable_rules(
             rule = result.scalar_one_or_none()
             if rule:
                 old_status = rule.status
-                rule.status = RuleStatus.ENABLED
+                rule.status = RuleStatus.DEPLOYED
                 rule.snooze_until = None
                 rule.snooze_indefinite = False
                 success.append(rule_id)
 
                 # Sync status to OpenSearch if deployed
-                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.ENABLED:
+                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.DEPLOYED:
                     percolator = PercolatorService(os_client)
                     percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
                     percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
@@ -969,7 +1097,8 @@ async def bulk_enable_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_enable", "rule", None,
-        {"count": len(success), "rule_ids": success}
+        {"count": len(success), "rule_ids": success},
+        ip_address=get_client_ip(request)
     )
     await db.commit()
 
@@ -979,6 +1108,7 @@ async def bulk_enable_rules(
 @router.post("/bulk/delete", response_model=BulkOperationResult)
 async def bulk_delete_rules(
     data: BulkOperationRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
@@ -1012,7 +1142,8 @@ async def bulk_delete_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_delete", "rule", None,
-        {"count": len(success), "rule_ids": success}
+        {"count": len(success), "rule_ids": success},
+        ip_address=get_client_ip(request)
     )
     await db.commit()
 
@@ -1022,6 +1153,7 @@ async def bulk_delete_rules(
 @router.post("/bulk/deploy", response_model=BulkOperationResult)
 async def bulk_deploy_rules(
     data: BulkOperationRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -1041,8 +1173,25 @@ async def bulk_deploy_rules(
             )
             rule = result.scalar_one_or_none()
             if rule:
-                # Translate rule to OpenSearch query
-                translation = sigma_service.translate_and_validate(rule.yaml_content)
+                # First validate the rule
+                validation = sigma_service.translate_and_validate(rule.yaml_content)
+                if not validation.success:
+                    errors_str = ", ".join(e.message for e in (validation.errors or []))
+                    failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
+                    continue
+
+                # Extract fields and resolve mappings
+                sigma_fields = list(validation.fields or set())
+                field_mappings_dict: dict[str, str] = {}
+
+                if sigma_fields and rule.index_pattern_id:
+                    resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
+                    field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
+
+                # Translate rule with field mappings applied
+                translation = sigma_service.translate_with_mappings(
+                    rule.yaml_content, field_mappings_dict if field_mappings_dict else None
+                )
                 if not translation.success:
                     errors_str = ", ".join(e.message for e in (translation.errors or []))
                     failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
@@ -1069,7 +1218,7 @@ async def bulk_deploy_rules(
                     title=rule.title,
                     severity=rule.severity,
                     tags=tags,
-                    enabled=(rule.status == RuleStatus.ENABLED),
+                    enabled=(rule.status == RuleStatus.DEPLOYED),
                 )
 
                 # Update rule deployment tracking
@@ -1077,6 +1226,9 @@ async def bulk_deploy_rules(
                 current_version = rule.versions[0].version_number if rule.versions else 1
                 rule.deployed_at = now
                 rule.deployed_version = current_version
+                # Set status to DEPLOYED (unless snoozed)
+                if rule.status != RuleStatus.SNOOZED:
+                    rule.status = RuleStatus.DEPLOYED
                 success.append(rule_id)
             else:
                 failed.append({"id": rule_id, "error": "Rule not found"})
@@ -1086,7 +1238,8 @@ async def bulk_deploy_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_deploy", "rule", None,
-        {"count": len(success), "rule_ids": success}
+        {"count": len(success), "rule_ids": success},
+        ip_address=get_client_ip(request)
     )
     await db.commit()
 
@@ -1096,6 +1249,7 @@ async def bulk_deploy_rules(
 @router.post("/bulk/undeploy", response_model=BulkOperationResult)
 async def bulk_undeploy_rules(
     data: BulkOperationRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -1123,9 +1277,12 @@ async def bulk_undeploy_rules(
                 percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
                 percolator.undeploy_rule(percolator_index, str(rule.id))
 
-                # Clear deployment tracking
+                # Clear deployment tracking and set status to UNDEPLOYED
                 rule.deployed_at = None
                 rule.deployed_version = None
+                rule.status = RuleStatus.UNDEPLOYED
+                rule.snooze_until = None
+                rule.snooze_indefinite = False
                 success.append(rule_id)
             else:
                 failed.append({"id": rule_id, "error": "Rule not found"})
@@ -1135,7 +1292,8 @@ async def bulk_undeploy_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_undeploy", "rule", None,
-        {"count": len(success), "rule_ids": success}
+        {"count": len(success), "rule_ids": success},
+        ip_address=get_client_ip(request)
     )
     await db.commit()
 
@@ -1179,6 +1337,7 @@ async def list_rule_comments(
 async def create_rule_comment(
     rule_id: UUID,
     data: RuleCommentCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -1198,7 +1357,8 @@ async def create_rule_comment(
 
     await audit_log(
         db, current_user.id, "rule.comment", "rule", str(rule_id),
-        {"comment_id": str(comment.id)}
+        {"comment_id": str(comment.id)},
+        ip_address=get_client_ip(request)
     )
     await db.commit()
 

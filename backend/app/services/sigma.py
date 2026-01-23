@@ -8,6 +8,8 @@ from sigma.backends.opensearch import OpensearchLuceneBackend
 from sigma.collection import SigmaCollection
 from sigma.exceptions import SigmaError
 from sigma.pipelines.base import Pipeline
+from sigma.processing.pipeline import ProcessingItem, ProcessingPipeline
+from sigma.processing.transformations import FieldMappingTransformation
 from sigma.rule import SigmaRule
 
 
@@ -338,6 +340,75 @@ class SigmaService:
                 return None
 
         return current
+
+    def build_field_mapping_pipeline(
+        self, field_mappings: dict[str, str]
+    ) -> ProcessingPipeline:
+        """
+        Build a pySigma processing pipeline that maps Sigma fields to target fields.
+
+        Args:
+            field_mappings: Dict mapping Sigma field names to target field names
+
+        Returns:
+            ProcessingPipeline that can be passed to translate_to_opensearch
+        """
+        if not field_mappings:
+            return ProcessingPipeline()
+
+        # Create a processing item with field mapping transformation
+        processing_items = [
+            ProcessingItem(
+                identifier="field_mappings",
+                transformation=FieldMappingTransformation(field_mappings),
+            )
+        ]
+
+        return ProcessingPipeline(items=processing_items)
+
+    def translate_with_mappings(
+        self, yaml_content: str, field_mappings: dict[str, str] | None = None
+    ) -> TranslationResult:
+        """
+        Parse, validate, and translate a Sigma rule with optional field mappings.
+
+        Args:
+            yaml_content: Raw YAML string of the Sigma rule
+            field_mappings: Optional dict mapping Sigma field names to target fields
+
+        Returns:
+            TranslationResult with query and any errors
+        """
+        # Validate first
+        errors = self.validate_rule(yaml_content)
+        if errors:
+            return TranslationResult(success=False, errors=errors)
+
+        # Parse and translate
+        try:
+            rule = self.parse_rule(yaml_content)
+            if rule is None:
+                return TranslationResult(
+                    success=False,
+                    errors=[
+                        ValidationError(type="schema", message="Failed to parse rule")
+                    ],
+                )
+
+            # Build pipeline if mappings provided
+            pipeline = None
+            if field_mappings:
+                pipeline = self.build_field_mapping_pipeline(field_mappings)
+
+            query = self.translate_to_opensearch(rule, pipeline)
+            fields = self.extract_fields(rule)
+
+            return TranslationResult(success=True, query=query, fields=fields)
+        except Exception as e:
+            return TranslationResult(
+                success=False,
+                errors=[ValidationError(type="schema", message=str(e))],
+            )
 
 
 # Singleton instance
