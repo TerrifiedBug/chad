@@ -135,13 +135,13 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
         </Button>
       </div>
 
-      <Tabs defaultValue="activity" className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="mx-4 mt-2">
+      <Tabs defaultValue="activity" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="mx-4 mt-2 shrink-0">
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="versions">Versions</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="activity" className="flex-1 flex flex-col overflow-hidden !mt-0 data-[state=active]:flex-1">
+        <TabsContent value="activity" className="flex-1 flex flex-col min-h-0 mt-2 data-[state=inactive]:hidden">
           <div className="flex-1 overflow-auto p-4 space-y-4">
             {isLoading ? (
               <div className="text-center text-muted-foreground">Loading...</div>
@@ -202,7 +202,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
           </div>
         </TabsContent>
 
-        <TabsContent value="versions" className="flex-1 overflow-auto p-4 space-y-3 !mt-0 data-[state=active]:flex-1">
+        <TabsContent value="versions" className="flex-1 overflow-auto p-4 space-y-3 mt-2 data-[state=inactive]:hidden">
           {isLoading ? (
             <div className="text-center text-muted-foreground">Loading...</div>
           ) : versionItems.length === 0 ? (
