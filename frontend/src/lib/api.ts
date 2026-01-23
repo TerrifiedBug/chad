@@ -882,3 +882,113 @@ export const healthApi = {
   getHistory: (id: string, hours = 24) =>
     api.get<HealthHistoryPoint[]>(`/health/indices/${id}/history?hours=${hours}`),
 }
+
+// ATT&CK Coverage Map types
+export type AttackTechnique = {
+  id: string
+  name: string
+  tactic_id: string
+  tactic_name: string
+  parent_id: string | null
+  is_subtechnique: boolean
+}
+
+export type TechniqueWithCoverage = AttackTechnique & {
+  rule_count: number
+}
+
+export type TacticWithTechniques = {
+  id: string
+  name: string
+  techniques: TechniqueWithCoverage[]
+}
+
+export type AttackMatrixResponse = {
+  tactics: TacticWithTechniques[]
+}
+
+export type AttackCoverageResponse = {
+  coverage: Record<string, number>
+}
+
+export type LinkedRule = {
+  id: string
+  title: string
+  severity: string
+  status: string
+  index_pattern_name: string | null
+}
+
+export type TechniqueDetail = {
+  id: string
+  name: string
+  tactic_id: string
+  tactic_name: string
+  parent_id: string | null
+  description: string | null
+  url: string | null
+  platforms: string[] | null
+  data_sources: string[] | null
+  is_subtechnique: boolean
+  updated_at: string
+}
+
+export type TechniqueDetailResponse = {
+  technique: TechniqueDetail
+  rules: LinkedRule[]
+  sub_techniques: TechniqueWithCoverage[]
+}
+
+export type AttackSyncResponse = {
+  success: boolean
+  message: string
+  techniques_updated: number
+  new_techniques: number
+  error: string | null
+}
+
+export type AttackSyncStatus = {
+  last_sync: string | null
+  next_scheduled: string | null
+  sync_enabled: boolean
+  technique_count: number
+  frequency: string | null
+}
+
+// ATT&CK Coverage Map API
+export const attackApi = {
+  getMatrix: () => api.get<AttackMatrixResponse>('/attack/techniques'),
+  getCoverage: (params?: {
+    deployed_only?: boolean
+    severity?: string[]
+    index_pattern_id?: string
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.deployed_only) searchParams.set('deployed_only', 'true')
+    if (params?.severity) {
+      params.severity.forEach((s) => searchParams.append('severity', s))
+    }
+    if (params?.index_pattern_id) searchParams.set('index_pattern_id', params.index_pattern_id)
+    const query = searchParams.toString()
+    return api.get<AttackCoverageResponse>(`/attack/coverage${query ? `?${query}` : ''}`)
+  },
+  getTechnique: (
+    id: string,
+    params?: {
+      deployed_only?: boolean
+      severity?: string[]
+      index_pattern_id?: string
+    }
+  ) => {
+    const searchParams = new URLSearchParams()
+    if (params?.deployed_only) searchParams.set('deployed_only', 'true')
+    if (params?.severity) {
+      params.severity.forEach((s) => searchParams.append('severity', s))
+    }
+    if (params?.index_pattern_id) searchParams.set('index_pattern_id', params.index_pattern_id)
+    const query = searchParams.toString()
+    return api.get<TechniqueDetailResponse>(`/attack/techniques/${id}${query ? `?${query}` : ''}`)
+  },
+  sync: () => api.post<AttackSyncResponse>('/attack/sync'),
+  getSyncStatus: () => api.get<AttackSyncStatus>('/attack/sync/status'),
+}
