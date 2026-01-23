@@ -181,7 +181,8 @@ async def login(
             "auth.lockout_login_attempt",
             "user",
             None,
-            {"email": email, "ip_address": ip_address},
+            {"email": email},
+            ip_address=ip_address,
         )
         await db.commit()
         raise HTTPException(
@@ -202,7 +203,8 @@ async def login(
             "auth.login_failed",
             "user",
             None,
-            {"email": email, "ip_address": ip_address, "reason": "invalid_credentials"},
+            {"email": email, "reason": "invalid_credentials"},
+            ip_address=ip_address,
         )
 
         # Check if this attempt triggered a lockout
@@ -214,7 +216,8 @@ async def login(
                 "auth.lockout",
                 "user",
                 None,
-                {"email": email, "ip_address": ip_address},
+                {"email": email},
+                ip_address=ip_address,
             )
 
         await db.commit()
@@ -233,7 +236,8 @@ async def login(
             "auth.login_failed",
             "user",
             str(user.id),
-            {"email": email, "ip_address": ip_address, "reason": "invalid_credentials"},
+            {"email": email, "reason": "invalid_credentials"},
+            ip_address=ip_address,
         )
 
         # Check if this attempt triggered a lockout
@@ -245,7 +249,8 @@ async def login(
                 "auth.lockout",
                 "user",
                 str(user.id),
-                {"email": email, "ip_address": ip_address},
+                {"email": email},
+                ip_address=ip_address,
             )
 
         await db.commit()
@@ -505,7 +510,7 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
 
     # Create JWT token
     access_token = await create_token_with_dynamic_timeout(str(user.id), db)
-    await audit_log(db, user.id, "user.login", "user", str(user.id), {"email": user.email, "auth_method": "sso"})
+    await audit_log(db, user.id, "user.login", "user", str(user.id), {"email": user.email, "auth_method": "sso"}, ip_address=get_client_ip(request))
     await db.commit()
 
     # Redirect to frontend with token
