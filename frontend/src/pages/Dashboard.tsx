@@ -12,7 +12,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { AlertTriangle, Clock, FileText, Shield } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { RelativeTime } from '@/components/RelativeTime'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -183,41 +184,41 @@ export default function Dashboard() {
               ? stats?.recent_alerts?.filter(a => a.severity === severityFilter)
               : stats?.recent_alerts
             return filteredAlerts && filteredAlerts.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Rule</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAlerts.map((alert) => (
-                  <TableRow key={alert.alert_id}>
-                    <TableCell>
-                      <Badge className={severityColors[alert.severity]}>
-                        {capitalize(alert.severity)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        to={`/alerts/${alert.alert_id}`}
-                        className="hover:underline"
-                      >
-                        {alert.rule_title}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{statusLabels[alert.status] || capitalize(alert.status)}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDistanceToNow(new Date(alert.created_at), {
-                        addSuffix: true,
-                      })}
-                    </TableCell>
+            <TooltipProvider>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Rule</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Time</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredAlerts.map((alert) => (
+                    <TableRow key={alert.alert_id}>
+                      <TableCell>
+                        <Badge className={severityColors[alert.severity]}>
+                          {capitalize(alert.severity)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Link
+                          to={`/alerts/${alert.alert_id}`}
+                          className="hover:underline"
+                        >
+                          {alert.rule_title}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{statusLabels[alert.status] || capitalize(alert.status)}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <RelativeTime date={alert.created_at} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TooltipProvider>
           ) : (
             <p className="text-center text-muted-foreground py-8">
               {severityFilter ? `No ${capitalize(severityFilter)} alerts` : 'No alerts yet'}

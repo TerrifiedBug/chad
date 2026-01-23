@@ -27,6 +27,7 @@ import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { RelativeTime } from '@/components/RelativeTime'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -376,14 +377,6 @@ export default function RulesPage() {
     }
   }
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -666,109 +659,111 @@ export default function RulesPage() {
             : 'No rules found. Create your first rule!'}
         </div>
       ) : viewMode === 'table' ? (
-        <div className="border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={selectedRules.size === filteredRules.length && filteredRules.length > 0}
-                    onCheckedChange={selectAll}
-                    aria-label="Select all rules"
-                  />
-                </TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Severity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Index Pattern</TableHead>
-                <TableHead>Last Edited By</TableHead>
-                <TableHead>Updated</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRules.map((rule, index) => (
-                <TableRow
-                  key={rule.id}
-                  className={cn(
-                    'cursor-pointer hover:bg-muted/50',
-                    selectedRules.has(rule.id) && 'bg-muted/50'
-                  )}
-                  onClick={() => navigate(`/rules/${rule.id}`)}
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+        <TooltipProvider>
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">
                     <Checkbox
-                      checked={selectedRules.has(rule.id)}
-                      onClick={(e: React.MouseEvent) => {
-                        e.stopPropagation()
-                        toggleRuleSelection(rule.id, index, e.shiftKey)
-                      }}
-                      aria-label={`Select rule: ${rule.title}`}
+                      checked={selectedRules.size === filteredRules.length && filteredRules.length > 0}
+                      onCheckedChange={selectAll}
+                      aria-label="Select all rules"
                     />
-                  </TableCell>
-                  <TableCell className="font-medium">{rule.title}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      {rule.source === 'sigmahq' ? (
-                        <>
-                          <FileCode className="h-4 w-4 text-blue-500" />
-                          <span className="text-xs text-muted-foreground">SigmaHQ</span>
-                        </>
-                      ) : (
-                        <>
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">User</span>
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        severityColors[rule.severity] || 'bg-gray-500 text-white'
-                      }`}
-                    >
-                      {capitalize(rule.severity)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
+                  </TableHead>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Severity</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Index Pattern</TableHead>
+                  <TableHead>Last Edited By</TableHead>
+                  <TableHead>Updated</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredRules.map((rule, index) => (
+                  <TableRow
+                    key={rule.id}
+                    className={cn(
+                      'cursor-pointer hover:bg-muted/50',
+                      selectedRules.has(rule.id) && 'bg-muted/50'
+                    )}
+                    onClick={() => navigate(`/rules/${rule.id}`)}
+                  >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedRules.has(rule.id)}
+                        onClick={(e: React.MouseEvent) => {
+                          e.stopPropagation()
+                          toggleRuleSelection(rule.id, index, e.shiftKey)
+                        }}
+                        aria-label={`Select rule: ${rule.title}`}
+                      />
+                    </TableCell>
+                    <TableCell className="font-medium">{rule.title}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {rule.source === 'sigmahq' ? (
+                          <>
+                            <FileCode className="h-4 w-4 text-blue-500" />
+                            <span className="text-xs text-muted-foreground">SigmaHQ</span>
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">User</span>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
                       <span
-                        className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
-                          rule.status === 'deployed'
-                            ? 'bg-green-600 text-white'
-                            : rule.status === 'snoozed'
-                            ? 'bg-yellow-500 text-white'
-                            : 'bg-gray-500 text-white'
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          severityColors[rule.severity] || 'bg-gray-500 text-white'
                         }`}
                       >
-                        {rule.status === 'deployed'
-                          ? 'Deployed'
-                          : rule.status === 'snoozed'
-                          ? (rule.snooze_indefinite ? 'Snoozed (Indefinite)' : 'Snoozed')
-                          : 'Undeployed'}
+                        {capitalize(rule.severity)}
                       </span>
-                      {rule.needs_redeploy && (
-                        <span className="px-2 py-0.5 rounded text-xs font-medium border border-orange-500 text-orange-600">
-                          Needs Redeploy
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
+                            rule.status === 'deployed'
+                              ? 'bg-green-600 text-white'
+                              : rule.status === 'snoozed'
+                              ? 'bg-yellow-500 text-white'
+                              : 'bg-gray-500 text-white'
+                          }`}
+                        >
+                          {rule.status === 'deployed'
+                            ? 'Deployed'
+                            : rule.status === 'snoozed'
+                            ? (rule.snooze_indefinite ? 'Snoozed (Indefinite)' : 'Snoozed')
+                            : 'Undeployed'}
                         </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {indexPatterns[rule.index_pattern_id]?.name || 'Unknown'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {rule.last_edited_by || '-'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDate(rule.updated_at)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                        {rule.needs_redeploy && (
+                          <span className="px-2 py-0.5 rounded text-xs font-medium border border-orange-500 text-orange-600">
+                            Needs Redeploy
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {indexPatterns[rule.index_pattern_id]?.name || 'Unknown'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {rule.last_edited_by || '-'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <RelativeTime date={rule.updated_at} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </TooltipProvider>
       ) : (
         <RulesTreeView
           rules={filteredRules}

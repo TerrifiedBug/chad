@@ -20,6 +20,8 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Search, Bell, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { RelativeTime } from '@/components/RelativeTime'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -85,19 +87,6 @@ export default function AlertsPage() {
   const filteredAlerts = alerts.filter((alert) =>
     alert.rule_title.toLowerCase().includes(search.toLowerCase())
   )
-
-  const getTimeSince = (dateStr: string) => {
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / (1000 * 60))
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    return `${diffDays}d ago`
-  }
 
   return (
     <div className="space-y-6">
@@ -215,66 +204,68 @@ export default function AlertsPage() {
             : 'No alerts yet. Alerts will appear when rules match incoming logs.'}
         </div>
       ) : (
-        <div className="border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Rule</TableHead>
-                <TableHead>Severity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Tags</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredAlerts.map((alert) => (
-                <TableRow
-                  key={alert.alert_id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => navigate(`/alerts/${alert.alert_id}`)}
-                >
-                  <TableCell className="font-medium">{alert.rule_title}</TableCell>
-                  <TableCell>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        severityColors[alert.severity] || 'bg-gray-500 text-white'
-                      }`}
-                    >
-                      {capitalize(alert.severity)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
-                    >
-                      {statusLabels[alert.status]}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1 flex-wrap">
-                      {alert.tags.slice(0, 3).map((tag, i) => (
-                        <span
-                          key={i}
-                          className="px-1.5 py-0.5 bg-muted rounded text-xs"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {alert.tags.length > 3 && (
-                        <span className="text-xs text-muted-foreground">
-                          +{alert.tags.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {getTimeSince(alert.created_at)}
-                  </TableCell>
+        <TooltipProvider>
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Rule</TableHead>
+                  <TableHead>Severity</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Tags</TableHead>
+                  <TableHead>Created</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {filteredAlerts.map((alert) => (
+                  <TableRow
+                    key={alert.alert_id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => navigate(`/alerts/${alert.alert_id}`)}
+                  >
+                    <TableCell className="font-medium">{alert.rule_title}</TableCell>
+                    <TableCell>
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          severityColors[alert.severity] || 'bg-gray-500 text-white'
+                        }`}
+                      >
+                        {capitalize(alert.severity)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
+                      >
+                        {statusLabels[alert.status]}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1 flex-wrap">
+                        {alert.tags.slice(0, 3).map((tag, i) => (
+                          <span
+                            key={i}
+                            className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {alert.tags.length > 3 && (
+                          <span className="text-xs text-muted-foreground">
+                            +{alert.tags.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <RelativeTime date={alert.created_at} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </TooltipProvider>
       )}
 
       {total > 100 && (
