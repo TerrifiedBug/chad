@@ -163,6 +163,34 @@ export default function AttackMatrixPage() {
     )
   }
 
+  // Show sync prompt when matrix is empty (no techniques synced yet)
+  if (matrix && matrix.tactics.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Shield className="h-6 w-6" />
+            MITRE ATT&CK Coverage
+          </h1>
+          <p className="text-muted-foreground">Visualize detection coverage across the ATT&CK Enterprise Matrix</p>
+        </div>
+        <Card>
+          <CardContent className="py-8 text-center">
+            <Shield className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">No ATT&CK Data</h3>
+            <p className="text-muted-foreground mb-4">
+              The MITRE ATT&CK framework hasn't been synced yet. Click the button below to download the latest techniques.
+            </p>
+            <Button onClick={handleSync} disabled={isSyncing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Syncing...' : 'Sync ATT&CK Framework'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
