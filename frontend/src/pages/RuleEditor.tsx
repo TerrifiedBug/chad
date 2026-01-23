@@ -877,77 +877,99 @@ export default function RuleEditorPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {isValid === null ? (
-                <div className="text-sm text-muted-foreground">
-                  Enter a rule to validate
-                </div>
-              ) : isValid ? (
-                <div className="flex items-center gap-2 text-sm text-green-600">
-                  <Check className="h-4 w-4" />
-                  Rule is valid
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {validationErrors.map((error, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-start gap-2 text-sm text-destructive"
-                    >
-                      <X className="h-4 w-4 mt-0.5 shrink-0" />
-                      <span>
-                        {error.line && `Line ${error.line}: `}
-                        {error.message}
-                      </span>
-                    </div>
-                  ))}
-                  {/* Show Map Fields button when there are field validation errors */}
-                  {validationErrors.some((e) => e.type === 'field') && indexPatternId && detectedFields.length > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={() => {
-                        // Get the unmapped fields from validation errors
-                        const unmappedFields = validationErrors
-                          .filter((e) => e.type === 'field' && e.field)
-                          .map((e) => e.field as string)
-                        setUnmappedFieldsDialog({
-                          open: false,
-                          fields: unmappedFields.length > 0 ? unmappedFields : detectedFields,
-                          indexPatternId,
-                        })
-                        setMapFieldsModalOpen(true)
-                      }}
-                    >
-                      Map Fields
-                    </Button>
-                  )}
-                </div>
-              )}
+              {(() => {
+                // Separate field errors from other errors
+                const fieldErrors = validationErrors.filter((e) => e.type === 'field')
+                const otherErrors = validationErrors.filter((e) => e.type !== 'field')
+                const unmappedFieldNames = new Set(fieldErrors.map((e) => e.field).filter(Boolean))
+                const hasFieldErrors = fieldErrors.length > 0
 
-              {detectedFields.length > 0 && (
-                <details className="mt-4" open>
-                  <summary className="text-sm text-muted-foreground cursor-pointer">
-                    Detected Fields ({detectedFields.length})
-                  </summary>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {detectedFields.map((field) => (
-                      <code
-                        key={field}
-                        className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono"
-                      >
-                        {field}
-                      </code>
-                    ))}
-                  </div>
-                </details>
-              )}
+                return (
+                  <>
+                    {isValid === null ? (
+                      <div className="text-sm text-muted-foreground">
+                        Enter a rule to validate
+                      </div>
+                    ) : isValid ? (
+                      <div className="flex items-center gap-2 text-sm text-green-600">
+                        <Check className="h-4 w-4" />
+                        Rule is valid
+                      </div>
+                    ) : otherErrors.length > 0 ? (
+                      <div className="space-y-2">
+                        {otherErrors.map((error, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-start gap-2 text-sm text-destructive"
+                          >
+                            <X className="h-4 w-4 mt-0.5 shrink-0" />
+                            <span>
+                              {error.line && `Line ${error.line}: `}
+                              {error.message}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : hasFieldErrors ? (
+                      <div className="flex items-center gap-2 text-sm text-yellow-600">
+                        <AlertCircle className="h-4 w-4" />
+                        Fields need mapping
+                      </div>
+                    ) : null}
 
-              {isValid !== null && detectedFields.length === 0 && (
-                <div className="mt-2 text-xs text-muted-foreground">
-                  No detection fields found in rule
-                </div>
-              )}
+                    {/* Detected Fields with color coding */}
+                    {detectedFields.length > 0 && (
+                      <div className="mt-4">
+                        <div className="text-sm text-muted-foreground mb-2">
+                          Detected Fields ({detectedFields.length})
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {detectedFields.map((field) => {
+                            const isUnmapped = unmappedFieldNames.has(field)
+                            return (
+                              <code
+                                key={field}
+                                className={`px-1.5 py-0.5 rounded text-xs font-mono ${
+                                  isUnmapped
+                                    ? 'bg-destructive/10 text-destructive'
+                                    : 'bg-green-500/10 text-green-600'
+                                }`}
+                              >
+                                {field}
+                              </code>
+                            )
+                          })}
+                        </div>
+                        {/* Map Fields button below detected fields */}
+                        {hasFieldErrors && indexPatternId && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            onClick={() => {
+                              const unmappedFields = Array.from(unmappedFieldNames) as string[]
+                              setUnmappedFieldsDialog({
+                                open: false,
+                                fields: unmappedFields.length > 0 ? unmappedFields : detectedFields,
+                                indexPatternId,
+                              })
+                              setMapFieldsModalOpen(true)
+                            }}
+                          >
+                            Map Fields
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {isValid !== null && detectedFields.length === 0 && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        No detection fields found in rule
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
 
               {generatedQuery && (
                 <details className="mt-4">
