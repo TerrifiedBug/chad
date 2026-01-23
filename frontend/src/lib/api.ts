@@ -279,6 +279,27 @@ export type RuleDeployResponse = {
   deployed_at: string
 }
 
+// Error response when deployment fails due to unmapped fields
+export type UnmappedFieldsError = {
+  error: 'unmapped_fields'
+  message: string
+  unmapped_fields: string[]
+  index_pattern_id: string
+}
+
+// Custom error class for unmapped fields
+export class DeploymentUnmappedFieldsError extends Error {
+  unmapped_fields: string[]
+  index_pattern_id: string
+
+  constructor(data: UnmappedFieldsError) {
+    super(data.message)
+    this.name = 'DeploymentUnmappedFieldsError'
+    this.unmapped_fields = data.unmapped_fields
+    this.index_pattern_id = data.index_pattern_id
+  }
+}
+
 // Bulk operation result type
 export type BulkOperationResult = {
   success: string[]
@@ -306,8 +327,26 @@ export const rulesApi = {
     api.post<RuleValidateResponse>('/rules/validate', { yaml_content, index_pattern_id }),
   test: (yaml_content: string, sample_logs: Record<string, unknown>[]) =>
     api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs }),
-  deploy: (id: string) =>
-    api.post<RuleDeployResponse>(`/rules/${id}/deploy`),
+  deploy: async (id: string): Promise<RuleDeployResponse> => {
+    const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(localStorage.getItem('chad-token')
+          ? { Authorization: `Bearer ${localStorage.getItem('chad-token')}` }
+          : {}),
+      },
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      // Check if this is an unmapped fields error
+      if (error.error === 'unmapped_fields') {
+        throw new DeploymentUnmappedFieldsError(error as UnmappedFieldsError)
+      }
+      throw new Error(error.detail || error.message || 'Request failed')
+    }
+    return response.json()
+  },
   undeploy: (id: string) =>
     api.post<{ success: boolean }>(`/rules/${id}/undeploy`),
   rollback: (id: string, version: number) =>

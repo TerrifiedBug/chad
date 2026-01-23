@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fieldMappingsApi,
   indexPatternsApi,
@@ -47,10 +48,12 @@ import { Globe, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 
 export default function FieldMappingsPage() {
   const { showToast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [isLoading, setIsLoading] = useState(true)
   const [indexPatterns, setIndexPatterns] = useState<IndexPattern[]>([])
   const [activeTab, setActiveTab] = useState<string>('global')
   const [mappings, setMappings] = useState<FieldMapping[]>([])
+  const initialParamsProcessed = useRef(false)
 
   // Add/Edit modal state
   const [showModal, setShowModal] = useState(false)
@@ -74,6 +77,39 @@ export default function FieldMappingsPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Handle URL parameters from rule deployment redirect
+  useEffect(() => {
+    if (initialParamsProcessed.current || indexPatterns.length === 0) return
+
+    const indexPatternId = searchParams.get('index_pattern_id')
+    const fields = searchParams.get('fields')
+
+    if (indexPatternId) {
+      // Find if this index pattern exists
+      const pattern = indexPatterns.find((p) => p.id === indexPatternId)
+      if (pattern) {
+        // Switch to the index pattern tab
+        setActiveTab(indexPatternId)
+
+        // If fields are provided, open the suggest modal with them pre-filled
+        if (fields) {
+          setSuggestSigmaFields(fields.split(',').join('\n'))
+          setShowSuggestModal(true)
+        }
+
+        // Clear the URL parameters
+        setSearchParams({})
+
+        showToast(
+          'Configure field mappings for the unmapped fields listed below.',
+          'info'
+        )
+      }
+    }
+
+    initialParamsProcessed.current = true
+  }, [indexPatterns, searchParams, setSearchParams, showToast])
 
   useEffect(() => {
     loadMappings()

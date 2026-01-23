@@ -16,7 +16,12 @@ class RuleBase(BaseModel):
 
 
 class RuleCreate(RuleBase):
-    status: RuleStatus = RuleStatus.ENABLED
+    status: RuleStatus = RuleStatus.UNDEPLOYED
+    # Threshold alerting
+    threshold_enabled: bool = False
+    threshold_count: int | None = None
+    threshold_window_minutes: int | None = None
+    threshold_group_by: str | None = None
 
 
 class RuleUpdate(BaseModel):
@@ -26,6 +31,11 @@ class RuleUpdate(BaseModel):
     severity: str | None = None
     status: RuleStatus | None = None
     index_pattern_id: UUID | None = None
+    # Threshold alerting
+    threshold_enabled: bool | None = None
+    threshold_count: int | None = None
+    threshold_window_minutes: int | None = None
+    threshold_group_by: str | None = None
 
 
 class RuleVersionResponse(BaseModel):
@@ -48,9 +58,16 @@ class RuleResponse(RuleBase):
     updated_at: datetime
     deployed_at: datetime | None = None
     deployed_version: int | None = None
+    current_version: int = 1  # Latest version number
+    needs_redeploy: bool = False  # True if deployed but out of date
     last_edited_by: str | None = None  # Email of user who last edited
     source: RuleSource = RuleSource.USER
     sigmahq_path: str | None = None
+    # Threshold alerting
+    threshold_enabled: bool = False
+    threshold_count: int | None = None
+    threshold_window_minutes: int | None = None
+    threshold_group_by: str | None = None
 
     class Config:
         from_attributes = True
@@ -117,3 +134,12 @@ class RuleRollbackResponse(BaseModel):
     new_version_number: int
     rolled_back_from: int
     yaml_content: str
+
+
+class UnmappedFieldsError(BaseModel):
+    """Error response when deployment fails due to unmapped fields."""
+
+    error: str = "unmapped_fields"
+    message: str
+    unmapped_fields: list[str]
+    index_pattern_id: UUID

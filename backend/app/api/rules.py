@@ -33,6 +33,7 @@ from app.schemas.rule import (
     RuleValidateRequest,
     RuleValidateResponse,
     RuleVersionResponse,
+    UnmappedFieldsError,
     ValidationErrorItem,
 )
 from app.schemas.rule_exception import (
@@ -555,7 +556,7 @@ async def test_rule(
             pass  # Best effort cleanup
 
 
-@router.post("/{rule_id}/deploy", response_model=RuleDeployResponse)
+@router.post("/{rule_id}/deploy", response_model=RuleDeployResponse, responses={400: {"model": UnmappedFieldsError}})
 async def deploy_rule(
     rule_id: UUID,
     request: Request,
@@ -569,11 +570,15 @@ async def deploy_rule(
     Process:
     1. Fetch rule and index pattern from DB
     2. Parse Sigma YAML with pySigma
-    3. Resolve field mappings (Sigma fields → log fields)
-    4. Translate to OpenSearch query with field mappings applied
-    5. Ensure percolator index exists
-    6. Index the percolator document
-    7. Update rule.deployed_at timestamp
+    3. Check fields exist in index OR have field mappings configured
+    4. Resolve field mappings (Sigma fields → log fields)
+    5. Translate to OpenSearch query with field mappings applied
+    6. Ensure percolator index exists
+    7. Index the percolator document
+    8. Update rule.deployed_at timestamp
+
+    Returns 400 with unmapped_fields if Sigma fields don't exist in index
+    and don't have mappings configured.
     """
     # Fetch rule with index pattern
     result = await db.execute(
@@ -607,6 +612,33 @@ async def deploy_rule(
         resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
         # Build dict of only mapped fields (exclude None values)
         field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
+
+        # Get fields from the OpenSearch index
+        try:
+            index_fields = set(get_index_fields(os_client, rule.index_pattern.pattern))
+        except Exception:
+            index_fields = set()
+
+        # Check for unmapped fields that don't exist in the index
+        unmapped_fields = []
+        for sigma_field in sigma_fields:
+            # Field is OK if: it has a mapping OR it exists in the index
+            if sigma_field in field_mappings_dict:
+                continue  # Has a mapping
+            if sigma_field in index_fields:
+                continue  # Exists directly in index
+            unmapped_fields.append(sigma_field)
+
+        if unmapped_fields:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=UnmappedFieldsError(
+                    message=f"The following fields are not found in the index and have no mappings configured: {', '.join(unmapped_fields)}",
+                    unmapped_fields=unmapped_fields,
+                    index_pattern_id=rule.index_pattern_id,
+                ).model_dump(mode="json"),
+            )
 
     # Translate rule with field mappings applied
     translation = sigma_service.translate_with_mappings(

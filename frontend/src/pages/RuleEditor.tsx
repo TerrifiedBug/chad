@@ -9,6 +9,7 @@ import {
   RuleException,
   ExceptionOperator,
   RuleExceptionCreate,
+  DeploymentUnmappedFieldsError,
 } from '@/lib/api'
 import { YamlEditor } from '@/components/YamlEditor'
 import { Button } from '@/components/ui/button'
@@ -30,7 +31,15 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, Link2 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
 
@@ -59,7 +68,7 @@ export default function RuleEditorPage() {
   const [severity, setSeverity] = useState('medium')
   const [indexPatternId, setIndexPatternId] = useState('')
   const [description, setDescription] = useState('')
-  const [status, setStatus] = useState<'enabled' | 'snoozed'>('enabled')
+  const [status, setStatus] = useState<'deployed' | 'undeployed' | 'snoozed'>('undeployed')
   const [snoozeIndefinite, setSnoozeIndefinite] = useState(false)
 
   // UI state
@@ -83,6 +92,7 @@ export default function RuleEditorPage() {
   const [deployedAt, setDeployedAt] = useState<string | null>(null)
   const [deployedVersion, setDeployedVersion] = useState<number | null>(null)
   const [currentVersion, setCurrentVersion] = useState<number>(1)
+  const [needsRedeploy, setNeedsRedeploy] = useState(false)
   const [isDeploying, setIsDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -111,6 +121,19 @@ export default function RuleEditorPage() {
   // Rule source state (for existing rules)
   const [ruleSource, setRuleSource] = useState<'user' | 'sigmahq'>('user')
   const [sigmahqPath, setSigmahqPath] = useState<string | null>(null)
+
+  // Threshold alerting state
+  const [thresholdEnabled, setThresholdEnabled] = useState(false)
+  const [thresholdCount, setThresholdCount] = useState<number | null>(null)
+  const [thresholdWindowMinutes, setThresholdWindowMinutes] = useState<number | null>(null)
+  const [thresholdGroupBy, setThresholdGroupBy] = useState<string | null>(null)
+
+  // Unmapped fields dialog state
+  const [unmappedFieldsDialog, setUnmappedFieldsDialog] = useState<{
+    open: boolean
+    fields: string[]
+    indexPatternId: string
+  }>({ open: false, fields: [], indexPatternId: '' })
 
   useEffect(() => {
     loadIndexPatterns()
@@ -168,16 +191,19 @@ export default function RuleEditorPage() {
       setDescription(rule.description || '')
       setDeployedAt(rule.deployed_at)
       setDeployedVersion(rule.deployed_version)
-      setStatus(rule.status as 'enabled' | 'snoozed')
+      setCurrentVersion(rule.current_version)
+      setNeedsRedeploy(rule.needs_redeploy)
+      setStatus(rule.status as 'deployed' | 'undeployed' | 'snoozed')
       setSnoozeIndefinite(rule.snooze_indefinite || false)
       setSnoozeUntil(rule.snooze_until)
-      // Get current version from versions array (sorted desc by version_number)
-      if (rule.versions && rule.versions.length > 0) {
-        setCurrentVersion(rule.versions[0].version_number)
-      }
       // Track rule source
       setRuleSource(rule.source as 'user' | 'sigmahq' || 'user')
       setSigmahqPath(rule.sigmahq_path || null)
+      // Load threshold settings
+      setThresholdEnabled(rule.threshold_enabled)
+      setThresholdCount(rule.threshold_count)
+      setThresholdWindowMinutes(rule.threshold_window_minutes)
+      setThresholdGroupBy(rule.threshold_group_by)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule')
     } finally {
@@ -333,6 +359,10 @@ export default function RuleEditorPage() {
           severity,
           status,
           index_pattern_id: indexPatternId,
+          threshold_enabled: thresholdEnabled,
+          threshold_count: thresholdEnabled ? thresholdCount : null,
+          threshold_window_minutes: thresholdEnabled ? thresholdWindowMinutes : null,
+          threshold_group_by: thresholdEnabled ? thresholdGroupBy : null,
         })
         // Navigate to the edit page for the new rule
         navigate(`/rules/${newRule.id}`, { replace: true })
@@ -344,6 +374,10 @@ export default function RuleEditorPage() {
           severity,
           status,
           index_pattern_id: indexPatternId,
+          threshold_enabled: thresholdEnabled,
+          threshold_count: thresholdEnabled ? thresholdCount : null,
+          threshold_window_minutes: thresholdEnabled ? thresholdWindowMinutes : null,
+          threshold_group_by: thresholdEnabled ? thresholdGroupBy : null,
         })
         // Reload rule to get updated version
         await loadRule()
@@ -366,9 +400,22 @@ export default function RuleEditorPage() {
       const result = await rulesApi.deploy(id)
       setDeployedAt(result.deployed_at)
       setDeployedVersion(result.deployed_version)
-      // deployed_version should now match currentVersion
+      setNeedsRedeploy(false)
+      // Update status to deployed (unless already snoozed)
+      if (status !== 'snoozed') {
+        setStatus('deployed')
+      }
     } catch (err) {
-      setDeployError(err instanceof Error ? err.message : 'Deploy failed')
+      if (err instanceof DeploymentUnmappedFieldsError) {
+        // Show unmapped fields dialog
+        setUnmappedFieldsDialog({
+          open: true,
+          fields: err.unmapped_fields,
+          indexPatternId: err.index_pattern_id,
+        })
+      } else {
+        setDeployError(err instanceof Error ? err.message : 'Deploy failed')
+      }
     } finally {
       setIsDeploying(false)
     }
@@ -382,6 +429,10 @@ export default function RuleEditorPage() {
       await rulesApi.undeploy(id)
       setDeployedAt(null)
       setDeployedVersion(null)
+      setStatus('undeployed')
+      // Clear snooze state as well (backend does this too)
+      setSnoozeUntil(null)
+      setSnoozeIndefinite(false)
     } catch (err) {
       setDeployError(err instanceof Error ? err.message : 'Undeploy failed')
     } finally {
@@ -486,7 +537,7 @@ export default function RuleEditorPage() {
     setIsSnoozing(true)
     try {
       await rulesApi.unsnooze(id)
-      setStatus('enabled')
+      setStatus('deployed')  // Unsnooze returns to deployed state
       setSnoozeUntil(null)
       setSnoozeIndefinite(false)
     } catch (err) {
@@ -593,9 +644,22 @@ export default function RuleEditorPage() {
                     {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
                   </Button>
                 </div>
+              ) : status === 'undeployed' ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500 font-medium">Undeployed</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled
+                    title="Deploy the rule first to enable snooze"
+                  >
+                    <Clock className="h-4 w-4 mr-1" />
+                    Snooze
+                  </Button>
+                </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-green-600 font-medium">Enabled</span>
+                  <span className="text-sm text-green-600 font-medium">Deployed</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" disabled={isSnoozing}>
@@ -706,6 +770,22 @@ export default function RuleEditorPage() {
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           Deployment error: {deployError}
+        </div>
+      )}
+
+      {needsRedeploy && (
+        <div className="bg-orange-500/10 text-orange-600 text-sm p-3 rounded-md flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            This rule has been modified since deployment. Redeploy to apply changes.
+          </div>
+          <Button
+            size="sm"
+            onClick={handleDeploy}
+            disabled={isDeploying}
+          >
+            {isDeploying ? 'Deploying...' : 'Redeploy Now'}
+          </Button>
         </div>
       )}
 
@@ -877,6 +957,68 @@ export default function RuleEditorPage() {
             </CardContent>
           </Card>
 
+          {/* Threshold Alerting Card */}
+          <Card>
+            <CardHeader className="py-3">
+              <CardTitle className="text-sm font-medium">Threshold Alerting</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="threshold-enabled" className="text-sm">
+                  Enable threshold alerting
+                </Label>
+                <Switch
+                  id="threshold-enabled"
+                  checked={thresholdEnabled}
+                  onCheckedChange={setThresholdEnabled}
+                />
+              </div>
+              {thresholdEnabled && (
+                <div className="space-y-3 pt-2 border-t">
+                  <div className="text-xs text-muted-foreground">
+                    Only create an alert when the rule matches N times within the specified window.
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Count</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={thresholdCount ?? ''}
+                        onChange={(e) => setThresholdCount(e.target.value ? parseInt(e.target.value) : null)}
+                        placeholder="5"
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Window (minutes)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={thresholdWindowMinutes ?? ''}
+                        onChange={(e) => setThresholdWindowMinutes(e.target.value ? parseInt(e.target.value) : null)}
+                        placeholder="10"
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Group by field (optional)</Label>
+                    <Input
+                      value={thresholdGroupBy ?? ''}
+                      onChange={(e) => setThresholdGroupBy(e.target.value || null)}
+                      placeholder="user.name"
+                      className="h-8 text-sm"
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      Count matches separately per unique value of this field
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Exceptions Card - Only show for existing rules */}
           {!isNew && (
             <Card>
@@ -1024,6 +1166,61 @@ export default function RuleEditorPage() {
           onRestore={handleRestoreVersion}
         />
       )}
+
+      {/* Unmapped Fields Dialog */}
+      <Dialog
+        open={unmappedFieldsDialog.open}
+        onOpenChange={(open) =>
+          setUnmappedFieldsDialog((prev) => ({ ...prev, open }))
+        }
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Unmapped Fields Detected
+            </DialogTitle>
+            <DialogDescription>
+              The following Sigma fields are not found in the target index and
+              have no field mappings configured. You need to create field
+              mappings to deploy this rule.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="flex flex-wrap gap-2">
+              {unmappedFieldsDialog.fields.map((field) => (
+                <code
+                  key={field}
+                  className="px-2 py-1 bg-destructive/10 text-destructive rounded text-sm font-mono"
+                >
+                  {field}
+                </code>
+              ))}
+            </div>
+          </div>
+          <DialogFooter className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                setUnmappedFieldsDialog((prev) => ({ ...prev, open: false }))
+              }
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                // Navigate to field mappings page with the index pattern pre-selected
+                navigate(
+                  `/field-mappings?index_pattern_id=${unmappedFieldsDialog.indexPatternId}&fields=${unmappedFieldsDialog.fields.join(',')}`
+                )
+              }}
+            >
+              <Link2 className="h-4 w-4 mr-2" />
+              Configure Field Mappings
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
