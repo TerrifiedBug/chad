@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { ChevronRight, ChevronDown, FileText, FileCode } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -82,15 +82,22 @@ export function RulesTreeView({
     return severityConfig[key] || severityConfig.informational
   }
 
-  // Calculate global index for shift+click - we need to track this across all patterns
-  let globalIndex = 0
+  // Precompute pattern start indices for shift+click selection
+  const patternStartIndices = useMemo(() => {
+    const indices: Record<string, number> = {}
+    let currentIndex = 0
+    Object.entries(rulesByPattern).forEach(([patternId, patternRules]) => {
+      indices[patternId] = currentIndex
+      currentIndex += patternRules.length
+    })
+    return indices
+  }, [rulesByPattern])
 
   return (
     <TooltipProvider>
       <div className="space-y-1 border rounded-lg p-2">
         {Object.entries(rulesByPattern).map(([patternId, patternRules]) => {
-          // Store the starting index for this pattern's rules
-          const patternStartIndex = globalIndex
+          const patternStartIndex = patternStartIndices[patternId]
 
           return (
             <div key={patternId}>
@@ -183,11 +190,6 @@ export function RulesTreeView({
                   })}
                 </div>
               )}
-              {/* Update global index after processing this pattern */}
-              {(() => {
-                globalIndex += patternRules.length
-                return null
-              })()}
             </div>
           )
         })}
