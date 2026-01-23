@@ -900,6 +900,28 @@ export default function RuleEditorPage() {
                       </span>
                     </div>
                   ))}
+                  {/* Show Map Fields button when there are field validation errors */}
+                  {validationErrors.some((e) => e.type === 'field') && indexPatternId && detectedFields.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => {
+                        // Get the unmapped fields from validation errors
+                        const unmappedFields = validationErrors
+                          .filter((e) => e.type === 'field' && e.field)
+                          .map((e) => e.field as string)
+                        setUnmappedFieldsDialog({
+                          open: false,
+                          fields: unmappedFields.length > 0 ? unmappedFields : detectedFields,
+                          indexPatternId,
+                        })
+                        setMapFieldsModalOpen(true)
+                      }}
+                    >
+                      Map Fields
+                    </Button>
+                  )}
                 </div>
               )}
 
