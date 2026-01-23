@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse } from '@/lib/api'
 import WebhooksSettings from '@/pages/WebhooksSettings'
+import NotificationsSettings from '@/pages/NotificationsSettings'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -460,6 +461,7 @@ export default function SettingsPage() {
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
           <TabsTrigger value="sso">SSO</TabsTrigger>
@@ -504,6 +506,10 @@ export default function SettingsPage() {
 
         <TabsContent value="webhooks" className="mt-4">
           <WebhooksSettings />
+        </TabsContent>
+
+        <TabsContent value="notifications" className="mt-4">
+          <NotificationsSettings />
         </TabsContent>
 
         <TabsContent value="security" className="mt-4 space-y-6">

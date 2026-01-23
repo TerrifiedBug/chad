@@ -964,6 +964,33 @@ export const healthApi = {
     api.get<HealthHistoryPoint[]>(`/health/indices/${id}/history?hours=${hours}`),
 }
 
+// Notification settings types
+export type SystemNotificationConfig = {
+  event_type: string
+  webhook_ids: string[]
+}
+
+export type AlertNotificationConfig = {
+  webhook_id: string
+  webhook_name: string
+  severities: string[]
+  enabled: boolean
+}
+
+export type NotificationSettings = {
+  system_events: SystemNotificationConfig[]
+  alert_notifications: AlertNotificationConfig[]
+}
+
+// Notifications API
+export const notificationsApi = {
+  get: () => api.get<NotificationSettings>('/notifications'),
+  updateSystem: (event_type: string, webhook_ids: string[]) =>
+    api.put<{ success: boolean }>('/notifications/system', { event_type, webhook_ids }),
+  updateAlert: (webhook_id: string, severities: string[], enabled: boolean) =>
+    api.put<{ success: boolean }>('/notifications/alerts', { webhook_id, severities, enabled }),
+}
+
 // ATT&CK Coverage Map types
 export type AttackTechnique = {
   id: string
