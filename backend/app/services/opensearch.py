@@ -195,14 +195,23 @@ def get_index_fields(client: OpenSearch, pattern: str) -> set[str]:
 
 
 def _extract_fields(properties: dict[str, Any], prefix: str, fields: set[str]) -> None:
-    """Recursively extract field names from mapping properties."""
+    """Recursively extract field names from mapping properties.
+
+    Only includes searchable fields (text, keyword, etc.), not object containers.
+    Object containers have 'properties' but no 'type' - they can't be searched directly.
+    """
     for field_name, field_config in properties.items():
         full_name = f"{prefix}{field_name}" if prefix else field_name
-        fields.add(full_name)
 
-        # Handle nested objects
+        # Handle nested objects - recurse into them
         if "properties" in field_config:
             _extract_fields(field_config["properties"], f"{full_name}.", fields)
+            # Only add the parent field if it also has a type (rare, but possible)
+            if "type" in field_config:
+                fields.add(full_name)
+        else:
+            # Regular field with a type - add it
+            fields.add(full_name)
 
 
 def validate_index_pattern(client: OpenSearch, pattern: str) -> dict[str, Any]:
