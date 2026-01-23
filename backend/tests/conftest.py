@@ -69,8 +69,13 @@ async def test_engine():
     """Create a test database engine."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
-    # Create all tables
+    # Drop all tables and enum types to ensure clean state
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        # Drop custom enum types that may persist after drop_all
+        await conn.execute(text("DROP TYPE IF EXISTS rulestatus CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS rulesource CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS mappingorigin CASCADE"))
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
@@ -79,6 +84,10 @@ async def test_engine():
     async with engine.begin() as conn:
         # Delete in correct order to respect foreign keys
         await conn.run_sync(Base.metadata.drop_all)
+        # Drop enum types for next test
+        await conn.execute(text("DROP TYPE IF EXISTS rulestatus CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS rulesource CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS mappingorigin CASCADE"))
         await conn.run_sync(Base.metadata.create_all)
 
     await engine.dispose()

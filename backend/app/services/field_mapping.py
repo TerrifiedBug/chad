@@ -1,0 +1,146 @@
+"""Field mapping service for Sigma to log field translations."""
+
+from uuid import UUID
+
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.field_mapping import FieldMapping, MappingOrigin
+
+
+async def resolve_mappings(
+    db: AsyncSession,
+    sigma_fields: list[str],
+    index_pattern_id: UUID,
+) -> dict[str, str | None]:
+    """
+    Resolve Sigma field names to target log field names.
+
+    Resolution order:
+    1. Per-index mapping (index_pattern_id matches)
+    2. Global mapping (index_pattern_id is NULL)
+    3. None if no mapping found
+
+    Returns:
+        Dict mapping sigma_field -> target_field (or None if unmapped)
+    """
+    if not sigma_fields:
+        return {}
+
+    # Fetch all relevant mappings (global + per-index)
+    result = await db.execute(
+        select(FieldMapping).where(
+            and_(
+                FieldMapping.sigma_field.in_(sigma_fields),
+                or_(
+                    FieldMapping.index_pattern_id == index_pattern_id,
+                    FieldMapping.index_pattern_id.is_(None),
+                ),
+            )
+        )
+    )
+    mappings = result.scalars().all()
+
+    # Build lookup: per-index wins over global
+    resolved: dict[str, str | None] = {field: None for field in sigma_fields}
+
+    # First pass: apply global mappings
+    for mapping in mappings:
+        if mapping.index_pattern_id is None:
+            resolved[mapping.sigma_field] = mapping.target_field
+
+    # Second pass: override with per-index mappings
+    for mapping in mappings:
+        if mapping.index_pattern_id == index_pattern_id:
+            resolved[mapping.sigma_field] = mapping.target_field
+
+    return resolved
+
+
+async def get_mappings(
+    db: AsyncSession,
+    index_pattern_id: UUID | None = None,
+) -> list[FieldMapping]:
+    """
+    Get field mappings, optionally filtered by index pattern.
+
+    Args:
+        index_pattern_id: If provided, filter to this index pattern.
+                         If None, get global mappings only.
+    """
+    if index_pattern_id is None:
+        query = select(FieldMapping).where(FieldMapping.index_pattern_id.is_(None))
+    else:
+        query = select(FieldMapping).where(
+            FieldMapping.index_pattern_id == index_pattern_id
+        )
+
+    result = await db.execute(query.order_by(FieldMapping.sigma_field))
+    return list(result.scalars().all())
+
+
+async def create_mapping(
+    db: AsyncSession,
+    sigma_field: str,
+    target_field: str,
+    created_by: UUID,
+    index_pattern_id: UUID | None = None,
+    origin: MappingOrigin = MappingOrigin.MANUAL,
+    confidence: float | None = None,
+) -> FieldMapping:
+    """Create a new field mapping."""
+    mapping = FieldMapping(
+        sigma_field=sigma_field,
+        target_field=target_field,
+        index_pattern_id=index_pattern_id,
+        origin=origin,
+        confidence=confidence,
+        created_by=created_by,
+    )
+    db.add(mapping)
+    await db.commit()
+    await db.refresh(mapping)
+    return mapping
+
+
+async def update_mapping(
+    db: AsyncSession,
+    mapping_id: UUID,
+    target_field: str | None = None,
+    origin: MappingOrigin | None = None,
+    confidence: float | None = None,
+) -> FieldMapping | None:
+    """Update an existing field mapping."""
+    result = await db.execute(
+        select(FieldMapping).where(FieldMapping.id == mapping_id)
+    )
+    mapping = result.scalar_one_or_none()
+
+    if mapping is None:
+        return None
+
+    if target_field is not None:
+        mapping.target_field = target_field
+    if origin is not None:
+        mapping.origin = origin
+    if confidence is not None:
+        mapping.confidence = confidence
+
+    await db.commit()
+    await db.refresh(mapping)
+    return mapping
+
+
+async def delete_mapping(db: AsyncSession, mapping_id: UUID) -> bool:
+    """Delete a field mapping. Returns True if deleted."""
+    result = await db.execute(
+        select(FieldMapping).where(FieldMapping.id == mapping_id)
+    )
+    mapping = result.scalar_one_or_none()
+
+    if mapping is None:
+        return False
+
+    await db.delete(mapping)
+    await db.commit()
+    return True
