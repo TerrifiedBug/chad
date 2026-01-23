@@ -61,11 +61,15 @@ async def list_audit_logs(
 
     items = []
     for log in logs:
+        # Get user email from user lookup, or fall back to details.user_email (for system events)
+        user_email = users.get(str(log.user_id)) if log.user_id else None
+        if not user_email and log.details:
+            user_email = log.details.get("user_email") or log.details.get("email")
         items.append(
             AuditLogEntry(
                 id=log.id,
                 user_id=log.user_id,
-                user_email=users.get(str(log.user_id)) if log.user_id else None,
+                user_email=user_email,
                 action=log.action,
                 resource_type=log.resource_type,
                 resource_id=log.resource_id,

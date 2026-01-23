@@ -90,14 +90,13 @@ async def audit_log(
         if user:
             user_email = user.email
 
-    # Create PostgreSQL record
+    # Create PostgreSQL record (user_email stored in details for reference)
     log = AuditLog(
         user_id=user_id,
-        user_email=user_email,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
-        details=details,
+        details={**(details or {}), "user_email": user_email} if user_email else details,
     )
     db.add(log)
     # Don't commit here - let the caller manage the transaction
