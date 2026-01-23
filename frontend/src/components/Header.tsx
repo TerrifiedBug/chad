@@ -15,13 +15,13 @@ import { ChevronDown, LogOut, Settings, Key, Lock } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Dashboard', exact: true },
-  { href: '/alerts', label: 'Alerts' },
   { href: '/rules', label: 'Rules' },
-  { href: '/attack', label: 'ATT&CK' },
+  { href: '/alerts', label: 'Alerts' },
   { href: '/sigmahq', label: 'SigmaHQ' },
-  { href: '/health', label: 'Health', adminOnly: true },
+  { href: '/attack', label: 'ATT&CK' },
   { href: '/index-patterns', label: 'Index Patterns', adminOnly: true },
   { href: '/field-mappings', label: 'Field Mappings', adminOnly: true },
+  { href: '/health', label: 'Health', adminOnly: true },
   { href: '/settings', label: 'Settings', adminOnly: true },
 ]
 
