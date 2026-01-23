@@ -105,6 +105,11 @@ async def sync_attack_data(
 
     Admin only. Downloads latest STIX data from MITRE and updates the cache.
     """
+    # Capture user ID before sync - the sync uses to_thread which can disrupt
+    # the greenlet context, causing issues with lazy attribute loading afterwards
+    user_id = current_user.id
+    client_ip = get_client_ip(request)
+
     result = await attack_sync_service.sync(db)
 
     # Update last sync time in settings
@@ -125,12 +130,12 @@ async def sync_attack_data(
     # Audit log
     await audit_log(
         db,
-        current_user.id,
+        user_id,
         "attack.sync.manual",
         "system",
         None,
         {"success": result.success, "techniques_updated": result.techniques_updated},
-        ip_address=get_client_ip(request),
+        ip_address=client_ip,
     )
     await db.commit()
 

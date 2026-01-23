@@ -7,9 +7,12 @@ and caches it in the local database.
 import asyncio
 import logging
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
+import httpx
 from mitreattack.stix20 import MitreAttackData
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
@@ -18,6 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 
 logger = logging.getLogger(__name__)
+
+# URL to download the MITRE ATT&CK Enterprise STIX bundle
+ATTACK_STIX_URL = "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
 
 
 @dataclass
@@ -56,26 +62,48 @@ class AttackSyncService:
         """
         Fetch ATT&CK data synchronously (runs in thread pool).
 
+        Downloads the latest STIX bundle from MITRE's GitHub repository,
+        saves it to a temporary file, and parses it.
+
         Returns tuple of (techniques, tactic_id_map).
         """
-        attack_data = MitreAttackData("enterprise-attack")
-        techniques = attack_data.get_techniques(remove_revoked_deprecated=True)
+        # Download the STIX bundle from MITRE
+        logger.info(f"Downloading ATT&CK STIX bundle from {ATTACK_STIX_URL}")
+        with httpx.Client(timeout=60.0) as client:
+            response = client.get(ATTACK_STIX_URL)
+            response.raise_for_status()
+            stix_data = response.content
 
-        # Build tactic ID map
-        tactic_id_map = {}
-        tactics = attack_data.get_tactics()
-        for tactic in tactics:
-            short_names = [
-                phase.get("phase_name")
-                for phase in tactic.get("kill_chain_phases", [])
-                if phase.get("kill_chain_name") == "mitre-attack"
-            ]
-            for short_name in short_names:
-                for ref in tactic.get("external_references", []):
-                    if ref.get("source_name") == "mitre-attack":
-                        tactic_id_map[short_name] = ref.get("external_id")
+        # Save to a temporary file (mitreattack-python requires a file path)
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as f:
+            f.write(stix_data)
+            stix_filepath = f.name
 
-        return techniques, tactic_id_map
+        try:
+            logger.info(f"Parsing ATT&CK STIX bundle from {stix_filepath}")
+            attack_data = MitreAttackData(stix_filepath)
+            techniques = attack_data.get_techniques(remove_revoked_deprecated=True)
+
+            # Build tactic ID map: maps short name (e.g., "credential-access") to tactic ID (e.g., "TA0006")
+            tactic_id_map = {}
+            tactics = attack_data.get_tactics()
+            for tactic in tactics:
+                # Tactics have x_mitre_shortname (e.g., "credential-access")
+                # and external_references with external_id (e.g., "TA0006")
+                short_name = getattr(tactic, "x_mitre_shortname", None)
+                if not short_name:
+                    continue
+
+                external_refs = getattr(tactic, "external_references", [])
+                for ref in external_refs:
+                    if getattr(ref, "source_name", None) == "mitre-attack":
+                        tactic_id_map[short_name] = getattr(ref, "external_id", None)
+                        break
+
+            return techniques, tactic_id_map
+        finally:
+            # Clean up temporary file
+            Path(stix_filepath).unlink(missing_ok=True)
 
     async def sync(self, db: AsyncSession) -> SyncResult:
         """
@@ -88,24 +116,26 @@ class AttackSyncService:
 
             # Fetch data from MITRE in thread pool (synchronous HTTP call)
             techniques, tactic_id_map = await asyncio.to_thread(self._fetch_attack_data)
+            logger.info(f"Fetched {len(techniques)} techniques, {len(tactic_id_map)} tactics from MITRE")
 
             techniques_count = 0
 
             for technique in techniques:
                 # Skip if revoked or deprecated
-                if technique.get("revoked") or technique.get("x_mitre_deprecated"):
+                # STIX2 objects use direct attribute access, not .get()
+                if getattr(technique, "revoked", False) or getattr(technique, "x_mitre_deprecated", False):
                     continue
 
                 # Extract technique ID from external references
-                external_refs = technique.get("external_references", [])
+                external_refs = getattr(technique, "external_references", [])
                 mitre_ref = next(
-                    (ref for ref in external_refs if ref.get("source_name") == "mitre-attack"),
+                    (ref for ref in external_refs if getattr(ref, "source_name", None) == "mitre-attack"),
                     None,
                 )
                 if not mitre_ref:
                     continue
 
-                technique_id = mitre_ref.get("external_id")
+                technique_id = getattr(mitre_ref, "external_id", None)
                 if not technique_id:
                     continue
 
@@ -114,12 +144,12 @@ class AttackSyncService:
                 parent_id = technique_id.rsplit(".", 1)[0] if is_subtechnique else None
 
                 # Get tactic(s) - techniques can belong to multiple tactics
-                kill_chain_phases = technique.get("kill_chain_phases", [])
+                kill_chain_phases = getattr(technique, "kill_chain_phases", [])
                 for phase in kill_chain_phases:
-                    if phase.get("kill_chain_name") != "mitre-attack":
+                    if getattr(phase, "kill_chain_name", None) != "mitre-attack":
                         continue
 
-                    tactic_short_name = phase.get("phase_name")
+                    tactic_short_name = getattr(phase, "phase_name", None)
                     if tactic_short_name not in self.TACTIC_DISPLAY_NAMES:
                         continue
 
@@ -131,24 +161,24 @@ class AttackSyncService:
                     # Upsert technique
                     stmt = insert(AttackTechnique).values(
                         id=technique_id,
-                        name=technique.get("name", ""),
+                        name=getattr(technique, "name", ""),
                         tactic_id=tactic_id,
                         tactic_name=self.TACTIC_DISPLAY_NAMES.get(tactic_short_name, tactic_short_name),
                         parent_id=parent_id,
-                        description=technique.get("description"),
-                        url=mitre_ref.get("url"),
-                        platforms=technique.get("x_mitre_platforms"),
-                        data_sources=technique.get("x_mitre_data_sources"),
+                        description=getattr(technique, "description", None),
+                        url=getattr(mitre_ref, "url", None),
+                        platforms=getattr(technique, "x_mitre_platforms", None),
+                        data_sources=getattr(technique, "x_mitre_data_sources", None),
                         is_subtechnique=is_subtechnique,
                         updated_at=datetime.now(UTC),
                     ).on_conflict_do_update(
                         index_elements=["id"],
                         set_={
-                            "name": technique.get("name", ""),
-                            "description": technique.get("description"),
-                            "url": mitre_ref.get("url"),
-                            "platforms": technique.get("x_mitre_platforms"),
-                            "data_sources": technique.get("x_mitre_data_sources"),
+                            "name": getattr(technique, "name", ""),
+                            "description": getattr(technique, "description", None),
+                            "url": getattr(mitre_ref, "url", None),
+                            "platforms": getattr(technique, "x_mitre_platforms", None),
+                            "data_sources": getattr(technique, "x_mitre_data_sources", None),
                             "updated_at": datetime.now(UTC),
                         },
                     )

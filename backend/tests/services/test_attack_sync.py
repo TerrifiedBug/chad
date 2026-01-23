@@ -15,6 +15,23 @@ from app.services.attack_sync import (
 )
 
 
+class MockSTIXObject:
+    """Mock STIX2 object that supports both attribute and dict-like access."""
+
+    def __init__(self, data: dict):
+        self._data = data
+        for key, value in data.items():
+            if isinstance(value, dict):
+                setattr(self, key, MockSTIXObject(value))
+            elif isinstance(value, list):
+                setattr(self, key, [MockSTIXObject(item) if isinstance(item, dict) else item for item in value])
+            else:
+                setattr(self, key, value)
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+
 class TestExtractAttackTags:
     """Tests for extract_attack_tags function."""
 
@@ -256,10 +273,12 @@ class TestAttackSyncService:
         """Test sync properly processes ATT&CK data."""
         service = AttackSyncService()
 
-        # Mock technique data
-        mock_technique = {
+        # Mock technique data as STIX-like object
+        mock_technique = MockSTIXObject({
             "name": "Command and Scripting Interpreter",
             "description": "Test description",
+            "revoked": False,
+            "x_mitre_deprecated": False,
             "external_references": [
                 {
                     "source_name": "mitre-attack",
@@ -272,7 +291,7 @@ class TestAttackSyncService:
             ],
             "x_mitre_platforms": ["Windows", "Linux"],
             "x_mitre_data_sources": ["Process: Process Creation"],
-        }
+        })
 
         # Mock the _fetch_attack_data method
         with patch.object(service, "_fetch_attack_data") as mock_fetch:
@@ -303,14 +322,14 @@ class TestAttackSyncService:
         """Test sync skips revoked techniques."""
         service = AttackSyncService()
 
-        # Revoked technique
-        mock_technique = {
+        # Revoked technique as STIX-like object
+        mock_technique = MockSTIXObject({
             "name": "Revoked Technique",
             "revoked": True,
             "external_references": [
                 {"source_name": "mitre-attack", "external_id": "T0001"}
             ],
-        }
+        })
 
         with patch.object(service, "_fetch_attack_data") as mock_fetch:
             mock_fetch.return_value = ([mock_technique], {})
@@ -333,10 +352,12 @@ class TestAttackSyncService:
         """Test sync properly handles sub-techniques."""
         service = AttackSyncService()
 
-        # Sub-technique
-        mock_technique = {
+        # Sub-technique as STIX-like object
+        mock_technique = MockSTIXObject({
             "name": "PowerShell",
             "description": "PowerShell sub-technique",
+            "revoked": False,
+            "x_mitre_deprecated": False,
             "external_references": [
                 {
                     "source_name": "mitre-attack",
@@ -347,7 +368,7 @@ class TestAttackSyncService:
             "kill_chain_phases": [
                 {"kill_chain_name": "mitre-attack", "phase_name": "execution"}
             ],
-        }
+        })
 
         with patch.object(service, "_fetch_attack_data") as mock_fetch:
             mock_fetch.return_value = (
