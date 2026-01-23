@@ -19,11 +19,16 @@ class TestRuleValidation:
 
 
 class TestRuleTesting:
-    """Tests for POST /rules/test endpoint."""
+    """Tests for POST /rules/test endpoint.
+
+    Note: These tests run without OpenSearch, so valid rules will return
+    a config error. Full matching tests require OpenSearch integration tests.
+    See test_rules_percolate.py for detailed percolate tests.
+    """
 
     @pytest.mark.asyncio
-    async def test_rule_matches_log(self, authenticated_client: AsyncClient):
-        """Test rule that matches sample log."""
+    async def test_rule_test_without_opensearch(self, authenticated_client: AsyncClient):
+        """Test rule returns config error when OpenSearch not available."""
         yaml_content = """
 title: Test Rule
 logsource:
@@ -44,16 +49,14 @@ detection:
         )
         assert response.status_code == 200
         data = response.json()
-        assert len(data["errors"]) == 0
-        assert len(data["matches"]) == 2
-        # First log should match
-        assert data["matches"][0]["matched"] is True
-        # Second log should not match
-        assert data["matches"][1]["matched"] is False
+        # Without OpenSearch, should return config error
+        assert len(data["errors"]) > 0
+        assert data["errors"][0]["type"] == "config"
+        assert "OpenSearch not configured" in data["errors"][0]["message"]
 
     @pytest.mark.asyncio
     async def test_rule_test_invalid_rule(self, authenticated_client: AsyncClient):
-        """Test with invalid rule returns errors."""
+        """Test with invalid rule returns errors (before OpenSearch check)."""
         yaml_content = """
 title: Test
   invalid: yaml
@@ -64,6 +67,7 @@ title: Test
         )
         assert response.status_code == 200
         data = response.json()
+        # YAML validation errors should be returned before OpenSearch check
         assert len(data["errors"]) > 0
         assert len(data["matches"]) == 0
 

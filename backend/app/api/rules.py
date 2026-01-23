@@ -359,13 +359,16 @@ async def validate_rule(
 @router.post("/test", response_model=RuleTestResponse)
 async def test_rule(
     request: RuleTestRequest,
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
     _: Annotated[User, Depends(get_current_user)],
 ):
     """
-    Test a Sigma rule against sample log data.
+    Test a Sigma rule against sample log data using OpenSearch percolate.
 
-    Does not require OpenSearch - runs in-memory matching.
+    Requires OpenSearch connection for accurate matching.
     """
+    import uuid as uuid_module
+
     # Parse and translate the rule
     result = sigma_service.translate_and_validate(request.yaml_content)
 
@@ -383,16 +386,100 @@ async def test_rule(
             ],
         )
 
-    # Test each log against the rule
-    matches = []
-    for idx, log in enumerate(request.sample_logs):
-        matched = sigma_service.test_against_log(result.query, log)
-        matches.append(LogMatchResult(log_index=idx, matched=matched))
+    if os_client is None:
+        return RuleTestResponse(
+            matches=[],
+            errors=[
+                ValidationErrorItem(
+                    type="config",
+                    message="OpenSearch not configured. Cannot test rules without OpenSearch connection.",
+                )
+            ],
+        )
 
-    return RuleTestResponse(
-        matches=matches,
-        opensearch_query=result.query,
-    )
+    # Use a dedicated test percolator index
+    test_index = "chad-test-percolator"
+
+    # Ensure test index exists with percolator mapping
+    try:
+        if not os_client.indices.exists(index=test_index):
+            os_client.indices.create(
+                index=test_index,
+                body={
+                    "mappings": {
+                        "properties": {
+                            "query": {"type": "percolator"},
+                        }
+                    }
+                }
+            )
+    except Exception as e:
+        return RuleTestResponse(
+            matches=[],
+            errors=[
+                ValidationErrorItem(
+                    type="opensearch",
+                    message=f"Failed to create test index: {str(e)}",
+                )
+            ],
+        )
+
+    # Index the test query temporarily
+    temp_id = f"test-{uuid_module.uuid4()}"
+    percolator_query = result.query.get("query", result.query)
+
+    try:
+        os_client.index(
+            index=test_index,
+            id=temp_id,
+            body={"query": percolator_query},
+            refresh=True,
+        )
+    except Exception as e:
+        return RuleTestResponse(
+            matches=[],
+            errors=[
+                ValidationErrorItem(
+                    type="opensearch",
+                    message=f"Failed to index test query: {str(e)}",
+                )
+            ],
+        )
+
+    try:
+        # Test each sample log against the percolator
+        matches = []
+        for idx, log in enumerate(request.sample_logs):
+            try:
+                response = os_client.search(
+                    index=test_index,
+                    body={
+                        "query": {
+                            "percolate": {
+                                "field": "query",
+                                "document": log,
+                            }
+                        }
+                    }
+                )
+                matched = response["hits"]["total"]["value"] > 0
+            except Exception:
+                # If percolation fails for this log, mark as not matched
+                matched = False
+
+            matches.append(LogMatchResult(log_index=idx, matched=matched))
+
+        return RuleTestResponse(
+            matches=matches,
+            opensearch_query=result.query,
+        )
+
+    finally:
+        # Always clean up temporary percolator document
+        try:
+            os_client.delete(index=test_index, id=temp_id, ignore=[404])
+        except Exception:
+            pass  # Best effort cleanup
 
 
 @router.post("/{rule_id}/deploy", response_model=RuleDeployResponse)
