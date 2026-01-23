@@ -477,6 +477,7 @@ export default function SettingsPage() {
           <TabsTrigger value="sso">SSO</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="sigmahq">SigmaHQ</TabsTrigger>
+          <TabsTrigger value="export">Export</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-4">
@@ -1172,6 +1173,47 @@ export default function SettingsPage() {
                   )}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="export" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Export Rules</CardTitle>
+              <CardDescription>
+                Download detection rules as Sigma YAML files
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Export all rules in your library as a ZIP archive containing individual YAML files.
+              </p>
+              <Button
+                onClick={() => window.location.href = '/api/export/rules'}
+              >
+                Export All Rules (ZIP)
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle>Configuration Backup</CardTitle>
+              <CardDescription>
+                Download system configuration (excludes sensitive data like passwords and tokens)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                The configuration backup includes: index patterns, general settings, webhooks, and role permissions.
+                Sensitive data like OpenSearch credentials and API tokens are excluded for security.
+              </p>
+              <Button
+                onClick={() => window.location.href = '/api/export/config'}
+              >
+                Export Configuration (JSON)
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

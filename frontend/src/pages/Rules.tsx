@@ -288,6 +288,47 @@ export default function RulesPage() {
     }
   }
 
+  // Handler for bulk export
+  const handleBulkExport = async () => {
+    if (selectedRules.size === 0) return
+
+    const ruleIds = Array.from(selectedRules)
+    // Create a form and submit it to trigger the download
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = '/api/export/rules/bulk'
+    form.style.display = 'none'
+
+    // Add the rule_ids as a JSON body - need to use fetch instead for JSON
+    try {
+      const response = await fetch('/api/export/rules/bulk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ rule_ids: ruleIds }),
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        throw new Error('Export failed')
+      }
+
+      // Get the blob and trigger download
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `chad-rules-${new Date().toISOString().slice(0, 10)}.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed')
+    }
+  }
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {
       month: 'short',
@@ -660,6 +701,9 @@ export default function RulesPage() {
             </Button>
             <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')} disabled={isBulkOperating}>
               Delete
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleBulkExport} disabled={isBulkOperating}>
+              Export
             </Button>
           </div>
           <Button size="sm" variant="ghost" onClick={clearSelection}>

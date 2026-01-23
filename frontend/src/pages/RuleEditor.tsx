@@ -30,8 +30,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download } from 'lucide-react'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
+import { ActivityPanel } from '@/components/ActivityPanel'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -102,6 +103,9 @@ export default function RuleEditorPage() {
   // Snooze state
   const [snoozeUntil, setSnoozeUntil] = useState<string | null>(null)
   const [isSnoozing, setIsSnoozing] = useState(false)
+
+  // Activity panel state
+  const [isActivityOpen, setIsActivityOpen] = useState(false)
 
   useEffect(() => {
     loadIndexPatterns()
@@ -444,6 +448,17 @@ export default function RuleEditorPage() {
     }
   }
 
+  // Restore version handler for activity panel
+  const handleRestoreVersion = async (versionNumber: number) => {
+    try {
+      const version = await rulesApi.getVersion(id!, versionNumber)
+      setYamlContent(version.yaml_content)
+      setIsActivityOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to restore version')
+    }
+  }
+
   const formatSnoozeExpiry = (iso: string) => {
     const date = new Date(iso)
     return date.toLocaleString()
@@ -549,6 +564,21 @@ export default function RuleEditorPage() {
               <Check className="h-4 w-4" />
               Saved
             </span>
+          )}
+          {!isNew && (
+            <Button variant="outline" onClick={() => setIsActivityOpen(true)}>
+              <History className="h-4 w-4 mr-2" />
+              Activity
+            </Button>
+          )}
+          {!isNew && (
+            <Button
+              variant="outline"
+              onClick={() => window.location.href = `/api/export/rules/${id}`}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
           )}
           {!isNew && (
             deployedAt ? (
@@ -894,6 +924,16 @@ export default function RuleEditorPage() {
         onConfirm={confirmDeleteException}
         isDeleting={isDeletingException}
       />
+
+      {/* Activity Panel */}
+      {!isNew && (
+        <ActivityPanel
+          ruleId={id!}
+          isOpen={isActivityOpen}
+          onClose={() => setIsActivityOpen(false)}
+          onRestore={handleRestoreVersion}
+        />
+      )}
     </div>
   )
 }
