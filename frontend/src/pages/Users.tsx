@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { usersApi, UserInfo } from '@/lib/api'
+import { usersApi, settingsApiExtended, UserInfo } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -87,13 +87,32 @@ export default function UsersPage() {
   // Password reset confirmation state
   const [isPasswordResetDialogOpen, setIsPasswordResetDialogOpen] = useState(false)
 
+  // SSO role mapping state
+  const [ssoRoleMappingEnabled, setSsoRoleMappingEnabled] = useState(true)
+
   // Password complexity
   const passwordComplexity = validatePasswordComplexity(newPassword)
   const allRequirementsMet = Object.values(passwordComplexity).every(Boolean)
 
   useEffect(() => {
     loadUsers()
+    loadSsoSettings()
   }, [])
+
+  const loadSsoSettings = async () => {
+    try {
+      const settings = await settingsApiExtended.getAll()
+      if (settings.sso && typeof settings.sso === 'object') {
+        const sso = settings.sso as Record<string, unknown>
+        setSsoRoleMappingEnabled((sso.role_mapping_enabled as boolean) || false)
+      } else {
+        setSsoRoleMappingEnabled(false)
+      }
+    } catch {
+      // Default to false if we can't load settings (allow role changes)
+      setSsoRoleMappingEnabled(false)
+    }
+  }
 
   const loadUsers = async () => {
     try {
@@ -443,7 +462,7 @@ export default function UsersPage() {
             {/* Role Selection */}
             <div className="space-y-2">
               <Label htmlFor="edit-role">Role</Label>
-              {editUser?.auth_method === 'sso' ? (
+              {editUser?.auth_method === 'sso' && ssoRoleMappingEnabled ? (
                 <div className="space-y-1">
                   <Select value={editRole} disabled>
                     <SelectTrigger className="opacity-50 cursor-not-allowed">
@@ -456,20 +475,27 @@ export default function UsersPage() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    Role is managed by SSO provider
+                    Role is managed by SSO provider. Disable role mapping in Settings to allow manual changes.
                   </p>
                 </div>
               ) : (
-                <Select value={editRole} onValueChange={setEditRole}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 bg-popover">
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="analyst">Analyst</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="space-y-1">
+                  <Select value={editRole} onValueChange={setEditRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-50 bg-popover">
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="analyst">Analyst</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {editUser?.auth_method === 'sso' && (
+                    <p className="text-xs text-muted-foreground">
+                      Role mapping is disabled. Role will persist until mapping is enabled.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
 
