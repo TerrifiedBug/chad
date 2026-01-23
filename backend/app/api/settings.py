@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_admin
 from app.core.encryption import encrypt
+from app.utils.request import get_client_ip
 from app.db.session import get_db
 from app.models.setting import Setting
 from app.models.user import User
@@ -14,6 +15,7 @@ from app.services.audit import audit_log
 from app.services.opensearch import validate_opensearch_connection
 from app.services.settings import get_setting, set_setting
 from app.services.webhooks import get_app_url_for_webhooks, send_webhook
+from app.core.encryption import decrypt
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -43,6 +45,13 @@ class WebhookTestRequest(BaseModel):
 
 class WebhookTestResponse(BaseModel):
     success: bool
+    error: str | None = None
+
+
+class AITestResponse(BaseModel):
+    success: bool
+    provider: str
+    model: str | None = None
     error: str | None = None
 
 
@@ -113,9 +122,147 @@ async def test_webhook(
         return WebhookTestResponse(success=False, error=str(e))
 
 
+@router.post("/ai/test", response_model=AITestResponse)
+async def test_ai_connection(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    """Test AI provider connection with a simple request."""
+    import httpx
+    import json as json_module
+
+    ai_settings = await get_setting(db, "ai")
+    if not ai_settings:
+        return AITestResponse(
+            success=False, provider="none", error="AI settings not configured"
+        )
+
+    provider = ai_settings.get("ai_provider", "disabled")
+    if provider == "disabled":
+        return AITestResponse(
+            success=False, provider="disabled", error="AI provider is disabled"
+        )
+
+    test_prompt = "Respond with only the word 'OK' to confirm connectivity."
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if provider == "ollama":
+                url = ai_settings.get("ai_ollama_url", "http://localhost:11434")
+                model = ai_settings.get("ai_ollama_model", "llama3")
+                response = await client.post(
+                    f"{url.rstrip('/')}/api/generate",
+                    json={"model": model, "prompt": test_prompt, "stream": False},
+                )
+                response.raise_for_status()
+                return AITestResponse(success=True, provider=provider, model=model)
+
+            elif provider == "openai":
+                api_key = ai_settings.get("ai_openai_key", "")
+                if api_key:
+                    try:
+                        api_key = decrypt(api_key)
+                    except Exception:
+                        return AITestResponse(
+                            success=False,
+                            provider=provider,
+                            error="Failed to decrypt API key. Please re-enter it.",
+                        )
+                if not api_key:
+                    return AITestResponse(
+                        success=False,
+                        provider=provider,
+                        error="OpenAI API key not configured",
+                    )
+                model = ai_settings.get("ai_openai_model", "gpt-4o")
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": test_prompt}],
+                        "max_tokens": 10,
+                    },
+                )
+                response.raise_for_status()
+                return AITestResponse(success=True, provider=provider, model=model)
+
+            elif provider == "anthropic":
+                api_key = ai_settings.get("ai_anthropic_key", "")
+                if api_key:
+                    try:
+                        api_key = decrypt(api_key)
+                    except Exception:
+                        return AITestResponse(
+                            success=False,
+                            provider=provider,
+                            error="Failed to decrypt API key. Please re-enter it.",
+                        )
+                if not api_key:
+                    return AITestResponse(
+                        success=False,
+                        provider=provider,
+                        error="Anthropic API key not configured",
+                    )
+                model = ai_settings.get("ai_anthropic_model", "claude-sonnet-4-20250514")
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                    },
+                    json={
+                        "model": model,
+                        "max_tokens": 10,
+                        "messages": [{"role": "user", "content": test_prompt}],
+                    },
+                )
+                response.raise_for_status()
+                return AITestResponse(success=True, provider=provider, model=model)
+
+            else:
+                return AITestResponse(
+                    success=False,
+                    provider=provider,
+                    error=f"Unknown provider: {provider}",
+                )
+
+    except httpx.ConnectError as e:
+        return AITestResponse(
+            success=False, provider=provider, error=f"Connection failed: {e}"
+        )
+    except httpx.HTTPStatusError as e:
+        # Try to extract a useful error message from the response
+        error_detail = ""
+        try:
+            error_json = e.response.json()
+            if "error" in error_json:
+                if isinstance(error_json["error"], dict):
+                    error_detail = error_json["error"].get("message", str(error_json["error"]))
+                else:
+                    error_detail = str(error_json["error"])
+            elif "message" in error_json:
+                error_detail = error_json["message"]
+            else:
+                error_detail = e.response.text[:200]
+        except (json_module.JSONDecodeError, ValueError):
+            error_detail = e.response.text[:200] if e.response.text else "No response body"
+
+        return AITestResponse(
+            success=False,
+            provider=provider,
+            error=f"API error ({e.response.status_code}): {error_detail}",
+        )
+    except Exception as e:
+        return AITestResponse(
+            success=False, provider=provider, error=f"Error: {str(e)}"
+        )
+
+
 @router.post("/opensearch")
 async def save_opensearch_config(
     config: OpenSearchConfig,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_admin)],
 ):
@@ -141,7 +288,7 @@ async def save_opensearch_config(
         setting = Setting(key="opensearch", value=config_value)
         db.add(setting)
 
-    await audit_log(db, current_user.id, "settings.update", "settings", "opensearch", {"host": config.host, "port": config.port})
+    await audit_log(db, current_user.id, "settings.update", "settings", "opensearch", {"host": config.host, "port": config.port}, ip_address=get_client_ip(request))
     await db.commit()
 
     return {"success": True}
@@ -206,7 +353,7 @@ async def set_app_url(
         raise HTTPException(400, "URL must start with http:// or https://")
 
     await set_setting(db, "app_url", {"url": url})
-    await audit_log(db, current_user.id, "settings.update", "settings", "app_url", {"url": url})
+    await audit_log(db, current_user.id, "settings.update", "settings", "app_url", {"url": url}, ip_address=get_client_ip(request))
     await db.commit()
     return {"success": True}
 
@@ -215,6 +362,7 @@ async def set_app_url(
 async def update_setting(
     key: str,
     value: dict,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_admin)],
 ):
@@ -247,7 +395,7 @@ async def update_setting(
 
     # Log setting change without sensitive values
     masked_value = _mask_sensitive(key, value)
-    await audit_log(db, current_user.id, "settings.update", "settings", key, {"value": masked_value})
+    await audit_log(db, current_user.id, "settings.update", "settings", key, {"value": masked_value}, ip_address=get_client_ip(request))
     await db.commit()
     return {"success": True}
 

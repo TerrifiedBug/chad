@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { Loader2, Plus, Save, Send, Trash2, Users, FileText } from 'lucide-react'
+import { CheckCircle2, Loader2, Plus, Save, Send, Trash2, Users, FileText, XCircle } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -144,6 +144,10 @@ export default function SettingsPage() {
   })
   const [aiOpenAIKey, setAiOpenAIKey] = useState('')
   const [aiAnthropicKey, setAiAnthropicKey] = useState('')
+  const [aiOpenAIKeyConfigured, setAiOpenAIKeyConfigured] = useState(false)
+  const [aiAnthropicKeyConfigured, setAiAnthropicKeyConfigured] = useState(false)
+  const [aiTestLoading, setAiTestLoading] = useState(false)
+  const [aiTestResult, setAiTestResult] = useState<AITestResponse | null>(null)
 
   useEffect(() => {
     loadSettings()
@@ -250,6 +254,9 @@ export default function SettingsPage() {
           ai_anthropic_model: (ai.ai_anthropic_model as string) || 'claude-sonnet-4-20250514',
           ai_allow_log_samples: (ai.ai_allow_log_samples as boolean) || false,
         })
+        // Check if keys are configured (they'll be masked as "********")
+        setAiOpenAIKeyConfigured(ai.ai_openai_key === '********')
+        setAiAnthropicKeyConfigured(ai.ai_anthropic_key === '********')
       }
     } catch (err) {
       // Settings may not exist yet, that's okay
@@ -478,12 +485,34 @@ export default function SettingsPage() {
       }
       await settingsApiExtended.update('ai', update)
       showToast('AI settings saved')
+      // Update key configured status if new keys were provided
+      if (aiOpenAIKey) setAiOpenAIKeyConfigured(true)
+      if (aiAnthropicKey) setAiAnthropicKeyConfigured(true)
       setAiOpenAIKey('')
       setAiAnthropicKey('')
+      // Clear test result since settings changed
+      setAiTestResult(null)
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const testAiConnection = async () => {
+    setAiTestLoading(true)
+    setAiTestResult(null)
+    try {
+      const result = await settingsApi.testAI()
+      setAiTestResult(result)
+    } catch (err) {
+      setAiTestResult({
+        success: false,
+        provider: aiSettings.ai_provider,
+        error: err instanceof Error ? err.message : 'Test failed',
+      })
+    } finally {
+      setAiTestLoading(false)
     }
   }
 
@@ -1084,6 +1113,55 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Connection Status Indicator */}
+              {aiSettings.ai_provider !== 'disabled' && (
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    {aiTestLoading ? (
+                      <div className="h-3 w-3 rounded-full bg-gray-400 animate-pulse" />
+                    ) : aiTestResult?.success ? (
+                      <div className="h-3 w-3 rounded-full bg-green-500" />
+                    ) : aiTestResult ? (
+                      <div className="h-3 w-3 rounded-full bg-red-500" />
+                    ) : (
+                      <div className="h-3 w-3 rounded-full bg-gray-300" />
+                    )}
+                    <div>
+                      <p className="font-medium">
+                        {aiTestLoading
+                          ? 'Testing connection...'
+                          : aiTestResult?.success
+                          ? 'Connected'
+                          : aiTestResult
+                          ? 'Connection failed'
+                          : 'Not tested'}
+                      </p>
+                      {aiTestResult?.success && aiTestResult.model && (
+                        <p className="text-sm text-muted-foreground">
+                          Model: {aiTestResult.model}
+                        </p>
+                      )}
+                      {aiTestResult && !aiTestResult.success && (
+                        <p className="text-sm text-destructive">
+                          {aiTestResult.error || 'Unknown error'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={testAiConnection}
+                    disabled={aiTestLoading}
+                  >
+                    {aiTestLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    ) : null}
+                    Test Connection
+                  </Button>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label>AI Provider</Label>
                 <Select
@@ -1160,17 +1238,32 @@ export default function SettingsPage() {
               {aiSettings.ai_provider === 'openai' && (
                 <div className="space-y-4 pt-4 border-t">
                   <div className="space-y-2">
-                    <Label htmlFor="openai-key">API Key</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="openai-key">API Key</Label>
+                      {aiOpenAIKeyConfigured ? (
+                        <span className="flex items-center text-xs text-green-600 dark:text-green-400">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Configured
+                        </span>
+                      ) : (
+                        <span className="flex items-center text-xs text-muted-foreground">
+                          <XCircle className="h-3 w-3 mr-1" />
+                          Not configured
+                        </span>
+                      )}
+                    </div>
                     <Input
                       id="openai-key"
                       type="password"
                       value={aiOpenAIKey}
                       onChange={(e) => setAiOpenAIKey(e.target.value)}
-                      placeholder="Enter new key to change"
+                      placeholder={aiOpenAIKeyConfigured ? "Enter new key to change" : "Enter API key"}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Leave blank to keep existing key
-                    </p>
+                    {aiOpenAIKeyConfigured && (
+                      <p className="text-xs text-muted-foreground">
+                        Leave blank to keep existing key
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="openai-model">Model</Label>
@@ -1199,17 +1292,32 @@ export default function SettingsPage() {
               {aiSettings.ai_provider === 'anthropic' && (
                 <div className="space-y-4 pt-4 border-t">
                   <div className="space-y-2">
-                    <Label htmlFor="anthropic-key">API Key</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="anthropic-key">API Key</Label>
+                      {aiAnthropicKeyConfigured ? (
+                        <span className="flex items-center text-xs text-green-600 dark:text-green-400">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Configured
+                        </span>
+                      ) : (
+                        <span className="flex items-center text-xs text-muted-foreground">
+                          <XCircle className="h-3 w-3 mr-1" />
+                          Not configured
+                        </span>
+                      )}
+                    </div>
                     <Input
                       id="anthropic-key"
                       type="password"
                       value={aiAnthropicKey}
                       onChange={(e) => setAiAnthropicKey(e.target.value)}
-                      placeholder="Enter new key to change"
+                      placeholder={aiAnthropicKeyConfigured ? "Enter new key to change" : "Enter API key"}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Leave blank to keep existing key
-                    </p>
+                    {aiAnthropicKeyConfigured && (
+                      <p className="text-xs text-muted-foreground">
+                        Leave blank to keep existing key
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="anthropic-model">Model</Label>

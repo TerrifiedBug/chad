@@ -122,6 +122,8 @@ export const settingsApi = {
     api.get<OpenSearchStatusResponse>('/settings/opensearch/status'),
   testWebhook: (url: string, provider: string) =>
     api.post<WebhookTestResponse>('/settings/webhooks/test', { url, provider }),
+  testAI: () =>
+    api.post<AITestResponse>('/settings/ai/test', {}),
   getAppUrl: () =>
     api.get<{ url: string }>('/settings/app-url'),
   setAppUrl: (url: string) =>
@@ -735,6 +737,13 @@ export type AISettings = {
 export type AISettingsUpdate = AISettings & {
   ai_openai_key?: string
   ai_anthropic_key?: string
+}
+
+export type AITestResponse = {
+  success: boolean
+  provider: string
+  model?: string | null
+  error?: string | null
 }
 
 // Health types
