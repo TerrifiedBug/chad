@@ -1,10 +1,11 @@
 from app.models.api_key import APIKey
+from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.audit_log import AuditLog
 from app.models.field_mapping import FieldMapping, MappingOrigin
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
 from app.models.login_attempt import LoginAttempt
-from app.models.role_permission import RolePermission, DEFAULT_ROLE_PERMISSIONS
+from app.models.role_permission import DEFAULT_ROLE_PERMISSIONS, RolePermission
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
 from app.models.rule_exception import ExceptionOperator, RuleException
@@ -14,6 +15,7 @@ from app.models.user import User, UserRole
 
 __all__ = [
     "APIKey",
+    "AttackTechnique",
     "AuditLog",
     "FieldMapping",
     "IndexHealthMetrics",
@@ -24,6 +26,7 @@ __all__ = [
     "LoginAttempt",
     "RolePermission",
     "Rule",
+    "RuleAttackMapping",
     "RuleComment",
     "RuleException",
     "RuleSource",
