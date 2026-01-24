@@ -654,9 +654,9 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Require 2FA on First Login</Label>
+                  <Label>Require Two-Factor Authentication</Label>
                   <p className="text-sm text-muted-foreground">
-                    New users must set up 2FA when they first log in. Users can still enable 2FA optionally if this is disabled.
+                    Users without 2FA must set it up on login. Users can still enable 2FA from their Account page if this is disabled.
                   </p>
                 </div>
                 <Switch
