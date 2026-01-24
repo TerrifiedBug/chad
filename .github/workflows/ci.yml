@@ -72,7 +72,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          npm ci
+          npm install
 
       - name: Run lint
         continue-on-error: true
@@ -90,13 +90,11 @@ jobs:
           cd frontend
           npm run build
 
-  # Load testing is optional and only runs on PRs
-  # It requires the full docker-compose stack which may not be available in CI
+  # Load testing validates k6 scripts (dry-run mode)
   load-test:
     runs-on: ubuntu-latest
     needs: [test-backend, test-frontend]
-    if: github.event_name == 'pull_request'
-    continue-on-error: true  # Don't fail the PR if load tests fail
+    continue-on-error: true  # Don't fail the build if load tests fail
 
     steps:
       - uses: actions/checkout@v4
