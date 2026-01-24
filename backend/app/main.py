@@ -15,6 +15,7 @@ from app.api.external import router as external_router
 from app.api.field_mappings import router as field_mappings_router
 from app.api.health import router as health_router
 from app.api.index_patterns import router as index_patterns_router
+from app.api.jira import router as jira_router
 from app.api.logs import router as logs_router
 from app.api.notifications import router as notifications_router
 from app.api.permissions import router as permissions_router
@@ -99,3 +100,4 @@ app.include_router(health_router, prefix="/api")
 app.include_router(attack_router, prefix="/api")
 app.include_router(webhooks_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
+app.include_router(jira_router, prefix="/api")
