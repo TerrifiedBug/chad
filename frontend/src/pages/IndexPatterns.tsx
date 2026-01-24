@@ -24,7 +24,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 
 export default function IndexPatternsPage() {
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
@@ -53,8 +54,13 @@ export default function IndexPatternsPage() {
     latencyMs: null as number | null,
   })
 
+  // GeoIP enrichment state
+  const [geoipFields, setGeoipFields] = useState<string[]>([])
+  const [geoipFieldInput, setGeoipFieldInput] = useState('')
+
   // Toggle for health settings section
   const [showHealthSettings, setShowHealthSettings] = useState(false)
+  const [showGeoipSettings, setShowGeoipSettings] = useState(false)
 
   // Validation state
   const [isValidating, setIsValidating] = useState(false)
@@ -111,7 +117,10 @@ export default function IndexPatternsPage() {
       errorRatePercent: null,
       latencyMs: null,
     })
+    setGeoipFields([])
+    setGeoipFieldInput('')
     setShowHealthSettings(false)
+    setShowGeoipSettings(false)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(false)
     setSaveError('')
@@ -132,12 +141,15 @@ export default function IndexPatternsPage() {
       errorRatePercent: pattern.health_error_rate_percent,
       latencyMs: pattern.health_latency_ms,
     })
+    setGeoipFields(pattern.geoip_fields || [])
+    setGeoipFieldInput('')
     setShowHealthSettings(
       pattern.health_no_data_minutes !== null ||
       pattern.health_error_rate_percent !== null ||
       pattern.health_latency_ms !== null ||
       !pattern.health_alerting_enabled
     )
+    setShowGeoipSettings(pattern.geoip_fields && pattern.geoip_fields.length > 0)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
     setSaveError('')
@@ -186,6 +198,7 @@ export default function IndexPatternsPage() {
           percolator_index: formData.percolator_index,
           description: formData.description || undefined,
           ...healthData,
+          geoip_fields: geoipFields,
         })
       } else {
         await indexPatternsApi.create({
@@ -194,6 +207,7 @@ export default function IndexPatternsPage() {
           percolator_index: formData.percolator_index,
           description: formData.description || undefined,
           ...healthData,
+          geoip_fields: geoipFields,
         })
       }
       setIsDialogOpen(false)
@@ -713,6 +727,98 @@ export default function IndexPatternsPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* GeoIP Enrichment Section */}
+            <div className="border rounded-lg">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                onClick={() => setShowGeoipSettings(!showGeoipSettings)}
+              >
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4" />
+                  <span className="font-medium text-sm">GeoIP Enrichment</span>
+                  {geoipFields.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {geoipFields.length} field{geoipFields.length > 1 ? 's' : ''}
+                    </Badge>
+                  )}
+                </div>
+                {showGeoipSettings ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
+
+              {showGeoipSettings && (
+                <div className="p-3 pt-0 space-y-4">
+                  <p className="text-xs text-muted-foreground">
+                    Specify IP address fields to enrich with geographic data when alerts are generated.
+                    GeoIP must be enabled in Settings.
+                  </p>
+
+                  <div className="flex gap-2">
+                    <Input
+                      value={geoipFieldInput}
+                      onChange={(e) => setGeoipFieldInput(e.target.value)}
+                      placeholder="e.g., source.ip, destination.ip"
+                      className="flex-1"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && geoipFieldInput.trim()) {
+                          e.preventDefault()
+                          const field = geoipFieldInput.trim()
+                          if (!geoipFields.includes(field)) {
+                            setGeoipFields([...geoipFields, field])
+                          }
+                          setGeoipFieldInput('')
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        const field = geoipFieldInput.trim()
+                        if (field && !geoipFields.includes(field)) {
+                          setGeoipFields([...geoipFields, field])
+                        }
+                        setGeoipFieldInput('')
+                      }}
+                      disabled={!geoipFieldInput.trim()}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {geoipFields.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {geoipFields.map((field) => (
+                        <Badge
+                          key={field}
+                          variant="outline"
+                          className="flex items-center gap-1 pr-1"
+                        >
+                          {field}
+                          <button
+                            type="button"
+                            onClick={() => setGeoipFields(geoipFields.filter(f => f !== field))}
+                            className="ml-1 hover:bg-muted rounded-full p-0.5"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    Common fields: source.ip, destination.ip, client.ip, server.ip
+                  </p>
                 </div>
               )}
             </div>

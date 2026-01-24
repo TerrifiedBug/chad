@@ -465,7 +465,7 @@ export default function SettingsPage() {
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
           <TabsTrigger value="sso">SSO</TabsTrigger>
           <TabsTrigger value="ai">AI</TabsTrigger>
-          <TabsTrigger value="geoip">GeoIP</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
           <TabsTrigger value="export">Export</TabsTrigger>
@@ -1100,8 +1100,11 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="geoip" className="mt-4">
-          <GeoIPSettings />
+        <TabsContent value="integrations" className="mt-4">
+          <div className="space-y-6">
+            <GeoIPSettings />
+            {/* Future integrations will be added here: MISP, AbuseIPDB, VirusTotal, etc. */}
+          </div>
         </TabsContent>
 
         <TabsContent value="opensearch" className="mt-4">
