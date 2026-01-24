@@ -207,6 +207,45 @@ export default function Notifications() {
     setDeleteModalOpen(true)
   }
 
+  // Check if a webhook is enabled for a system event
+  const isSystemEventEnabled = (eventType: string, webhookId: string): boolean => {
+    if (!settings) return false
+    const eventConfig = settings.system_events.find(e => e.event_type === eventType)
+    return eventConfig?.webhook_ids.includes(webhookId) ?? false
+  }
+
+  // Toggle system event webhook
+  const toggleSystemEvent = async (eventType: string, webhookId: string) => {
+    if (!settings) return
+
+    setSavingSystem(`${eventType}-${webhookId}`)
+    try {
+      const eventConfig = settings.system_events.find(e => e.event_type === eventType)
+      const currentWebhookIds = eventConfig?.webhook_ids ?? []
+      const newWebhookIds = currentWebhookIds.includes(webhookId)
+        ? currentWebhookIds.filter(id => id !== webhookId)
+        : [...currentWebhookIds, webhookId]
+
+      await notificationsApi.updateSystem(eventType, newWebhookIds)
+
+      setSettings(prev => {
+        if (!prev) return prev
+        const existingEventIndex = prev.system_events.findIndex(e => e.event_type === eventType)
+        const newSystemEvents = [...prev.system_events]
+        if (existingEventIndex >= 0) {
+          newSystemEvents[existingEventIndex] = { event_type: eventType, webhook_ids: newWebhookIds }
+        } else {
+          newSystemEvents.push({ event_type: eventType, webhook_ids: newWebhookIds })
+        }
+        return { ...prev, system_events: newSystemEvents }
+      })
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update', 'error')
+    } finally {
+      setSavingSystem(null)
+    }
+  }
+
   useEffect(() => {
     loadData()
   }, [])
@@ -225,6 +264,37 @@ export default function Notifications() {
       setIsLoading(false)
     }
   }
+
+  const SystemEventsSection = ({ webhookId }: { webhookId: string }) => (
+    <div className="space-y-4">
+      <h4 className="font-medium text-sm">System Events</h4>
+      {SYSTEM_EVENT_GROUPS.map(group => (
+        <div key={group.name} className="space-y-2">
+          <p className="text-xs text-muted-foreground font-medium">{group.name}</p>
+          <div className="space-y-2 pl-2">
+            {group.events.map(event => {
+              const isEnabled = isSystemEventEnabled(event.id, webhookId)
+              const isSaving = savingSystem === `${event.id}-${webhookId}`
+              return (
+                <label
+                  key={event.id}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <Checkbox
+                    checked={isEnabled}
+                    onCheckedChange={() => toggleSystemEvent(event.id, webhookId)}
+                    disabled={isSaving}
+                  />
+                  <span className="text-sm">{event.label}</span>
+                  {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 
   if (isLoading) {
     return (
@@ -340,8 +410,11 @@ export default function Notifications() {
 
                 <CollapsibleContent>
                   <CardContent className="pt-4 border-t">
-                    {/* System Events and Alert Severities sections - next task */}
-                    <p className="text-muted-foreground py-4">Configuration sections go here</p>
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <SystemEventsSection webhookId={webhook.id} />
+                      {/* Alert Severities section - next task */}
+                      <div className="text-muted-foreground">Alert severities go here</div>
+                    </div>
                   </CardContent>
                 </CollapsibleContent>
               </Card>
