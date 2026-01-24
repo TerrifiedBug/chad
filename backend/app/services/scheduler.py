@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings as app_settings
 from app.models.setting import Setting
+from app.services.encryption import decrypt_value
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,9 @@ class SchedulerService:
                 )
             else:
                 self._remove_job("sigmahq_sync")
+
+            # Configure GeoIP update job
+            await self._configure_geoip_job(session)
 
             # Add health check job (runs every minute)
             self._schedule_health_check()
@@ -323,6 +327,73 @@ class SchedulerService:
                 logger.info(f"Health check found {len(issues)} issues")
         except Exception as e:
             logger.error(f"Scheduled health check failed: {e}")
+        finally:
+            await session.close()
+
+    async def _configure_geoip_job(self, session: AsyncSession):
+        """Configure the GeoIP database update job."""
+        # Load GeoIP settings
+        result = await session.execute(
+            select(Setting).where(Setting.key.in_(["geoip_enabled", "geoip_update_interval", "geoip_license_key"]))
+        )
+        geoip_settings = {s.key: s.value for s in result.scalars()}
+
+        enabled = geoip_settings.get("geoip_enabled", False)
+        has_license = bool(geoip_settings.get("geoip_license_key"))
+
+        if enabled and has_license:
+            update_interval = geoip_settings.get("geoip_update_interval", "weekly")
+            self._schedule_job(
+                job_id="geoip_update",
+                func=self._run_geoip_update,
+                frequency=update_interval,
+            )
+        else:
+            self._remove_job("geoip_update")
+
+    async def _run_geoip_update(self):
+        """Execute GeoIP database update job."""
+        from app.services.geoip import geoip_service
+
+        logger.info("Running scheduled GeoIP database update")
+        session = await self._get_session()
+        try:
+            # Check if enabled and has license key
+            result = await session.execute(
+                select(Setting).where(Setting.key.in_(["geoip_enabled", "geoip_license_key", "geoip_last_update"]))
+            )
+            settings = {s.key: s.value for s in result.scalars()}
+
+            if not settings.get("geoip_enabled"):
+                logger.debug("GeoIP not enabled, skipping update")
+                return
+
+            license_key = settings.get("geoip_license_key")
+            if not license_key:
+                logger.debug("No GeoIP license key configured, skipping update")
+                return
+
+            # Download/update the database
+            decrypted_key = decrypt_value(license_key)
+            result = await geoip_service.download_database(decrypted_key)
+
+            if result["success"]:
+                # Update last update timestamp
+                last_update_setting = await session.execute(
+                    select(Setting).where(Setting.key == "geoip_last_update")
+                )
+                setting = last_update_setting.scalar_one_or_none()
+                if setting:
+                    setting.value = datetime.now(UTC).isoformat()
+                else:
+                    session.add(Setting(key="geoip_last_update", value=datetime.now(UTC).isoformat()))
+                await session.commit()
+                logger.info("GeoIP database updated successfully")
+            else:
+                logger.error(f"GeoIP database update failed: {result.get('error')}")
+
+        except Exception as e:
+            logger.error(f"Scheduled GeoIP update failed: {e}")
         finally:
             await session.close()
 
