@@ -26,17 +26,7 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
+import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { Check, Loader2, Trash2, XCircle } from 'lucide-react'
 
 // Available severity levels
@@ -54,6 +44,7 @@ export default function JiraSettings() {
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
 
   // Config state
   const [configured, setConfigured] = useState(false)
@@ -529,35 +520,33 @@ export default function JiraSettings() {
             </Button>
 
             {configured && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" disabled={isDeleting}>
-                    {isDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <Trash2 className="h-4 w-4 mr-2" />
-                    )}
-                    Delete Configuration
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Jira Configuration?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will remove the Jira integration and stop automatic ticket
-                      creation for alerts. This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <Button
+                variant="destructive"
+                disabled={isDeleting}
+                onClick={() => setDeleteModalOpen(true)}
+              >
+                {isDeleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                Delete Configuration
+              </Button>
             )}
           </div>
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        open={deleteModalOpen}
+        onOpenChange={setDeleteModalOpen}
+        title="Delete Jira Configuration"
+        description="This will remove the Jira integration and stop automatic ticket creation for alerts. This action cannot be undone."
+        itemName="Jira Cloud Integration"
+        onConfirm={handleDelete}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }
