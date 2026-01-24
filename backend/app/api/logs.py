@@ -25,6 +25,8 @@ from app.db.session import get_db
 from app.models.index_pattern import IndexPattern
 from app.models.rule_exception import RuleException
 from app.services.alerts import AlertService, should_suppress_alert
+from app.services.notification import send_alert_notification
+from app.services.settings import get_app_url
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -188,14 +190,27 @@ async def receive_logs(
             alerts_created.append(alert)
             total_matches += 1
 
-    # Send webhook notifications in background
+    # Send notifications through the new notification system
     if alerts_created:
-        from app.services.webhooks import WebhookService
-        background_tasks.add_task(
-            WebhookService.send_notifications,
-            os_client,
-            alerts_created,
-        )
+        # Get app URL for alert links
+        app_url = await get_app_url(db)
+
+        # Send notifications for each alert
+        for alert in alerts_created:
+            alert_url = f"{app_url}/alerts/{alert['alert_id']}" if app_url else None
+            try:
+                await send_alert_notification(
+                    db,
+                    alert_id=UUID(alert["alert_id"]) if isinstance(alert["alert_id"], str) else alert["alert_id"],
+                    rule_title=alert.get("rule_title", "Unknown Rule"),
+                    severity=alert.get("severity", "medium"),
+                    matched_log=alert.get("log_document", {}),
+                    alert_url=alert_url,
+                )
+            except Exception as e:
+                # Log but don't fail the request if notification fails
+                import logging
+                logging.getLogger(__name__).error(f"Failed to send notification: {e}")
 
     return LogMatchResponse(
         logs_received=len(logs),
