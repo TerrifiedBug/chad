@@ -15,6 +15,7 @@ from app.schemas.attack import (
     LinkedRuleResponse,
     MatrixResponse,
     TacticWithTechniques,
+    TechniqueCoverageStats,
     TechniqueDetailResponse,
     TechniqueResponse,
     TechniqueWithCoverage,
@@ -74,13 +75,15 @@ class AttackCoverageService:
         """
         Get coverage counts per technique with optional filters.
 
+        Returns both total and deployed counts per technique.
+
         Args:
             deployed_only: Only count deployed rules
             severity: Filter by severity levels
             index_pattern_id: Filter by specific index pattern
         """
-        # Build the query to count rules per technique
-        query = (
+        # Build the base query for total counts
+        total_query = (
             select(
                 RuleAttackMapping.technique_id,
                 func.count(RuleAttackMapping.rule_id.distinct()).label("count"),
@@ -89,20 +92,50 @@ class AttackCoverageService:
             .group_by(RuleAttackMapping.technique_id)
         )
 
-        # Apply filters
-        if deployed_only:
-            query = query.where(Rule.status == RuleStatus.DEPLOYED)
+        # Build the query for deployed counts
+        deployed_query = (
+            select(
+                RuleAttackMapping.technique_id,
+                func.count(RuleAttackMapping.rule_id.distinct()).label("count"),
+            )
+            .join(Rule, Rule.id == RuleAttackMapping.rule_id)
+            .where(Rule.status == RuleStatus.DEPLOYED)
+            .group_by(RuleAttackMapping.technique_id)
+        )
 
+        # Apply common filters
         if severity:
-            query = query.where(Rule.severity.in_(severity))
+            total_query = total_query.where(Rule.severity.in_(severity))
+            deployed_query = deployed_query.where(Rule.severity.in_(severity))
 
         if index_pattern_id:
-            query = query.where(Rule.index_pattern_id == index_pattern_id)
+            total_query = total_query.where(Rule.index_pattern_id == index_pattern_id)
+            deployed_query = deployed_query.where(Rule.index_pattern_id == index_pattern_id)
 
-        result = await db.execute(query)
-        rows = result.all()
+        # If deployed_only filter is set, both queries return deployed counts only
+        if deployed_only:
+            total_query = total_query.where(Rule.status == RuleStatus.DEPLOYED)
 
-        coverage = {row.technique_id: row.count for row in rows}
+        # Execute both queries
+        total_result = await db.execute(total_query)
+        deployed_result = await db.execute(deployed_query)
+
+        total_rows = total_result.all()
+        deployed_rows = deployed_result.all()
+
+        # Build coverage dict with both counts
+        total_counts = {row.technique_id: row.count for row in total_rows}
+        deployed_counts = {row.technique_id: row.count for row in deployed_rows}
+
+        # Combine into coverage response
+        all_technique_ids = set(total_counts.keys()) | set(deployed_counts.keys())
+        coverage = {
+            tech_id: TechniqueCoverageStats(
+                total=total_counts.get(tech_id, 0),
+                deployed=deployed_counts.get(tech_id, 0),
+            )
+            for tech_id in all_technique_ids
+        }
 
         return CoverageResponse(coverage=coverage)
 

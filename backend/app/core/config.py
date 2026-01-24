@@ -1,9 +1,32 @@
 import os
+from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-# Application version - read from environment or default to dev
-APP_VERSION = os.getenv("CHAD_VERSION", "0.0.0-dev")
+
+def _get_version() -> str:
+    """Read version from pyproject.toml or environment variable."""
+    # First check environment variable (for Docker/CI overrides)
+    if env_version := os.getenv("CHAD_VERSION"):
+        return env_version
+
+    # Try to read from pyproject.toml
+    try:
+        pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+        if pyproject_path.exists():
+            content = pyproject_path.read_text()
+            for line in content.split("\n"):
+                if line.startswith("version"):
+                    # Parse: version = "0.1.0"
+                    return line.split("=")[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+
+    return "0.0.0-dev"
+
+
+# Application version - read from pyproject.toml, env var, or default to dev
+APP_VERSION = _get_version()
 
 
 class Settings(BaseSettings):

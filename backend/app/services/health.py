@@ -1,14 +1,13 @@
 """Health monitoring service."""
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
-
 
 # Thresholds (could be moved to settings)
 QUEUE_WARNING_THRESHOLD = 10000
@@ -17,6 +16,10 @@ LATENCY_WARNING_MS = 500
 LATENCY_CRITICAL_MS = 2000
 ERROR_RATE_WARNING = 0.01
 ERROR_RATE_CRITICAL = 0.05
+
+# No data thresholds (in minutes)
+DEFAULT_NO_DATA_WARNING_MINUTES = 15
+DEFAULT_NO_DATA_CRITICAL_MINUTES = 30
 
 
 class HealthStatus:
@@ -37,7 +40,21 @@ async def get_index_health(
     hours: int = 24,
 ) -> dict:
     """Get health summary for an index pattern."""
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since = datetime.now(UTC) - timedelta(hours=hours)
+
+    # Get index pattern settings for thresholds
+    pattern_result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == index_pattern_id)
+    )
+    index_pattern = pattern_result.scalar_one_or_none()
+
+    # Get custom thresholds or use defaults
+    no_data_warning_minutes = (
+        index_pattern.health_no_data_minutes
+        if index_pattern and index_pattern.health_no_data_minutes
+        else DEFAULT_NO_DATA_WARNING_MINUTES
+    )
+    no_data_critical_minutes = no_data_warning_minutes * 2  # Critical is 2x the warning threshold
 
     # Get latest metrics
     result = await db.execute(
@@ -49,10 +66,11 @@ async def get_index_health(
     latest = result.scalar_one_or_none()
 
     if not latest:
+        # No metrics at all - this is a warning state (index may not be configured or receiving logs)
         return {
-            "status": HealthStatus.HEALTHY,
-            "message": "No data",
-            "issues": [],
+            "status": HealthStatus.WARNING,
+            "message": "No data received",
+            "issues": ["No data received - index may not be configured or receiving logs"],
             "latest": {
                 "queue_depth": 0,
                 "avg_latency_ms": 0,
@@ -69,6 +87,18 @@ async def get_index_health(
     # Calculate status
     status = HealthStatus.HEALTHY
     issues = []
+
+    # Check time since last data
+    now = datetime.now(UTC)
+    time_since_last = now - latest.timestamp.replace(tzinfo=UTC)
+    minutes_since_last = time_since_last.total_seconds() / 60
+
+    if minutes_since_last >= no_data_critical_minutes:
+        status = HealthStatus.CRITICAL
+        issues.append(f"No data received for {int(minutes_since_last)} minutes")
+    elif minutes_since_last >= no_data_warning_minutes:
+        status = _max_status(status, HealthStatus.WARNING)
+        issues.append(f"No data received for {int(minutes_since_last)} minutes")
 
     if latest.queue_depth >= QUEUE_CRITICAL_THRESHOLD:
         status = HealthStatus.CRITICAL
@@ -151,7 +181,7 @@ async def get_health_history(
     hours: int = 24,
 ) -> list[dict]:
     """Get historical metrics for sparkline charts."""
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since = datetime.now(UTC) - timedelta(hours=hours)
 
     result = await db.execute(
         select(IndexHealthMetrics)

@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash
+from app.models.setting import Setting
 from app.models.user import User, UserRole
 
 
@@ -74,14 +75,45 @@ class TestUpdateUser:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_cannot_update_sso_user_role(
+    async def test_can_update_sso_user_role_when_role_mapping_disabled(
         self, authenticated_client: AsyncClient, test_session: AsyncSession
     ):
-        """Cannot update role for SSO user (no password_hash)."""
+        """Can update role for SSO user when role mapping is disabled (default)."""
         # Create an SSO user (no password_hash)
         sso_user = User(
             id=uuid.uuid4(),
             email="ssouser@example.com",
+            password_hash=None,  # SSO users have no password
+            role=UserRole.VIEWER,
+            is_active=True,
+        )
+        test_session.add(sso_user)
+        await test_session.commit()
+
+        # No SSO settings = role_mapping_enabled defaults to false
+        response = await authenticated_client.patch(
+            f"/api/users/{sso_user.id}",
+            json={"role": "analyst"},
+        )
+        assert response.status_code == 200
+        assert response.json()["role"] == "analyst"
+
+    @pytest.mark.asyncio
+    async def test_cannot_update_sso_user_role_when_role_mapping_enabled(
+        self, authenticated_client: AsyncClient, test_session: AsyncSession
+    ):
+        """Cannot update role for SSO user when role mapping is enabled."""
+        # Enable SSO role mapping
+        sso_setting = Setting(
+            key="sso",
+            value={"role_mapping_enabled": True, "admin_groups": [], "analyst_groups": [], "viewer_groups": []},
+        )
+        test_session.add(sso_setting)
+
+        # Create an SSO user (no password_hash)
+        sso_user = User(
+            id=uuid.uuid4(),
+            email="ssouser_mapped@example.com",
             password_hash=None,  # SSO users have no password
             role=UserRole.VIEWER,
             is_active=True,

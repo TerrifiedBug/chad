@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -125,6 +125,8 @@ class AITestResponse(BaseModel):
     provider: str
     model: str | None = None
     error: str | None = None
+    last_tested: str | None = None
+    last_test_success: bool | None = None
 
 
 @router.post("/opensearch/test", response_model=OpenSearchTestResponse)
@@ -211,9 +213,13 @@ async def test_ai_connection(
         )
 
     provider = ai_settings.get("ai_provider", "disabled")
+    last_tested = ai_settings.get("last_tested")
+    last_test_success = ai_settings.get("last_test_success")
+
     if provider == "disabled":
         return AITestResponse(
-            success=False, provider="disabled", error="AI provider is disabled"
+            success=False, provider="disabled", error="AI provider is disabled",
+            last_tested=last_tested, last_test_success=last_test_success
         )
 
     test_prompt = "Respond with only the word 'OK' to confirm connectivity."
@@ -228,7 +234,13 @@ async def test_ai_connection(
                     json={"model": model, "prompt": test_prompt, "stream": False},
                 )
                 response.raise_for_status()
-                return AITestResponse(success=True, provider=provider, model=model)
+                # Store last tested time
+                now = datetime.now(UTC).isoformat()
+                ai_settings["last_tested"] = now
+                ai_settings["last_test_success"] = True
+                await set_setting(db, "ai", ai_settings)
+                await db.commit()
+                return AITestResponse(success=True, provider=provider, model=model, last_tested=now)
 
             elif provider == "openai":
                 api_key = ai_settings.get("ai_openai_key", "")
@@ -258,7 +270,12 @@ async def test_ai_connection(
                     },
                 )
                 response.raise_for_status()
-                return AITestResponse(success=True, provider=provider, model=model)
+                now = datetime.now(UTC).isoformat()
+                ai_settings["last_tested"] = now
+                ai_settings["last_test_success"] = True
+                await set_setting(db, "ai", ai_settings)
+                await db.commit()
+                return AITestResponse(success=True, provider=provider, model=model, last_tested=now)
 
             elif provider == "anthropic":
                 api_key = ai_settings.get("ai_anthropic_key", "")
@@ -291,7 +308,12 @@ async def test_ai_connection(
                     },
                 )
                 response.raise_for_status()
-                return AITestResponse(success=True, provider=provider, model=model)
+                now = datetime.now(UTC).isoformat()
+                ai_settings["last_tested"] = now
+                ai_settings["last_test_success"] = True
+                await set_setting(db, "ai", ai_settings)
+                await db.commit()
+                return AITestResponse(success=True, provider=provider, model=model, last_tested=now)
 
             else:
                 return AITestResponse(
@@ -329,6 +351,141 @@ async def test_ai_connection(
     except Exception as e:
         return AITestResponse(
             success=False, provider=provider, error=f"Error: {str(e)}"
+        )
+
+
+@router.post("/ai/ping", response_model=AITestResponse)
+async def ping_ai_connection(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """
+    Lightweight AI connectivity check that doesn't consume tokens.
+    Uses /v1/models for OpenAI and model listing for Anthropic.
+    Suitable for scheduled background checks.
+    """
+    import httpx
+
+    ai_settings = await get_setting(db, "ai")
+    if not ai_settings:
+        return AITestResponse(
+            success=False, provider="none", error="AI settings not configured"
+        )
+
+    provider = ai_settings.get("ai_provider", "disabled")
+    last_tested = ai_settings.get("last_tested")
+    last_test_success = ai_settings.get("last_test_success")
+
+    if provider == "disabled":
+        return AITestResponse(
+            success=False, provider="disabled", error="AI provider is disabled",
+            last_tested=last_tested, last_test_success=last_test_success
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if provider == "ollama":
+                # Ollama: Check /api/tags endpoint (lists models, no token cost)
+                url = ai_settings.get("ai_ollama_url", "http://localhost:11434")
+                response = await client.get(f"{url.rstrip('/')}/api/tags")
+                response.raise_for_status()
+
+            elif provider == "openai":
+                # OpenAI: Use /v1/models endpoint (free, validates API key)
+                api_key = ai_settings.get("ai_openai_key", "")
+                if api_key:
+                    try:
+                        api_key = decrypt(api_key)
+                    except Exception:
+                        return AITestResponse(
+                            success=False, provider=provider,
+                            error="Failed to decrypt API key",
+                            last_tested=last_tested, last_test_success=False
+                        )
+                if not api_key:
+                    return AITestResponse(
+                        success=False, provider=provider,
+                        error="OpenAI API key not configured",
+                        last_tested=last_tested, last_test_success=False
+                    )
+                response = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                response.raise_for_status()
+
+            elif provider == "anthropic":
+                # Anthropic: No free endpoint, but we can validate key format
+                # and make a request that fails fast if key is invalid
+                api_key = ai_settings.get("ai_anthropic_key", "")
+                if api_key:
+                    try:
+                        api_key = decrypt(api_key)
+                    except Exception:
+                        return AITestResponse(
+                            success=False, provider=provider,
+                            error="Failed to decrypt API key",
+                            last_tested=last_tested, last_test_success=False
+                        )
+                if not api_key:
+                    return AITestResponse(
+                        success=False, provider=provider,
+                        error="Anthropic API key not configured",
+                        last_tested=last_tested, last_test_success=False
+                    )
+                # Use /v1/models endpoint - free, no token consumption
+                response = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                    },
+                )
+                response.raise_for_status()
+
+            else:
+                return AITestResponse(
+                    success=False, provider=provider, error=f"Unknown provider: {provider}"
+                )
+
+            # Update last tested time
+            now = datetime.now(UTC).isoformat()
+            ai_settings["last_tested"] = now
+            ai_settings["last_test_success"] = True
+            await set_setting(db, "ai", ai_settings)
+            return AITestResponse(
+                success=True, provider=provider,
+                last_tested=now, last_test_success=True
+            )
+
+    except httpx.ConnectError as e:
+        # Mark as failed
+        now = datetime.now(UTC).isoformat()
+        ai_settings["last_tested"] = now
+        ai_settings["last_test_success"] = False
+        await set_setting(db, "ai", ai_settings)
+        return AITestResponse(
+            success=False, provider=provider, error=f"Connection failed: {e}",
+            last_tested=now, last_test_success=False
+        )
+    except httpx.HTTPStatusError as e:
+        now = datetime.now(UTC).isoformat()
+        ai_settings["last_tested"] = now
+        ai_settings["last_test_success"] = False
+        await set_setting(db, "ai", ai_settings)
+        return AITestResponse(
+            success=False, provider=provider,
+            error=f"API error ({e.response.status_code})",
+            last_tested=now, last_test_success=False
+        )
+    except Exception as e:
+        now = datetime.now(UTC).isoformat()
+        ai_settings["last_tested"] = now
+        ai_settings["last_test_success"] = False
+        await set_setting(db, "ai", ai_settings)
+        return AITestResponse(
+            success=False, provider=provider, error=f"Error: {str(e)}",
+            last_tested=now, last_test_success=False
         )
 
 

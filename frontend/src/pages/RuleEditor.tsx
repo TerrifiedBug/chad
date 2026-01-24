@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, Copy } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -147,6 +147,10 @@ export default function RuleEditorPage() {
   const [thresholdCount, setThresholdCount] = useState<number | null>(null)
   const [thresholdWindowMinutes, setThresholdWindowMinutes] = useState<number | null>(null)
   const [thresholdGroupBy, setThresholdGroupBy] = useState<string | null>(null)
+
+  // Collapsible section state
+  const [showThreshold, setShowThreshold] = useState(false)
+  const [showExceptions, setShowExceptions] = useState(false)
 
   // Unmapped fields dialog state
   const [unmappedFieldsDialog, setUnmappedFieldsDialog] = useState<{
@@ -884,27 +888,6 @@ export default function RuleEditorPage() {
             />
           </div>
 
-          <div className="border rounded-lg overflow-hidden">
-            <div className="flex items-center justify-between bg-muted/50 px-3 py-1.5 border-b">
-              <span className="text-xs text-muted-foreground">Sigma YAML</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={formatYaml}
-                className="h-6 text-xs"
-              >
-                <AlignLeft className="h-3 w-3 mr-1" />
-                Format
-              </Button>
-            </div>
-            <YamlEditor
-              value={yamlContent}
-              onChange={handleYamlChange}
-              height="400px"
-              errors={editorErrors}
-            />
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Index Pattern</Label>
@@ -936,6 +919,27 @@ export default function RuleEditorPage() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="border rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between bg-muted/50 px-3 py-1.5 border-b">
+              <span className="text-xs text-muted-foreground">Sigma YAML</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={formatYaml}
+                className="h-6 text-xs"
+              >
+                <AlignLeft className="h-3 w-3 mr-1" />
+                Format
+              </Button>
+            </div>
+            <YamlEditor
+              value={yamlContent}
+              onChange={handleYamlChange}
+              height="400px"
+              errors={editorErrors}
+            />
           </div>
         </div>
 
@@ -1130,186 +1134,225 @@ export default function RuleEditorPage() {
 
           {/* Threshold Alerting Card */}
           <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm font-medium">Threshold Alerting</CardTitle>
+            <CardHeader
+              className="py-3 cursor-pointer"
+              onClick={() => setShowThreshold(!showThreshold)}
+            >
+              <CardTitle className="text-sm font-medium flex items-center justify-between">
+                <span>Threshold Alerting</span>
+                {showThreshold ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="threshold-enabled" className="text-sm">
-                  Enable threshold alerting
-                </Label>
-                <Switch
-                  id="threshold-enabled"
-                  checked={thresholdEnabled}
-                  onCheckedChange={setThresholdEnabled}
-                />
-              </div>
-              {thresholdEnabled && (
-                <div className="space-y-3 pt-2 border-t">
-                  <div className="text-xs text-muted-foreground">
-                    Only create an alert when the rule matches N times within the specified window.
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Count</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={thresholdCount ?? ''}
-                        onChange={(e) => setThresholdCount(e.target.value ? parseInt(e.target.value) : null)}
-                        placeholder="5"
-                        className="h-8 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Window (minutes)</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={thresholdWindowMinutes ?? ''}
-                        onChange={(e) => setThresholdWindowMinutes(e.target.value ? parseInt(e.target.value) : null)}
-                        placeholder="10"
-                        className="h-8 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Group by field (optional)</Label>
-                    <Input
-                      value={thresholdGroupBy ?? ''}
-                      onChange={(e) => setThresholdGroupBy(e.target.value || null)}
-                      placeholder="user.name"
-                      className="h-8 text-sm"
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      Count matches separately per unique value of this field
-                    </div>
-                  </div>
+            {showThreshold && (
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="threshold-enabled" className="text-sm">
+                    Enable threshold alerting
+                  </Label>
+                  <Switch
+                    id="threshold-enabled"
+                    checked={thresholdEnabled}
+                    onCheckedChange={setThresholdEnabled}
+                  />
                 </div>
-              )}
-            </CardContent>
+                {thresholdEnabled && (
+                  <div className="space-y-3 pt-2 border-t">
+                    <div className="text-xs text-muted-foreground">
+                      Only create an alert when the rule matches N times within the specified window.
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Count</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={thresholdCount ?? ''}
+                          onChange={(e) => setThresholdCount(e.target.value ? parseInt(e.target.value) : null)}
+                          placeholder="5"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Window (minutes)</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={thresholdWindowMinutes ?? ''}
+                          onChange={(e) => setThresholdWindowMinutes(e.target.value ? parseInt(e.target.value) : null)}
+                          placeholder="10"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Group by field (optional)</Label>
+                      <Input
+                        value={thresholdGroupBy ?? ''}
+                        onChange={(e) => setThresholdGroupBy(e.target.value || null)}
+                        placeholder="user.name"
+                        className="h-8 text-sm"
+                      />
+                      <div className="text-xs text-muted-foreground">
+                        Count matches separately per unique value of this field
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            )}
           </Card>
 
           {/* Exceptions Card - Only show for existing rules */}
           {!isNew && (
             <Card>
-              <CardHeader className="py-3">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  Exceptions
-                  {isLoadingExceptions && (
-                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                  )}
+              <CardHeader
+                className="py-3 cursor-pointer"
+                onClick={() => setShowExceptions(!showExceptions)}
+              >
+                <CardTitle className="text-sm font-medium flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    Exceptions
+                    {isLoadingExceptions && (
+                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                    )}
+                    {exceptions.length > 0 && (
+                      <span className="text-xs text-muted-foreground font-normal">
+                        ({exceptions.length})
+                      </span>
+                    )}
+                  </span>
+                  {showExceptions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Existing exceptions list */}
-                {exceptions.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    No exceptions defined
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {exceptions.map((exception) => (
-                      <div
-                        key={exception.id}
-                        className={`p-2 border rounded-md space-y-1 ${
-                          !exception.is_active ? 'opacity-50' : ''
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">
-                              {exception.field}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {operatorLabels[exception.operator]}: {exception.value}
-                            </div>
-                            {exception.reason && (
-                              <div className="text-xs text-muted-foreground mt-1 italic">
-                                Reason: {exception.reason}
+              {showExceptions && (
+                <CardContent className="space-y-4">
+                  {/* Existing exceptions list */}
+                  {exceptions.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      No exceptions defined
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {exceptions.map((exception) => (
+                        <div
+                          key={exception.id}
+                          className={`p-2 border rounded-md space-y-1 ${
+                            !exception.is_active ? 'opacity-50' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">
+                                {exception.field}
                               </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Switch
-                              checked={exception.is_active}
-                              onCheckedChange={(checked) =>
-                                handleToggleException(exception.id, checked)
-                              }
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => openDeleteExceptionDialog(exception)}
-                            >
-                              <Trash2 className="h-3 w-3 text-destructive" />
-                            </Button>
+                              <div className="text-xs text-muted-foreground">
+                                {operatorLabels[exception.operator]}: {exception.value}
+                              </div>
+                              {exception.reason && (
+                                <div className="text-xs text-muted-foreground mt-1 italic">
+                                  Reason: {exception.reason}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Switch
+                                checked={exception.is_active}
+                                onCheckedChange={(checked) =>
+                                  handleToggleException(exception.id, checked)
+                                }
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => openDeleteExceptionDialog(exception)}
+                              >
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
 
-                {/* Add exception form */}
-                <div className="border-t pt-4 space-y-3">
-                  <Label className="text-xs font-medium">Add Exception</Label>
-                  <div className="space-y-2">
-                    <Input
-                      placeholder="Field name"
-                      value={newExceptionField}
-                      onChange={(e) => setNewExceptionField(e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                    <Select
-                      value={newExceptionOperator}
-                      onValueChange={(value) =>
-                        setNewExceptionOperator(value as ExceptionOperator)
-                      }
-                    >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="z-50 bg-popover">
-                        <SelectItem value="equals">Equals</SelectItem>
-                        <SelectItem value="not_equals">Not equals</SelectItem>
-                        <SelectItem value="contains">Contains</SelectItem>
-                        <SelectItem value="not_contains">Not contains</SelectItem>
-                        <SelectItem value="starts_with">Starts with</SelectItem>
-                        <SelectItem value="ends_with">Ends with</SelectItem>
-                        <SelectItem value="regex">Regex</SelectItem>
-                        <SelectItem value="in_list">In list</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <textarea
-                      placeholder="Value"
-                      value={newExceptionValue}
-                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewExceptionValue(e.target.value)}
-                      className="w-full min-h-[60px] p-2 text-sm border rounded-md bg-background resize-none"
-                    />
-                    <Input
-                      placeholder="Reason (optional)"
-                      value={newExceptionReason}
-                      onChange={(e) => setNewExceptionReason(e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleAddException}
-                      disabled={
-                        isAddingException ||
-                        !newExceptionField.trim() ||
-                        !newExceptionValue.trim()
-                      }
-                      className="w-full"
-                    >
-                      <Plus className="h-3 w-3 mr-2" />
-                      {isAddingException ? 'Adding...' : 'Add Exception'}
-                    </Button>
+                  {/* Add exception form */}
+                  <div className="border-t pt-4 space-y-3">
+                    <Label className="text-xs font-medium">Add Exception</Label>
+                    <div className="space-y-2">
+                      {detectedFields.length > 0 ? (
+                        <Select
+                          value={newExceptionField}
+                          onValueChange={setNewExceptionField}
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder="Select field" />
+                          </SelectTrigger>
+                          <SelectContent className="z-50 bg-popover max-h-48">
+                            {detectedFields.map((field) => (
+                              <SelectItem key={field} value={field}>
+                                {field}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          placeholder="Field name"
+                          value={newExceptionField}
+                          onChange={(e) => setNewExceptionField(e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                      )}
+                      <Select
+                        value={newExceptionOperator}
+                        onValueChange={(value) =>
+                          setNewExceptionOperator(value as ExceptionOperator)
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="z-50 bg-popover">
+                          <SelectItem value="equals">Equals</SelectItem>
+                          <SelectItem value="not_equals">Not equals</SelectItem>
+                          <SelectItem value="contains">Contains</SelectItem>
+                          <SelectItem value="not_contains">Not contains</SelectItem>
+                          <SelectItem value="starts_with">Starts with</SelectItem>
+                          <SelectItem value="ends_with">Ends with</SelectItem>
+                          <SelectItem value="regex">Regex</SelectItem>
+                          <SelectItem value="in_list">In list</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <textarea
+                        placeholder="Value"
+                        value={newExceptionValue}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewExceptionValue(e.target.value)}
+                        className="w-full min-h-[60px] p-2 text-sm border rounded-md bg-background resize-none"
+                      />
+                      <Input
+                        placeholder="Reason (optional)"
+                        value={newExceptionReason}
+                        onChange={(e) => setNewExceptionReason(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleAddException}
+                        disabled={
+                          isAddingException ||
+                          !newExceptionField.trim() ||
+                          !newExceptionValue.trim()
+                        }
+                        className="w-full"
+                      >
+                        <Plus className="h-3 w-3 mr-2" />
+                        {isAddingException ? 'Adding...' : 'Add Exception'}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
+                </CardContent>
+              )}
             </Card>
           )}
         </div>

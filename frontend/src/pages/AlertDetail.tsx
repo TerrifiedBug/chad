@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, AlertTriangle, Clock, User, FileText } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Clock, User, FileText, Globe } from 'lucide-react'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -35,6 +35,58 @@ const statusLabels: Record<AlertStatus, string> = {
 }
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+// GeoIP data extraction helper
+interface GeoIPEntry {
+  field: string
+  ip: string
+  country?: string
+  city?: string
+  coordinates?: { lat: number; lon: number }
+}
+
+function extractGeoIPData(doc: Record<string, unknown>): GeoIPEntry[] {
+  const entries: GeoIPEntry[] = []
+
+  // Helper to get nested value
+  const getNestedValue = (obj: Record<string, unknown>, path: string): unknown => {
+    return path.split('.').reduce((acc: unknown, key) => {
+      if (acc && typeof acc === 'object' && key in (acc as Record<string, unknown>)) {
+        return (acc as Record<string, unknown>)[key]
+      }
+      return undefined
+    }, obj)
+  }
+
+  // Common patterns for GeoIP enriched fields
+  const geoPatterns = [
+    { ipField: 'source.ip', geoPrefix: 'source.geo' },
+    { ipField: 'destination.ip', geoPrefix: 'destination.geo' },
+    { ipField: 'client.ip', geoPrefix: 'client.geo' },
+    { ipField: 'server.ip', geoPrefix: 'server.geo' },
+    { ipField: 'host.ip', geoPrefix: 'host.geo' },
+  ]
+
+  for (const pattern of geoPatterns) {
+    const ip = getNestedValue(doc, pattern.ipField)
+    const country = getNestedValue(doc, `${pattern.geoPrefix}.country_name`) as string | undefined
+    const city = getNestedValue(doc, `${pattern.geoPrefix}.city_name`) as string | undefined
+    const location = getNestedValue(doc, `${pattern.geoPrefix}.location`) as { lat: number; lon: number } | undefined
+
+    // Only include if we have geo data (not just an IP)
+    if (ip && typeof ip === 'string' && (country || city || location)) {
+      entries.push({
+        field: pattern.ipField.replace('.ip', ''),
+        ip,
+        country,
+        city,
+        coordinates: location,
+      })
+    }
+  }
+
+  return entries
+}
 
 export default function AlertDetailPage() {
   const navigate = useNavigate()
@@ -237,6 +289,39 @@ export default function AlertDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* GeoIP Data - shown if enrichment data exists */}
+          {(() => {
+            const geoData = extractGeoIPData(alert.log_document as Record<string, unknown>)
+            if (geoData.length === 0) return null
+            return (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    Geographic Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {geoData.map((entry, i) => (
+                    <div key={i} className="text-sm">
+                      <div className="font-medium capitalize">{entry.field}</div>
+                      <div className="text-muted-foreground text-xs space-y-0.5 mt-1">
+                        <div>IP: {entry.ip}</div>
+                        {entry.country && <div>Country: {entry.country}</div>}
+                        {entry.city && <div>City: {entry.city}</div>}
+                        {entry.coordinates && (
+                          <div>
+                            Coordinates: {entry.coordinates.lat.toFixed(4)}, {entry.coordinates.lon.toFixed(4)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )
+          })()}
         </div>
 
         {/* Log Document */}

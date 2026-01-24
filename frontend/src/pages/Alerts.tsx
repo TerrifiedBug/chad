@@ -19,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 
@@ -57,20 +57,29 @@ export default function AlertsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<AlertStatus | 'all'>('all')
   const [severityFilter, setSeverityFilter] = useState<string>('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter, severityFilter])
 
   useEffect(() => {
     loadData()
-  }, [statusFilter, severityFilter])
+  }, [statusFilter, severityFilter, page, pageSize])
 
   const loadData = async () => {
     setIsLoading(true)
     setError('')
     try {
+      const offset = (page - 1) * pageSize
       const [alertsResponse, countsResponse] = await Promise.all([
         alertsApi.list({
           status: statusFilter === 'all' ? undefined : statusFilter,
           severity: severityFilter === 'all' ? undefined : severityFilter,
-          limit: 100,
+          limit: pageSize,
+          offset,
         }),
         alertsApi.getCounts(),
       ])
@@ -83,6 +92,10 @@ export default function AlertsPage() {
       setIsLoading(false)
     }
   }
+
+  const totalPages = Math.ceil(total / pageSize)
+  const canGoPrevious = page > 1
+  const canGoNext = page < totalPages
 
   const filteredAlerts = alerts.filter((alert) =>
     alert.rule_title.toLowerCase().includes(search.toLowerCase())
@@ -268,9 +281,58 @@ export default function AlertsPage() {
         </TooltipProvider>
       )}
 
-      {total > 100 && (
-        <div className="text-center text-sm text-muted-foreground">
-          Showing {filteredAlerts.length} of {total} alerts
+      {/* Pagination Controls */}
+      {total > 0 && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Show</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => {
+                setPageSize(Number(value))
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className="w-20 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="z-50 bg-popover">
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+            <span>per page</span>
+          </div>
+
+          <div className="text-sm text-muted-foreground">
+            Showing {Math.min((page - 1) * pageSize + 1, total)} - {Math.min(page * pageSize, total)} of {total} alerts
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(page - 1)}
+              disabled={!canGoPrevious}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(page + 1)}
+              disabled={!canGoNext}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
     </div>

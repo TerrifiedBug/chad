@@ -858,6 +858,8 @@ export type AITestResponse = {
   provider: string
   model?: string | null
   error?: string | null
+  last_tested?: string | null
+  last_test_success?: boolean | null
 }
 
 // Field Mapping types
@@ -1079,8 +1081,13 @@ export type AttackMatrixResponse = {
   tactics: TacticWithTechniques[]
 }
 
+export type TechniqueCoverageStats = {
+  total: number
+  deployed: number
+}
+
 export type AttackCoverageResponse = {
-  coverage: Record<string, number>
+  coverage: Record<string, TechniqueCoverageStats>
 }
 
 export type LinkedRule = {

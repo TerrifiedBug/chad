@@ -16,7 +16,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Save, Users, FileText, XCircle } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ExternalLink, Loader2, RefreshCw, Save, Users, FileText, XCircle } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useVersion } from '@/hooks/use-version'
 import {
   Select,
@@ -122,6 +123,8 @@ export default function SettingsPage() {
   const [aiAnthropicKeyConfigured, setAiAnthropicKeyConfigured] = useState(false)
   const [aiTestLoading, setAiTestLoading] = useState(false)
   const [aiTestResult, setAiTestResult] = useState<AITestResponse | null>(null)
+  const [aiLastTested, setAiLastTested] = useState<string | null>(null)
+  const [aiLastTestSuccess, setAiLastTestSuccess] = useState<boolean | null>(null)
 
   useEffect(() => {
     loadSettings()
@@ -217,6 +220,13 @@ export default function SettingsPage() {
         // Check if keys are configured (they'll be masked as "********")
         setAiOpenAIKeyConfigured(ai.ai_openai_key === '********')
         setAiAnthropicKeyConfigured(ai.ai_anthropic_key === '********')
+        // Set last tested time and success status if available
+        if (ai.last_tested) {
+          setAiLastTested(ai.last_tested as string)
+        }
+        if (ai.last_test_success !== undefined) {
+          setAiLastTestSuccess(ai.last_test_success as boolean)
+        }
       }
     } catch (err) {
       // Settings may not exist yet, that's okay
@@ -407,6 +417,12 @@ export default function SettingsPage() {
     try {
       const result = await settingsApi.testAI()
       setAiTestResult(result)
+      if (result.last_tested) {
+        setAiLastTested(result.last_tested)
+      }
+      if (result.last_test_success !== undefined) {
+        setAiLastTestSuccess(result.last_test_success)
+      }
     } catch (err) {
       setAiTestResult({
         success: false,
@@ -613,42 +629,58 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-6">
-                {['analyst', 'viewer'].map((role) => (
-                  <div key={role} className="space-y-4">
-                    <h3 className="font-medium capitalize text-lg border-b pb-2">{role}</h3>
-                    <div className="grid gap-3">
-                      {Object.entries(permissionDescriptions).map(([perm, desc]) => (
-                        <div key={perm} className="flex items-center justify-between py-2">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm font-medium">
-                              {perm.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-                            </Label>
-                            <p className="text-xs text-muted-foreground">{desc}</p>
-                          </div>
-                          <Switch
-                            checked={permissions[role]?.[perm] ?? false}
-                            onCheckedChange={async (checked) => {
-                              try {
-                                await permissionsApi.update(role, perm, checked)
-                                setPermissions((prev) => ({
-                                  ...prev,
-                                  [role]: { ...prev[role], [perm]: checked },
-                                }))
-                                showToast(`Permission updated for ${role}`)
-                              } catch (err) {
-                                showToast(
-                                  err instanceof Error ? err.message : 'Failed to update permission',
-                                  'error'
-                                )
-                              }
-                            }}
-                          />
+              <div className="space-y-4">
+                {['analyst', 'viewer'].map((role) => {
+                  const enabledCount = Object.keys(permissionDescriptions).filter(
+                    (perm) => permissions[role]?.[perm] ?? false
+                  ).length
+                  const totalCount = Object.keys(permissionDescriptions).length
+                  return (
+                    <Collapsible key={role} defaultOpen={false} className="border rounded-lg">
+                      <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-muted/50 transition-colors [&[data-state=open]>svg]:rotate-180">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-medium capitalize text-lg">{role}</h3>
+                          <span className="text-sm text-muted-foreground">
+                            {enabledCount} of {totalCount} permissions enabled
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                        <ChevronDown className="h-4 w-4 transition-transform duration-200" />
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="grid gap-3 p-4 pt-0 border-t">
+                          {Object.entries(permissionDescriptions).map(([perm, desc]) => (
+                            <div key={perm} className="flex items-center justify-between py-2">
+                              <div className="space-y-0.5">
+                                <Label className="text-sm font-medium">
+                                  {perm.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                                </Label>
+                                <p className="text-xs text-muted-foreground">{desc}</p>
+                              </div>
+                              <Switch
+                                checked={permissions[role]?.[perm] ?? false}
+                                onCheckedChange={async (checked) => {
+                                  try {
+                                    await permissionsApi.update(role, perm, checked)
+                                    setPermissions((prev) => ({
+                                      ...prev,
+                                      [role]: { ...prev[role], [perm]: checked },
+                                    }))
+                                    showToast(`Permission updated for ${role}`)
+                                  } catch (err) {
+                                    showToast(
+                                      err instanceof Error ? err.message : 'Failed to update permission',
+                                      'error'
+                                    )
+                                  }
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )
+                })}
                 {Object.keys(permissionDescriptions).length === 0 && (
                   <p className="text-muted-foreground text-sm">
                     No permissions configured. The permissions API may not be available.
@@ -872,6 +904,10 @@ export default function SettingsPage() {
                       <div className="h-3 w-3 rounded-full bg-green-500" />
                     ) : aiTestResult ? (
                       <div className="h-3 w-3 rounded-full bg-red-500" />
+                    ) : aiLastTestSuccess === true ? (
+                      <div className="h-3 w-3 rounded-full bg-green-500" />
+                    ) : aiLastTestSuccess === false ? (
+                      <div className="h-3 w-3 rounded-full bg-red-500" />
                     ) : (
                       <div className="h-3 w-3 rounded-full bg-gray-300" />
                     )}
@@ -883,16 +919,20 @@ export default function SettingsPage() {
                           ? 'Connected'
                           : aiTestResult
                           ? 'Connection failed'
+                          : aiLastTestSuccess === true
+                          ? 'Connected'
+                          : aiLastTestSuccess === false
+                          ? 'Connection failed'
                           : 'Not tested'}
                       </p>
-                      {aiTestResult?.success && aiTestResult.model && (
-                        <p className="text-sm text-muted-foreground">
-                          Model: {aiTestResult.model}
-                        </p>
-                      )}
                       {aiTestResult && !aiTestResult.success && (
                         <p className="text-sm text-destructive">
                           {aiTestResult.error || 'Unknown error'}
+                        </p>
+                      )}
+                      {aiLastTested && !aiTestLoading && (
+                        <p className="text-xs text-muted-foreground">
+                          Last tested: {new Date(aiLastTested).toLocaleString()}
                         </p>
                       )}
                     </div>

@@ -59,13 +59,32 @@ const SYSTEM_EVENT_GROUPS = [
       { id: 'attack_sync_complete', label: 'ATT&CK Sync Complete' },
       { id: 'sigmahq_new_rules', label: 'New Rules Available' },
       { id: 'sync_failed', label: 'Sync Failed' },
+      { id: 'sigmahq_sync_failed', label: 'SigmaHQ Sync Failed' },
+      { id: 'attack_sync_failed', label: 'ATT&CK Sync Failed' },
     ],
   },
   {
-    name: 'Health Alerts',
+    name: 'Health & Infrastructure',
     events: [
       { id: 'health_warning', label: 'Health Warning' },
       { id: 'health_critical', label: 'Health Critical' },
+      { id: 'opensearch_connection_lost', label: 'OpenSearch Connection Lost' },
+      { id: 'opensearch_connection_restored', label: 'OpenSearch Connection Restored' },
+    ],
+  },
+  {
+    name: 'Rule Operations',
+    events: [
+      { id: 'rule_deployment_failed', label: 'Rule Deployment Failed' },
+      { id: 'percolator_query_error', label: 'Percolator Query Error' },
+    ],
+  },
+  {
+    name: 'Integration Failures',
+    events: [
+      { id: 'maxmind_update_failed', label: 'MaxMind Update Failed' },
+      { id: 'ai_mapping_failed', label: 'AI Mapping Failed' },
+      { id: 'webhook_delivery_failed', label: 'Webhook Delivery Failed' },
     ],
   },
 ]

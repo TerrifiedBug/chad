@@ -49,10 +49,17 @@ class MatrixResponse(BaseModel):
     tactics: list[TacticWithTechniques]
 
 
-class CoverageResponse(BaseModel):
-    """Coverage counts per technique."""
+class TechniqueCoverageStats(BaseModel):
+    """Coverage statistics for a single technique."""
 
-    coverage: dict[str, int]  # {"T1059": 5, "T1059.001": 2, ...}
+    total: int = 0
+    deployed: int = 0
+
+
+class CoverageResponse(BaseModel):
+    """Coverage counts per technique with total and deployed breakdown."""
+
+    coverage: dict[str, TechniqueCoverageStats]  # {"T1059": {"total": 5, "deployed": 3}, ...}
 
 
 class LinkedRuleResponse(BaseModel):

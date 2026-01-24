@@ -221,56 +221,43 @@ export default function GeoIPSettings() {
               </Button>
             </div>
           </div>
+
+          {/* Test IP Lookup - within GeoIP card */}
+          {settings.database_available && (
+            <div className="border-t pt-4 mt-4">
+              <h4 className="font-medium mb-2">Test IP Lookup</h4>
+              <div className="flex gap-2">
+                <Input
+                  value={testIp}
+                  onChange={e => setTestIp(e.target.value)}
+                  placeholder="Enter IP address"
+                  className="max-w-xs"
+                />
+                <Button onClick={handleTest} variant="outline">
+                  Test
+                </Button>
+              </div>
+              {testResult && (
+                <pre className="text-xs bg-muted p-4 rounded overflow-auto max-h-64 mt-3">
+                  {JSON.stringify(testResult, null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
+
+          {/* Field Configuration link */}
+          {settings.database_available && (
+            <div className="border-t pt-4 mt-4">
+              <p className="text-sm text-muted-foreground mb-2">
+                Configure which IP fields to enrich in{' '}
+                <Link to="/index-patterns" className="text-primary hover:underline">
+                  Index Pattern settings
+                </Link>
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      {settings.database_available && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Field Configuration</CardTitle>
-            <CardDescription>
-              Configure which IP fields to enrich with geographic data for each index pattern
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link to="/index-patterns">
-              <Button variant="outline">
-                Configure Index Pattern Fields
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      )}
-
-      {settings.database_available && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Test Lookup</CardTitle>
-            <CardDescription>
-              Test the GeoIP database by looking up an IP address
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                value={testIp}
-                onChange={e => setTestIp(e.target.value)}
-                placeholder="Enter IP address"
-                className="max-w-xs"
-              />
-              <Button onClick={handleTest} variant="outline">
-                Test
-              </Button>
-            </div>
-            {testResult && (
-              <pre className="text-xs bg-muted p-4 rounded overflow-auto max-h-64">
-                {JSON.stringify(testResult, null, 2)}
-              </pre>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

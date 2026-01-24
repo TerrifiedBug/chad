@@ -33,13 +33,27 @@ from app.utils.request import get_client_ip
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 SYSTEM_EVENT_TYPES = [
+    # Security
     "user_locked",
+    # Sync events
     "sigmahq_sync_complete",
     "sigmahq_new_rules",
     "attack_sync_complete",
     "sync_failed",
+    "sigmahq_sync_failed",
+    "attack_sync_failed",
+    # Health & Infrastructure
     "health_warning",
     "health_critical",
+    "opensearch_connection_lost",
+    "opensearch_connection_restored",
+    # Rule operations
+    "rule_deployment_failed",
+    "percolator_query_error",
+    # Integration failures
+    "maxmind_update_failed",
+    "ai_mapping_failed",
+    "webhook_delivery_failed",
 ]
 
 

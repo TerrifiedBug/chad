@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import validate_password_complexity
 from app.api.deps import get_db, require_admin
-from app.utils.request import get_client_ip
 from app.models.setting import Setting
 from app.models.user import User, UserRole
 from app.services.audit import audit_log
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/users", tags=["users"])
 

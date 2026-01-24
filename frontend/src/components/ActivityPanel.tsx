@@ -223,15 +223,19 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     {activity.user_email && <span> by {activity.user_email}</span>}
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => handleRestoreClick(Number(activity.data.version_number), String(activity.data.yaml_content))}
-                >
-                  <RotateCcw className="h-3 w-3 mr-1" />
-                  Restore
-                </Button>
+                {Number(activity.data.version_number) === currentVersion ? (
+                  <span className="text-xs text-muted-foreground px-2">(Current)</span>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => handleRestoreClick(Number(activity.data.version_number), String(activity.data.yaml_content))}
+                  >
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                    Restore
+                  </Button>
+                )}
               </div>
             ))
           )}

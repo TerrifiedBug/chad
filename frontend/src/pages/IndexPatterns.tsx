@@ -143,12 +143,7 @@ export default function IndexPatternsPage() {
     })
     setGeoipFields(pattern.geoip_fields || [])
     setGeoipFieldInput('')
-    setShowHealthSettings(
-      pattern.health_no_data_minutes !== null ||
-      pattern.health_error_rate_percent !== null ||
-      pattern.health_latency_ms !== null ||
-      !pattern.health_alerting_enabled
-    )
+    setShowHealthSettings(false)
     setShowGeoipSettings(pattern.geoip_fields && pattern.geoip_fields.length > 0)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns

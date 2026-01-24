@@ -136,11 +136,12 @@ export default function AttackMatrixPage() {
 
   // Calculate stats
   const stats = useMemo(() => {
-    if (!matrix || !coverage) return { total: 0, covered: 0, uncovered: 0 }
+    if (!matrix || !coverage) return { total: 0, covered: 0, uncovered: 0, deployed: 0 }
     const allTechniques = matrix.tactics.flatMap((t) => t.techniques)
     const total = allTechniques.filter((t) => !t.is_subtechnique).length
-    const covered = allTechniques.filter((t) => !t.is_subtechnique && (coverage.coverage[t.id] || 0) > 0).length
-    return { total, covered, uncovered: total - covered }
+    const covered = allTechniques.filter((t) => !t.is_subtechnique && (coverage.coverage[t.id]?.total || 0) > 0).length
+    const deployed = allTechniques.filter((t) => !t.is_subtechnique && (coverage.coverage[t.id]?.deployed || 0) > 0).length
+    return { total, covered, uncovered: total - covered, deployed }
   }, [matrix, coverage])
 
   if (isLoading) {
@@ -209,7 +210,7 @@ export default function AttackMatrixPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4">
             <div className="text-2xl font-bold">{stats.total}</div>
@@ -220,6 +221,12 @@ export default function AttackMatrixPage() {
           <CardContent className="pt-4">
             <div className="text-2xl font-bold text-green-600">{stats.covered}</div>
             <div className="text-sm text-muted-foreground">Covered</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold text-blue-600">{stats.deployed}</div>
+            <div className="text-sm text-muted-foreground">Deployed</div>
           </CardContent>
         </Card>
         <Card>
@@ -313,8 +320,10 @@ export default function AttackMatrixPage() {
                   {tactic.techniques
                     .filter((t) => !t.is_subtechnique)
                     .map((technique) => {
-                      const count = coverage?.coverage[technique.id] || 0
-                      const level = getCoverageLevel(count)
+                      const stats = coverage?.coverage[technique.id]
+                      const totalCount = stats?.total || 0
+                      const deployedCount = stats?.deployed || 0
+                      const level = getCoverageLevel(totalCount)
                       return (
                         <button
                           key={technique.id}
@@ -329,7 +338,7 @@ export default function AttackMatrixPage() {
                           <div className="flex items-center justify-between mt-0.5">
                             <span className="text-[10px] opacity-70">{technique.id}</span>
                             <span className={`text-[10px] font-medium ${coverageTextColors[level]}`}>
-                              {count} rule{count !== 1 ? 's' : ''}
+                              {totalCount} rule{totalCount !== 1 ? 's' : ''}{totalCount > 0 && ` (${deployedCount} deployed)`}
                             </span>
                           </div>
                         </button>

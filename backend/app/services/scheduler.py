@@ -121,6 +121,9 @@ class SchedulerService:
             # Configure GeoIP update job
             await self._configure_geoip_job(session)
 
+            # Configure AI connectivity ping job (hourly if AI enabled)
+            await self._configure_ai_ping_job(session)
+
             # Add health check job (runs every minute)
             self._schedule_health_check()
 
@@ -327,6 +330,99 @@ class SchedulerService:
                 logger.info(f"Health check found {len(issues)} issues")
         except Exception as e:
             logger.error(f"Scheduled health check failed: {e}")
+        finally:
+            await session.close()
+
+    async def _configure_ai_ping_job(self, session: AsyncSession):
+        """Configure the AI connectivity ping job (runs hourly if AI is enabled)."""
+        result = await session.execute(select(Setting).where(Setting.key == "ai"))
+        setting = result.scalar_one_or_none()
+        ai_settings = setting.value if setting else {}
+
+        provider = ai_settings.get("ai_provider", "disabled")
+
+        if provider != "disabled":
+            # Schedule hourly ping
+            scheduler.add_job(
+                self._run_ai_ping,
+                trigger=IntervalTrigger(hours=1),
+                id="ai_ping",
+                name="AI connectivity ping",
+                replace_existing=True,
+                misfire_grace_time=300,  # 5 minute grace period
+            )
+            logger.info("Scheduled AI connectivity ping (every hour)")
+        else:
+            self._remove_job("ai_ping")
+
+    async def _run_ai_ping(self):
+        """Execute AI connectivity ping (lightweight, no token consumption)."""
+        import httpx
+
+        logger.debug("Running scheduled AI connectivity ping")
+        session = await self._get_session()
+        try:
+            result = await session.execute(select(Setting).where(Setting.key == "ai"))
+            setting = result.scalar_one_or_none()
+            if not setting:
+                return
+
+            ai_settings = setting.value or {}
+            provider = ai_settings.get("ai_provider", "disabled")
+
+            if provider == "disabled":
+                return
+
+            success = False
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                if provider == "ollama":
+                    url = ai_settings.get("ai_ollama_url", "http://localhost:11434")
+                    response = await client.get(f"{url.rstrip('/')}/api/tags")
+                    success = response.status_code == 200
+
+                elif provider == "openai":
+                    api_key = ai_settings.get("ai_openai_key", "")
+                    if api_key:
+                        try:
+                            api_key = decrypt(api_key)
+                            response = await client.get(
+                                "https://api.openai.com/v1/models",
+                                headers={"Authorization": f"Bearer {api_key}"},
+                            )
+                            success = response.status_code == 200
+                        except Exception:
+                            success = False
+
+                elif provider == "anthropic":
+                    # Use /v1/models endpoint - free, no token consumption
+                    api_key = ai_settings.get("ai_anthropic_key", "")
+                    if api_key:
+                        try:
+                            api_key = decrypt(api_key)
+                            response = await client.get(
+                                "https://api.anthropic.com/v1/models",
+                                headers={
+                                    "x-api-key": api_key,
+                                    "anthropic-version": "2023-06-01",
+                                },
+                            )
+                            success = response.status_code == 200
+                        except Exception:
+                            success = False
+
+            # Update status
+            ai_settings["last_tested"] = datetime.now(UTC).isoformat()
+            ai_settings["last_test_success"] = success
+            setting.value = ai_settings
+            await session.commit()
+
+            if success:
+                logger.debug(f"AI connectivity ping successful for {provider}")
+            else:
+                logger.warning(f"AI connectivity ping failed for {provider}")
+
+        except Exception as e:
+            logger.error(f"AI connectivity ping failed: {e}")
         finally:
             await session.close()
 
