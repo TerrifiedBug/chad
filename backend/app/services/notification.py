@@ -15,11 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.encryption import decrypt
+from app.models.jira_config import JiraConfig
 from app.models.notification_settings import (
     AlertNotificationSetting,
     SystemNotificationSetting,
     Webhook,
 )
+from app.services.jira import JiraAPIError, create_jira_ticket_for_alert
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +105,7 @@ async def send_alert_notification(
     alert_url: str | None = None,
 ) -> list[dict]:
     """
-    Send an alert notification to webhooks configured for this severity.
+    Send an alert notification to webhooks and Jira (if configured) for this severity.
 
     Args:
         db: Database session
@@ -114,9 +116,35 @@ async def send_alert_notification(
         alert_url: Optional URL to the alert detail page
 
     Returns:
-        List of results with webhook_id, success, error
+        List of results with webhook_id/jira, success, error
     """
-    # Get alert notification settings
+    results = []
+
+    # Send to webhooks
+    webhook_results = await _send_alert_to_webhooks(
+        db, alert_id, rule_title, severity, matched_log, alert_url
+    )
+    results.extend(webhook_results)
+
+    # Send to Jira if configured
+    jira_result = await _send_alert_to_jira(
+        db, alert_id, rule_title, severity, matched_log, alert_url
+    )
+    if jira_result:
+        results.append(jira_result)
+
+    return results
+
+
+async def _send_alert_to_webhooks(
+    db: AsyncSession,
+    alert_id: UUID,
+    rule_title: str,
+    severity: str,
+    matched_log: dict,
+    alert_url: str | None = None,
+) -> list[dict]:
+    """Send alert to configured webhooks."""
     result = await db.execute(
         select(AlertNotificationSetting)
         .options(selectinload(AlertNotificationSetting.webhook))
@@ -157,6 +185,58 @@ async def send_alert_notification(
         )
 
     return results
+
+
+async def _send_alert_to_jira(
+    db: AsyncSession,
+    alert_id: UUID,
+    rule_title: str,
+    severity: str,
+    matched_log: dict,
+    alert_url: str | None = None,
+) -> dict | None:
+    """Send alert to Jira if configured for this severity."""
+    # Get Jira config
+    result = await db.execute(select(JiraConfig).limit(1))
+    config = result.scalar_one_or_none()
+
+    if not config or not config.is_enabled:
+        return None
+
+    # Check if this severity should create a Jira ticket
+    if not config.alert_severities or severity not in config.alert_severities:
+        return None
+
+    try:
+        issue = await create_jira_ticket_for_alert(
+            config=config,
+            alert_id=str(alert_id),
+            rule_title=rule_title,
+            severity=severity,
+            matched_log=matched_log,
+            alert_url=alert_url,
+        )
+        logger.info(f"Created Jira issue {issue.get('key')} for alert {alert_id}")
+        return {
+            "destination": "jira",
+            "success": True,
+            "issue_key": issue.get("key"),
+            "error": None,
+        }
+    except JiraAPIError as e:
+        logger.error(f"Failed to create Jira issue for alert {alert_id}: {e.message}")
+        return {
+            "destination": "jira",
+            "success": False,
+            "error": e.message,
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error creating Jira issue for alert {alert_id}: {e}")
+        return {
+            "destination": "jira",
+            "success": False,
+            "error": str(e),
+        }
 
 
 async def send_health_notification(

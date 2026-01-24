@@ -29,6 +29,8 @@ class JiraConfigUpdate(BaseModel):
     default_project: str
     default_issue_type: str
     is_enabled: bool = True
+    # Severities to create Jira tickets for (e.g., ["critical", "high"])
+    alert_severities: list[str] = []
 
 
 class JiraConfigResponse(BaseModel):
@@ -41,6 +43,7 @@ class JiraConfigResponse(BaseModel):
     default_issue_type: str
     is_enabled: bool
     has_api_token: bool
+    alert_severities: list[str]
 
 
 class JiraConfigStatus(BaseModel):
@@ -104,6 +107,7 @@ async def get_jira_config(
             default_issue_type=config.default_issue_type,
             is_enabled=config.is_enabled,
             has_api_token=bool(config.api_token_encrypted),
+            alert_severities=config.alert_severities or [],
         ),
     )
 
@@ -127,6 +131,7 @@ async def update_jira_config(
         config.default_project = data.default_project
         config.default_issue_type = data.default_issue_type
         config.is_enabled = data.is_enabled
+        config.alert_severities = data.alert_severities
 
         # Only update token if provided
         if data.api_token:
@@ -146,6 +151,7 @@ async def update_jira_config(
             default_project=data.default_project,
             default_issue_type=data.default_issue_type,
             is_enabled=data.is_enabled,
+            alert_severities=data.alert_severities,
         )
         db.add(config)
 
@@ -169,6 +175,7 @@ async def update_jira_config(
         default_issue_type=config.default_issue_type,
         is_enabled=config.is_enabled,
         has_api_token=bool(config.api_token_encrypted),
+        alert_severities=config.alert_severities or [],
     )
 
 
