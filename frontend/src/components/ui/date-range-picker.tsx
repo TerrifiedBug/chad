@@ -23,23 +23,25 @@ export function DateRangePicker({ value, onChange, className }: DateRangePickerP
         <Button
           variant="outline"
           className={cn(
-            "h-10 w-full justify-start text-left font-normal",
+            "h-10 w-full justify-start text-left font-normal overflow-hidden",
             !value && "text-muted-foreground",
             className
           )}
         >
-          <CalendarIcon className="mr-2 h-4 w-4" />
-          {value?.from ? (
-            value.to ? (
-              <>
-                {format(value.from, "LLL dd, y")} - {format(value.to, "LLL dd, y")}
-              </>
+          <CalendarIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+          <span className="truncate">
+            {value?.from ? (
+              value.to ? (
+                <>
+                  {format(value.from, "MMM d")} - {format(value.to, "MMM d, y")}
+                </>
+              ) : (
+                format(value.from, "MMM d, y")
+              )
             ) : (
-              format(value.from, "LLL dd, y")
-            )
-          ) : (
-            <span>Pick a date range</span>
-          )}
+              "Pick a date range"
+            )}
+          </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">

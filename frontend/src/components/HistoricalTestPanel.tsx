@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { DateRange } from 'react-day-picker'
 import { format, subDays } from 'date-fns'
-import { X, Play, ChevronDown, ChevronUp, AlertCircle, Clock, Database, FileSearch, Download } from 'lucide-react'
+import { Play, ChevronDown, ChevronUp, AlertCircle, Clock, Database, FileSearch, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import {
   Table,
@@ -32,7 +31,7 @@ interface HistoricalTestResult {
   error?: string
 }
 
-export function HistoricalTestPanel({ ruleId, onClose }: HistoricalTestPanelProps) {
+export function HistoricalTestPanel({ ruleId, onClose: _onClose }: HistoricalTestPanelProps) {
   // Default to last 7 days
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
@@ -152,36 +151,17 @@ export function HistoricalTestPanel({ ruleId, onClose }: HistoricalTestPanelProp
     : []
 
   return (
-    <Card className="w-full">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <FileSearch className="h-5 w-5" />
-              Historical Dry-Run Test
-            </CardTitle>
-            <CardDescription>
-              Test this rule against historical log data to find potential matches
-            </CardDescription>
-          </div>
-          {onClose && (
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
         {/* Configuration Section */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="space-y-2 flex-1">
             <Label>Date Range</Label>
             <DateRangePicker
               value={dateRange}
               onChange={setDateRange}
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 sm:w-32">
             <Label htmlFor="limit">Result Limit</Label>
             <Input
               id="limit"
@@ -192,7 +172,6 @@ export function HistoricalTestPanel({ ruleId, onClose }: HistoricalTestPanelProp
               onChange={(e) => setLimit(Math.min(1000, Math.max(1, parseInt(e.target.value) || 500)))}
               placeholder="500"
             />
-            <p className="text-xs text-muted-foreground">Max 1000 results</p>
           </div>
         </div>
 
@@ -386,7 +365,6 @@ export function HistoricalTestPanel({ ruleId, onClose }: HistoricalTestPanelProp
             )}
           </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   )
 }

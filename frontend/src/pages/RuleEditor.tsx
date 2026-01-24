@@ -152,6 +152,7 @@ export default function RuleEditorPage() {
   // Collapsible section state
   const [showThreshold, setShowThreshold] = useState(false)
   const [showExceptions, setShowExceptions] = useState(false)
+  const [showHistoricalTest, setShowHistoricalTest] = useState(false)
 
   // Unmapped fields dialog state
   const [unmappedFieldsDialog, setUnmappedFieldsDialog] = useState<{
@@ -1133,6 +1134,29 @@ export default function RuleEditorPage() {
             </CardContent>
           </Card>
 
+          {/* Historical Dry-Run Test - Only show for existing rules with index pattern */}
+          {!isNew && indexPatternId && (
+            <Card>
+              <CardHeader
+                className="py-3 cursor-pointer"
+                onClick={() => setShowHistoricalTest(!showHistoricalTest)}
+              >
+                <CardTitle className="text-sm font-medium flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <History className="h-4 w-4" />
+                    Historical Dry-Run Test
+                  </span>
+                  {showHistoricalTest ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </CardTitle>
+              </CardHeader>
+              {showHistoricalTest && (
+                <CardContent className="pt-0">
+                  <HistoricalTestPanel ruleId={id!} />
+                </CardContent>
+              )}
+            </Card>
+          )}
+
           {/* Threshold Alerting Card */}
           <Card>
             <CardHeader
@@ -1357,12 +1381,6 @@ export default function RuleEditorPage() {
             </Card>
           )}
 
-          {/* Historical Test - Only show for existing rules with index pattern */}
-          {!isNew && indexPatternId && (
-            <HistoricalTestPanel
-              ruleId={id!}
-            />
-          )}
         </div>
       </div>
 
