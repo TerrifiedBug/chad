@@ -12,6 +12,9 @@ import {
   TIFieldConfig,
   TISourceConfigForPattern,
   tiApi,
+  healthApi,
+  IndexHealth,
+  HealthStatus,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,13 +43,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield, HeartPulse } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield, HeartPulse, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+
+const HealthStatusIcon = ({ status }: { status: HealthStatus }) => {
+  switch (status) {
+    case 'healthy':
+      return <CheckCircle2 className="h-4 w-4 text-green-600" />
+    case 'warning':
+      return <AlertTriangle className="h-4 w-4 text-yellow-600" />
+    case 'critical':
+      return <AlertCircle className="h-4 w-4 text-red-600" />
+  }
+}
 
 export default function IndexPatternsPage() {
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [healthData, setHealthData] = useState<Record<string, HealthStatus>>({})
 
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -132,10 +147,24 @@ export default function IndexPatternsPage() {
     try {
       const data = await indexPatternsApi.list()
       setPatterns(data)
+      loadHealthData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load patterns')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadHealthData = async () => {
+    try {
+      const health = await healthApi.listIndices()
+      const healthMap: Record<string, HealthStatus> = {}
+      for (const h of health) {
+        healthMap[h.index_pattern_id] = h.status
+      }
+      setHealthData(healthMap)
+    } catch {
+      // Health data is optional, continue without it
     }
   }
 
@@ -411,7 +440,14 @@ export default function IndexPatternsPage() {
             <TableBody>
               {patterns.map((pattern) => (
                 <TableRow key={pattern.id}>
-                  <TableCell className="font-medium">{pattern.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {healthData[pattern.id] && (
+                        <HealthStatusIcon status={healthData[pattern.id]} />
+                      )}
+                      {pattern.name}
+                    </div>
+                  </TableCell>
                   <TableCell className="font-mono text-sm">
                     {pattern.pattern}
                   </TableCell>
