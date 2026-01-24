@@ -1227,3 +1227,60 @@ export const attackApi = {
   sync: () => api.post<AttackSyncResponse>('/attack/sync'),
   getSyncStatus: () => api.get<AttackSyncStatus>('/attack/sync/status'),
 }
+
+// Jira types
+export type JiraConfig = {
+  id: string
+  jira_url: string
+  email: string
+  default_project: string
+  default_issue_type: string
+  is_enabled: boolean
+  has_api_token: boolean
+  alert_severities: string[]
+}
+
+export type JiraConfigStatus = {
+  configured: boolean
+  config: JiraConfig | null
+}
+
+export type JiraConfigUpdate = {
+  jira_url: string
+  email: string
+  api_token?: string
+  default_project: string
+  default_issue_type: string
+  is_enabled: boolean
+  alert_severities: string[]
+}
+
+export type JiraTestResponse = {
+  success: boolean
+  error?: string | null
+  server_title?: string | null
+}
+
+export type JiraProject = {
+  id: string
+  key: string
+  name: string
+}
+
+export type JiraIssueType = {
+  id: string
+  name: string
+  description: string
+}
+
+// Jira API
+export const jiraApi = {
+  getConfig: () => api.get<JiraConfigStatus>('/jira'),
+  updateConfig: (data: JiraConfigUpdate) => api.put<JiraConfig>('/jira', data),
+  deleteConfig: () => api.delete('/jira'),
+  testConnection: (data: { jira_url: string; email: string; api_token: string }) =>
+    api.post<JiraTestResponse>('/jira/test', data),
+  testSavedConnection: () => api.post<JiraTestResponse>('/jira/test-saved'),
+  getProjects: () => api.get<JiraProject[]>('/jira/projects'),
+  getIssueTypes: (projectKey: string) => api.get<JiraIssueType[]>(`/jira/issue-types/${projectKey}`),
+}
