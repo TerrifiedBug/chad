@@ -6,6 +6,7 @@ import {
   TIConfig,
   TI_SOURCE_INFO,
   TI_INDICATOR_TYPE_INFO,
+  TI_SOURCE_SUPPORTED_TYPES,
   TISourceType,
   TIIndicatorType,
   TIFieldConfig,
@@ -166,7 +167,7 @@ export default function IndexPatternsPage() {
     setIsDialogOpen(true)
   }
 
-  const openEditDialog = (pattern: IndexPattern) => {
+  const openEditDialog = async (pattern: IndexPattern) => {
     setEditingPattern(pattern)
     setFormData({
       name: pattern.name,
@@ -203,6 +204,19 @@ export default function IndexPatternsPage() {
     setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
     setSaveError('')
     setIsDialogOpen(true)
+
+    // Auto-validate to load available fields for enrichment configuration
+    if (pattern.pattern) {
+      setIsValidating(true)
+      try {
+        const result = await indexPatternsApi.validate(pattern.pattern)
+        setValidationResult(result)
+      } catch {
+        // Silently fail - user can manually validate if needed
+      } finally {
+        setIsValidating(false)
+      }
+    }
   }
 
   const handleValidate = async () => {
@@ -935,7 +949,9 @@ export default function IndexPatternsPage() {
                       {availableTiSources.map((source) => {
                         const sourceInfo = TI_SOURCE_INFO[source]
                         const config: TISourceConfigForPattern = tiConfig[source] || { enabled: false, fields: [] }
-                        const fieldInput = tiFieldInputs[source] || { field: '', type: 'ip' as TIIndicatorType }
+                        const supportedTypes = TI_SOURCE_SUPPORTED_TYPES[source] || ['ip']
+                        const defaultType = supportedTypes[0]
+                        const fieldInput = tiFieldInputs[source] || { field: '', type: defaultType }
 
                         const addFieldConfig = () => {
                           if (!fieldInput.field) return
@@ -949,7 +965,7 @@ export default function IndexPatternsPage() {
                               fields: [...config.fields, { field: fieldInput.field, type: fieldInput.type }],
                             },
                           })
-                          setTiFieldInputs({ ...tiFieldInputs, [source]: { field: '', type: 'ip' } })
+                          setTiFieldInputs({ ...tiFieldInputs, [source]: { field: '', type: defaultType } })
                         }
 
                         return (
@@ -1000,7 +1016,7 @@ export default function IndexPatternsPage() {
                                     </SelectContent>
                                   </Select>
 
-                                  {/* Indicator type selector */}
+                                  {/* Indicator type selector - filtered by source capabilities */}
                                   <Select
                                     value={fieldInput.type}
                                     onValueChange={(value) => setTiFieldInputs({
@@ -1012,7 +1028,7 @@ export default function IndexPatternsPage() {
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {(Object.keys(TI_INDICATOR_TYPE_INFO) as TIIndicatorType[]).map(type => (
+                                      {(TI_SOURCE_SUPPORTED_TYPES[source] || []).map(type => (
                                         <SelectItem key={type} value={type}>
                                           {TI_INDICATOR_TYPE_INFO[type].label}
                                         </SelectItem>

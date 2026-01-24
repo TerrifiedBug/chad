@@ -464,6 +464,14 @@ export const TI_INDICATOR_TYPE_INFO: Record<TIIndicatorType, { label: string; de
   hash_sha256: { label: 'SHA256 Hash', description: '64-character SHA256 file hash' },
 }
 
+// Indicator types supported by each TI source
+export const TI_SOURCE_SUPPORTED_TYPES: Record<TISourceType, TIIndicatorType[]> = {
+  virustotal: ['ip', 'domain', 'url', 'hash_md5', 'hash_sha1', 'hash_sha256'],
+  abuseipdb: ['ip'],
+  greynoise: ['ip'],
+  threatfox: ['ip', 'domain', 'hash_md5', 'hash_sha1', 'hash_sha256'],
+}
+
 // Field configuration for TI enrichment
 export type TIFieldConfig = {
   field: string
