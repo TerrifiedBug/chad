@@ -1284,3 +1284,75 @@ export const jiraApi = {
   getProjects: () => api.get<JiraProject[]>('/jira/projects'),
   getIssueTypes: (projectKey: string) => api.get<JiraIssueType[]>(`/jira/issue-types/${projectKey}`),
 }
+
+// Threat Intelligence types
+export type TISourceType = 'virustotal' | 'abuseipdb' | 'greynoise' | 'threatfox'
+
+export type TISourceConfig = {
+  id: string
+  source_type: TISourceType
+  is_enabled: boolean
+  has_api_key: boolean
+  instance_url: string | null
+  config: Record<string, unknown> | null
+}
+
+export type TISourcesStatus = {
+  sources: TISourceConfig[]
+}
+
+export type TISourceConfigUpdate = {
+  is_enabled: boolean
+  api_key?: string | null
+  instance_url?: string | null
+  config?: Record<string, unknown> | null
+}
+
+export type TITestResponse = {
+  success: boolean
+  error?: string | null
+}
+
+// TI source display info
+export const TI_SOURCE_INFO: Record<
+  TISourceType,
+  { name: string; description: string; requiresKey: boolean; docsUrl: string }
+> = {
+  virustotal: {
+    name: 'VirusTotal',
+    description: 'File, IP, domain, and URL reputation from crowdsourced malware analysis',
+    requiresKey: true,
+    docsUrl: 'https://docs.virustotal.com/reference/overview',
+  },
+  abuseipdb: {
+    name: 'AbuseIPDB',
+    description: 'IP reputation database with user-reported abuse data',
+    requiresKey: true,
+    docsUrl: 'https://docs.abuseipdb.com/',
+  },
+  greynoise: {
+    name: 'GreyNoise',
+    description: 'Internet scanner and mass exploitation detection',
+    requiresKey: true,
+    docsUrl: 'https://docs.greynoise.io/',
+  },
+  threatfox: {
+    name: 'ThreatFox',
+    description: 'Free IOC sharing platform by abuse.ch for malware-related indicators',
+    requiresKey: false,
+    docsUrl: 'https://threatfox.abuse.ch/api/',
+  },
+}
+
+// Threat Intelligence API
+export const tiApi = {
+  listSources: () => api.get<TISourcesStatus>('/ti'),
+  getSource: (sourceType: TISourceType) => api.get<TISourceConfig>(`/ti/${sourceType}`),
+  updateSource: (sourceType: TISourceType, data: TISourceConfigUpdate) =>
+    api.put<TISourceConfig>(`/ti/${sourceType}`, data),
+  deleteSource: (sourceType: TISourceType) => api.delete(`/ti/${sourceType}`),
+  testConnection: (sourceType: TISourceType, data: TISourceConfigUpdate) =>
+    api.post<TITestResponse>(`/ti/${sourceType}/test`, data),
+  testSavedConnection: (sourceType: TISourceType) =>
+    api.post<TITestResponse>(`/ti/${sourceType}/test-saved`),
+}

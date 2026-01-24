@@ -4,6 +4,7 @@ import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchS
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import JiraSettings from '@/pages/JiraSettings'
+import TISettings from '@/pages/TISettings'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -1200,6 +1201,7 @@ export default function SettingsPage() {
         <TabsContent value="integrations" className="mt-4">
           <div className="space-y-6">
             <GeoIPSettings />
+            <TISettings />
             <JiraSettings />
           </div>
         </TabsContent>
