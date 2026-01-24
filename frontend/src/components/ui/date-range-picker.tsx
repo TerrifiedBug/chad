@@ -23,7 +23,7 @@ export function DateRangePicker({ value, onChange, className }: DateRangePickerP
         <Button
           variant="outline"
           className={cn(
-            "justify-start text-left font-normal",
+            "h-10 w-full justify-start text-left font-normal",
             !value && "text-muted-foreground",
             className
           )}

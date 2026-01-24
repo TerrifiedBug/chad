@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
-import { webhooksApi, Webhook } from '@/lib/api'
+import { webhooksApi, Webhook, WebhookProvider } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Card,
   CardContent,
@@ -37,6 +44,7 @@ type WebhookFormData = {
   name: string
   url: string
   auth_header: string
+  provider: WebhookProvider
   enabled: boolean
 }
 
@@ -44,7 +52,14 @@ const emptyFormData: WebhookFormData = {
   name: '',
   url: '',
   auth_header: '',
+  provider: 'generic',
   enabled: true,
+}
+
+const providerLabels: Record<WebhookProvider, string> = {
+  generic: 'Generic (Raw JSON)',
+  discord: 'Discord',
+  slack: 'Slack',
 }
 
 export default function WebhooksSettings() {
@@ -94,6 +109,7 @@ export default function WebhooksSettings() {
       name: webhook.name,
       url: webhook.url,
       auth_header: '', // Never pre-fill auth header
+      provider: webhook.provider,
       enabled: webhook.enabled,
     })
     setDialogOpen(true)
@@ -119,9 +135,10 @@ export default function WebhooksSettings() {
     try {
       if (editingWebhook) {
         // Update existing webhook
-        const updateData: Partial<{ name: string; url: string; auth_header: string; enabled: boolean }> = {
+        const updateData: Partial<{ name: string; url: string; auth_header: string; provider: WebhookProvider; enabled: boolean }> = {
           name: formData.name,
           url: formData.url,
+          provider: formData.provider,
           enabled: formData.enabled,
         }
         // Only include auth_header if user entered a new one
@@ -137,6 +154,7 @@ export default function WebhooksSettings() {
           name: formData.name,
           url: formData.url,
           auth_header: formData.auth_header || undefined,
+          provider: formData.provider,
           enabled: formData.enabled,
         })
         setWebhooks([...webhooks, created])
@@ -284,6 +302,9 @@ export default function WebhooksSettings() {
                         <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
                           {truncateUrl(webhook.url)}
                         </code>
+                        <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                          {providerLabels[webhook.provider]}
+                        </span>
                         {webhook.has_auth && (
                           <span className="flex items-center text-xs text-muted-foreground">
                             <Key className="h-3 w-3 mr-1" />
@@ -384,6 +405,25 @@ export default function WebhooksSettings() {
               />
               <p className="text-xs text-muted-foreground">
                 Alert payloads will be sent as JSON via HTTP POST
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="webhook-provider">Provider</Label>
+              <Select
+                value={formData.provider}
+                onValueChange={(value: WebhookProvider) => setFormData({ ...formData, provider: value })}
+              >
+                <SelectTrigger id="webhook-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="generic">Generic (Raw JSON)</SelectItem>
+                  <SelectItem value="discord">Discord</SelectItem>
+                  <SelectItem value="slack">Slack</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select the provider to format payloads correctly
               </p>
             </div>
             <div className="space-y-2">

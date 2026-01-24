@@ -21,6 +21,8 @@ class Webhook(Base, UUIDMixin, TimestampMixin):
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
     auth_header: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Encrypted auth header value (e.g., Bearer token, API key)
+    # Provider type for payload formatting: generic, discord, slack
+    provider: Mapped[str] = mapped_column(String(20), default="generic")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships

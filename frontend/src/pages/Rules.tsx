@@ -117,6 +117,19 @@ export default function RulesPage() {
     checkEligibility()
   }, [selectedRules])
 
+  // Compute which bulk actions are applicable based on selected rules' states
+  const selectedRulesData = useMemo(() => {
+    return rules.filter(r => selectedRules.has(r.id))
+  }, [rules, selectedRules])
+
+  const hasDeployedRules = useMemo(() => {
+    return selectedRulesData.some(r => r.status === 'deployed')
+  }, [selectedRulesData])
+
+  const hasSnoozedRules = useMemo(() => {
+    return selectedRulesData.some(r => r.status === 'snoozed')
+  }, [selectedRulesData])
+
   const loadData = async () => {
     setIsLoading(true)
     setError('')
@@ -801,7 +814,7 @@ export default function RulesPage() {
                   </TooltipContent>
                 )}
               </Tooltip>
-              <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating}>
+              <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating || !hasDeployedRules}>
                 <X className="mr-2 h-4 w-4" /> Undeploy
               </Button>
               <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
@@ -821,7 +834,7 @@ export default function RulesPage() {
                   <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating}>
+              <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating || !hasSnoozedRules}>
                 <RotateCcw className="mr-2 h-4 w-4" /> Unsnooze
               </Button>
               <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')} disabled={isBulkOperating}>

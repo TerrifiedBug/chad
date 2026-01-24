@@ -23,6 +23,23 @@ from app.models.notification_settings import (
 
 logger = logging.getLogger(__name__)
 
+# Severity colors for Discord (decimal format)
+SEVERITY_COLORS = {
+    "critical": 0xFF0000,    # Red
+    "high": 0xFF8C00,        # Dark Orange
+    "medium": 0xFFD700,      # Gold
+    "low": 0x4169E1,         # Royal Blue
+    "informational": 0x808080,  # Gray
+}
+
+SEVERITY_EMOJI = {
+    "critical": "🔴",
+    "high": "🟠",
+    "medium": "🟡",
+    "low": "🔵",
+    "informational": "⚪",
+}
+
 
 async def send_system_notification(
     db: AsyncSession,
@@ -176,6 +193,133 @@ async def send_health_notification(
     )
 
 
+def _format_discord_payload(payload: dict) -> dict:
+    """Format payload for Discord webhook."""
+    # System notification
+    if payload.get("type") == "system":
+        event = payload.get("event", "unknown")
+        event_display = event.replace("_", " ").title()
+        return {
+            "embeds": [{
+                "title": f"🔔 {event_display}",
+                "description": _build_system_description(payload),
+                "color": 0x5865F2,  # Discord blurple
+                "timestamp": payload.get("timestamp"),
+                "footer": {"text": "CHAD Alert System"}
+            }]
+        }
+
+    # Alert notification
+    severity = payload.get("severity", "medium")
+    emoji = SEVERITY_EMOJI.get(severity, "⚪")
+    color = SEVERITY_COLORS.get(severity, SEVERITY_COLORS["medium"])
+
+    return {
+        "embeds": [{
+            "title": f"{emoji} {payload.get('rule_title', 'Alert')}",
+            "description": f"A **{severity.upper()}** severity alert has been triggered.",
+            "color": color,
+            "fields": [
+                {"name": "Alert ID", "value": f"`{payload.get('alert_id', 'N/A')}`", "inline": True},
+                {"name": "Severity", "value": severity.upper(), "inline": True},
+            ],
+            "timestamp": payload.get("timestamp"),
+            "footer": {"text": "CHAD Alert System"}
+        }]
+    }
+
+
+def _format_slack_payload(payload: dict) -> dict:
+    """Format payload for Slack webhook."""
+    # System notification
+    if payload.get("type") == "system":
+        event = payload.get("event", "unknown")
+        event_display = event.replace("_", " ").title()
+        return {
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": f"🔔 {event_display}", "emoji": True}
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": _build_system_description(payload)}
+                },
+                {
+                    "type": "context",
+                    "elements": [{"type": "mrkdwn", "text": "CHAD Alert System"}]
+                }
+            ]
+        }
+
+    # Alert notification
+    severity = payload.get("severity", "medium")
+    emoji = SEVERITY_EMOJI.get(severity, "⚪")
+
+    return {
+        "blocks": [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": f"{emoji} {payload.get('rule_title', 'Alert')}", "emoji": True}
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Severity:*\n{severity.upper()}"},
+                    {"type": "mrkdwn", "text": f"*Alert ID:*\n`{payload.get('alert_id', 'N/A')}`"},
+                ]
+            },
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": "CHAD Alert System"}]
+            }
+        ]
+    }
+
+
+def _build_system_description(payload: dict) -> str:
+    """Build a description string for system notifications."""
+    event = payload.get("event", "")
+    parts = []
+
+    if event == "user_lockout":
+        parts.append(f"User `{payload.get('email', 'unknown')}` has been locked out")
+        if payload.get("ip_address"):
+            parts.append(f"IP: {payload['ip_address']}")
+    elif event == "sigmahq_sync_complete":
+        parts.append(f"SigmaHQ sync completed: {payload.get('message', '')}")
+        if payload.get("rule_count"):
+            parts.append(f"Rules: {payload['rule_count']}")
+    elif event == "attack_sync_complete":
+        parts.append(f"ATT&CK sync completed: {payload.get('message', '')}")
+        if payload.get("techniques_updated"):
+            parts.append(f"Techniques updated: {payload['techniques_updated']}")
+    elif event == "new_rules_available":
+        parts.append(f"New rules available: {payload.get('count', 0)} from {payload.get('source', 'unknown')}")
+    elif event == "sync_failure":
+        parts.append(f"Sync failed: {payload.get('sync_type', 'unknown')}")
+        if payload.get("error"):
+            parts.append(f"Error: {payload['error']}")
+    elif "health" in event:
+        parts.append(f"Health alert: {payload.get('condition', '')}")
+        if payload.get("index_pattern"):
+            parts.append(f"Index: {payload['index_pattern']}")
+    else:
+        parts.append(str(payload))
+
+    return "\n".join(parts)
+
+
+def _format_payload_for_provider(provider: str, payload: dict) -> dict:
+    """Format payload based on webhook provider."""
+    if provider == "discord":
+        return _format_discord_payload(payload)
+    elif provider == "slack":
+        return _format_slack_payload(payload)
+    else:
+        return payload
+
+
 async def _send_to_webhook(webhook: Webhook, payload: dict) -> tuple[bool, str | None]:
     """Send payload to a webhook. Returns (success, error)."""
     headers = {"Content-Type": "application/json"}
@@ -186,11 +330,14 @@ async def _send_to_webhook(webhook: Webhook, payload: dict) -> tuple[bool, str |
             logger.error(f"Failed to decrypt auth header for webhook {webhook.id}: {e}")
             return False, "Failed to decrypt auth header"
 
+    # Format payload based on provider
+    formatted_payload = _format_payload_for_provider(webhook.provider, payload)
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 webhook.url,
-                json=payload,
+                json=formatted_payload,
                 headers=headers,
                 timeout=10.0,
             )

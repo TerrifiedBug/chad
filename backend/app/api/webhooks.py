@@ -43,6 +43,7 @@ async def list_webhooks(
             name=w.name,
             url=w.url,
             has_auth=bool(w.auth_header),
+            provider=w.provider,
             enabled=w.enabled,
             created_at=w.created_at,
             updated_at=w.updated_at,
@@ -71,6 +72,7 @@ async def create_webhook(
         name=data.name,
         url=str(data.url),
         auth_header=encrypt(data.auth_header) if data.auth_header else None,
+        provider=data.provider.value,
         enabled=data.enabled,
     )
     db.add(webhook)
@@ -93,6 +95,7 @@ async def create_webhook(
         name=webhook.name,
         url=webhook.url,
         has_auth=bool(webhook.auth_header),
+        provider=webhook.provider,
         enabled=webhook.enabled,
         created_at=webhook.created_at,
         updated_at=webhook.updated_at,
@@ -115,6 +118,7 @@ async def get_webhook(
         name=webhook.name,
         url=webhook.url,
         has_auth=bool(webhook.auth_header),
+        provider=webhook.provider,
         enabled=webhook.enabled,
         created_at=webhook.created_at,
         updated_at=webhook.updated_at,
@@ -140,6 +144,8 @@ async def update_webhook(
         webhook.url = str(data.url)
     if data.auth_header is not None:
         webhook.auth_header = encrypt(data.auth_header) if data.auth_header else None
+    if data.provider is not None:
+        webhook.provider = data.provider.value
     if data.enabled is not None:
         webhook.enabled = data.enabled
 
@@ -160,6 +166,7 @@ async def update_webhook(
         name=webhook.name,
         url=webhook.url,
         has_auth=bool(webhook.auth_header),
+        provider=webhook.provider,
         enabled=webhook.enabled,
         created_at=webhook.created_at,
         updated_at=webhook.updated_at,
@@ -192,6 +199,51 @@ async def delete_webhook(
     await db.commit()
 
 
+def _format_test_payload(provider: str, webhook_name: str) -> dict:
+    """Format a test payload based on provider type."""
+    if provider == "discord":
+        return {
+            "embeds": [{
+                "title": "🔔 CHAD Test Notification",
+                "description": f"Test message from webhook: **{webhook_name}**",
+                "color": 0x00FF00,  # Green
+                "footer": {"text": "CHAD Alert System"}
+            }]
+        }
+    elif provider == "slack":
+        return {
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "🔔 CHAD Test Notification",
+                        "emoji": True
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"Test message from webhook: *{webhook_name}*"
+                    }
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {"type": "mrkdwn", "text": "CHAD Alert System"}
+                    ]
+                }
+            ]
+        }
+    else:
+        return {
+            "type": "test",
+            "message": "Test notification from CHAD",
+            "webhook_name": webhook_name,
+        }
+
+
 @router.post("/{webhook_id}/test", response_model=WebhookTestResponse)
 async def test_webhook(
     webhook_id: UUID,
@@ -207,11 +259,7 @@ async def test_webhook(
     if webhook.auth_header:
         headers["Authorization"] = decrypt(webhook.auth_header)
 
-    payload = {
-        "type": "test",
-        "message": "Test notification from CHAD",
-        "webhook_name": webhook.name,
-    }
+    payload = _format_test_payload(webhook.provider, webhook.name)
 
     try:
         async with httpx.AsyncClient() as client:

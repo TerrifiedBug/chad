@@ -913,11 +913,14 @@ export const fieldMappingsApi = {
 }
 
 // Webhook types (notification webhooks, not settings webhooks)
+export type WebhookProvider = 'generic' | 'discord' | 'slack'
+
 export type Webhook = {
   id: string
   name: string
   url: string
   has_auth: boolean
+  provider: WebhookProvider
   enabled: boolean
   created_at: string
   updated_at: string
@@ -926,9 +929,9 @@ export type Webhook = {
 // Webhooks API
 export const webhooksApi = {
   list: () => api.get<Webhook[]>('/webhooks'),
-  create: (data: { name: string; url: string; auth_header?: string; enabled?: boolean }) =>
+  create: (data: { name: string; url: string; auth_header?: string; provider?: WebhookProvider; enabled?: boolean }) =>
     api.post<Webhook>('/webhooks', data),
-  update: (id: string, data: Partial<{ name: string; url: string; auth_header: string; enabled: boolean }>) =>
+  update: (id: string, data: Partial<{ name: string; url: string; auth_header: string; provider: WebhookProvider; enabled: boolean }>) =>
     api.patch<Webhook>(`/webhooks/${id}`, data),
   delete: (id: string) => api.delete(`/webhooks/${id}`),
   test: (id: string) => api.post<{ success: boolean; status_code?: number; error?: string }>(`/webhooks/${id}/test`),

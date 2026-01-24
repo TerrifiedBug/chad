@@ -47,7 +47,7 @@ async def check_for_updates():
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                "https://api.github.com/repos/YOUR_ORG/chad/releases/latest",
+                "https://api.github.com/repos/TerrifiedBug/chad/releases/latest",
                 timeout=10.0,
             )
             if response.status_code == 200:

@@ -490,9 +490,20 @@ async def validate_rule(
             )
 
         field_mapping_info = build_field_mapping_info(sigma_fields, field_mappings, index_fields)
+
+        # Re-translate with field mappings applied so query preview shows mapped fields
+        field_mappings_dict = {k: v for k, v in field_mappings.items() if v is not None}
+        if field_mappings_dict:
+            mapped_result = sigma_service.translate_with_mappings(
+                request.yaml_content, field_mappings_dict
+            )
+            query_to_return = mapped_result.query if mapped_result.success else result.query
+        else:
+            query_to_return = result.query
+
         return RuleValidateResponse(
             valid=True,
-            opensearch_query=result.query,
+            opensearch_query=query_to_return,
             fields=list(result.fields or set()),
             field_mappings=field_mapping_info,
         )

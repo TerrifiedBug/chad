@@ -16,8 +16,8 @@ import { ChevronDown, LogOut, Settings, Key, Lock } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Dashboard', exact: true },
-  { href: '/rules', label: 'Rules' },
   { href: '/alerts', label: 'Alerts' },
+  { href: '/rules', label: 'Rules' },
   { href: '/sigmahq', label: 'SigmaHQ' },
   { href: '/attack', label: 'ATT&CK' },
   { href: '/index-patterns', label: 'Index Patterns', adminOnly: true },
@@ -39,7 +39,7 @@ export function Header() {
     <header className="border-b">
       <div className="flex h-16 w-full items-center justify-between px-6">
         <div className="flex items-center gap-8">
-          <Link to="/" className="text-xl font-bold flex items-center gap-2">
+          <Link to="/" className="text-xl font-bold flex items-baseline gap-2">
             CHAD
             {version && (
               <span className="text-xs text-muted-foreground font-normal">
