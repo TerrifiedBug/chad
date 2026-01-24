@@ -555,7 +555,7 @@ export default function SettingsPage() {
           <Notifications />
         </TabsContent>
 
-        <TabsContent value="security" className="mt-4 space-y-6">
+        <TabsContent value="security" className="mt-4 space-y-6" data-form-type="other" data-lpignore="true" data-1p-ignore="true">
           <Card>
             <CardHeader>
               <CardTitle>Session Settings</CardTitle>
@@ -653,7 +653,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card data-lpignore="true" data-1p-ignore="true" data-protonpass-ignore="true">
             <CardHeader>
               <CardTitle>Two-Factor Authentication</CardTitle>
               <CardDescription>
