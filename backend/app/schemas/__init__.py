@@ -3,6 +3,7 @@ from app.schemas.index_pattern import (
     IndexPatternCreate,
     IndexPatternResponse,
     IndexPatternUpdate,
+    TISourceConfig,
 )
 from app.schemas.rule import (
     RuleCreate,
@@ -20,6 +21,7 @@ __all__ = [
     "IndexPatternCreate",
     "IndexPatternResponse",
     "IndexPatternUpdate",
+    "TISourceConfig",
     "RuleCreate",
     "RuleDetailResponse",
     "RuleResponse",

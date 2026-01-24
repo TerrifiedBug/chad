@@ -5,7 +5,6 @@ Enriches alert data with additional context like GeoIP and Threat Intelligence.
 """
 import ipaddress
 import logging
-import re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,18 +16,33 @@ from app.services.ti import TIEnrichmentManager, TIIndicatorType
 
 logger = logging.getLogger(__name__)
 
-# Regex patterns for indicator extraction
-IP_PATTERN = re.compile(
-    r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}"
-    r"(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
-)
-DOMAIN_PATTERN = re.compile(
-    r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)"
-    r"+[a-zA-Z]{2,}\b"
-)
-MD5_PATTERN = re.compile(r"\b[a-fA-F0-9]{32}\b")
-SHA1_PATTERN = re.compile(r"\b[a-fA-F0-9]{40}\b")
-SHA256_PATTERN = re.compile(r"\b[a-fA-F0-9]{64}\b")
+# Mapping of field name hints to indicator types
+INDICATOR_TYPE_HINTS = {
+    # IP fields
+    "ip": TIIndicatorType.IP,
+    "ip_address": TIIndicatorType.IP,
+    "ipaddress": TIIndicatorType.IP,
+    "src_ip": TIIndicatorType.IP,
+    "dst_ip": TIIndicatorType.IP,
+    "source_ip": TIIndicatorType.IP,
+    "dest_ip": TIIndicatorType.IP,
+    # Domain fields
+    "domain": TIIndicatorType.DOMAIN,
+    "hostname": TIIndicatorType.DOMAIN,
+    "host": TIIndicatorType.DOMAIN,
+    "fqdn": TIIndicatorType.DOMAIN,
+    # URL fields
+    "url": TIIndicatorType.URL,
+    "uri": TIIndicatorType.URL,
+    # Hash fields
+    "md5": TIIndicatorType.HASH_MD5,
+    "sha1": TIIndicatorType.HASH_SHA1,
+    "sha256": TIIndicatorType.HASH_SHA256,
+    "hash_md5": TIIndicatorType.HASH_MD5,
+    "hash_sha1": TIIndicatorType.HASH_SHA1,
+    "hash_sha256": TIIndicatorType.HASH_SHA256,
+    "file_hash": TIIndicatorType.HASH_SHA256,  # Default to SHA256
+}
 
 
 def get_nested_value(doc: dict, path: str) -> Any:
@@ -63,70 +77,65 @@ def is_public_ip(ip: str) -> bool:
         return False
 
 
-def extract_indicators(doc: dict, max_per_type: int = 5) -> dict[TIIndicatorType, list[str]]:
+def infer_indicator_type(field_path: str) -> TIIndicatorType | None:
     """
-    Extract potential threat indicators from a log document.
+    Infer the indicator type from a field path.
+
+    Uses the last component of the path to guess the type.
+    """
+    # Get the last part of the path (e.g., "source.ip" -> "ip")
+    field_name = field_path.split(".")[-1].lower()
+
+    # Check exact match first
+    if field_name in INDICATOR_TYPE_HINTS:
+        return INDICATOR_TYPE_HINTS[field_name]
+
+    # Check if field name contains a known hint
+    for hint, indicator_type in INDICATOR_TYPE_HINTS.items():
+        if hint in field_name:
+            return indicator_type
+
+    # Default to IP for unknown fields (most common use case)
+    return TIIndicatorType.IP
+
+
+def extract_field_indicators(
+    doc: dict,
+    fields: list[str],
+) -> list[tuple[str, str, TIIndicatorType]]:
+    """
+    Extract indicator values from specific fields in a document.
 
     Args:
-        doc: The log document to extract indicators from.
-        max_per_type: Maximum indicators to return per type.
+        doc: The log document.
+        fields: List of field paths to extract (e.g., ["source.ip", "file.hash.sha256"]).
 
     Returns:
-        Dictionary mapping indicator types to lists of unique values.
+        List of tuples: (field_path, value, indicator_type)
     """
-    # Convert doc to JSON string for pattern matching
-    doc_str = str(doc)
+    results: list[tuple[str, str, TIIndicatorType]] = []
 
-    indicators: dict[TIIndicatorType, set[str]] = {
-        TIIndicatorType.IP: set(),
-        TIIndicatorType.DOMAIN: set(),
-        TIIndicatorType.HASH_MD5: set(),
-        TIIndicatorType.HASH_SHA1: set(),
-        TIIndicatorType.HASH_SHA256: set(),
-    }
+    for field_path in fields:
+        value = get_nested_value(doc, field_path)
+        if not value or not isinstance(value, str):
+            continue
 
-    # Extract IPs (only public ones)
-    for match in IP_PATTERN.findall(doc_str):
-        if is_public_ip(match):
-            indicators[TIIndicatorType.IP].add(match)
+        # Skip empty strings
+        if not value.strip():
+            continue
 
-    # Extract domains (exclude common false positives)
-    excluded_domains = {
-        "localhost",
-        "example.com",
-        "test.com",
-        "local",
-    }
-    for match in DOMAIN_PATTERN.findall(doc_str):
-        match_lower = match.lower()
-        # Skip if it looks like a version number or common pattern
-        if not any(
-            match_lower.endswith(exc) or match_lower == exc
-            for exc in excluded_domains
-        ):
-            indicators[TIIndicatorType.DOMAIN].add(match_lower)
+        # Infer indicator type from field name
+        indicator_type = infer_indicator_type(field_path)
+        if not indicator_type:
+            continue
 
-    # Extract hashes (prioritize SHA256 > SHA1 > MD5)
-    for match in SHA256_PATTERN.findall(doc_str):
-        indicators[TIIndicatorType.HASH_SHA256].add(match.lower())
-    for match in SHA1_PATTERN.findall(doc_str):
-        # Skip if it's part of a SHA256 hash
-        if match.lower() not in str(indicators[TIIndicatorType.HASH_SHA256]):
-            indicators[TIIndicatorType.HASH_SHA1].add(match.lower())
-    for match in MD5_PATTERN.findall(doc_str):
-        # Skip if it's part of a longer hash
-        if (
-            match.lower() not in str(indicators[TIIndicatorType.HASH_SHA256])
-            and match.lower() not in str(indicators[TIIndicatorType.HASH_SHA1])
-        ):
-            indicators[TIIndicatorType.HASH_MD5].add(match.lower())
+        # Skip private IPs
+        if indicator_type == TIIndicatorType.IP and not is_public_ip(value):
+            continue
 
-    # Limit results per type
-    return {
-        indicator_type: list(values)[:max_per_type]
-        for indicator_type, values in indicators.items()
-        if values
-    }
+        results.append((field_path, value, indicator_type))
+
+    return results
 
 
 # Global TI manager instance (initialized on first use)
@@ -174,7 +183,7 @@ async def enrich_alert(
     await _enrich_geoip(db, enriched, log_doc, index_pattern)
 
     # Threat Intelligence enrichment
-    await _enrich_ti(db, enriched, log_doc)
+    await _enrich_ti(db, enriched, log_doc, index_pattern)
 
     return enriched
 
@@ -226,34 +235,70 @@ async def _enrich_ti(
     db: AsyncSession,
     enriched: dict,
     log_doc: dict,
+    index_pattern: IndexPattern,
 ) -> None:
     """Add Threat Intelligence enrichment to the document."""
     try:
-        # Check if TI is enabled (at least one source configured)
+        # Get TI configuration from index pattern
+        ti_config = index_pattern.ti_config or {}
+        if not ti_config:
+            return
+
+        # Get the TI manager
         ti_manager = await get_ti_manager(db)
         if not ti_manager.enabled_sources:
             return
 
-        # Extract indicators from the log document
-        indicators = extract_indicators(log_doc)
-        if not indicators:
-            return
-
-        # Collect enrichment results
+        # Collect all indicators to look up, grouped by source
         ti_enrichment: dict[str, Any] = {
-            "sources_used": ti_manager.enabled_sources,
+            "sources_used": [],
             "indicators": [],
         }
 
-        # Enrich each indicator
-        for indicator_type, values in indicators.items():
-            for value in values:
+        # Track which values we've already looked up to avoid duplicates
+        seen_indicators: set[str] = set()
+
+        # Process each TI source configuration
+        for source_name, source_config in ti_config.items():
+            if not isinstance(source_config, dict):
+                continue
+
+            # Check if this source is enabled for this index pattern
+            if not source_config.get("enabled", False):
+                continue
+
+            # Check if this source is globally enabled
+            if source_name not in ti_manager.enabled_sources:
+                continue
+
+            # Get the fields configured for this source
+            fields = source_config.get("fields", [])
+            if not fields:
+                continue
+
+            # Extract indicators from configured fields
+            indicators = extract_field_indicators(log_doc, fields)
+
+            # Look up each indicator
+            for field_path, value, indicator_type in indicators:
+                # Create unique key to avoid duplicate lookups
+                indicator_key = f"{value}:{indicator_type.value}"
+                if indicator_key in seen_indicators:
+                    continue
+                seen_indicators.add(indicator_key)
+
                 try:
                     result = await ti_manager.enrich(value, indicator_type)
                     if result.sources_with_results > 0:
-                        ti_enrichment["indicators"].append(result.to_dict())
+                        result_dict = result.to_dict()
+                        result_dict["field"] = field_path  # Add source field info
+                        ti_enrichment["indicators"].append(result_dict)
                 except Exception as e:
                     logger.warning(f"TI enrichment failed for {value}: {e}")
+
+            # Track which sources were used
+            if source_name not in ti_enrichment["sources_used"]:
+                ti_enrichment["sources_used"].append(source_name)
 
         # Only add ti_enrichment if we have results
         if ti_enrichment["indicators"]:

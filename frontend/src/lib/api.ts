@@ -452,6 +452,17 @@ export const rulesApi = {
   },
 }
 
+// TI Source Config for per-index-pattern configuration
+export type TISourceConfig = {
+  enabled: boolean
+  fields: string[]
+}
+
+// TI config maps source name to its config
+export type TIConfig = {
+  [sourceName: string]: TISourceConfig
+}
+
 // Index Pattern types
 export type IndexPattern = {
   id: string
@@ -469,6 +480,8 @@ export type IndexPattern = {
   health_alerting_enabled: boolean
   // GeoIP enrichment
   geoip_fields: string[]
+  // TI enrichment config per source
+  ti_config: TIConfig | null
 }
 
 export type IndexPatternCreate = {
@@ -483,6 +496,8 @@ export type IndexPatternCreate = {
   health_alerting_enabled?: boolean
   // GeoIP enrichment
   geoip_fields?: string[]
+  // TI enrichment config per source
+  ti_config?: TIConfig | null
 }
 
 export type IndexPatternUpdate = Partial<IndexPatternCreate>

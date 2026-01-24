@@ -3,6 +3,10 @@ import {
   indexPatternsApi,
   IndexPattern,
   IndexPatternValidateResponse,
+  TIConfig,
+  TI_SOURCE_INFO,
+  TISourceType,
+  tiApi,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,7 +28,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 export default function IndexPatternsPage() {
@@ -58,9 +62,15 @@ export default function IndexPatternsPage() {
   const [geoipFields, setGeoipFields] = useState<string[]>([])
   const [geoipFieldInput, setGeoipFieldInput] = useState('')
 
+  // TI enrichment state
+  const [tiConfig, setTiConfig] = useState<TIConfig>({})
+  const [tiFieldInputs, setTiFieldInputs] = useState<Record<string, string>>({})
+  const [availableTiSources, setAvailableTiSources] = useState<TISourceType[]>([])
+
   // Toggle for health settings section
   const [showHealthSettings, setShowHealthSettings] = useState(false)
   const [showGeoipSettings, setShowGeoipSettings] = useState(false)
+  const [showTiSettings, setShowTiSettings] = useState(false)
 
   // Validation state
   const [isValidating, setIsValidating] = useState(false)
@@ -88,7 +98,22 @@ export default function IndexPatternsPage() {
 
   useEffect(() => {
     loadPatterns()
+    loadTiSources()
   }, [])
+
+  const loadTiSources = async () => {
+    try {
+      const status = await tiApi.listSources()
+      // Get sources that have API keys configured
+      const configuredSources = (Object.keys(TI_SOURCE_INFO) as TISourceType[]).filter(
+        source => status.sources[source]?.has_api_key
+      )
+      setAvailableTiSources(configuredSources)
+    } catch {
+      // If TI sources fail to load, continue without them
+      setAvailableTiSources([])
+    }
+  }
 
   const loadPatterns = async () => {
     setIsLoading(true)
@@ -119,8 +144,11 @@ export default function IndexPatternsPage() {
     })
     setGeoipFields([])
     setGeoipFieldInput('')
+    setTiConfig({})
+    setTiFieldInputs({})
     setShowHealthSettings(false)
     setShowGeoipSettings(false)
+    setShowTiSettings(false)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(false)
     setSaveError('')
@@ -143,8 +171,23 @@ export default function IndexPatternsPage() {
     })
     setGeoipFields(pattern.geoip_fields || [])
     setGeoipFieldInput('')
+    // Load TI config from pattern
+    const patternTiConfig: TIConfig = {}
+    if (pattern.ti_config) {
+      for (const [source, config] of Object.entries(pattern.ti_config)) {
+        patternTiConfig[source] = {
+          enabled: config.enabled ?? false,
+          fields: config.fields ?? [],
+        }
+      }
+    }
+    setTiConfig(patternTiConfig)
+    setTiFieldInputs({})
     setShowHealthSettings(false)
     setShowGeoipSettings(pattern.geoip_fields && pattern.geoip_fields.length > 0)
+    // Show TI settings if any source is enabled
+    const hasTiEnabled = Object.values(patternTiConfig).some(c => c.enabled)
+    setShowTiSettings(hasTiEnabled)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
     setSaveError('')
@@ -186,6 +229,14 @@ export default function IndexPatternsPage() {
         health_latency_ms: healthAlerting.latencyMs,
       }
 
+      // Build TI config - only include sources with fields configured
+      const tiConfigToSave: TIConfig = {}
+      for (const [source, config] of Object.entries(tiConfig)) {
+        if (config.enabled || config.fields.length > 0) {
+          tiConfigToSave[source] = config
+        }
+      }
+
       if (editingPattern) {
         await indexPatternsApi.update(editingPattern.id, {
           name: formData.name,
@@ -194,6 +245,7 @@ export default function IndexPatternsPage() {
           description: formData.description || undefined,
           ...healthData,
           geoip_fields: geoipFields,
+          ti_config: Object.keys(tiConfigToSave).length > 0 ? tiConfigToSave : null,
         })
       } else {
         await indexPatternsApi.create({
@@ -203,6 +255,7 @@ export default function IndexPatternsPage() {
           description: formData.description || undefined,
           ...healthData,
           geoip_fields: geoipFields,
+          ti_config: Object.keys(tiConfigToSave).length > 0 ? tiConfigToSave : null,
         })
       }
       setIsDialogOpen(false)
@@ -754,25 +807,39 @@ export default function IndexPatternsPage() {
                   <p className="text-xs text-muted-foreground">
                     Specify IP address fields to enrich with geographic data when alerts are generated.
                     GeoIP must be enabled in Settings.
+                    {validationResult?.sample_fields && validationResult.sample_fields.length > 0 && (
+                      <> Field suggestions are available based on validated pattern.</>
+                    )}
                   </p>
 
                   <div className="flex gap-2">
-                    <Input
-                      value={geoipFieldInput}
-                      onChange={(e) => setGeoipFieldInput(e.target.value)}
-                      placeholder="e.g., source.ip, destination.ip"
-                      className="flex-1"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && geoipFieldInput.trim()) {
-                          e.preventDefault()
-                          const field = geoipFieldInput.trim()
-                          if (!geoipFields.includes(field)) {
-                            setGeoipFields([...geoipFields, field])
+                    <div className="flex-1 relative">
+                      <Input
+                        value={geoipFieldInput}
+                        onChange={(e) => setGeoipFieldInput(e.target.value)}
+                        placeholder="e.g., source.ip, destination.ip"
+                        list="geoip-field-suggestions"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && geoipFieldInput.trim()) {
+                            e.preventDefault()
+                            const field = geoipFieldInput.trim()
+                            if (!geoipFields.includes(field)) {
+                              setGeoipFields([...geoipFields, field])
+                            }
+                            setGeoipFieldInput('')
                           }
-                          setGeoipFieldInput('')
-                        }
-                      }}
-                    />
+                        }}
+                      />
+                      {validationResult?.sample_fields && validationResult.sample_fields.length > 0 && (
+                        <datalist id="geoip-field-suggestions">
+                          {validationResult.sample_fields
+                            .filter(f => f.toLowerCase().includes('ip') || f.toLowerCase().includes('address'))
+                            .map(field => (
+                              <option key={field} value={field} />
+                            ))}
+                        </datalist>
+                      )}
+                    </div>
                     <Button
                       type="button"
                       variant="secondary"
@@ -813,6 +880,169 @@ export default function IndexPatternsPage() {
 
                   <p className="text-xs text-muted-foreground">
                     Common fields: source.ip, destination.ip, client.ip, server.ip
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* TI Enrichment Section */}
+            <div className="border rounded-lg">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                onClick={() => setShowTiSettings(!showTiSettings)}
+              >
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  <span className="font-medium text-sm">Threat Intelligence Enrichment</span>
+                  {Object.values(tiConfig).filter(c => c.enabled).length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {Object.values(tiConfig).filter(c => c.enabled).length} source{Object.values(tiConfig).filter(c => c.enabled).length > 1 ? 's' : ''}
+                    </Badge>
+                  )}
+                </div>
+                {showTiSettings ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
+
+              {showTiSettings && (
+                <div className="p-3 pt-0 space-y-4">
+                  <p className="text-xs text-muted-foreground">
+                    Enable TI sources for this index pattern and specify which fields to enrich.
+                    TI sources must first be configured in Settings &gt; Integrations.
+                  </p>
+
+                  {availableTiSources.length === 0 ? (
+                    <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded">
+                      No TI sources configured. Configure API keys in Settings &gt; Integrations &gt; Threat Intelligence.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {availableTiSources.map((source) => {
+                        const sourceInfo = TI_SOURCE_INFO[source]
+                        const config = tiConfig[source] || { enabled: false, fields: [] }
+                        const fieldInput = tiFieldInputs[source] || ''
+
+                        return (
+                          <div key={source} className="border rounded p-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-medium text-sm">{sourceInfo.name}</div>
+                                <p className="text-xs text-muted-foreground">{sourceInfo.description}</p>
+                              </div>
+                              <Switch
+                                checked={config.enabled}
+                                onCheckedChange={(checked) => {
+                                  setTiConfig({
+                                    ...tiConfig,
+                                    [source]: { ...config, enabled: checked },
+                                  })
+                                }}
+                              />
+                            </div>
+
+                            {config.enabled && (
+                              <div className="space-y-2">
+                                <Label className="text-xs">Fields to enrich</Label>
+                                <div className="flex gap-2">
+                                  <div className="flex-1 relative">
+                                    <Input
+                                      value={fieldInput}
+                                      onChange={(e) => setTiFieldInputs({
+                                        ...tiFieldInputs,
+                                        [source]: e.target.value,
+                                      })}
+                                      placeholder="e.g., source.ip, file.hash.sha256"
+                                      list={`ti-field-suggestions-${source}`}
+                                      className="h-8 text-sm"
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && fieldInput.trim()) {
+                                          e.preventDefault()
+                                          const field = fieldInput.trim()
+                                          if (!config.fields.includes(field)) {
+                                            setTiConfig({
+                                              ...tiConfig,
+                                              [source]: {
+                                                ...config,
+                                                fields: [...config.fields, field],
+                                              },
+                                            })
+                                          }
+                                          setTiFieldInputs({ ...tiFieldInputs, [source]: '' })
+                                        }
+                                      }}
+                                    />
+                                    {validationResult?.sample_fields && validationResult.sample_fields.length > 0 && (
+                                      <datalist id={`ti-field-suggestions-${source}`}>
+                                        {validationResult.sample_fields.map(field => (
+                                          <option key={field} value={field} />
+                                        ))}
+                                      </datalist>
+                                    )}
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => {
+                                      const field = fieldInput.trim()
+                                      if (field && !config.fields.includes(field)) {
+                                        setTiConfig({
+                                          ...tiConfig,
+                                          [source]: {
+                                            ...config,
+                                            fields: [...config.fields, field],
+                                          },
+                                        })
+                                      }
+                                      setTiFieldInputs({ ...tiFieldInputs, [source]: '' })
+                                    }}
+                                    disabled={!fieldInput.trim()}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </Button>
+                                </div>
+
+                                {config.fields.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {config.fields.map((field) => (
+                                      <Badge
+                                        key={field}
+                                        variant="outline"
+                                        className="flex items-center gap-1 pr-1 text-xs"
+                                      >
+                                        {field}
+                                        <button
+                                          type="button"
+                                          onClick={() => setTiConfig({
+                                            ...tiConfig,
+                                            [source]: {
+                                              ...config,
+                                              fields: config.fields.filter(f => f !== field),
+                                            },
+                                          })}
+                                          className="ml-1 hover:bg-muted rounded-full p-0.5"
+                                        >
+                                          <X className="h-2.5 w-2.5" />
+                                        </button>
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    Common fields: source.ip, destination.ip, file.hash.md5, file.hash.sha256, url.domain
                   </p>
                 </div>
               )}

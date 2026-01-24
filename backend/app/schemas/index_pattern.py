@@ -4,6 +4,13 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
+class TISourceConfig(BaseModel):
+    """Configuration for a single TI source on an index pattern."""
+
+    enabled: bool = False
+    fields: list[str] = []
+
+
 class IndexPatternBase(BaseModel):
     name: str
     pattern: str
@@ -14,6 +21,7 @@ class IndexPatternBase(BaseModel):
     health_latency_ms: int | None = None
     health_alerting_enabled: bool = True
     geoip_fields: list[str] = []
+    ti_config: dict[str, TISourceConfig] | None = None
 
 
 class IndexPatternCreate(IndexPatternBase):
@@ -30,6 +38,7 @@ class IndexPatternUpdate(BaseModel):
     health_latency_ms: int | None = None
     health_alerting_enabled: bool | None = None
     geoip_fields: list[str] | None = None
+    ti_config: dict[str, TISourceConfig] | None = None
 
 
 class IndexPatternResponse(IndexPatternBase):

@@ -1,7 +1,7 @@
 import secrets
 
 from sqlalchemy import Boolean, Float, Integer, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
@@ -39,6 +39,10 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     geoip_fields: Mapped[list[str]] = mapped_column(
         ARRAY(String), default=list, server_default="{}"
     )
+
+    # Threat Intelligence enrichment config per source
+    # Format: {"virustotal": {"enabled": true, "fields": ["source.ip"]}, ...}
+    ti_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
 
     # Relationships
     field_mappings = relationship(

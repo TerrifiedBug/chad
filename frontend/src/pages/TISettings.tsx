@@ -374,9 +374,8 @@ export default function TISettings() {
         </CardHeader>
         <CardContent className="prose prose-sm dark:prose-invert max-w-none">
           <p>
-            When an alert is triggered, CHAD automatically extracts indicators (IP addresses,
-            domains, file hashes) from the log data and looks them up across all enabled
-            threat intelligence sources.
+            Configure API keys here to enable TI sources globally. Then, enable specific sources
+            and configure which fields to enrich in each Index Pattern's settings.
           </p>
           <ul>
             <li>
