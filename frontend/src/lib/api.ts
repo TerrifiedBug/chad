@@ -124,6 +124,11 @@ export type UpdateCheckResponse = {
   release_url?: string | null
 }
 
+// Security settings types
+export type SecuritySettings = {
+  force_2fa_on_signup: boolean
+}
+
 // Settings API
 export const settingsApi = {
   testOpenSearch: (config: OpenSearchConfig) =>
@@ -145,6 +150,11 @@ export const settingsApi = {
     api.get<VersionResponse>('/settings/version'),
   checkForUpdates: () =>
     api.get<UpdateCheckResponse>('/settings/version/check'),
+  // Security settings
+  getSecuritySettings: () =>
+    api.get<SecuritySettings>('/settings/security'),
+  updateSecuritySettings: (data: Partial<SecuritySettings>) =>
+    api.put<SecuritySettings>('/settings/security', data),
 }
 
 // Exception types

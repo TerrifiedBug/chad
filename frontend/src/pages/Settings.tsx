@@ -61,6 +61,9 @@ export default function SettingsPage() {
   const [rateLimitMaxAttempts, setRateLimitMaxAttempts] = useState(5)
   const [rateLimitLockoutMinutes, setRateLimitLockoutMinutes] = useState(15)
 
+  // 2FA settings
+  const [force2FAOnSignup, setForce2FAOnSignup] = useState(false)
+
   // App URL setting
   const [appUrl, setAppUrl] = useState('')
 
@@ -131,7 +134,17 @@ export default function SettingsPage() {
     loadOpenSearchStatus()
     loadAppUrl()
     loadPermissions()
+    loadSecuritySettings()
   }, [])
+
+  const loadSecuritySettings = async () => {
+    try {
+      const security = await settingsApi.getSecuritySettings()
+      setForce2FAOnSignup(security.force_2fa_on_signup)
+    } catch (error) {
+      console.error('Failed to load security settings:', error)
+    }
+  }
 
   // Check OpenSearch connection when the tab is selected
   useEffect(() => {
@@ -304,6 +317,18 @@ export default function SettingsPage() {
         lockout_minutes: rateLimitLockoutMinutes,
       })
       showToast('Rate limiting settings saved')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const save2FASettings = async () => {
+    setIsSaving(true)
+    try {
+      await settingsApi.updateSecuritySettings({ force_2fa_on_signup: force2FAOnSignup })
+      showToast('2FA settings saved')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
@@ -613,6 +638,33 @@ export default function SettingsPage() {
               )}
 
               <Button onClick={saveRateLimiting} disabled={isSaving}>
+                <Save className="mr-2 h-4 w-4" />
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Two-Factor Authentication</CardTitle>
+              <CardDescription>
+                Configure organization-wide 2FA requirements
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Require 2FA on First Login</Label>
+                  <p className="text-sm text-muted-foreground">
+                    New users must set up 2FA when they first log in. Users can still enable 2FA optionally if this is disabled.
+                  </p>
+                </div>
+                <Switch
+                  checked={force2FAOnSignup}
+                  onCheckedChange={setForce2FAOnSignup}
+                />
+              </div>
+              <Button onClick={save2FASettings} disabled={isSaving}>
                 <Save className="mr-2 h-4 w-4" />
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>

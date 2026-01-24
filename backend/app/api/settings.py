@@ -588,6 +588,48 @@ async def set_app_url(
     return {"success": True}
 
 
+# Security settings models
+class SecuritySettings(BaseModel):
+    force_2fa_on_signup: bool = False
+
+
+class SecuritySettingsResponse(BaseModel):
+    force_2fa_on_signup: bool
+
+
+# Security settings endpoints
+@router.get("/security", response_model=SecuritySettingsResponse)
+async def get_security_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Get security settings."""
+    security = await get_setting(db, "security")
+    return SecuritySettingsResponse(
+        force_2fa_on_signup=security.get("force_2fa_on_signup", False) if security else False
+    )
+
+
+@router.put("/security", response_model=SecuritySettingsResponse)
+async def update_security_settings(
+    data: SecuritySettings,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    """Update security settings."""
+    security = await get_setting(db, "security") or {}
+    security["force_2fa_on_signup"] = data.force_2fa_on_signup
+    await set_setting(db, "security", security)
+    await audit_log(
+        db, current_user.id, "settings.update", "settings", "security",
+        {"force_2fa_on_signup": data.force_2fa_on_signup},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+    return SecuritySettingsResponse(force_2fa_on_signup=data.force_2fa_on_signup)
+
+
 # GeoIP endpoints
 @router.get("/geoip", response_model=GeoIPSettings)
 async def get_geoip_settings(

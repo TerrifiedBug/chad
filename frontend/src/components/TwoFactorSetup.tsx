@@ -10,15 +10,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from '@/components/ui/alert'
-import { Loader2, Shield, Copy, Check } from 'lucide-react'
+import { Loader2, Shield, Copy, Check, AlertTriangle } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { authApi } from '@/lib/api'
-import { useToast } from '@/hooks/use-toast'
+import { useToast } from '@/components/ui/toast-provider'
 
 interface TwoFactorSetupProps {
   open: boolean
@@ -29,7 +24,7 @@ interface TwoFactorSetupProps {
 type SetupStep = 'initial' | 'scan' | 'verify' | 'backup'
 
 export function TwoFactorSetup({ open, onOpenChange, onComplete }: TwoFactorSetupProps) {
-  const { toast } = useToast()
+  const { showToast } = useToast()
   const [step, setStep] = useState<SetupStep>('initial')
   const [loading, setLoading] = useState(false)
   const [qrUri, setQrUri] = useState('')
@@ -47,11 +42,7 @@ export function TwoFactorSetup({ open, onOpenChange, onComplete }: TwoFactorSetu
       setSecret(response.secret)
       setStep('scan')
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to start 2FA setup',
-        variant: 'destructive',
-      })
+      showToast(error instanceof Error ? error.message : 'Failed to start 2FA setup', 'error')
     } finally {
       setLoading(false)
     }
@@ -66,11 +57,7 @@ export function TwoFactorSetup({ open, onOpenChange, onComplete }: TwoFactorSetu
       setBackupCodes(response.backup_codes)
       setStep('backup')
     } catch {
-      toast({
-        title: 'Invalid Code',
-        description: 'Please check your authenticator app and try again.',
-        variant: 'destructive',
-      })
+      showToast('Invalid code. Please check your authenticator app and try again.', 'error')
     } finally {
       setLoading(false)
     }
@@ -172,12 +159,15 @@ export function TwoFactorSetup({ open, onOpenChange, onComplete }: TwoFactorSetu
 
         {step === 'backup' && (
           <div className="space-y-4">
-            <Alert>
-              <AlertTitle>Important!</AlertTitle>
-              <AlertDescription>
-                These backup codes can be used to access your account if you lose your authenticator. Each code can only be used once. Save them somewhere safe!
-              </AlertDescription>
-            </Alert>
+            <div className="flex gap-3 p-4 rounded-lg border border-yellow-500/50 bg-yellow-500/10">
+              <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-sm">Important!</p>
+                <p className="text-sm text-muted-foreground">
+                  These backup codes can be used to access your account if you lose your authenticator. Each code can only be used once. Save them somewhere safe!
+                </p>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-2 p-4 bg-muted rounded-lg font-mono text-sm">
               {backupCodes.map((code, i) => (
                 <div key={i} className="text-center">{code}</div>

@@ -15,11 +15,11 @@ import {
 import { Shield, ShieldCheck, ShieldOff, User, Loader2 } from 'lucide-react'
 import { TwoFactorSetup } from '@/components/TwoFactorSetup'
 import { authApi } from '@/lib/api'
-import { useToast } from '@/hooks/use-toast'
+import { useToast } from '@/components/ui/toast-provider'
 
 export default function AccountPage() {
   const { user, refreshUser } = useAuth()
-  const { toast } = useToast()
+  const { showToast } = useToast()
   const [showSetup, setShowSetup] = useState(false)
   const [showDisable, setShowDisable] = useState(false)
   const [disableCode, setDisableCode] = useState('')
@@ -27,10 +27,7 @@ export default function AccountPage() {
 
   const handle2FAComplete = async () => {
     await refreshUser()
-    toast({
-      title: 'Two-Factor Authentication Enabled',
-      description: 'Your account is now protected with 2FA.',
-    })
+    showToast('Two-Factor Authentication enabled', 'success')
   }
 
   const handleDisable2FA = async () => {
@@ -42,16 +39,9 @@ export default function AccountPage() {
       await refreshUser()
       setShowDisable(false)
       setDisableCode('')
-      toast({
-        title: 'Two-Factor Authentication Disabled',
-        description: '2FA has been removed from your account.',
-      })
+      showToast('Two-Factor Authentication disabled', 'success')
     } catch {
-      toast({
-        title: 'Failed to Disable 2FA',
-        description: 'Invalid code. Please try again.',
-        variant: 'destructive',
-      })
+      showToast('Invalid code. Please try again.', 'error')
     } finally {
       setDisabling(false)
     }
