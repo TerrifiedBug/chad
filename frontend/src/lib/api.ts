@@ -436,6 +436,20 @@ export const rulesApi = {
     api.post<RuleComment>(`/rules/${ruleId}/comments`, { content }),
   getVersion: (ruleId: string, versionNumber: number) =>
     api.get<RuleVersion>(`/rules/${ruleId}/versions/${versionNumber}`),
+  // Historical testing
+  testHistorical: async (ruleId: string, startDate: Date, endDate: Date, limit?: number) => {
+    return api.post<{
+      total_scanned: number
+      total_matches: number
+      matches: Array<{ _id: string; _index: string; _source: Record<string, unknown> }>
+      truncated: boolean
+      error?: string
+    }>(`/rules/${ruleId}/test-historical`, {
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
+      limit: limit || 500,
+    })
+  },
 }
 
 // Index Pattern types
