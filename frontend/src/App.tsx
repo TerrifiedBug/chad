@@ -22,6 +22,7 @@ import AuditLogPage from '@/pages/AuditLog'
 import HealthPage from '@/pages/Health'
 import FieldMappingsPage from '@/pages/FieldMappings'
 import AttackMatrixPage from '@/pages/AttackMatrix'
+import AccountPage from '@/pages/Account'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -180,6 +181,16 @@ function AppRoutes() {
             <Header />
             <main className="px-6 py-8">
               <ChangePasswordPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/account" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <AccountPage />
             </main>
           </div>
         </ProtectedRoute>

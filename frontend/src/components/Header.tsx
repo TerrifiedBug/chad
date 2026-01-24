@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, LogOut, Settings, Key, Lock } from 'lucide-react'
+import { ChevronDown, LogOut, Settings, Key, Lock, User } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Dashboard', exact: true },
@@ -91,6 +91,10 @@ export function Header() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/account')}>
+                  <User className="mr-2 h-4 w-4" />
+                  Account
+                </DropdownMenuItem>
                 {isAdmin && (
                   <DropdownMenuItem onClick={() => navigate('/settings')}>
                     <Settings className="mr-2 h-4 w-4" />
