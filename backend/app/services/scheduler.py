@@ -17,8 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings as app_settings
+from app.core.encryption import decrypt
 from app.models.setting import Setting
-from app.services.encryption import decrypt_value
 
 logger = logging.getLogger(__name__)
 
@@ -374,7 +374,7 @@ class SchedulerService:
                 return
 
             # Download/update the database
-            decrypted_key = decrypt_value(license_key)
+            decrypted_key = decrypt(license_key)
             result = await geoip_service.download_database(decrypted_key)
 
             if result["success"]:
