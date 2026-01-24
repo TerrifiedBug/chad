@@ -1,13 +1,16 @@
 # backend/app/api/sigmahq.py
+from datetime import UTC, datetime
 from typing import Annotated
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_admin
 from app.db.session import get_db
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion, SigmaHQType
+from app.models.setting import Setting
 from app.models.user import User
 from app.schemas.sigmahq import (
     SigmaHQCategoryTree,
@@ -46,12 +49,25 @@ async def get_status(
 @router.post("/sync", response_model=SigmaHQSyncResponse)
 async def sync_repo(
     _: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Sync (clone or pull) the SigmaHQ repository."""
     if sigmahq_service.is_repo_cloned():
         result = sigmahq_service.pull_repo()
     else:
         result = sigmahq_service.clone_repo()
+
+    # Update last_sync time in settings
+    if result.success:
+        setting_result = await db.execute(
+            select(Setting).where(Setting.key == "sigmahq_sync")
+        )
+        setting = setting_result.scalar_one_or_none()
+        if setting:
+            setting.value = {**setting.value, "last_sync": datetime.now(UTC).isoformat()}
+        else:
+            db.add(Setting(key="sigmahq_sync", value={"last_sync": datetime.now(UTC).isoformat()}))
+        await db.commit()
 
     return SigmaHQSyncResponse(
         success=result.success,
