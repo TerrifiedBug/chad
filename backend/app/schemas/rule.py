@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.rule import RuleSource, RuleStatus
 from app.schemas.index_pattern import IndexPatternResponse
@@ -149,3 +150,31 @@ class UnmappedFieldsError(BaseModel):
     message: str
     unmapped_fields: list[str]
     index_pattern_id: UUID
+
+
+# Historical testing schemas
+class HistoricalTestRequest(BaseModel):
+    """Request body for historical rule testing."""
+
+    start_date: datetime
+    end_date: datetime
+    limit: int = Field(default=500, ge=1, le=1000)
+
+
+class HistoricalTestMatch(BaseModel):
+    """A single match from historical testing."""
+
+    _id: str
+    _index: str
+    _source: dict[str, Any]
+
+
+class HistoricalTestResponse(BaseModel):
+    """Response for historical rule testing."""
+
+    total_scanned: int
+    total_matches: int
+    matches: list[dict[str, Any]]
+    truncated: bool
+    query_executed: dict[str, Any] | None = None
+    error: str | None = None

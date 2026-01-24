@@ -21,6 +21,8 @@ from app.models.user import User
 from app.schemas.bulk import BulkOperationRequest, BulkOperationResult
 from app.schemas.rule import (
     FieldMappingInfo,
+    HistoricalTestRequest,
+    HistoricalTestResponse,
     LogMatchResult,
     RuleCreate,
     RuleDeployResponse,
@@ -47,6 +49,7 @@ from app.services.audit import audit_log
 from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
+from app.services.rule_testing import run_historical_test
 from app.services.sigma import sigma_service
 from app.utils.request import get_client_ip
 
@@ -720,6 +723,81 @@ async def test_rule(
             os_client.indices.delete(index=test_index, ignore=[404])
         except Exception:
             pass  # Best effort cleanup
+
+
+@router.post("/{rule_id}/test-historical", response_model=HistoricalTestResponse)
+async def test_rule_historical(
+    rule_id: UUID,
+    request: HistoricalTestRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Test a rule against historical log data.
+
+    This is a "dry-run" feature that shows what would have matched
+    without creating any alerts. Useful for:
+    - Validating a new rule before deployment
+    - Understanding rule match rates
+    - Identifying false positives
+
+    The query is executed against the rule's associated index pattern
+    with a time range filter applied.
+
+    Args:
+        rule_id: ID of the rule to test
+        start_date: Start of time range to search
+        end_date: End of time range to search
+        limit: Maximum matches to return (1-1000, default 500)
+
+    Returns:
+        Total documents scanned, total matches, sample match documents,
+        and whether results were truncated.
+    """
+    # Validate that end_date > start_date
+    if request.end_date <= request.start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="end_date must be greater than start_date",
+        )
+
+    result = await run_historical_test(
+        db=db,
+        os_client=os_client,
+        rule_id=rule_id,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        limit=request.limit,
+    )
+
+    # If there's an error from the service, return it as HTTP error
+    if result.error:
+        # Determine appropriate status code based on error type
+        if "not found" in result.error.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result.error,
+            )
+        elif "translate" in result.error.lower() or "no query" in result.error.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.error,
+            )
+        else:
+            # OpenSearch errors or other issues
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.error,
+            )
+
+    return HistoricalTestResponse(
+        total_scanned=result.total_scanned,
+        total_matches=result.total_matches,
+        matches=result.matches,
+        truncated=result.truncated,
+        query_executed=result.query_executed,
+    )
 
 
 @router.post("/{rule_id}/deploy", response_model=RuleDeployResponse, responses={400: {"model": UnmappedFieldsError}})
