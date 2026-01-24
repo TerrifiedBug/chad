@@ -40,3 +40,6 @@ htmlcov/
 
 # Docker
 *.log
+
+# Load test results
+load-tests/results/*.json
