@@ -90,27 +90,19 @@ jobs:
           cd frontend
           npm run build
 
-  # Load testing validates k6 scripts (dry-run mode)
-  load-test:
+  # Validates k6 scripts compile correctly (no actual HTTP requests)
+  validate-k6-scripts:
     runs-on: ubuntu-latest
     needs: [test-backend, test-frontend]
-    continue-on-error: true  # Don't fail the build if load tests fail
+    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run quick load test
+      - name: Validate k6 scripts
         env:
           WORKSPACE: ${{ github.workspace }}
         run: |
-          # Run k6 directly without backend (smoke test the script syntax)
           docker run --rm \
             -v "${WORKSPACE}/load-tests/scripts:/scripts" \
-            grafana/k6 run /scripts/log-ingestion.js \
-            --duration 5s --vus 1 --dry-run || echo "Load test script validated"
-
-      - name: Upload test scripts
-        uses: actions/upload-artifact@v4
-        with:
-          name: load-test-scripts
-          path: load-tests/scripts/
+            grafana/k6 run /scripts/log-ingestion.js --dry-run
