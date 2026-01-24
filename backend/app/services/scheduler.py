@@ -207,7 +207,7 @@ class SchedulerService:
                 # Send sync failure notification
                 await send_system_notification(
                     session,
-                    "sync_failure",
+                    "sync_failed",
                     {
                         "sync_type": "attack",
                         "error": result.error or result.message,
@@ -222,7 +222,7 @@ class SchedulerService:
             try:
                 await send_system_notification(
                     session,
-                    "sync_failure",
+                    "sync_failed",
                     {"sync_type": "attack", "error": str(e)},
                 )
             except Exception:
@@ -278,7 +278,7 @@ class SchedulerService:
                 if hasattr(result, "new_rules") and result.new_rules > 0:
                     await send_system_notification(
                         session,
-                        "new_rules_available",
+                        "sigmahq_new_rules",
                         {
                             "count": result.new_rules,
                             "source": "sigmahq",
@@ -288,7 +288,7 @@ class SchedulerService:
                 # Send sync failure notification
                 await send_system_notification(
                     session,
-                    "sync_failure",
+                    "sync_failed",
                     {
                         "sync_type": "sigmahq",
                         "error": result.error if hasattr(result, "error") else result.message,
@@ -303,7 +303,7 @@ class SchedulerService:
             try:
                 await send_system_notification(
                     session,
-                    "sync_failure",
+                    "sync_failed",
                     {"sync_type": "sigmahq", "error": str(e)},
                 )
             except Exception:

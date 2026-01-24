@@ -223,7 +223,7 @@ async def login(
             # Send lockout notification
             await send_system_notification(
                 db,
-                "user_lockout",
+                "user_locked",
                 {"email": email, "ip_address": ip_address},
             )
 
@@ -262,7 +262,7 @@ async def login(
             # Send lockout notification
             await send_system_notification(
                 db,
-                "user_lockout",
+                "user_locked",
                 {"email": email, "ip_address": ip_address},
             )
 

@@ -282,7 +282,7 @@ def _build_system_description(payload: dict) -> str:
     event = payload.get("event", "")
     parts = []
 
-    if event == "user_lockout":
+    if event == "user_locked":
         parts.append(f"User `{payload.get('email', 'unknown')}` has been locked out")
         if payload.get("ip_address"):
             parts.append(f"IP: {payload['ip_address']}")
@@ -294,9 +294,9 @@ def _build_system_description(payload: dict) -> str:
         parts.append(f"ATT&CK sync completed: {payload.get('message', '')}")
         if payload.get("techniques_updated"):
             parts.append(f"Techniques updated: {payload['techniques_updated']}")
-    elif event == "new_rules_available":
+    elif event == "sigmahq_new_rules":
         parts.append(f"New rules available: {payload.get('count', 0)} from {payload.get('source', 'unknown')}")
-    elif event == "sync_failure":
+    elif event == "sync_failed":
         parts.append(f"Sync failed: {payload.get('sync_type', 'unknown')}")
         if payload.get("error"):
             parts.append(f"Error: {payload['error']}")
