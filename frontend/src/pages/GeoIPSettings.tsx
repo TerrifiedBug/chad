@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { geoipApi, GeoIPSettings as GeoIPSettingsType } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Check, Download, Globe, Loader2 } from 'lucide-react'
+import { ArrowRight, Check, Download, Globe, Loader2 } from 'lucide-react'
 
 export default function GeoIPSettings() {
   const { showToast } = useToast()
@@ -222,6 +223,25 @@ export default function GeoIPSettings() {
           </div>
         </CardContent>
       </Card>
+
+      {settings.database_available && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Field Configuration</CardTitle>
+            <CardDescription>
+              Configure which IP fields to enrich with geographic data for each index pattern
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link to="/index-patterns">
+              <Button variant="outline">
+                Configure Index Pattern Fields
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       {settings.database_available && (
         <Card>
