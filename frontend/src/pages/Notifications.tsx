@@ -128,6 +128,85 @@ export default function Notifications() {
   const [savingSystem, setSavingSystem] = useState<string | null>(null)
   const [savingAlert, setSavingAlert] = useState<string | null>(null)
 
+  // Generate summary text for a webhook
+  const getWebhookSummary = (webhookId: string): string => {
+    const parts: string[] = []
+
+    // Count system events
+    const systemEventCount = settings?.system_events.filter(
+      e => e.webhook_ids.includes(webhookId)
+    ).length ?? 0
+    if (systemEventCount > 0) {
+      parts.push(`${systemEventCount} system event${systemEventCount > 1 ? 's' : ''}`)
+    }
+
+    // Get alert severities
+    const alertConfig = settings?.alert_notifications.find(a => a.webhook_id === webhookId)
+    if (alertConfig && alertConfig.severities.length > 0) {
+      const severityLabels = alertConfig.severities
+        .map(s => ALERT_SEVERITIES.find(sev => sev.id === s)?.label)
+        .filter(Boolean)
+      parts.push(severityLabels.join(', '))
+    }
+
+    return parts.length > 0 ? parts.join(' · ') : 'No notifications configured'
+  }
+
+  const toggleExpanded = (webhookId: string) => {
+    setExpandedWebhooks(prev => {
+      const next = new Set(prev)
+      if (next.has(webhookId)) {
+        next.delete(webhookId)
+      } else {
+        next.add(webhookId)
+      }
+      return next
+    })
+  }
+
+  const handleToggleEnabled = async (webhook: Webhook) => {
+    try {
+      const updated = await webhooksApi.update(webhook.id, { enabled: !webhook.enabled })
+      setWebhooks(webhooks.map(w => w.id === updated.id ? updated : w))
+      showToast(updated.enabled ? 'Webhook enabled' : 'Webhook disabled')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update webhook', 'error')
+    }
+  }
+
+  const handleTest = async (webhook: Webhook) => {
+    setTestingId(webhook.id)
+    try {
+      const result = await webhooksApi.test(webhook.id)
+      if (result.success) {
+        showToast('Test notification sent successfully')
+      } else {
+        showToast(result.error || 'Test failed', 'error')
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Test failed', 'error')
+    } finally {
+      setTestingId(null)
+    }
+  }
+
+  const openEditDialog = (webhook: Webhook) => {
+    setEditingWebhook(webhook)
+    setFormData({
+      name: webhook.name,
+      url: webhook.url,
+      auth_header: '',
+      provider: webhook.provider,
+      enabled: webhook.enabled,
+    })
+    setDialogOpen(true)
+  }
+
+  const openDeleteModal = (webhook: Webhook) => {
+    setWebhookToDelete(webhook)
+    setDeleteModalOpen(true)
+  }
+
   useEffect(() => {
     loadData()
   }, [])
@@ -170,8 +249,106 @@ export default function Notifications() {
         </Button>
       </div>
 
-      {/* Placeholder - webhook cards will be added in Task 3 */}
-      <p className="text-muted-foreground">Webhook cards will go here</p>
+      {webhooks.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <ExternalLink className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">No notification webhooks configured</h3>
+            <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
+              Add webhook endpoints to receive alerts and system notifications via Discord, Slack, or custom HTTP endpoints.
+            </p>
+            <Button onClick={() => { setEditingWebhook(null); setFormData(emptyFormData); setDialogOpen(true) }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Webhook
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {webhooks.map(webhook => (
+            <Collapsible
+              key={webhook.id}
+              open={expandedWebhooks.has(webhook.id)}
+              onOpenChange={() => toggleExpanded(webhook.id)}
+            >
+              <Card className={webhook.enabled ? '' : 'opacity-60'}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CollapsibleTrigger asChild>
+                      <button className="flex items-center gap-3 text-left hover:bg-muted/50 -ml-2 pl-2 pr-4 py-1 rounded-md transition-colors">
+                        {expandedWebhooks.has(webhook.id) ? (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{webhook.name}</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {providerLabels[webhook.provider]}
+                            </Badge>
+                            {!webhook.enabled && (
+                              <Badge variant="outline" className="text-xs text-muted-foreground">
+                                Disabled
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-0.5">
+                            {getWebhookSummary(webhook.id)}
+                          </p>
+                        </div>
+                      </button>
+                    </CollapsibleTrigger>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={webhook.enabled}
+                        onCheckedChange={() => handleToggleEnabled(webhook)}
+                        aria-label={webhook.enabled ? 'Disable webhook' : 'Enable webhook'}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTest(webhook)}
+                        disabled={testingId === webhook.id || !webhook.enabled}
+                      >
+                        {testingId === webhook.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                        <span className="ml-1">Test</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEditDialog(webhook)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                        <span className="ml-1">Edit</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openDeleteModal(webhook)}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CollapsibleContent>
+                  <CardContent className="pt-4 border-t">
+                    {/* System Events and Alert Severities sections - next task */}
+                    <p className="text-muted-foreground py-4">Configuration sections go here</p>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
