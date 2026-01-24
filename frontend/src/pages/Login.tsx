@@ -128,13 +128,14 @@ export default function LoginPage() {
                 <Label htmlFor="2fa-code">Verification Code</Label>
                 <Input
                   id="2fa-code"
+                  name="totp"
                   type="text"
                   inputMode="numeric"
                   maxLength={8}
                   placeholder="000000"
                   value={twoFactorCode}
                   onChange={(e) => setTwoFactorCode(e.target.value.toUpperCase())}
-                  className="text-center text-2xl tracking-widest"
+                  className="text-center text-2xl tracking-[0.5em] placeholder:tracking-normal"
                   autoComplete="one-time-code"
                   autoFocus
                 />

@@ -556,6 +556,10 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="security" className="mt-4 space-y-6" data-form-type="other" data-lpignore="true" data-1p-ignore="true">
+          {/* Hidden autofill trap to prevent password managers from offering TOTP */}
+          <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', opacity: 0 }}>
+            <input type="text" name="fake-otp" tabIndex={-1} autoComplete="off" />
+          </div>
           <Card>
             <CardHeader>
               <CardTitle>Session Settings</CardTitle>
