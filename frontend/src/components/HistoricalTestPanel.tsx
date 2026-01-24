@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { DateRange } from 'react-day-picker'
 import { format, subDays } from 'date-fns'
-import { X, Play, ChevronDown, ChevronUp, AlertCircle, Clock, Database, FileSearch } from 'lucide-react'
+import { X, Play, ChevronDown, ChevronUp, AlertCircle, Clock, Database, FileSearch, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -86,6 +86,47 @@ export function HistoricalTestPanel({ ruleId, onClose }: HistoricalTestPanelProp
       newExpanded.add(id)
     }
     setExpandedRows(newExpanded)
+  }
+
+  const exportToCsv = () => {
+    if (!results || results.matches.length === 0) return
+
+    // Build CSV header
+    const allKeys = new Set<string>()
+    results.matches.forEach((match) => {
+      Object.keys(match._source).forEach((key) => allKeys.add(key))
+    })
+    const headers = ['_id', '_index', ...Array.from(allKeys).sort()]
+
+    // Build CSV rows
+    const rows = results.matches.map((match) => {
+      const row = [match._id, match._index]
+      Array.from(allKeys).sort().forEach((key) => {
+        const value = match._source[key]
+        if (value === undefined || value === null) {
+          row.push('')
+        } else if (typeof value === 'object') {
+          row.push(JSON.stringify(value).replace(/"/g, '""'))
+        } else {
+          row.push(String(value).replace(/"/g, '""'))
+        }
+      })
+      return row.map((cell) => `"${cell}"`).join(',')
+    })
+
+    // Create CSV content
+    const csvContent = [headers.map((h) => `"${h}"`).join(','), ...rows].join('\n')
+
+    // Download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', `historical-test-results-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   const getTimestampFromSource = (source: Record<string, unknown>): string | null => {
@@ -185,6 +226,17 @@ export function HistoricalTestPanel({ ruleId, onClose }: HistoricalTestPanelProp
         {/* Results Section */}
         {results && (
           <div className="space-y-4 pt-4 border-t">
+            {/* Results Header with Export Button */}
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium">Test Results</h4>
+              {results.matches.length > 0 && (
+                <Button variant="outline" size="sm" onClick={exportToCsv}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+              )}
+            </div>
+
             {/* Stats */}
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center p-3 bg-muted rounded-md">
