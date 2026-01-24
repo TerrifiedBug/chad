@@ -25,6 +25,7 @@ from app.db.session import get_db
 from app.models.index_pattern import IndexPattern
 from app.models.rule_exception import RuleException
 from app.services.alerts import AlertService, should_suppress_alert
+from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
 
@@ -117,8 +118,8 @@ async def receive_logs(
     Returns:
         Summary of matches found
     """
-    # Validate the auth token first
-    await validate_log_shipping_token(index_suffix, authorization, db)
+    # Validate the auth token first and get the index pattern for enrichment config
+    index_pattern = await validate_log_shipping_token(index_suffix, authorization, db)
 
     if os_client is None:
         raise HTTPException(
@@ -178,6 +179,9 @@ async def receive_logs(
             if should_suppress_alert(log, rule_exceptions_cache[rule_id]):
                 continue
 
+            # Enrich log with GeoIP data if configured
+            enriched_log = await enrich_alert(db, log, index_pattern)
+
             # Create alert
             alert = alert_service.create_alert(
                 alerts_index=alerts_index,
@@ -185,7 +189,7 @@ async def receive_logs(
                 rule_title=match["rule_title"],
                 severity=match["severity"],
                 tags=match.get("tags", []),
-                log_document=log,
+                log_document=enriched_log,
             )
             alerts_created.append(alert)
             total_matches += 1
