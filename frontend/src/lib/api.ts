@@ -964,6 +964,14 @@ export type HealthHistoryPoint = {
   alerts_generated: number
 }
 
+export type HealthSettings = {
+  no_data_minutes: number
+  error_rate_percent: number
+  latency_ms: number
+  queue_warning: number
+  queue_critical: number
+}
+
 // Health API
 export const healthApi = {
   listIndices: () =>
@@ -972,6 +980,10 @@ export const healthApi = {
     api.get<IndexHealth>(`/health/indices/${id}?hours=${hours}`),
   getHistory: (id: string, hours = 24) =>
     api.get<HealthHistoryPoint[]>(`/health/indices/${id}/history?hours=${hours}`),
+  getSettings: () =>
+    api.get<HealthSettings>('/health/settings'),
+  updateSettings: (data: Partial<HealthSettings>) =>
+    api.put<HealthSettings>('/health/settings', data),
 }
 
 // Notification settings types

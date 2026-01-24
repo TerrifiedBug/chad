@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { healthApi, IndexHealth, HealthStatus } from '@/lib/api'
+import { healthApi, IndexHealth, HealthStatus, HealthSettings } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, Settings, ChevronDown, ChevronUp, Save, Loader2 } from 'lucide-react'
 
 const statusColors: Record<HealthStatus, string> = {
   healthy: 'text-green-600',
@@ -37,8 +40,16 @@ export default function HealthPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
+  // Settings state
+  const [showSettings, setShowSettings] = useState(false)
+  const [settings, setSettings] = useState<HealthSettings | null>(null)
+  const [settingsForm, setSettingsForm] = useState<HealthSettings | null>(null)
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [settingsError, setSettingsError] = useState('')
+
   useEffect(() => {
     loadHealth()
+    loadSettings()
     // Refresh every 30 seconds
     const interval = setInterval(loadHealth, 30000)
     return () => clearInterval(interval)
@@ -55,6 +66,40 @@ export default function HealthPage() {
       setIsLoading(false)
     }
   }
+
+  const loadSettings = async () => {
+    try {
+      const data = await healthApi.getSettings()
+      setSettings(data)
+      setSettingsForm(data)
+    } catch {
+      // Settings may require admin - silently ignore
+    }
+  }
+
+  const handleSaveSettings = async () => {
+    if (!settingsForm) return
+
+    setIsSavingSettings(true)
+    setSettingsError('')
+    try {
+      const updated = await healthApi.updateSettings(settingsForm)
+      setSettings(updated)
+      setSettingsForm(updated)
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to save settings')
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }
+
+  const hasSettingsChanged = settings && settingsForm && (
+    settings.no_data_minutes !== settingsForm.no_data_minutes ||
+    settings.error_rate_percent !== settingsForm.error_rate_percent ||
+    settings.latency_ms !== settingsForm.latency_ms ||
+    settings.queue_warning !== settingsForm.queue_warning ||
+    settings.queue_critical !== settingsForm.queue_critical
+  )
 
   // Calculate overall status
   const overallStatus: HealthStatus = health.reduce((worst, h) => {
@@ -101,6 +146,141 @@ export default function HealthPage() {
           <AlertCircle className="h-4 w-4" />
           {error}
         </div>
+      )}
+
+      {/* Settings Panel */}
+      {settings && settingsForm && (
+        <Card>
+          <button
+            type="button"
+            className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+            onClick={() => setShowSettings(!showSettings)}
+          >
+            <div className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              <span className="font-medium">Global Alerting Thresholds</span>
+            </div>
+            {showSettings ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </button>
+
+          {showSettings && (
+            <CardContent className="pt-0 border-t">
+              <p className="text-sm text-muted-foreground mb-4">
+                These thresholds are used by default for all index patterns unless overridden in the index pattern settings.
+              </p>
+
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="no-data-minutes" className="text-sm">No Data (min)</Label>
+                  <Input
+                    id="no-data-minutes"
+                    type="number"
+                    min="1"
+                    value={settingsForm.no_data_minutes}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        no_data_minutes: parseInt(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="error-rate" className="text-sm">Error Rate (%)</Label>
+                  <Input
+                    id="error-rate"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={settingsForm.error_rate_percent}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        error_rate_percent: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="latency-ms" className="text-sm">Latency (ms)</Label>
+                  <Input
+                    id="latency-ms"
+                    type="number"
+                    min="1"
+                    value={settingsForm.latency_ms}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        latency_ms: parseInt(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="queue-warning" className="text-sm">Queue Warning</Label>
+                  <Input
+                    id="queue-warning"
+                    type="number"
+                    min="1"
+                    value={settingsForm.queue_warning}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        queue_warning: parseInt(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="queue-critical" className="text-sm">Queue Critical</Label>
+                  <Input
+                    id="queue-critical"
+                    type="number"
+                    min="1"
+                    value={settingsForm.queue_critical}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        queue_critical: parseInt(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              {settingsError && (
+                <div className="mt-4 text-sm text-destructive">{settingsError}</div>
+              )}
+
+              <div className="mt-4 flex justify-end">
+                <Button
+                  onClick={handleSaveSettings}
+                  disabled={!hasSettingsChanged || isSavingSettings}
+                >
+                  {isSavingSettings ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          )}
+        </Card>
       )}
 
       {/* Summary Cards */}
