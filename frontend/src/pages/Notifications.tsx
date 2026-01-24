@@ -391,6 +391,69 @@ export default function Notifications() {
     </div>
   )
 
+  const handleSave = async () => {
+    if (!formData.name.trim()) {
+      showToast('Name is required', 'error')
+      return
+    }
+    if (!formData.url.trim()) {
+      showToast('URL is required', 'error')
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      if (editingWebhook) {
+        const updateData: Partial<{ name: string; url: string; auth_header: string; provider: WebhookProvider; enabled: boolean }> = {
+          name: formData.name,
+          url: formData.url,
+          provider: formData.provider,
+          enabled: formData.enabled,
+        }
+        if (formData.auth_header) {
+          updateData.auth_header = formData.auth_header
+        }
+        const updated = await webhooksApi.update(editingWebhook.id, updateData)
+        setWebhooks(webhooks.map(w => w.id === updated.id ? updated : w))
+        showToast('Webhook updated')
+      } else {
+        const created = await webhooksApi.create({
+          name: formData.name,
+          url: formData.url,
+          auth_header: formData.auth_header || undefined,
+          provider: formData.provider,
+          enabled: formData.enabled,
+        })
+        setWebhooks([...webhooks, created])
+        // Auto-expand new webhook
+        setExpandedWebhooks(prev => new Set([...prev, created.id]))
+        showToast('Webhook created')
+      }
+      setDialogOpen(false)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save webhook', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!webhookToDelete) return
+
+    setIsDeleting(true)
+    try {
+      await webhooksApi.delete(webhookToDelete.id)
+      setWebhooks(webhooks.filter(w => w.id !== webhookToDelete.id))
+      showToast('Webhook deleted')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete webhook', 'error')
+    } finally {
+      setIsDeleting(false)
+      setDeleteModalOpen(false)
+      setWebhookToDelete(null)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -516,6 +579,114 @@ export default function Notifications() {
           ))}
         </div>
       )}
+
+      {/* Add/Edit Webhook Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingWebhook ? 'Edit Webhook' : 'Add Webhook'}
+            </DialogTitle>
+            <DialogDescription>
+              {editingWebhook
+                ? 'Update the webhook configuration.'
+                : 'Configure a new webhook endpoint to receive notifications.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="webhook-name">Name</Label>
+              <Input
+                id="webhook-name"
+                value={formData.name}
+                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Discord Alerts"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="webhook-provider">Provider</Label>
+              <Select
+                value={formData.provider}
+                onValueChange={(value: WebhookProvider) => setFormData({ ...formData, provider: value })}
+              >
+                <SelectTrigger id="webhook-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="discord">Discord</SelectItem>
+                  <SelectItem value="slack">Slack</SelectItem>
+                  <SelectItem value="generic">Generic (Raw JSON)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Formats payloads for the selected platform
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="webhook-url">Webhook URL</Label>
+              <Input
+                id="webhook-url"
+                value={formData.url}
+                onChange={e => setFormData({ ...formData, url: e.target.value })}
+                placeholder="https://discord.com/api/webhooks/..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="webhook-auth">Authorization Header (optional)</Label>
+              <Input
+                id="webhook-auth"
+                type="password"
+                value={formData.auth_header}
+                onChange={e => setFormData({ ...formData, auth_header: e.target.value })}
+                placeholder={editingWebhook?.has_auth ? 'Enter new value to change' : 'Bearer token or API key'}
+              />
+              <p className="text-xs text-muted-foreground">
+                {editingWebhook?.has_auth ? 'Leave blank to keep existing' : 'Sent as Authorization header'}
+              </p>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Enabled</Label>
+                <p className="text-xs text-muted-foreground">
+                  Receive notifications when enabled
+                </p>
+              </div>
+              <Switch
+                checked={formData.enabled}
+                onCheckedChange={enabled => setFormData({ ...formData, enabled })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : editingWebhook ? (
+                'Update'
+              ) : (
+                'Create'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        open={deleteModalOpen}
+        onOpenChange={setDeleteModalOpen}
+        title="Delete Webhook"
+        description="Are you sure you want to delete this webhook? This action cannot be undone."
+        itemName={webhookToDelete?.name}
+        onConfirm={handleDelete}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }
