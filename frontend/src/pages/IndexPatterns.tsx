@@ -104,10 +104,10 @@ export default function IndexPatternsPage() {
   const loadTiSources = async () => {
     try {
       const status = await tiApi.listSources()
-      // Get sources that have API keys configured
-      const configuredSources = (Object.keys(TI_SOURCE_INFO) as TISourceType[]).filter(
-        source => status.sources[source]?.has_api_key
-      )
+      // Get sources that have API keys configured (sources is an array)
+      const configuredSources = status.sources
+        .filter(s => s.has_api_key)
+        .map(s => s.source_type as TISourceType)
       setAvailableTiSources(configuredSources)
     } catch {
       // If TI sources fail to load, continue without them
