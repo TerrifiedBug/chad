@@ -45,6 +45,7 @@ import {
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
+import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -1354,6 +1355,13 @@ export default function RuleEditorPage() {
                 </CardContent>
               )}
             </Card>
+          )}
+
+          {/* Historical Test - Only show for existing rules with index pattern */}
+          {!isNew && indexPatternId && (
+            <HistoricalTestPanel
+              ruleId={id!}
+            />
           )}
         </div>
       </div>
