@@ -6,10 +6,12 @@ from app.services.ti.base import (
     TILookupResult,
     TIRiskLevel,
 )
+from app.services.ti.virustotal import VirusTotalClient
 
 __all__ = [
     "TIClient",
     "TIIndicatorType",
     "TILookupResult",
     "TIRiskLevel",
+    "VirusTotalClient",
 ]
