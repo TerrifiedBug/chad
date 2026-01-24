@@ -569,6 +569,7 @@ export default function SettingsPage() {
                 <Input
                   id="session-timeout"
                   type="number"
+                  autoComplete="off"
                   value={sessionTimeout}
                   onChange={(e) =>
                     setSessionTimeout(parseInt(e.target.value) || 480)
@@ -616,6 +617,7 @@ export default function SettingsPage() {
                     <Input
                       id="rate-limit-max-attempts"
                       type="number"
+                      autoComplete="off"
                       min={1}
                       max={20}
                       value={rateLimitMaxAttempts}
@@ -631,6 +633,7 @@ export default function SettingsPage() {
                     <Input
                       id="rate-limit-lockout-minutes"
                       type="number"
+                      autoComplete="off"
                       min={1}
                       max={1440}
                       value={rateLimitLockoutMinutes}

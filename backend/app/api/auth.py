@@ -386,7 +386,10 @@ async def change_password(
     current_user.password_hash = get_password_hash(new_password)
     current_user.must_change_password = False
     await db.commit()
-    await audit_log(db, current_user.id, "user.password_change", "user", str(current_user.id), {})
+    await audit_log(
+        db, current_user.id, "user.password_change", "user",
+        str(current_user.id), {}, ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     return {"message": "Password changed successfully"}
