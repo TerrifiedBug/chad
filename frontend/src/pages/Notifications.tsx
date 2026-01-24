@@ -246,6 +246,60 @@ export default function Notifications() {
     }
   }
 
+  // Get alert notification config for a webhook
+  const getAlertConfig = (webhookId: string) => {
+    return settings?.alert_notifications.find(a => a.webhook_id === webhookId)
+  }
+
+  // Check if a severity is enabled for a webhook
+  const isSeverityEnabled = (webhookId: string, severity: string): boolean => {
+    const config = getAlertConfig(webhookId)
+    return config?.severities.includes(severity) ?? false
+  }
+
+  // Toggle severity for a webhook
+  const toggleSeverity = async (webhookId: string, severity: string) => {
+    if (!settings) return
+
+    setSavingAlert(`${webhookId}-${severity}`)
+    try {
+      const config = getAlertConfig(webhookId)
+      const currentSeverities = config?.severities ?? []
+      const newSeverities = currentSeverities.includes(severity)
+        ? currentSeverities.filter(s => s !== severity)
+        : [...currentSeverities, severity]
+
+      const enabled = newSeverities.length > 0
+      await notificationsApi.updateAlert(webhookId, newSeverities, enabled)
+
+      setSettings(prev => {
+        if (!prev) return prev
+        const existingIndex = prev.alert_notifications.findIndex(a => a.webhook_id === webhookId)
+        const webhook = webhooks.find(w => w.id === webhookId)
+        const newAlertNotifications = [...prev.alert_notifications]
+        if (existingIndex >= 0) {
+          newAlertNotifications[existingIndex] = {
+            ...newAlertNotifications[existingIndex],
+            severities: newSeverities,
+            enabled,
+          }
+        } else {
+          newAlertNotifications.push({
+            webhook_id: webhookId,
+            webhook_name: webhook?.name ?? 'Unknown',
+            severities: newSeverities,
+            enabled,
+          })
+        }
+        return { ...prev, alert_notifications: newAlertNotifications }
+      })
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update', 'error')
+    } finally {
+      setSavingAlert(null)
+    }
+  }
+
   useEffect(() => {
     loadData()
   }, [])
@@ -293,6 +347,47 @@ export default function Notifications() {
           </div>
         </div>
       ))}
+    </div>
+  )
+
+  const AlertSeveritiesSection = ({ webhookId }: { webhookId: string }) => (
+    <div className="space-y-4">
+      <div>
+        <h4 className="font-medium text-sm">Alert Severities</h4>
+        <p className="text-xs text-muted-foreground mt-1">
+          Which alert severities should trigger notifications?
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {ALERT_SEVERITIES.map(severity => {
+          const isEnabled = isSeverityEnabled(webhookId, severity.id)
+          const isSaving = savingAlert === `${webhookId}-${severity.id}`
+          return (
+            <button
+              key={severity.id}
+              onClick={() => toggleSeverity(webhookId, severity.id)}
+              disabled={isSaving}
+              className={`
+                inline-flex items-center gap-2 px-3 py-1.5 rounded-md border transition-colors
+                ${isEnabled
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-background text-muted-foreground hover:bg-muted'
+                }
+                ${isSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+              `}
+            >
+              <span className={`w-2 h-2 rounded-full ${severity.color}`} />
+              <span className="text-sm">{severity.label}</span>
+              {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+            </button>
+          )
+        })}
+      </div>
+      {!getAlertConfig(webhookId)?.severities.length && (
+        <p className="text-xs text-muted-foreground">
+          No alert notifications enabled for this webhook.
+        </p>
+      )}
     </div>
   )
 
@@ -412,8 +507,7 @@ export default function Notifications() {
                   <CardContent className="pt-4 border-t">
                     <div className="grid md:grid-cols-2 gap-6">
                       <SystemEventsSection webhookId={webhook.id} />
-                      {/* Alert Severities section - next task */}
-                      <div className="text-muted-foreground">Alert severities go here</div>
+                      <AlertSeveritiesSection webhookId={webhook.id} />
                     </div>
                   </CardContent>
                 </CollapsibleContent>
