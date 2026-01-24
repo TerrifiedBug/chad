@@ -438,6 +438,11 @@ export type IndexPattern = {
   auth_token: string
   created_at: string
   updated_at: string
+  // Health alerting thresholds
+  health_no_data_minutes: number | null
+  health_error_rate_percent: number | null
+  health_latency_ms: number | null
+  health_alerting_enabled: boolean
 }
 
 export type IndexPatternCreate = {
@@ -445,6 +450,11 @@ export type IndexPatternCreate = {
   pattern: string
   percolator_index: string
   description?: string
+  // Health alerting thresholds
+  health_no_data_minutes?: number | null
+  health_error_rate_percent?: number | null
+  health_latency_ms?: number | null
+  health_alerting_enabled?: boolean
 }
 
 export type IndexPatternUpdate = Partial<IndexPatternCreate>

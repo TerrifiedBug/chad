@@ -23,7 +23,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp } from 'lucide-react'
 
 export default function IndexPatternsPage() {
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
@@ -43,6 +44,17 @@ export default function IndexPatternsPage() {
     percolator_index: '',
     description: '',
   })
+
+  // Health alerting form state
+  const [healthAlerting, setHealthAlerting] = useState({
+    enabled: true,
+    noDataMinutes: null as number | null,
+    errorRatePercent: null as number | null,
+    latencyMs: null as number | null,
+  })
+
+  // Toggle for health settings section
+  const [showHealthSettings, setShowHealthSettings] = useState(false)
 
   // Validation state
   const [isValidating, setIsValidating] = useState(false)
@@ -93,6 +105,13 @@ export default function IndexPatternsPage() {
       percolator_index: '',
       description: '',
     })
+    setHealthAlerting({
+      enabled: true,
+      noDataMinutes: null,
+      errorRatePercent: null,
+      latencyMs: null,
+    })
+    setShowHealthSettings(false)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(false)
     setSaveError('')
@@ -107,6 +126,18 @@ export default function IndexPatternsPage() {
       percolator_index: pattern.percolator_index,
       description: pattern.description || '',
     })
+    setHealthAlerting({
+      enabled: pattern.health_alerting_enabled,
+      noDataMinutes: pattern.health_no_data_minutes,
+      errorRatePercent: pattern.health_error_rate_percent,
+      latencyMs: pattern.health_latency_ms,
+    })
+    setShowHealthSettings(
+      pattern.health_no_data_minutes !== null ||
+      pattern.health_error_rate_percent !== null ||
+      pattern.health_latency_ms !== null ||
+      !pattern.health_alerting_enabled
+    )
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
     setSaveError('')
@@ -141,12 +172,20 @@ export default function IndexPatternsPage() {
     setIsSaving(true)
     setSaveError('')
     try {
+      const healthData = {
+        health_alerting_enabled: healthAlerting.enabled,
+        health_no_data_minutes: healthAlerting.noDataMinutes,
+        health_error_rate_percent: healthAlerting.errorRatePercent,
+        health_latency_ms: healthAlerting.latencyMs,
+      }
+
       if (editingPattern) {
         await indexPatternsApi.update(editingPattern.id, {
           name: formData.name,
           pattern: formData.pattern,
           percolator_index: formData.percolator_index,
           description: formData.description || undefined,
+          ...healthData,
         })
       } else {
         await indexPatternsApi.create({
@@ -154,6 +193,7 @@ export default function IndexPatternsPage() {
           pattern: formData.pattern,
           percolator_index: formData.percolator_index,
           description: formData.description || undefined,
+          ...healthData,
         })
       }
       setIsDialogOpen(false)
@@ -581,6 +621,100 @@ export default function IndexPatternsPage() {
                 }
                 placeholder="Windows event logs from Sysmon"
               />
+            </div>
+
+            {/* Health Alerting Section */}
+            <div className="border rounded-lg">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                onClick={() => setShowHealthSettings(!showHealthSettings)}
+              >
+                <span className="font-medium text-sm">Health Alerting</span>
+                {showHealthSettings ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
+
+              {showHealthSettings && (
+                <div className="p-3 pt-0 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="health-enabled" className="font-normal">Enable Health Alerting</Label>
+                      <p className="text-xs text-muted-foreground">Send alerts when thresholds are exceeded</p>
+                    </div>
+                    <Switch
+                      id="health-enabled"
+                      checked={healthAlerting.enabled}
+                      onCheckedChange={(checked) =>
+                        setHealthAlerting({ ...healthAlerting, enabled: checked })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Leave empty to use global defaults from the Health page.
+                    </p>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="no-data-minutes" className="text-xs">No Data (min)</Label>
+                        <Input
+                          id="no-data-minutes"
+                          type="number"
+                          min="1"
+                          placeholder="15"
+                          value={healthAlerting.noDataMinutes ?? ''}
+                          onChange={(e) =>
+                            setHealthAlerting({
+                              ...healthAlerting,
+                              noDataMinutes: e.target.value ? parseInt(e.target.value) : null,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="error-rate" className="text-xs">Error Rate (%)</Label>
+                        <Input
+                          id="error-rate"
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          placeholder="5.0"
+                          value={healthAlerting.errorRatePercent ?? ''}
+                          onChange={(e) =>
+                            setHealthAlerting({
+                              ...healthAlerting,
+                              errorRatePercent: e.target.value ? parseFloat(e.target.value) : null,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="latency-ms" className="text-xs">Latency (ms)</Label>
+                        <Input
+                          id="latency-ms"
+                          type="number"
+                          min="1"
+                          placeholder="1000"
+                          value={healthAlerting.latencyMs ?? ''}
+                          onChange={(e) =>
+                            setHealthAlerting({
+                              ...healthAlerting,
+                              latencyMs: e.target.value ? parseInt(e.target.value) : null,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {saveError && (
