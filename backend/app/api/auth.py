@@ -310,6 +310,19 @@ async def login(
         await db.commit()
         return {"requires_2fa": True, "2fa_token": temp_token}
 
+    # Check if force 2FA is enabled and user hasn't set it up yet
+    security_settings = await get_setting(db, "security")
+    if security_settings and security_settings.get("force_2fa_on_signup", False):
+        # User needs to set up 2FA before they can fully log in
+        await clear_failed_attempts(db, email)
+        access_token = await create_token_with_dynamic_timeout(str(user.id), db)
+        await audit_log(
+            db, user.id, "user.login", "user", str(user.id),
+            {"email": user.email, "auth_method": "local", "requires_2fa_setup": True}, ip_address=ip_address
+        )
+        await db.commit()
+        return {"access_token": access_token, "requires_2fa_setup": True}
+
     # Clear failed attempts on successful login
     await clear_failed_attempts(db, email)
 

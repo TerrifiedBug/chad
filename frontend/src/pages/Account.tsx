@@ -148,6 +148,7 @@ export default function AccountPage() {
                 value={disableCode}
                 onChange={(e) => setDisableCode(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
                 className="text-center text-2xl tracking-widest"
+                autoComplete="one-time-code"
                 autoFocus
               />
               <p className="text-xs text-muted-foreground">

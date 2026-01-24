@@ -358,6 +358,7 @@ export default function UsersPage() {
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Auth</TableHead>
+              <TableHead>2FA</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="w-[100px]">Actions</TableHead>
@@ -366,14 +367,14 @@ export default function UsersPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={7} className="text-center py-8">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No users found
@@ -399,6 +400,20 @@ export default function UsersPage() {
                     >
                       {user.auth_method === 'sso' ? 'SSO' : 'Local'}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {user.auth_method === 'local' && (
+                      <Badge
+                        variant="outline"
+                        className={
+                          user.totp_enabled
+                            ? 'border-green-300 text-green-700 dark:border-green-700 dark:text-green-300'
+                            : 'border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400'
+                        }
+                      >
+                        {user.totp_enabled ? 'Enabled' : 'Off'}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge

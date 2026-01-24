@@ -151,6 +151,7 @@ export function TwoFactorSetup({ open, onOpenChange, onComplete }: TwoFactorSetu
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
                 className="text-center text-2xl tracking-widest"
+                autoComplete="one-time-code"
                 autoFocus
               />
             </div>

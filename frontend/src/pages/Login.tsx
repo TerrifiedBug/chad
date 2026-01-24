@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { TwoFactorSetup } from '@/components/TwoFactorSetup'
 import { Loader2, Shield } from 'lucide-react'
 
 export default function LoginPage() {
@@ -23,6 +24,8 @@ export default function LoginPage() {
   const [requires2FA, setRequires2FA] = useState(false)
   const [twoFactorToken, setTwoFactorToken] = useState('')
   const [twoFactorCode, setTwoFactorCode] = useState('')
+  // 2FA setup required state
+  const [requires2FASetup, setRequires2FASetup] = useState(false)
 
   // Check for SSO error in URL params
   useEffect(() => {
@@ -72,6 +75,10 @@ export default function LoginPage() {
       if (response.requires_2fa && response['2fa_token']) {
         setTwoFactorToken(response['2fa_token'])
         setRequires2FA(true)
+      } else if (response.access_token && response.requires_2fa_setup) {
+        // User logged in but needs to set up 2FA
+        localStorage.setItem('chad-token', response.access_token)
+        setRequires2FASetup(true)
       } else if (response.access_token) {
         await login(email, password)
         navigate('/')
@@ -128,6 +135,7 @@ export default function LoginPage() {
                   value={twoFactorCode}
                   onChange={(e) => setTwoFactorCode(e.target.value.toUpperCase())}
                   className="text-center text-2xl tracking-widest"
+                  autoComplete="one-time-code"
                   autoFocus
                 />
               </div>
@@ -226,6 +234,15 @@ export default function LoginPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 2FA Setup Required Dialog */}
+      <TwoFactorSetup
+        open={requires2FASetup}
+        onOpenChange={setRequires2FASetup}
+        onComplete={() => {
+          window.location.href = '/'
+        }}
+      />
     </div>
   )
 }

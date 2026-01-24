@@ -7,10 +7,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from passlib.hash import bcrypt
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import validate_password_complexity
+from app.models.audit_log import AuditLog
 from app.api.deps import get_db, require_admin
 from app.models.setting import Setting
 from app.models.user import User, UserRole
@@ -43,6 +44,7 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: str
     auth_method: str  # "local" or "sso"
+    totp_enabled: bool = False
 
     class Config:
         from_attributes = True
@@ -69,6 +71,7 @@ async def list_users(
                 is_active=u.is_active,
                 created_at=u.created_at.isoformat(),
                 auth_method="local" if u.password_hash else "sso",
+                totp_enabled=u.totp_enabled,
             )
             for u in users
         ]
@@ -167,6 +170,12 @@ async def delete_user(
             )
 
     email = user.email  # Capture before delete
+
+    # Nullify user_id in audit_log to preserve audit trail while removing FK reference
+    await db.execute(
+        update(AuditLog).where(AuditLog.user_id == user_id).values(user_id=None)
+    )
+
     await db.delete(user)
     await audit_log(db, current_user.id, "user.delete", "user", str(user_id), {"email": email}, ip_address=get_client_ip(request))
     await db.commit()

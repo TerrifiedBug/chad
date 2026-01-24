@@ -643,6 +643,7 @@ export type LoginResponse = {
   access_token?: string
   requires_2fa?: boolean
   '2fa_token'?: string
+  requires_2fa_setup?: boolean
 }
 
 // Current user type
