@@ -495,7 +495,7 @@ export default function IndexPatternsPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {editingPattern ? 'Edit Index Pattern' : 'Create Index Pattern'}
@@ -505,7 +505,7 @@ export default function IndexPatternsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 overflow-y-auto flex-1">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input

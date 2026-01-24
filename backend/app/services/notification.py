@@ -301,9 +301,11 @@ def _build_system_description(payload: dict) -> str:
         if payload.get("error"):
             parts.append(f"Error: {payload['error']}")
     elif "health" in event:
-        parts.append(f"Health alert: {payload.get('condition', '')}")
+        condition = payload.get("condition", "")
         if payload.get("index_pattern"):
-            parts.append(f"Index: {payload['index_pattern']}")
+            parts.append(f"{condition} (Index: {payload['index_pattern']})")
+        else:
+            parts.append(condition)
     else:
         parts.append(str(payload))
 

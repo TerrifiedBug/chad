@@ -85,7 +85,7 @@ async def check_index_health(db: AsyncSession) -> list[dict]:
                     pattern,
                     "warning",
                     "no_data",
-                    f"No health metrics received for {pattern.name}",
+                    f"No data received for {pattern.name}",
                     {"minutes_since_creation": int(time_since_creation.total_seconds() // 60)},
                 )
                 issues.append(issue)
