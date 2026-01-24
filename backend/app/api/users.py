@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import validate_password_complexity
 from app.api.deps import get_db, require_admin
 from app.utils.request import get_client_ip
+from app.models.setting import Setting
 from app.models.user import User, UserRole
 from app.services.audit import audit_log
 
@@ -193,12 +194,19 @@ async def update_user(
     # Check if user is SSO (no password_hash)
     is_sso_user = user.password_hash is None
 
-    # SSO users cannot have their role changed (role comes from IdP)
+    # SSO users cannot have their role changed if role mapping is enabled
     if data.role is not None and is_sso_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot change role for SSO users. Role is managed by the identity provider.",
-        )
+        # Check if SSO role mapping is enabled
+        sso_result = await db.execute(select(Setting).where(Setting.key == "sso"))
+        sso_setting = sso_result.scalar_one_or_none()
+        sso_config = sso_setting.value if sso_setting else {}
+        role_mapping_enabled = sso_config.get("role_mapping_enabled", False)
+
+        if role_mapping_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change role for SSO users. Role is managed by the identity provider.",
+            )
 
     # Validate role if provided
     if data.role is not None:
