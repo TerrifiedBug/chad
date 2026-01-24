@@ -518,6 +518,46 @@ export const indexPatternsApi = {
 // Alert types
 export type AlertStatus = 'new' | 'acknowledged' | 'resolved' | 'false_positive'
 
+// TI Enrichment types for alerts
+export type TISourceResult = {
+  source: string
+  indicator: string
+  indicator_type: string
+  success: boolean
+  error?: string | null
+  risk_level: string
+  risk_score?: number | null
+  categories: string[]
+  tags: string[]
+  malicious_count: number
+  total_count: number
+  country?: string | null
+  country_code?: string | null
+  asn?: string | null
+  as_owner?: string | null
+  first_seen?: string | null
+  last_seen?: string | null
+}
+
+export type TIEnrichmentIndicator = {
+  indicator: string
+  indicator_type: string
+  overall_risk_level: string
+  overall_risk_score: number
+  highest_risk_source?: string | null
+  sources_queried: number
+  sources_with_results: number
+  sources_with_detections: number
+  all_categories: string[]
+  all_tags: string[]
+  source_results?: TISourceResult[]
+}
+
+export type TIEnrichment = {
+  sources_used: string[]
+  indicators: TIEnrichmentIndicator[]
+}
+
 export type Alert = {
   alert_id: string
   rule_id: string
@@ -526,6 +566,7 @@ export type Alert = {
   tags: string[]
   status: AlertStatus
   log_document: Record<string, unknown>
+  ti_enrichment?: TIEnrichment | null
   created_at: string
   updated_at: string
   acknowledged_by: string | null
