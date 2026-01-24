@@ -13,6 +13,7 @@ class IndexPatternBase(BaseModel):
     health_error_rate_percent: float | None = None
     health_latency_ms: int | None = None
     health_alerting_enabled: bool = True
+    geoip_fields: list[str] = []
 
 
 class IndexPatternCreate(IndexPatternBase):
@@ -28,6 +29,7 @@ class IndexPatternUpdate(BaseModel):
     health_error_rate_percent: float | None = None
     health_latency_ms: int | None = None
     health_alerting_enabled: bool | None = None
+    geoip_fields: list[str] | None = None
 
 
 class IndexPatternResponse(IndexPatternBase):

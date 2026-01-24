@@ -1,6 +1,7 @@
 import secrets
 
 from sqlalchemy import Boolean, Float, Integer, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
@@ -33,6 +34,11 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
         Integer, nullable=True
     )  # Latency threshold in ms (default: 1000)
     health_alerting_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # GeoIP enrichment fields (e.g., ["source.ip", "destination.ip"])
+    geoip_fields: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list, server_default="{}"
+    )
 
     # Relationships
     field_mappings = relationship(
