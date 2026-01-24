@@ -6,11 +6,11 @@ Alerts are stored in OpenSearch with the following structure:
 - Each alert contains: rule info, matched log, timestamp, status
 """
 
-from datetime import datetime, timezone
-from typing import Any
 import json
 import re
 import uuid
+from datetime import UTC, datetime
+from typing import Any
 
 from opensearchpy import OpenSearch
 
@@ -108,6 +108,28 @@ ALERTS_MAPPING = {
             "updated_at": {"type": "date"},
             "acknowledged_by": {"type": "keyword"},
             "acknowledged_at": {"type": "date"},
+            # Threat Intelligence enrichment
+            "ti_enrichment": {
+                "type": "object",
+                "properties": {
+                    "sources_used": {"type": "keyword"},
+                    "indicators": {
+                        "type": "nested",
+                        "properties": {
+                            "indicator": {"type": "keyword"},
+                            "indicator_type": {"type": "keyword"},
+                            "overall_risk_level": {"type": "keyword"},
+                            "overall_risk_score": {"type": "float"},
+                            "highest_risk_source": {"type": "keyword"},
+                            "sources_queried": {"type": "integer"},
+                            "sources_with_results": {"type": "integer"},
+                            "sources_with_detections": {"type": "integer"},
+                            "all_categories": {"type": "keyword"},
+                            "all_tags": {"type": "keyword"},
+                        },
+                    },
+                },
+            },
         }
     }
 }
@@ -165,7 +187,10 @@ class AlertService:
         self.ensure_alerts_index(alerts_index)
 
         alert_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
+
+        # Extract TI enrichment to top level for querying
+        ti_enrichment = log_document.pop("ti_enrichment", None)
 
         alert = {
             "alert_id": alert_id,
@@ -178,6 +203,10 @@ class AlertService:
             "created_at": now,
             "updated_at": now,
         }
+
+        # Add TI enrichment at top level if present
+        if ti_enrichment:
+            alert["ti_enrichment"] = ti_enrichment
 
         self.client.index(
             index=alerts_index,
@@ -250,7 +279,7 @@ class AlertService:
         user_id: str | None = None,
     ) -> bool:
         """Update alert status (acknowledge, resolve, mark false positive)."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         update = {
             "status": status,
             "updated_at": now,
