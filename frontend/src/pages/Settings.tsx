@@ -334,7 +334,7 @@ export default function SettingsPage() {
     setIsSaving(true)
     try {
       await settingsApi.updateSecuritySettings({ force_2fa_on_signup: force2FAOnSignup })
-      showToast('2FA settings saved')
+      showToast('MFA settings saved')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
@@ -659,17 +659,17 @@ export default function SettingsPage() {
 
           <Card data-lpignore="true" data-1p-ignore="true" data-protonpass-ignore="true">
             <CardHeader>
-              <CardTitle>Two-Factor Authentication</CardTitle>
+              <CardTitle>Multi-Factor Policy</CardTitle>
               <CardDescription>
-                Configure organization-wide 2FA requirements
+                Configure organization-wide MFA requirements
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Require Two-Factor Authentication</Label>
+                  <Label>Require Multi-Factor Authentication</Label>
                   <p className="text-sm text-muted-foreground">
-                    Users without 2FA must set it up on login. Users can still enable 2FA from their Account page if this is disabled.
+                    Users without MFA must set it up on login. Users can still enable MFA from their Account page if this is disabled.
                   </p>
                 </div>
                 <Switch

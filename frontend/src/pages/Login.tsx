@@ -116,8 +116,19 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Hidden TOTP field always in DOM for password manager detection */}
+          {!requires2FA && (
+            <input
+              type="text"
+              name="totp"
+              autoComplete="one-time-code"
+              style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
+              tabIndex={-1}
+              aria-hidden="true"
+            />
+          )}
           {requires2FA ? (
-            <form onSubmit={handle2FASubmit} className="space-y-4">
+            <form onSubmit={handle2FASubmit} className="space-y-4" autoComplete="off">
               <div className="text-center mb-4">
                 <Shield className="h-12 w-12 mx-auto mb-2 text-primary" />
                 <p className="text-sm text-muted-foreground">
