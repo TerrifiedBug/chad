@@ -443,6 +443,8 @@ export type IndexPattern = {
   health_error_rate_percent: number | null
   health_latency_ms: number | null
   health_alerting_enabled: boolean
+  // GeoIP enrichment
+  geoip_fields: string[]
 }
 
 export type IndexPatternCreate = {
@@ -455,6 +457,8 @@ export type IndexPatternCreate = {
   health_error_rate_percent?: number | null
   health_latency_ms?: number | null
   health_alerting_enabled?: boolean
+  // GeoIP enrichment
+  geoip_fields?: string[]
 }
 
 export type IndexPatternUpdate = Partial<IndexPatternCreate>
@@ -1014,6 +1018,41 @@ export const notificationsApi = {
     api.put<{ success: boolean }>('/notifications/system', { event_type, webhook_ids }),
   updateAlert: (webhook_id: string, severities: string[], enabled: boolean) =>
     api.put<{ success: boolean }>('/notifications/alerts', { webhook_id, severities, enabled }),
+}
+
+// GeoIP types
+export type GeoIPSettings = {
+  enabled: boolean
+  has_license_key: boolean
+  database_available: boolean
+  database_info: {
+    path: string
+    size_mb: number
+    modified_at: string
+  } | null
+  update_interval: string
+}
+
+export type GeoIPDownloadResponse = {
+  success: boolean
+  message?: string | null
+  error?: string | null
+  info?: Record<string, unknown> | null
+}
+
+export type GeoIPTestResponse = {
+  ip: string
+  is_public: boolean
+  geo: Record<string, unknown> | null
+}
+
+// GeoIP API
+export const geoipApi = {
+  getSettings: () => api.get<GeoIPSettings>('/settings/geoip'),
+  updateSettings: (data: { license_key?: string; update_interval?: string; enabled?: boolean }) =>
+    api.put<GeoIPSettings>('/settings/geoip', data),
+  downloadDatabase: () => api.post<GeoIPDownloadResponse>('/settings/geoip/download'),
+  testLookup: (ip: string) => api.post<GeoIPTestResponse>(`/settings/geoip/test?ip=${ip}`),
 }
 
 // ATT&CK Coverage Map types
