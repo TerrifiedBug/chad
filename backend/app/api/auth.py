@@ -383,7 +383,7 @@ async def change_password(
 async def get_current_user_info(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    """Get current user info including role."""
+    """Get current user info including role and 2FA status."""
     return {
         "id": str(current_user.id),
         "email": current_user.email,
@@ -391,6 +391,7 @@ async def get_current_user_info(
         "is_active": current_user.is_active,
         "auth_method": "local" if current_user.password_hash else "sso",
         "must_change_password": current_user.must_change_password,
+        "totp_enabled": current_user.totp_enabled,
     }
 
 

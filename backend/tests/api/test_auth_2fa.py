@@ -419,3 +419,18 @@ class TestLogin2FA:
         )
         assert response.status_code == 400
         assert "Invalid or expired" in response.json()["detail"]
+
+
+class TestMe2FAStatus:
+    """Tests for 2FA status in /auth/me endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_me_includes_2fa_status(
+        self, authenticated_client: AsyncClient, test_user: User
+    ):
+        """Test /auth/me includes 2FA status."""
+        response = await authenticated_client.get("/api/auth/me")
+        assert response.status_code == 200
+        data = response.json()
+        assert "totp_enabled" in data
+        assert data["totp_enabled"] is False
