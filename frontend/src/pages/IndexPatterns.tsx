@@ -832,55 +832,54 @@ export default function IndexPatternsPage() {
                   <p className="text-xs text-muted-foreground">
                     Specify IP address fields to enrich with geographic data when alerts are generated.
                     GeoIP must be enabled in Settings.
-                    {validationResult?.sample_fields && validationResult.sample_fields.length > 0 && (
-                      <> Field suggestions are available based on validated pattern.</>
-                    )}
                   </p>
 
                   <div className="flex gap-2">
-                    <div className="flex-1 relative">
-                      <Input
-                        value={geoipFieldInput}
-                        onChange={(e) => setGeoipFieldInput(e.target.value)}
-                        placeholder="e.g., source.ip, destination.ip"
-                        list="geoip-field-suggestions"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && geoipFieldInput.trim()) {
-                            e.preventDefault()
-                            const field = geoipFieldInput.trim()
-                            if (!geoipFields.includes(field)) {
-                              setGeoipFields([...geoipFields, field])
-                            }
-                            setGeoipFieldInput('')
-                          }
-                        }}
-                      />
-                      {validationResult?.sample_fields && validationResult.sample_fields.length > 0 && (
-                        <datalist id="geoip-field-suggestions">
-                          {validationResult.sample_fields
-                            .filter(f => f.toLowerCase().includes('ip') || f.toLowerCase().includes('address'))
+                    <Select
+                      value={geoipFieldInput}
+                      onValueChange={(value) => setGeoipFieldInput(value)}
+                    >
+                      <SelectTrigger className="flex-1 h-8 text-sm">
+                        <SelectValue placeholder="Select IP field..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {validationResult?.sample_fields && validationResult.sample_fields.length > 0 ? (
+                          validationResult.sample_fields
+                            .filter(f => !geoipFields.includes(f))
                             .map(field => (
-                              <option key={field} value={field} />
-                            ))}
-                        </datalist>
-                      )}
-                    </div>
+                              <SelectItem key={field} value={field}>
+                                {field}
+                              </SelectItem>
+                            ))
+                        ) : (
+                          <div className="p-2 text-xs text-muted-foreground">
+                            Validate pattern to see available fields
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
                     <Button
                       type="button"
                       variant="secondary"
                       size="sm"
+                      className="h-8"
                       onClick={() => {
-                        const field = geoipFieldInput.trim()
-                        if (field && !geoipFields.includes(field)) {
-                          setGeoipFields([...geoipFields, field])
+                        if (geoipFieldInput && !geoipFields.includes(geoipFieldInput)) {
+                          setGeoipFields([...geoipFields, geoipFieldInput])
                         }
                         setGeoipFieldInput('')
                       }}
-                      disabled={!geoipFieldInput.trim()}
+                      disabled={!geoipFieldInput}
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
                   </div>
+
+                  {!validationResult?.sample_fields?.length && (
+                    <p className="text-xs text-amber-600">
+                      Validate the index pattern above to see available fields
+                    </p>
+                  )}
 
                   {geoipFields.length > 0 && (
                     <div className="flex flex-wrap gap-2">
