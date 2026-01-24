@@ -12,7 +12,14 @@ from app.core.encryption import decrypt, encrypt
 from app.db.session import get_db
 from app.models.setting import Setting
 from app.models.user import User
+from app.schemas.geoip import (
+    GeoIPDownloadResponse,
+    GeoIPSettings,
+    GeoIPSettingsUpdate,
+    GeoIPTestResponse,
+)
 from app.services.audit import audit_log
+from app.services.geoip import geoip_service
 from app.services.opensearch import validate_opensearch_connection
 from app.services.settings import get_setting, set_setting
 from app.services.webhooks import get_app_url_for_webhooks, send_webhook
@@ -422,6 +429,100 @@ async def set_app_url(
     await audit_log(db, current_user.id, "settings.update", "settings", "app_url", {"url": url}, ip_address=get_client_ip(request))
     await db.commit()
     return {"success": True}
+
+
+# GeoIP endpoints
+@router.get("/geoip", response_model=GeoIPSettings)
+async def get_geoip_settings(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get GeoIP enrichment settings."""
+    geoip_settings = await get_setting(db, "geoip")
+    license_key = geoip_settings.get("license_key") if geoip_settings else None
+    enabled = geoip_settings.get("enabled", False) if geoip_settings else False
+    update_interval = geoip_settings.get("update_interval", "weekly") if geoip_settings else "weekly"
+
+    return GeoIPSettings(
+        enabled=enabled,
+        has_license_key=bool(license_key),
+        database_available=geoip_service.is_database_available(),
+        database_info=geoip_service.get_database_info(),
+        update_interval=update_interval,
+    )
+
+
+@router.put("/geoip", response_model=GeoIPSettings)
+async def update_geoip_settings(
+    data: GeoIPSettingsUpdate,
+    request: Request,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update GeoIP enrichment settings."""
+    geoip_settings = await get_setting(db, "geoip") or {}
+
+    if data.license_key is not None:
+        geoip_settings["license_key"] = encrypt(data.license_key)
+    if data.update_interval is not None:
+        geoip_settings["update_interval"] = data.update_interval
+    if data.enabled is not None:
+        geoip_settings["enabled"] = data.enabled
+
+    await set_setting(db, "geoip", geoip_settings)
+    await audit_log(
+        db, _.id, "settings.update", "settings", "geoip",
+        {"enabled": geoip_settings.get("enabled"), "update_interval": geoip_settings.get("update_interval")},
+        ip_address=get_client_ip(request)
+    )
+
+    return await get_geoip_settings(_, db)
+
+
+@router.post("/geoip/download", response_model=GeoIPDownloadResponse)
+async def download_geoip_database(
+    request: Request,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Download/update the GeoIP database."""
+    geoip_settings = await get_setting(db, "geoip")
+    if not geoip_settings or not geoip_settings.get("license_key"):
+        raise HTTPException(status_code=400, detail="License key not configured")
+
+    try:
+        license_key = decrypt(geoip_settings["license_key"])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to decrypt license key")
+
+    result = await geoip_service.download_database(license_key)
+
+    if result["success"]:
+        await audit_log(
+            db, _.id, "geoip.download", "settings", "geoip",
+            {"success": True},
+            ip_address=get_client_ip(request)
+        )
+        await db.commit()
+
+    return GeoIPDownloadResponse(**result)
+
+
+@router.post("/geoip/test", response_model=GeoIPTestResponse)
+async def test_geoip_lookup(
+    ip: str,
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Test GeoIP lookup for an IP address."""
+    if not geoip_service.is_database_available():
+        raise HTTPException(status_code=400, detail="GeoIP database not available")
+
+    result = geoip_service.lookup(ip)
+    return GeoIPTestResponse(
+        ip=ip,
+        is_public=geoip_service.is_public_ip(ip),
+        geo=result,
+    )
 
 
 @router.put("/{key}")
