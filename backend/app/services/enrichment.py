@@ -101,32 +101,46 @@ def infer_indicator_type(field_path: str) -> TIIndicatorType | None:
 
 def extract_field_indicators(
     doc: dict,
-    fields: list[str],
+    field_configs: list[dict],
 ) -> list[tuple[str, str, TIIndicatorType]]:
     """
     Extract indicator values from specific fields in a document.
 
     Args:
         doc: The log document.
-        fields: List of field paths to extract (e.g., ["source.ip", "file.hash.sha256"]).
+        field_configs: List of field configs with explicit type.
+            Format: [{"field": "source.ip", "type": "ip"}, ...]
 
     Returns:
         List of tuples: (field_path, value, indicator_type)
     """
     results: list[tuple[str, str, TIIndicatorType]] = []
 
-    for field_path in fields:
+    for config in field_configs:
+        # Handle both old format (string) and new format (dict with field/type)
+        if isinstance(config, str):
+            field_path = config
+            indicator_type = infer_indicator_type(field_path)
+        elif isinstance(config, dict):
+            field_path = config.get("field", "")
+            type_str = config.get("type", "")
+            try:
+                indicator_type = TIIndicatorType(type_str)
+            except ValueError:
+                # Fall back to inference if type is invalid
+                indicator_type = infer_indicator_type(field_path)
+        else:
+            continue
+
+        if not field_path or not indicator_type:
+            continue
+
         value = get_nested_value(doc, field_path)
         if not value or not isinstance(value, str):
             continue
 
         # Skip empty strings
         if not value.strip():
-            continue
-
-        # Infer indicator type from field name
-        indicator_type = infer_indicator_type(field_path)
-        if not indicator_type:
             continue
 
         # Skip private IPs

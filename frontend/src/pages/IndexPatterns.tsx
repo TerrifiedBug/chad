@@ -5,7 +5,11 @@ import {
   IndexPatternValidateResponse,
   TIConfig,
   TI_SOURCE_INFO,
+  TI_INDICATOR_TYPE_INFO,
   TISourceType,
+  TIIndicatorType,
+  TIFieldConfig,
+  TISourceConfigForPattern,
   tiApi,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -28,6 +32,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
@@ -64,7 +75,7 @@ export default function IndexPatternsPage() {
 
   // TI enrichment state
   const [tiConfig, setTiConfig] = useState<TIConfig>({})
-  const [tiFieldInputs, setTiFieldInputs] = useState<Record<string, string>>({})
+  const [tiFieldInputs, setTiFieldInputs] = useState<Record<string, { field: string; type: TIIndicatorType }>>({})
   const [availableTiSources, setAvailableTiSources] = useState<TISourceType[]>([])
 
   // Toggle for health settings section
@@ -923,8 +934,23 @@ export default function IndexPatternsPage() {
                     <div className="space-y-3">
                       {availableTiSources.map((source) => {
                         const sourceInfo = TI_SOURCE_INFO[source]
-                        const config = tiConfig[source] || { enabled: false, fields: [] }
-                        const fieldInput = tiFieldInputs[source] || ''
+                        const config: TISourceConfigForPattern = tiConfig[source] || { enabled: false, fields: [] }
+                        const fieldInput = tiFieldInputs[source] || { field: '', type: 'ip' as TIIndicatorType }
+
+                        const addFieldConfig = () => {
+                          if (!fieldInput.field) return
+                          // Check if field already exists
+                          const exists = config.fields.some(f => f.field === fieldInput.field)
+                          if (exists) return
+                          setTiConfig({
+                            ...tiConfig,
+                            [source]: {
+                              ...config,
+                              fields: [...config.fields, { field: fieldInput.field, type: fieldInput.type }],
+                            },
+                          })
+                          setTiFieldInputs({ ...tiFieldInputs, [source]: { field: '', type: 'ip' } })
+                        }
 
                         return (
                           <div key={source} className="border rounded p-3 space-y-3">
@@ -948,60 +974,59 @@ export default function IndexPatternsPage() {
                               <div className="space-y-2">
                                 <Label className="text-xs">Fields to enrich</Label>
                                 <div className="flex gap-2">
-                                  <div className="flex-1 relative">
-                                    <Input
-                                      value={fieldInput}
-                                      onChange={(e) => setTiFieldInputs({
-                                        ...tiFieldInputs,
-                                        [source]: e.target.value,
-                                      })}
-                                      placeholder="e.g., source.ip, file.hash.sha256"
-                                      list={`ti-field-suggestions-${source}`}
-                                      className="h-8 text-sm"
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && fieldInput.trim()) {
-                                          e.preventDefault()
-                                          const field = fieldInput.trim()
-                                          if (!config.fields.includes(field)) {
-                                            setTiConfig({
-                                              ...tiConfig,
-                                              [source]: {
-                                                ...config,
-                                                fields: [...config.fields, field],
-                                              },
-                                            })
-                                          }
-                                          setTiFieldInputs({ ...tiFieldInputs, [source]: '' })
-                                        }
-                                      }}
-                                    />
-                                    {validationResult?.sample_fields && validationResult.sample_fields.length > 0 && (
-                                      <datalist id={`ti-field-suggestions-${source}`}>
-                                        {validationResult.sample_fields.map(field => (
-                                          <option key={field} value={field} />
-                                        ))}
-                                      </datalist>
-                                    )}
-                                  </div>
+                                  {/* Field selector */}
+                                  <Select
+                                    value={fieldInput.field}
+                                    onValueChange={(value) => setTiFieldInputs({
+                                      ...tiFieldInputs,
+                                      [source]: { ...fieldInput, field: value },
+                                    })}
+                                  >
+                                    <SelectTrigger className="flex-1 h-8 text-sm">
+                                      <SelectValue placeholder="Select field..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {validationResult?.sample_fields && validationResult.sample_fields.length > 0 ? (
+                                        validationResult.sample_fields.map(field => (
+                                          <SelectItem key={field} value={field}>
+                                            {field}
+                                          </SelectItem>
+                                        ))
+                                      ) : (
+                                        <div className="p-2 text-xs text-muted-foreground">
+                                          Validate pattern to see available fields
+                                        </div>
+                                      )}
+                                    </SelectContent>
+                                  </Select>
+
+                                  {/* Indicator type selector */}
+                                  <Select
+                                    value={fieldInput.type}
+                                    onValueChange={(value) => setTiFieldInputs({
+                                      ...tiFieldInputs,
+                                      [source]: { ...fieldInput, type: value as TIIndicatorType },
+                                    })}
+                                  >
+                                    <SelectTrigger className="w-32 h-8 text-sm">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {(Object.keys(TI_INDICATOR_TYPE_INFO) as TIIndicatorType[]).map(type => (
+                                        <SelectItem key={type} value={type}>
+                                          {TI_INDICATOR_TYPE_INFO[type].label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+
                                   <Button
                                     type="button"
                                     variant="secondary"
                                     size="sm"
                                     className="h-8"
-                                    onClick={() => {
-                                      const field = fieldInput.trim()
-                                      if (field && !config.fields.includes(field)) {
-                                        setTiConfig({
-                                          ...tiConfig,
-                                          [source]: {
-                                            ...config,
-                                            fields: [...config.fields, field],
-                                          },
-                                        })
-                                      }
-                                      setTiFieldInputs({ ...tiFieldInputs, [source]: '' })
-                                    }}
-                                    disabled={!fieldInput.trim()}
+                                    onClick={addFieldConfig}
+                                    disabled={!fieldInput.field}
                                   >
                                     <Plus className="h-3 w-3" />
                                   </Button>
@@ -1009,20 +1034,23 @@ export default function IndexPatternsPage() {
 
                                 {config.fields.length > 0 && (
                                   <div className="flex flex-wrap gap-1">
-                                    {config.fields.map((field) => (
+                                    {config.fields.map((fieldConfig, idx) => (
                                       <Badge
-                                        key={field}
+                                        key={`${fieldConfig.field}-${idx}`}
                                         variant="outline"
                                         className="flex items-center gap-1 pr-1 text-xs"
                                       >
-                                        {field}
+                                        <span className="font-mono">{fieldConfig.field}</span>
+                                        <span className="text-muted-foreground">
+                                          ({TI_INDICATOR_TYPE_INFO[fieldConfig.type]?.label || fieldConfig.type})
+                                        </span>
                                         <button
                                           type="button"
                                           onClick={() => setTiConfig({
                                             ...tiConfig,
                                             [source]: {
                                               ...config,
-                                              fields: config.fields.filter(f => f !== field),
+                                              fields: config.fields.filter((_, i) => i !== idx),
                                             },
                                           })}
                                           className="ml-1 hover:bg-muted rounded-full p-0.5"
@@ -1032,6 +1060,12 @@ export default function IndexPatternsPage() {
                                       </Badge>
                                     ))}
                                   </div>
+                                )}
+
+                                {!validationResult?.sample_fields?.length && (
+                                  <p className="text-xs text-amber-600">
+                                    Validate the index pattern above to see available fields
+                                  </p>
                                 )}
                               </div>
                             )}

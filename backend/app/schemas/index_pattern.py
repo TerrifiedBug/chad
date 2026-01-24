@@ -1,14 +1,33 @@
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel
+
+
+class TIIndicatorType(str, Enum):
+    """Types of indicators for TI enrichment."""
+
+    IP = "ip"
+    DOMAIN = "domain"
+    URL = "url"
+    HASH_MD5 = "hash_md5"
+    HASH_SHA1 = "hash_sha1"
+    HASH_SHA256 = "hash_sha256"
+
+
+class TIFieldConfig(BaseModel):
+    """Configuration for a single field to enrich with TI."""
+
+    field: str  # Field path like "source.ip"
+    type: TIIndicatorType  # Explicit indicator type
 
 
 class TISourceConfig(BaseModel):
     """Configuration for a single TI source on an index pattern."""
 
     enabled: bool = False
-    fields: list[str] = []
+    fields: list[TIFieldConfig] = []
 
 
 class IndexPatternBase(BaseModel):

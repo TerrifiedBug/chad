@@ -3,6 +3,8 @@ from app.schemas.index_pattern import (
     IndexPatternCreate,
     IndexPatternResponse,
     IndexPatternUpdate,
+    TIFieldConfig,
+    TIIndicatorType,
     TISourceConfig,
 )
 from app.schemas.rule import (
@@ -21,6 +23,8 @@ __all__ = [
     "IndexPatternCreate",
     "IndexPatternResponse",
     "IndexPatternUpdate",
+    "TIFieldConfig",
+    "TIIndicatorType",
     "TISourceConfig",
     "RuleCreate",
     "RuleDetailResponse",

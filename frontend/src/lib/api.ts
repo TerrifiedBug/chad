@@ -452,15 +452,33 @@ export const rulesApi = {
   },
 }
 
+// TI Indicator types for enrichment
+export type TIIndicatorType = 'ip' | 'domain' | 'url' | 'hash_md5' | 'hash_sha1' | 'hash_sha256'
+
+export const TI_INDICATOR_TYPE_INFO: Record<TIIndicatorType, { label: string; description: string }> = {
+  ip: { label: 'IP Address', description: 'IPv4 or IPv6 address' },
+  domain: { label: 'Domain', description: 'Domain name or hostname' },
+  url: { label: 'URL', description: 'Full URL' },
+  hash_md5: { label: 'MD5 Hash', description: '32-character MD5 file hash' },
+  hash_sha1: { label: 'SHA1 Hash', description: '40-character SHA1 file hash' },
+  hash_sha256: { label: 'SHA256 Hash', description: '64-character SHA256 file hash' },
+}
+
+// Field configuration for TI enrichment
+export type TIFieldConfig = {
+  field: string
+  type: TIIndicatorType
+}
+
 // TI Source Config for per-index-pattern configuration
-export type TISourceConfig = {
+export type TISourceConfigForPattern = {
   enabled: boolean
-  fields: string[]
+  fields: TIFieldConfig[]
 }
 
 // TI config maps source name to its config
 export type TIConfig = {
-  [sourceName: string]: TISourceConfig
+  [sourceName: string]: TISourceConfigForPattern
 }
 
 // Index Pattern types
