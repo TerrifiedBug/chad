@@ -636,6 +636,18 @@ export type CurrentUser = {
   is_active: boolean
   auth_method: 'local' | 'sso'
   must_change_password: boolean
+  totp_enabled?: boolean
+}
+
+// 2FA types
+export type TwoFactorSetupResponse = {
+  qr_uri: string
+  secret: string
+}
+
+export type TwoFactorVerifyResponse = {
+  message: string
+  backup_codes: string[]
 }
 
 // Auth API
@@ -651,6 +663,13 @@ export const authApi = {
       current_password: currentPassword,
       new_password: newPassword,
     }),
+  // 2FA methods
+  setup2FA: () =>
+    api.post<TwoFactorSetupResponse>('/auth/2fa/setup'),
+  verify2FA: (code: string) =>
+    api.post<TwoFactorVerifyResponse>('/auth/2fa/verify', { code }),
+  disable2FA: (code: string) =>
+    api.post<void>('/auth/2fa/disable', { code }),
 }
 
 // SigmaHQ types
