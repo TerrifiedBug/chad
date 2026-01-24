@@ -628,6 +628,13 @@ export type SsoStatus = {
   provider_name: string
 }
 
+// Login response type (for login that might require 2FA)
+export type LoginResponse = {
+  access_token?: string
+  requires_2fa?: boolean
+  '2fa_token'?: string
+}
+
 // Current user type
 export type CurrentUser = {
   id: string
@@ -663,6 +670,11 @@ export const authApi = {
       current_password: currentPassword,
       new_password: newPassword,
     }),
+  // Login methods
+  loginRaw: (email: string, password: string) =>
+    api.post<LoginResponse>('/auth/login', { email, password }),
+  login2FA: (token: string, code: string) =>
+    api.post<{ access_token: string }>('/auth/login/2fa', { token, code }),
   // 2FA methods
   setup2FA: () =>
     api.post<TwoFactorSetupResponse>('/auth/2fa/setup'),

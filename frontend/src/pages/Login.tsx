@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Shield } from 'lucide-react'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -19,6 +19,10 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [ssoStatus, setSsoStatus] = useState<SsoStatus | null>(null)
   const [ssoLoading, setSsoLoading] = useState(true)
+  // 2FA state
+  const [requires2FA, setRequires2FA] = useState(false)
+  const [twoFactorToken, setTwoFactorToken] = useState('')
+  const [twoFactorCode, setTwoFactorCode] = useState('')
 
   // Check for SSO error in URL params
   useEffect(() => {
@@ -63,10 +67,33 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      await login(email, password)
-      navigate('/')
+      const response = await authApi.loginRaw(email, password)
+
+      if (response.requires_2fa && response['2fa_token']) {
+        setTwoFactorToken(response['2fa_token'])
+        setRequires2FA(true)
+      } else if (response.access_token) {
+        await login(email, password)
+        navigate('/')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handle2FASubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setIsLoading(true)
+
+    try {
+      const response = await authApi.login2FA(twoFactorToken, twoFactorCode)
+      localStorage.setItem('chad-token', response.access_token)
+      window.location.href = '/'
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid 2FA code')
     } finally {
       setIsLoading(false)
     }
@@ -82,68 +109,121 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            {error && (
-              <div className="text-destructive text-sm">{error}</div>
-            )}
-
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Signing in...' : 'Sign In'}
-            </Button>
-          </form>
-
-          {/* SSO Login */}
-          {ssoLoading ? (
-            <div className="mt-6 pt-6 border-t flex items-center justify-center">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : ssoStatus?.enabled && ssoStatus?.configured ? (
-            <div className="mt-6 pt-6 border-t">
-              <div className="relative mb-4">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-card px-2 text-muted-foreground">Or</span>
-                </div>
+          {requires2FA ? (
+            <form onSubmit={handle2FASubmit} className="space-y-4">
+              <div className="text-center mb-4">
+                <Shield className="h-12 w-12 mx-auto mb-2 text-primary" />
+                <p className="text-sm text-muted-foreground">
+                  Enter the 6-digit code from your authenticator app, or an 8-character backup code
+                </p>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="2fa-code">Verification Code</Label>
+                <Input
+                  id="2fa-code"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={8}
+                  placeholder="000000"
+                  value={twoFactorCode}
+                  onChange={(e) => setTwoFactorCode(e.target.value.toUpperCase())}
+                  className="text-center text-2xl tracking-widest"
+                  autoFocus
+                />
+              </div>
+
+              {error && (
+                <div className="text-destructive text-sm">{error}</div>
+              )}
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading || (twoFactorCode.length !== 6 && twoFactorCode.length !== 8)}
+              >
+                {isLoading ? 'Verifying...' : 'Verify'}
+              </Button>
+
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 className="w-full"
-                onClick={handleSsoLogin}
+                onClick={() => {
+                  setRequires2FA(false)
+                  setTwoFactorCode('')
+                  setTwoFactorToken('')
+                  setError('')
+                }}
               >
-                Sign in with {ssoStatus.provider_name}
+                Back to Login
               </Button>
-            </div>
-          ) : null}
+            </form>
+          ) : (
+            <>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
 
-          <div className="mt-6 pt-6 border-t flex items-center justify-center">
-            <ThemeToggle />
-          </div>
+                {error && (
+                  <div className="text-destructive text-sm">{error}</div>
+                )}
+
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? 'Signing in...' : 'Sign In'}
+                </Button>
+              </form>
+
+              {/* SSO Login */}
+              {ssoLoading ? (
+                <div className="mt-6 pt-6 border-t flex items-center justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : ssoStatus?.enabled && ssoStatus?.configured ? (
+                <div className="mt-6 pt-6 border-t">
+                  <div className="relative mb-4">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card px-2 text-muted-foreground">Or</span>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleSsoLogin}
+                  >
+                    Sign in with {ssoStatus.provider_name}
+                  </Button>
+                </div>
+              ) : null}
+
+              <div className="mt-6 pt-6 border-t flex items-center justify-center">
+                <ThemeToggle />
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
