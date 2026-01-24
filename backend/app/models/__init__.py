@@ -4,6 +4,7 @@ from app.models.audit_log import AuditLog
 from app.models.field_mapping import FieldMapping, MappingOrigin
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
+from app.models.jira_config import JiraConfig
 from app.models.login_attempt import LoginAttempt
 from app.models.notification_settings import (
     AlertNotificationSetting,
@@ -25,6 +26,7 @@ __all__ = [
     "AuditLog",
     "FieldMapping",
     "IndexHealthMetrics",
+    "JiraConfig",
     "MappingOrigin",
     "DEFAULT_ROLE_PERMISSIONS",
     "ExceptionOperator",
