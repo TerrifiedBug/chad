@@ -492,9 +492,9 @@ export default function Notifications() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Notifications</h2>
+          <h2 className="text-lg font-semibold">Notifications & Alerts</h2>
           <p className="text-sm text-muted-foreground">
-            Configure webhook endpoints and what notifications they receive
+            Configure notification destinations for security alerts and system events
           </p>
         </div>
         <Button onClick={() => { setEditingWebhook(null); setFormData(emptyFormData); setDialogOpen(true) }}>
