@@ -167,6 +167,7 @@ class SchedulerService:
         """Execute ATT&CK sync job."""
         from app.services.attack_sync import attack_sync_service
         from app.services.audit import audit_log
+        from app.services.notification import send_system_notification
 
         logger.info("Running scheduled ATT&CK sync")
         session = await self._get_session()
@@ -191,16 +192,48 @@ class SchedulerService:
             )
             await session.commit()
 
+            if result.success:
+                # Send sync completion notification
+                await send_system_notification(
+                    session,
+                    "attack_sync_complete",
+                    {
+                        "techniques_updated": result.techniques_updated,
+                        "new_techniques": result.new_techniques,
+                        "message": result.message,
+                    },
+                )
+            else:
+                # Send sync failure notification
+                await send_system_notification(
+                    session,
+                    "sync_failure",
+                    {
+                        "sync_type": "attack",
+                        "error": result.error or result.message,
+                    },
+                )
+
             logger.info(f"ATT&CK sync completed: {result.message}")
 
         except Exception as e:
             logger.error(f"Scheduled ATT&CK sync failed: {e}")
+            # Send sync failure notification
+            try:
+                await send_system_notification(
+                    session,
+                    "sync_failure",
+                    {"sync_type": "attack", "error": str(e)},
+                )
+            except Exception:
+                pass  # Don't fail on notification errors
         finally:
             await session.close()
 
     async def _run_sigmahq_sync(self):
         """Execute SigmaHQ sync job."""
         from app.services.audit import audit_log
+        from app.services.notification import send_system_notification
         from app.services.sigmahq import sigmahq_service
 
         logger.info("Running scheduled SigmaHQ sync")
@@ -229,10 +262,52 @@ class SchedulerService:
             )
             await session.commit()
 
+            if result.success:
+                # Send sync completion notification
+                await send_system_notification(
+                    session,
+                    "sigmahq_sync_complete",
+                    {
+                        "rule_count": result.rule_count,
+                        "new_rules": result.new_rules if hasattr(result, "new_rules") else 0,
+                        "message": result.message,
+                    },
+                )
+
+                # Send new rules notification if there are new rules
+                if hasattr(result, "new_rules") and result.new_rules > 0:
+                    await send_system_notification(
+                        session,
+                        "new_rules_available",
+                        {
+                            "count": result.new_rules,
+                            "source": "sigmahq",
+                        },
+                    )
+            else:
+                # Send sync failure notification
+                await send_system_notification(
+                    session,
+                    "sync_failure",
+                    {
+                        "sync_type": "sigmahq",
+                        "error": result.error if hasattr(result, "error") else result.message,
+                    },
+                )
+
             logger.info(f"SigmaHQ sync completed: {result.message}")
 
         except Exception as e:
             logger.error(f"Scheduled SigmaHQ sync failed: {e}")
+            # Send sync failure notification
+            try:
+                await send_system_notification(
+                    session,
+                    "sync_failure",
+                    {"sync_type": "sigmahq", "error": str(e)},
+                )
+            except Exception:
+                pass  # Don't fail on notification errors
         finally:
             await session.close()
 

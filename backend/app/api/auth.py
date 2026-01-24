@@ -23,6 +23,7 @@ from app.services.rate_limit import (
     clear_failed_attempts,
 )
 from app.services.settings import get_app_url, get_setting
+from app.services.notification import send_system_notification
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -219,6 +220,12 @@ async def login(
                 {"email": email},
                 ip_address=ip_address,
             )
+            # Send lockout notification
+            await send_system_notification(
+                db,
+                "user_lockout",
+                {"email": email, "ip_address": ip_address},
+            )
 
         await db.commit()
         raise HTTPException(
@@ -251,6 +258,12 @@ async def login(
                 str(user.id),
                 {"email": email},
                 ip_address=ip_address,
+            )
+            # Send lockout notification
+            await send_system_notification(
+                db,
+                "user_lockout",
+                {"email": email, "ip_address": ip_address},
             )
 
         await db.commit()
