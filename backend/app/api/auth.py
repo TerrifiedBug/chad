@@ -15,20 +15,39 @@ from app.core.security import create_access_token, get_password_hash, verify_pas
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, SetupRequest, TokenResponse
+from app.schemas.totp import (
+    TwoFactorDisableRequest,
+    TwoFactorLoginRequest,
+    TwoFactorSetupResponse,
+    TwoFactorVerifyRequest,
+    TwoFactorVerifyResponse,
+)
 from app.services.audit import audit_log
-from app.utils.request import get_client_ip
+from app.services.notification import send_system_notification
 from app.services.rate_limit import (
+    clear_failed_attempts,
     is_account_locked,
     record_failed_attempt,
-    clear_failed_attempts,
 )
 from app.services.settings import get_app_url, get_setting
-from app.services.notification import send_system_notification
+from app.services.totp import (
+    generate_backup_codes,
+    generate_qr_uri,
+    generate_totp_secret,
+    hash_backup_code,
+    verify_backup_code,
+    verify_totp_code,
+)
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # OAuth client instance
 oauth = OAuth()
+
+# Temporary storage for 2FA setup/login (in production, use Redis)
+_pending_2fa_setup: dict[str, str] = {}
+_pending_2fa_login: dict[str, str] = {}
 
 # Default session timeout in minutes (8 hours)
 DEFAULT_SESSION_TIMEOUT_MINUTES = 480
@@ -163,7 +182,7 @@ async def initial_setup(
     return TokenResponse(access_token=access_token)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login")
 async def login(
     request: LoginRequest,
     http_request: Request,
@@ -188,7 +207,10 @@ async def login(
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Account temporarily locked due to too many failed login attempts. Try again in {lockout_minutes} minutes.",
+            detail=(
+                f"Account temporarily locked due to too many failed login attempts. "
+                f"Try again in {lockout_minutes} minutes."
+            ),
         )
 
     result = await db.execute(select(User).where(User.email == email))
@@ -278,12 +300,25 @@ async def login(
             detail="User is inactive",
         )
 
+    # Check if 2FA is enabled
+    if user.totp_enabled:
+        import secrets
+
+        temp_token = secrets.token_urlsafe(32)
+        _pending_2fa_login[temp_token] = str(user.id)
+        await clear_failed_attempts(db, email)
+        await db.commit()
+        return {"requires_2fa": True, "2fa_token": temp_token}
+
     # Clear failed attempts on successful login
     await clear_failed_attempts(db, email)
 
     # Generate token with dynamic timeout
     access_token = await create_token_with_dynamic_timeout(str(user.id), db)
-    await audit_log(db, user.id, "user.login", "user", str(user.id), {"email": user.email, "auth_method": "local"}, ip_address=ip_address)
+    await audit_log(
+        db, user.id, "user.login", "user", str(user.id),
+        {"email": user.email, "auth_method": "local"}, ip_address=ip_address
+    )
     await db.commit()
     return TokenResponse(access_token=access_token)
 
@@ -523,9 +558,154 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
 
     # Create JWT token
     access_token = await create_token_with_dynamic_timeout(str(user.id), db)
-    await audit_log(db, user.id, "user.login", "user", str(user.id), {"email": user.email, "auth_method": "sso"}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, user.id, "user.login", "user", str(user.id),
+        {"email": user.email, "auth_method": "sso"}, ip_address=get_client_ip(request)
+    )
     await db.commit()
 
     # Redirect to frontend with token
     # The frontend will extract this and store it
     return RedirectResponse(url=f"{frontend_url}/?sso_token={access_token}")
+
+
+# ============================================================================
+# Two-Factor Authentication (2FA)
+# ============================================================================
+
+
+@router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
+async def setup_2fa(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Initiate 2FA setup. Returns QR code URI for authenticator app."""
+    if current_user.password_hash is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SSO users cannot enable 2FA in CHAD. Use your identity provider's 2FA instead.",
+        )
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="2FA is already enabled. Disable it first to set up again.",
+        )
+
+    secret = generate_totp_secret()
+    qr_uri = generate_qr_uri(secret, current_user.email)
+    _pending_2fa_setup[str(current_user.id)] = secret
+
+    return TwoFactorSetupResponse(qr_uri=qr_uri, secret=secret)
+
+
+@router.post("/2fa/verify", response_model=TwoFactorVerifyResponse)
+async def verify_2fa_setup(
+    request: TwoFactorVerifyRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Verify 2FA setup with code from authenticator app."""
+    user_id = str(current_user.id)
+    pending_secret = _pending_2fa_setup.get(user_id)
+    if not pending_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No pending 2FA setup. Call /2fa/setup first.",
+        )
+
+    if not verify_totp_code(pending_secret, request.code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code. Please try again.",
+        )
+
+    backup_codes = generate_backup_codes(10)
+    hashed_codes = [hash_backup_code(code) for code in backup_codes]
+
+    current_user.totp_secret = pending_secret
+    current_user.totp_enabled = True
+    current_user.totp_backup_codes = hashed_codes
+    await db.commit()
+
+    del _pending_2fa_setup[user_id]
+
+    await audit_log(db, current_user.id, "user.2fa_enabled", "user", str(current_user.id), {})
+    await db.commit()
+
+    return TwoFactorVerifyResponse(message="2FA enabled successfully", backup_codes=backup_codes)
+
+
+@router.post("/2fa/disable")
+async def disable_2fa(
+    request: TwoFactorDisableRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Disable 2FA. Requires valid TOTP or backup code."""
+    if not current_user.totp_enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="2FA is not enabled.")
+
+    code_valid = verify_totp_code(current_user.totp_secret, request.code)
+
+    if not code_valid and current_user.totp_backup_codes:
+        for i, hashed in enumerate(current_user.totp_backup_codes):
+            if verify_backup_code(request.code, hashed):
+                code_valid = True
+                current_user.totp_backup_codes = [
+                    c for j, c in enumerate(current_user.totp_backup_codes) if j != i
+                ]
+                break
+
+    if not code_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid code.")
+
+    current_user.totp_secret = None
+    current_user.totp_enabled = False
+    current_user.totp_backup_codes = None
+    await db.commit()
+
+    await audit_log(db, current_user.id, "user.2fa_disabled", "user", str(current_user.id), {})
+    await db.commit()
+
+    return {"message": "2FA disabled"}
+
+
+@router.post("/login/2fa")
+async def login_2fa(
+    request: TwoFactorLoginRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Complete login with 2FA code."""
+    user_id = _pending_2fa_login.get(request.token)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired 2FA token. Please login again.",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User not found.")
+
+    code_valid = verify_totp_code(user.totp_secret, request.code)
+
+    if not code_valid and user.totp_backup_codes:
+        for i, hashed in enumerate(user.totp_backup_codes):
+            if verify_backup_code(request.code, hashed):
+                code_valid = True
+                user.totp_backup_codes = [c for j, c in enumerate(user.totp_backup_codes) if j != i]
+                await db.commit()
+                break
+
+    if not code_valid:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid 2FA code.")
+
+    del _pending_2fa_login[request.token]
+
+    access_token = await create_token_with_dynamic_timeout(str(user.id), db)
+    await audit_log(
+        db, user.id, "user.login", "user", str(user.id), {"email": user.email, "auth_method": "local", "2fa": True}
+    )
+    await db.commit()
+
+    return TokenResponse(access_token=access_token)
