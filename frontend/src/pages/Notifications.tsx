@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { webhooksApi, notificationsApi, Webhook, WebhookProvider, NotificationSettings } from '@/lib/api'
+import { Link } from 'react-router-dom'
+import { webhooksApi, notificationsApi, jiraApi, Webhook, WebhookProvider, NotificationSettings, JiraConfig } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,6 +42,7 @@ import {
   Pencil,
   Plus,
   Send,
+  Settings,
   Trash2,
 } from 'lucide-react'
 
@@ -125,6 +127,8 @@ export default function Notifications() {
   const [isLoading, setIsLoading] = useState(true)
   const [webhooks, setWebhooks] = useState<Webhook[]>([])
   const [settings, setSettings] = useState<NotificationSettings | null>(null)
+  const [jiraConfig, setJiraConfig] = useState<JiraConfig | null>(null)
+  const [jiraConfigured, setJiraConfigured] = useState(false)
 
   // Track which webhooks are expanded
   const [expandedWebhooks, setExpandedWebhooks] = useState<Set<string>>(new Set())
@@ -325,12 +329,15 @@ export default function Notifications() {
 
   const loadData = async () => {
     try {
-      const [webhooksData, notificationData] = await Promise.all([
+      const [webhooksData, notificationData, jiraStatus] = await Promise.all([
         webhooksApi.list(),
         notificationsApi.get(),
+        jiraApi.getConfig(),
       ])
       setWebhooks(webhooksData)
       setSettings(notificationData)
+      setJiraConfigured(jiraStatus.configured)
+      setJiraConfig(jiraStatus.config)
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to load data', 'error')
     } finally {
@@ -495,6 +502,62 @@ export default function Notifications() {
           Add Webhook
         </Button>
       </div>
+
+      {/* Jira Integration Status */}
+      <Card className={!jiraConfigured || !jiraConfig?.is_enabled ? 'opacity-60' : ''}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.005 1.005 0 0 0 23.013 0z" />
+              </svg>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Jira Cloud</span>
+                  {jiraConfigured ? (
+                    jiraConfig?.is_enabled ? (
+                      <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                        Active
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                        Disabled
+                      </Badge>
+                    )
+                  ) : (
+                    <Badge variant="outline" className="text-xs text-muted-foreground">
+                      Not Configured
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {jiraConfigured && jiraConfig ? (
+                    jiraConfig.alert_severities.length > 0 ? (
+                      <>
+                        Creating tickets for:{' '}
+                        {jiraConfig.alert_severities
+                          .map(s => ALERT_SEVERITIES.find(sev => sev.id === s)?.label)
+                          .filter(Boolean)
+                          .join(', ')}
+                      </>
+                    ) : (
+                      'No severities configured for ticket creation'
+                    )
+                  ) : (
+                    'Configure Jira to automatically create tickets for alerts'
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/settings?tab=integrations">
+                <Settings className="h-4 w-4 mr-1" />
+                Configure
+              </Link>
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
 
       {webhooks.length === 0 ? (
         <Card>

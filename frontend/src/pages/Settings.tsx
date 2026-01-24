@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
@@ -50,6 +50,7 @@ async function downloadWithAuth(url: string, filename: string) {
 
 export default function SettingsPage() {
   const { showToast } = useToast()
+  const [searchParams] = useSearchParams()
   const { version, updateAvailable, latestVersion, releaseUrl, loading: versionLoading, checkForUpdates } = useVersion()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -68,8 +69,11 @@ export default function SettingsPage() {
   // App URL setting
   const [appUrl, setAppUrl] = useState('')
 
-  // Active tab for programmatic navigation
-  const [activeTab, setActiveTab] = useState('general')
+  // Active tab for programmatic navigation - read from URL param if present
+  const [activeTab, setActiveTab] = useState(() => {
+    const tabParam = searchParams.get('tab')
+    return tabParam || 'general'
+  })
 
   // SSO settings
   const [ssoEnabled, setSsoEnabled] = useState(false)
