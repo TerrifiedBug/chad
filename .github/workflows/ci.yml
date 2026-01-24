@@ -75,7 +75,6 @@ jobs:
           npm install
 
       - name: Run lint
-        continue-on-error: true
         run: |
           cd frontend
           npm run lint
