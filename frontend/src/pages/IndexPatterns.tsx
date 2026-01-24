@@ -40,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield, HeartPulse } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 export default function IndexPatternsPage() {
@@ -72,7 +72,6 @@ export default function IndexPatternsPage() {
 
   // GeoIP enrichment state
   const [geoipFields, setGeoipFields] = useState<string[]>([])
-  const [geoipFieldInput, setGeoipFieldInput] = useState('')
 
   // TI enrichment state
   const [tiConfig, setTiConfig] = useState<TIConfig>({})
@@ -155,7 +154,6 @@ export default function IndexPatternsPage() {
       latencyMs: null,
     })
     setGeoipFields([])
-    setGeoipFieldInput('')
     setTiConfig({})
     setTiFieldInputs({})
     setShowHealthSettings(false)
@@ -182,7 +180,6 @@ export default function IndexPatternsPage() {
       latencyMs: pattern.health_latency_ms,
     })
     setGeoipFields(pattern.geoip_fields || [])
-    setGeoipFieldInput('')
     // Load TI config from pattern
     const patternTiConfig: TIConfig = {}
     if (pattern.ti_config) {
@@ -717,7 +714,10 @@ export default function IndexPatternsPage() {
                 className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
                 onClick={() => setShowHealthSettings(!showHealthSettings)}
               >
-                <span className="font-medium text-sm">Health Alerting</span>
+                <div className="flex items-center gap-2">
+                  <HeartPulse className="h-4 w-4" />
+                  <span className="font-medium text-sm">Health Alerting</span>
+                </div>
                 {showHealthSettings ? (
                   <ChevronUp className="h-4 w-4" />
                 ) : (
@@ -830,50 +830,36 @@ export default function IndexPatternsPage() {
               {showGeoipSettings && (
                 <div className="p-3 pt-0 space-y-4">
                   <p className="text-xs text-muted-foreground">
-                    Specify IP address fields to enrich with geographic data when alerts are generated.
-                    GeoIP must be enabled in Settings.
+                    Select IP address fields to enrich with geographic data. Click a field to add it.
                   </p>
 
-                  <div className="flex gap-2">
-                    <Select
-                      value={geoipFieldInput}
-                      onValueChange={(value) => setGeoipFieldInput(value)}
-                    >
-                      <SelectTrigger className="flex-1 h-8 text-sm">
-                        <SelectValue placeholder="Select IP field..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {validationResult?.sample_fields && validationResult.sample_fields.length > 0 ? (
-                          validationResult.sample_fields
-                            .filter(f => !geoipFields.includes(f))
-                            .map(field => (
-                              <SelectItem key={field} value={field}>
-                                {field}
-                              </SelectItem>
-                            ))
-                        ) : (
-                          <div className="p-2 text-xs text-muted-foreground">
-                            Validate pattern to see available fields
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => {
-                        if (geoipFieldInput && !geoipFields.includes(geoipFieldInput)) {
-                          setGeoipFields([...geoipFields, geoipFieldInput])
-                        }
-                        setGeoipFieldInput('')
-                      }}
-                      disabled={!geoipFieldInput}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Select
+                    value=""
+                    onValueChange={(value) => {
+                      if (value && !geoipFields.includes(value)) {
+                        setGeoipFields([...geoipFields, value])
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Click to add IP fields..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {validationResult?.sample_fields && validationResult.sample_fields.length > 0 ? (
+                        validationResult.sample_fields
+                          .filter(f => !geoipFields.includes(f))
+                          .map(field => (
+                            <SelectItem key={field} value={field}>
+                              {field}
+                            </SelectItem>
+                          ))
+                      ) : (
+                        <div className="p-2 text-xs text-muted-foreground">
+                          Validate pattern to see available fields
+                        </div>
+                      )}
+                    </SelectContent>
+                  </Select>
 
                   {!validationResult?.sample_fields?.length && (
                     <p className="text-xs text-amber-600">
@@ -952,21 +938,6 @@ export default function IndexPatternsPage() {
                         const defaultType = supportedTypes[0]
                         const fieldInput = tiFieldInputs[source] || { field: '', type: defaultType }
 
-                        const addFieldConfig = () => {
-                          if (!fieldInput.field) return
-                          // Check if field already exists
-                          const exists = config.fields.some(f => f.field === fieldInput.field)
-                          if (exists) return
-                          setTiConfig({
-                            ...tiConfig,
-                            [source]: {
-                              ...config,
-                              fields: [...config.fields, { field: fieldInput.field, type: fieldInput.type }],
-                            },
-                          })
-                          setTiFieldInputs({ ...tiFieldInputs, [source]: { field: '', type: defaultType } })
-                        }
-
                         return (
                           <div key={source} className="border rounded p-3 space-y-3">
                             <div className="flex items-center justify-between">
@@ -987,35 +958,9 @@ export default function IndexPatternsPage() {
 
                             {config.enabled && (
                               <div className="space-y-2">
-                                <Label className="text-xs">Fields to enrich</Label>
-                                <div className="flex gap-2">
-                                  {/* Field selector */}
-                                  <Select
-                                    value={fieldInput.field}
-                                    onValueChange={(value) => setTiFieldInputs({
-                                      ...tiFieldInputs,
-                                      [source]: { ...fieldInput, field: value },
-                                    })}
-                                  >
-                                    <SelectTrigger className="flex-1 h-8 text-sm">
-                                      <SelectValue placeholder="Select field..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {validationResult?.sample_fields && validationResult.sample_fields.length > 0 ? (
-                                        validationResult.sample_fields.map(field => (
-                                          <SelectItem key={field} value={field}>
-                                            {field}
-                                          </SelectItem>
-                                        ))
-                                      ) : (
-                                        <div className="p-2 text-xs text-muted-foreground">
-                                          Validate pattern to see available fields
-                                        </div>
-                                      )}
-                                    </SelectContent>
-                                  </Select>
-
-                                  {/* Indicator type selector - filtered by source capabilities */}
+                                <div className="flex items-center gap-2">
+                                  <Label className="text-xs">Add as:</Label>
+                                  {/* Type selector - sets the type for next added field */}
                                   <Select
                                     value={fieldInput.type}
                                     onValueChange={(value) => setTiFieldInputs({
@@ -1023,7 +968,7 @@ export default function IndexPatternsPage() {
                                       [source]: { ...fieldInput, type: value as TIIndicatorType },
                                     })}
                                   >
-                                    <SelectTrigger className="w-32 h-8 text-sm">
+                                    <SelectTrigger className="w-32 h-7 text-xs">
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1034,18 +979,42 @@ export default function IndexPatternsPage() {
                                       ))}
                                     </SelectContent>
                                   </Select>
-
-                                  <Button
-                                    type="button"
-                                    variant="secondary"
-                                    size="sm"
-                                    className="h-8"
-                                    onClick={addFieldConfig}
-                                    disabled={!fieldInput.field}
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </Button>
                                 </div>
+
+                                {/* Field selector - clicking adds immediately with selected type */}
+                                <Select
+                                  value=""
+                                  onValueChange={(value) => {
+                                    if (value && !config.fields.some(f => f.field === value)) {
+                                      setTiConfig({
+                                        ...tiConfig,
+                                        [source]: {
+                                          ...config,
+                                          fields: [...config.fields, { field: value, type: fieldInput.type }],
+                                        },
+                                      })
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-sm">
+                                    <SelectValue placeholder="Click to add fields..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {validationResult?.sample_fields && validationResult.sample_fields.length > 0 ? (
+                                      validationResult.sample_fields
+                                        .filter(f => !config.fields.some(fc => fc.field === f))
+                                        .map(field => (
+                                          <SelectItem key={field} value={field}>
+                                            {field}
+                                          </SelectItem>
+                                        ))
+                                    ) : (
+                                      <div className="p-2 text-xs text-muted-foreground">
+                                        Validate pattern to see available fields
+                                      </div>
+                                    )}
+                                  </SelectContent>
+                                </Select>
 
                                 {config.fields.length > 0 && (
                                   <div className="flex flex-wrap gap-1">
