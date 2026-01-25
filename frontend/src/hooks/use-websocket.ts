@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 
 interface WebSocketMessage {
   type: string
-  data: any
+  data?: any
+  message?: string
 }
 
 interface AlertData {

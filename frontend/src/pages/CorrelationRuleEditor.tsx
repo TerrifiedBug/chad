@@ -135,8 +135,6 @@ export default function CorrelationRuleEditorPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
-  const [ruleAFields, setRuleAFields] = useState<string[]>([])
-  const [ruleBFields, setRuleBFields] = useState<string[]>([])
   const [ruleAFieldMappings, setRuleAFieldMappings] = useState<FieldMappingInfo[]>([])
   const [ruleBFieldMappings, setRuleBFieldMappings] = useState<FieldMappingInfo[]>([])
 
@@ -161,8 +159,6 @@ export default function CorrelationRuleEditorPage() {
       loadCommonFields()
     } else {
       setAvailableFields([])
-      setRuleAFields([])
-      setRuleBFields([])
       setRuleAFieldMappings([])
       setRuleBFieldMappings([])
     }
@@ -192,8 +188,6 @@ export default function CorrelationRuleEditorPage() {
         loadRuleFields(formData.rule_b_id!),
       ])
 
-      setRuleAFields(resultA.fields)
-      setRuleBFields(resultB.fields)
       setRuleAFieldMappings(resultA.mappings)
       setRuleBFieldMappings(resultB.mappings)
 

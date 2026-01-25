@@ -108,7 +108,7 @@ export default function LiveAlertFeedPage() {
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="font-mono">{alert.alert_id.slice(0, 8)}</span>
                       <span>•</span>
-                      <RelativeTime timestamp={alert.timestamp} />
+                      <RelativeTime date={alert.timestamp} />
                     </div>
                   </div>
                   <Button
