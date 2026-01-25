@@ -44,6 +44,10 @@ export default function TISettings() {
     abuseipdb: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
     greynoise: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
     threatfox: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
+    misp: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
+    abuse_ch: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
+    alienvault_otx: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
+    phishtank: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
   })
 
   useEffect(() => {
@@ -268,6 +272,31 @@ export default function TISettings() {
 
                   <CollapsibleContent>
                     <div className="border-t p-4 space-y-4 bg-muted/50">
+                      {/* Instance URL Input */}
+                      {info.requiresInstance && (
+                        <div className="space-y-2">
+                          <Label htmlFor={`${sourceType}-instance-url`}>Instance URL</Label>
+                          <Input
+                            id={`${sourceType}-instance-url`}
+                            type="text"
+                            value={formState.instanceUrl}
+                            onChange={(e) =>
+                              updateFormState(sourceType, { instanceUrl: e.target.value })
+                            }
+                            placeholder={
+                              source.instance_url
+                                ? source.instance_url
+                                : `https://${sourceType}.example.com`
+                            }
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {source.instance_url
+                              ? 'Leave blank to keep existing URL'
+                              : `Enter your ${info.name} instance URL (e.g., https://misp.example.com)`}
+                          </p>
+                        </div>
+                      )}
+
                       {/* API Key Input */}
                       {info.requiresKey && (
                         <div className="space-y-2">
@@ -364,37 +393,6 @@ export default function TISettings() {
               </Collapsible>
             )
           })}
-        </CardContent>
-      </Card>
-
-      {/* Enrichment Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle>How Threat Intelligence Enrichment Works</CardTitle>
-        </CardHeader>
-        <CardContent className="prose prose-sm dark:prose-invert max-w-none">
-          <p>
-            Configure API keys here to enable TI sources globally. Then, enable specific sources
-            and configure which fields to enrich in each Index Pattern's settings.
-          </p>
-          <ul>
-            <li>
-              <strong>IP Addresses:</strong> Checked against reputation databases for known
-              malicious activity, abuse reports, and scanner behavior
-            </li>
-            <li>
-              <strong>Domains:</strong> Analyzed for malware distribution, phishing campaigns,
-              and command-and-control infrastructure
-            </li>
-            <li>
-              <strong>File Hashes:</strong> Matched against known malware signatures and
-              detection engines
-            </li>
-          </ul>
-          <p>
-            Enrichment results are displayed in the alert details panel, showing risk scores,
-            categories, and relevant context from each enabled source.
-          </p>
         </CardContent>
       </Card>
     </div>

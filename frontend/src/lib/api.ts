@@ -493,6 +493,10 @@ export const TI_SOURCE_SUPPORTED_TYPES: Record<TISourceType, TIIndicatorType[]> 
   abuseipdb: ['ip'],
   greynoise: ['ip'],
   threatfox: ['ip', 'domain', 'hash_md5', 'hash_sha1', 'hash_sha256'],
+  misp: ['ip', 'domain', 'url', 'hash_md5', 'hash_sha1', 'hash_sha256'],
+  abuse_ch: ['ip', 'domain', 'url'],
+  alienvault_otx: ['ip', 'domain', 'url', 'hash_md5', 'hash_sha1', 'hash_sha256'],
+  phishtank: ['url'],
 }
 
 // Field configuration for TI enrichment
@@ -1393,7 +1397,15 @@ export const jiraApi = {
 }
 
 // Threat Intelligence types
-export type TISourceType = 'virustotal' | 'abuseipdb' | 'greynoise' | 'threatfox'
+export type TISourceType =
+  | 'virustotal'
+  | 'abuseipdb'
+  | 'greynoise'
+  | 'threatfox'
+  | 'misp'
+  | 'abuse_ch'
+  | 'alienvault_otx'
+  | 'phishtank'
 
 export type TISourceConfig = {
   id: string
@@ -1423,31 +1435,71 @@ export type TITestResponse = {
 // TI source display info
 export const TI_SOURCE_INFO: Record<
   TISourceType,
-  { name: string; description: string; requiresKey: boolean; docsUrl: string }
+  { name: string; description: string; requiresKey: boolean; requiresInstance: boolean; docsUrl: string; category: string }
 > = {
   virustotal: {
     name: 'VirusTotal',
     description: 'File, IP, domain, and URL reputation from crowdsourced malware analysis',
     requiresKey: true,
+    requiresInstance: false,
     docsUrl: 'https://docs.virustotal.com/reference/overview',
+    category: 'general',
   },
   abuseipdb: {
     name: 'AbuseIPDB',
     description: 'IP reputation database with user-reported abuse data',
     requiresKey: true,
+    requiresInstance: false,
     docsUrl: 'https://docs.abuseipdb.com/',
+    category: 'ip',
   },
   greynoise: {
     name: 'GreyNoise',
     description: 'Internet scanner and mass exploitation detection',
     requiresKey: true,
+    requiresInstance: false,
     docsUrl: 'https://docs.greynoise.io/',
+    category: 'ip',
   },
   threatfox: {
     name: 'ThreatFox',
     description: 'Free IOC sharing platform by abuse.ch for malware-related indicators',
     requiresKey: false,
+    requiresInstance: false,
     docsUrl: 'https://threatfox.abuse.ch/api/',
+    category: 'malware',
+  },
+  misp: {
+    name: 'MISP',
+    description: 'Threat sharing platform for malware indicators and IOC collaboration',
+    requiresKey: true,
+    requiresInstance: true,
+    docsUrl: 'https://www.misp-project.org/',
+    category: 'malware',
+  },
+  abuse_ch: {
+    name: 'abuse.ch',
+    description: 'Malware and botnet tracking via URLhaus and Feodo Tracker',
+    requiresKey: false,
+    requiresInstance: false,
+    docsUrl: 'https://abuse.ch/',
+    category: 'malware',
+  },
+  alienvault_otx: {
+    name: 'AlienVault OTX',
+    description: 'Open threat exchange with community-contributed threat intelligence',
+    requiresKey: true,
+    requiresInstance: false,
+    docsUrl: 'https://otx.alienvault.com/',
+    category: 'general',
+  },
+  phishtank: {
+    name: 'PhishTank',
+    description: 'Community phishing URL database',
+    requiresKey: false,
+    requiresInstance: false,
+    docsUrl: 'https://www.phishtank.com/',
+    category: 'phishing',
   },
 }
 
