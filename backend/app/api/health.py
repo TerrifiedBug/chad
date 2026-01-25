@@ -184,8 +184,8 @@ async def get_health_status(
             })
 
     # GeoIP - show if configured
-    result = await db.execute(select(Setting).where(Setting.key == "geoip"))
-    geoip_setting = result.scalar_one_or_or_none()
+    geoip_result = await db.execute(select(Setting).where(Setting.key == "geoip"))
+    geoip_setting = geoip_result.scalar_one_or_none()
     if geoip_setting and geoip_setting.value:
         geoip_config = geoip_setting.value
         # Check if enabled and has license key
@@ -194,8 +194,8 @@ async def get_health_status(
 
         if enabled and has_license:
             # Get last update time
-            result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
-            geoip_last_update = result.scalar_one_or_none()
+            last_update_result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
+            geoip_last_update = last_update_result.scalar_one_or_none()
             last_update = geoip_last_update.value if geoip_last_update else None
 
             if last_update:
