@@ -137,6 +137,7 @@ export default function CorrelationRuleEditorPage() {
   const [error, setError] = useState('')
   const [ruleAFieldMappings, setRuleAFieldMappings] = useState<FieldMappingInfo[]>([])
   const [ruleBFieldMappings, setRuleBFieldMappings] = useState<FieldMappingInfo[]>([])
+  const [isLoadingEditData, setIsLoadingEditData] = useState(false) // Track if editing data is loading
 
   const [formData, setFormData] = useState({
     name: '',
@@ -153,8 +154,11 @@ export default function CorrelationRuleEditorPage() {
     if (id) loadRule(id)
   }, [id])
 
-  // Load Sigma fields when both rules are selected
+  // Load Sigma fields when both rules are selected (only for new rules)
   useEffect(() => {
+    // Skip if we're loading edit data or if this is an edit operation
+    if (isLoadingEditData || id) return
+
     if (formData.rule_a_id && formData.rule_b_id) {
       loadCommonFields(formData.entity_field)
     } else {
@@ -162,7 +166,7 @@ export default function CorrelationRuleEditorPage() {
       setRuleAFieldMappings([])
       setRuleBFieldMappings([])
     }
-  }, [formData.rule_a_id, formData.rule_b_id])
+  }, [formData.rule_a_id, formData.rule_b_id, id, isLoadingEditData])
 
   async function loadRuleFields(ruleId: string): Promise<{ fields: string[], mappings: FieldMappingInfo[] }> {
     try {
@@ -228,6 +232,7 @@ export default function CorrelationRuleEditorPage() {
   }
 
   const loadRule = async (ruleId: string) => {
+    setIsLoadingEditData(true)
     setIsLoading(true)
     try {
       const rule = await correlationRulesApi.get(ruleId)
@@ -245,6 +250,7 @@ export default function CorrelationRuleEditorPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load correlation rule')
     } finally {
+      setIsLoadingEditData(false)
       setIsLoading(false)
     }
   }
