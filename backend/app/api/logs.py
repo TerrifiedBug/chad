@@ -196,22 +196,63 @@ async def receive_logs(
             alerts_created.append(alert)
             total_matches += 1
 
-            # Check for correlation triggers
+            # Check for correlation triggers and create correlation alerts
             try:
                 triggered_correlations = await check_correlation(
                     db,
                     rule_id=UUID(rule_id),
                     log_document=enriched_log,
-                    alert_id=alert_id,
+                    alert_id=alert["alert_id"],
                 )
                 if triggered_correlations:
-                    # TODO: Create correlation alerts or store them
-                    logger.info(
-                        f"Correlation triggered for rule {rule_id}: "
-                        f"{len(triggered_correlations)} correlation(s) detected"
-                    )
+                    import logging
+                    logger = logging.getLogger(__name__)
+
+                    # Create correlation alerts
+                    for corr in triggered_correlations:
+                        # Create a correlation alert with the combined information
+                        correlation_alert = alert_service.create_alert(
+                            alerts_index=alerts_index,
+                            rule_id=corr["correlation_rule_id"],
+                            rule_title=corr["correlation_name"],
+                            severity=corr.get("severity", "high"),
+                            tags=["correlation"],
+                            log_document={
+                                "correlation": {
+                                    "correlation_rule_id": corr["correlation_rule_id"],
+                                    "correlation_name": corr["correlation_name"],
+                                    "source_alerts": corr.get("source_alerts", []),
+                                    "entity_field": corr.get("entity_field"),
+                                    "entity_value": corr.get("entity_value"),
+                                },
+                                "@timestamp": enriched_log.get("@timestamp"),
+                            },
+                        )
+                        alerts_created.append(correlation_alert)
+                        total_matches += 1
+
+                        # Broadcast correlation alert via WebSocket
+                        try:
+                            corr_broadcast = AlertBroadcast(
+                                alert_id=str(correlation_alert["alert_id"]),
+                                rule_id=corr["correlation_rule_id"],
+                                rule_title=corr["correlation_name"],
+                                severity=corr.get("severity", "high"),
+                                timestamp=correlation_alert.get("created_at", ""),
+                                matched_log={"correlation": True, **corr},
+                            )
+                            await manager.broadcast_alert(corr_broadcast)
+                        except Exception as e:
+                            logger.error(f"WebSocket broadcast failed for correlation alert: {e}")
+
+                        logger.info(
+                            f"Correlation alert created: {corr['correlation_name']} "
+                            f"(entity: {corr.get('entity_value')})"
+                        )
             except Exception as e:
                 # Log but don't fail the alert creation
+                import logging
+                logger = logging.getLogger(__name__)
                 logger.error(f"Correlation check failed: {e}")
 
             # Broadcast alert via WebSocket for real-time updates
@@ -221,12 +262,14 @@ async def receive_logs(
                     rule_id=rule_id,
                     rule_title=alert.get("rule_title", "Unknown Rule"),
                     severity=alert.get("severity", "medium"),
-                    timestamp=alert.get("@timestamp", ""),
+                    timestamp=alert.get("created_at", ""),
                     matched_log=enriched_log,
                 )
                 await manager.broadcast_alert(alert_broadcast)
             except Exception as e:
                 # Log but don't fail the alert creation
+                import logging
+                logger = logging.getLogger(__name__)
                 logger.error(f"WebSocket broadcast failed: {e}")
 
     # Send notifications through the new notification system

@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2 } from 'lucide-react'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -179,6 +179,70 @@ function TIEnrichmentCard({ indicators }: { indicators: TIEnrichmentIndicator[] 
             No threat intelligence data available
           </p>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// Correlation Alert Details card component
+function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, unknown> }) {
+  const correlationData = logDocument.correlation as {
+    correlation_rule_id?: string
+    correlation_name?: string
+    source_alerts?: Array<{ alert_id: string; rule_title: string; timestamp: string }>
+    entity_field?: string
+    entity_value?: string
+  }
+
+  if (!correlationData) {
+    return null
+  }
+
+  return (
+    <Card className="border-purple-200 dark:border-purple-900">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Link2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+          <span className="text-purple-700 dark:text-purple-300">Correlation Alert</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <span className="text-muted-foreground">Entity Field:</span>
+            <div className="font-mono font-medium">{correlationData.entity_field || 'N/A'}</div>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Entity Value:</span>
+            <div className="font-mono font-medium">{correlationData.entity_value || 'N/A'}</div>
+          </div>
+        </div>
+
+        {correlationData.source_alerts && correlationData.source_alerts.length > 0 && (
+          <div>
+            <div className="text-muted-foreground mb-2">Source Alerts:</div>
+            <div className="space-y-2">
+              {correlationData.source_alerts.map((sourceAlert, idx) => (
+                <div key={idx} className="flex items-center justify-between p-2 bg-muted rounded text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium">{idx + 1}.</span>
+                    <span className="truncate">{sourceAlert.rule_title}</span>
+                  </div>
+                  <Link
+                    to={`/alerts/${sourceAlert.alert_id}`}
+                    className="text-primary hover:underline text-xs shrink-0"
+                  >
+                    View
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="text-xs text-muted-foreground">
+          This alert was triggered when multiple detection rules matched within the configured time window for the same entity value.
+        </div>
       </CardContent>
     </Card>
   )
@@ -404,7 +468,15 @@ export default function AlertDetailPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
+              {alert.tags.includes('correlation') && (
+                <div className="flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                  <Link2 className="h-3 w-3" />
+                  <span>Correlation</span>
+                </div>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">
               Alert ID: {alert.alert_id}
             </p>
@@ -560,6 +632,9 @@ export default function AlertDetailPage() {
           {alert.ti_enrichment && alert.ti_enrichment.indicators.length > 0 && (
             <TIEnrichmentCard indicators={alert.ti_enrichment.indicators} />
           )}
+
+          {/* Correlation Alert Details - shown if this is a correlation alert */}
+          <CorrelationAlertDetails logDocument={alert.log_document as Record<string, unknown>} />
 
           {/* Correlation Rules - shown if any correlation rules involve this alert's rule */}
           <CorrelationInfoCard correlations={correlations} ruleId={alert.rule_id} />

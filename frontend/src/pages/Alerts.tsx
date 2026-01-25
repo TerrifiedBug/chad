@@ -19,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Link2 } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 
@@ -236,7 +236,17 @@ export default function AlertsPage() {
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => navigate(`/alerts/${alert.alert_id}`)}
                   >
-                    <TableCell className="font-medium">{alert.rule_title}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {alert.tags.includes('correlation') && (
+                          <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                            <Link2 className="h-3 w-3" />
+                            <span>Correlation</span>
+                          </div>
+                        )}
+                        <span>{alert.rule_title}</span>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <span
                         className={`px-2 py-1 rounded text-xs font-medium ${
@@ -255,17 +265,20 @@ export default function AlertsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1 flex-wrap">
-                        {alert.tags.slice(0, 3).map((tag, i) => (
-                          <span
-                            key={i}
-                            className="px-1.5 py-0.5 bg-muted rounded text-xs"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                        {alert.tags.length > 3 && (
+                        {alert.tags
+                          .filter(tag => tag !== 'correlation')
+                          .slice(0, 3)
+                          .map((tag, i) => (
+                            <span
+                              key={i}
+                              className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        {alert.tags.filter(tag => tag !== 'correlation').length > 3 && (
                           <span className="text-xs text-muted-foreground">
-                            +{alert.tags.length - 3}
+                            +{alert.tags.filter(tag => tag !== 'correlation').length - 3}
                           </span>
                         )}
                       </div>

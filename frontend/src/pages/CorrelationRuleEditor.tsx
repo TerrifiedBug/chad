@@ -175,7 +175,6 @@ export default function CorrelationRuleEditorPage() {
   }, [id, isLoadingEditData])
 
   async function loadRuleFields(ruleId: string): Promise<{ fields: string[], mappings: FieldMappingInfo[] }> {
-    console.log('loadRuleFields called with:', ruleId)
     try {
       const rule = await rulesApi.get(ruleId)
       // Use validation API to get detected fields (same as RuleEditor)
@@ -196,7 +195,6 @@ export default function CorrelationRuleEditorPage() {
     const actualRuleBId = ruleBId || formData.rule_b_id
 
     if (!actualRuleAId || !actualRuleBId) {
-      console.log('loadCommonFields: skipping - missing rule IDs', { ruleAId, ruleBId, rule_a_id: formData.rule_a_id, rule_b_id: formData.rule_b_id })
       return
     }
 
@@ -288,6 +286,29 @@ export default function CorrelationRuleEditorPage() {
       setError(err instanceof Error ? err.message : 'Failed to save correlation rule')
       setIsSaving(false)
     }
+  }
+
+  // Show loading state while editing data is being fetched
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-2xl">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/correlation')}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">
+              {isEditing ? 'Edit Correlation Rule' : 'Create Correlation Rule'}
+            </h1>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
