@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db, require_admin
 from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
+from app.models.setting import Setting
 from app.models.ti_config import TISourceConfig
 from app.models.user import User
 from app.services.health import get_all_indices_health, get_health_history, get_index_health
