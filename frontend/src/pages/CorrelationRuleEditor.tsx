@@ -79,10 +79,31 @@ export default function CorrelationRuleEditorPage() {
     setIsLoadingFields(true)
     try {
       const response = await rulesApi.getFields(ruleId)
-      setAvailableFields(response.fields || [])
+      const fields = response.fields || []
+
+      // If no fields returned, use fallback common entity fields
+      if (fields.length === 0) {
+        console.warn('No fields returned from API, using fallback entity fields')
+        const fallbackFields = [
+          'source.ip', 'source.address', 'destination.ip', 'destination.address',
+          'client.ip', 'client.address', 'server.ip', 'server.address',
+          'host.ip', 'host.name', 'user.id', 'user.name',
+          'process.executable', 'process.command_line',
+        ]
+        setAvailableFields(fallbackFields)
+      } else {
+        setAvailableFields(fields)
+      }
     } catch (err) {
       console.error('Failed to load fields:', err)
-      setAvailableFields([])
+      // Use fallback fields on error
+      const fallbackFields = [
+        'source.ip', 'source.address', 'destination.ip', 'destination.address',
+        'client.ip', 'client.address', 'server.ip', 'server.address',
+        'host.ip', 'host.name', 'user.id', 'user.name',
+        'process.executable', 'process.command_line',
+      ]
+      setAvailableFields(fallbackFields)
     } finally {
       setIsLoadingFields(false)
     }
@@ -138,8 +159,9 @@ export default function CorrelationRuleEditorPage() {
     }
   }
 
-  const filteredRules = rules.filter(
-    (rule) => rule.id !== formData.rule_a_id && rule.id !== formData.rule_b_id
+  // Filtered rules for Rule B dropdown (excludes Rule A only)
+  const filteredRulesForRuleB = rules.filter(
+    (rule) => rule.id !== formData.rule_a_id
   )
 
   return (
@@ -196,10 +218,7 @@ export default function CorrelationRuleEditorPage() {
                 <SelectContent className="z-50 bg-popover max-h-[300px]">
                   {rules.map((rule) => (
                     <SelectItem key={rule.id} value={rule.id}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{rule.title}</span>
-                        <span className="text-xs text-muted-foreground">{rule.id}</span>
-                      </div>
+                      {rule.title}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -217,16 +236,18 @@ export default function CorrelationRuleEditorPage() {
                   <SelectValue placeholder="Select second rule" />
                 </SelectTrigger>
                 <SelectContent className="z-50 bg-popover max-h-[300px]">
-                  {filteredRules.map((rule) => (
+                  {filteredRulesForRuleB.map((rule) => (
                     <SelectItem key={rule.id} value={rule.id}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{rule.title}</span>
-                        <span className="text-xs text-muted-foreground">{rule.id}</span>
-                      </div>
+                      {rule.title}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {formData.rule_a_id === formData.rule_b_id && (
+                <p className="text-xs text-destructive">
+                  Rule B cannot be the same as Rule A
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -256,7 +277,7 @@ export default function CorrelationRuleEditorPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                The field from log documents used to match events (loaded from Rule A's index pattern)
+                The field used to match events across both rules. This field must exist in the log data after field mappings are applied.
               </p>
             </div>
 
@@ -325,7 +346,7 @@ export default function CorrelationRuleEditorPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSaving || isLoading || !formData.name || !formData.rule_a_id || !formData.rule_b_id}>
+              <Button type="submit" disabled={isSaving || isLoading || !formData.name || !formData.rule_a_id || !formData.rule_b_id || formData.rule_a_id === formData.rule_b_id}>
                 {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {isEditing ? 'Update' : 'Create'} Rule
               </Button>
