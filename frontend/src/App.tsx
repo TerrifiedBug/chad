@@ -25,6 +25,7 @@ import AttackMatrixPage from '@/pages/AttackMatrix'
 import AccountPage from '@/pages/Account'
 import CorrelationRulesPage from '@/pages/CorrelationRules'
 import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
+import LiveAlertFeedPage from '@/pages/LiveAlertFeed'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -173,6 +174,16 @@ function AppRoutes() {
             <Header />
             <main className="px-6 py-8">
               <AlertDetailPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/live" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <LiveAlertFeedPage />
             </main>
           </div>
         </ProtectedRoute>

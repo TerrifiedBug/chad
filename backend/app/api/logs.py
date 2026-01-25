@@ -29,6 +29,7 @@ from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
 from app.services.correlation import check_correlation
+from app.services.websocket import manager, AlertBroadcast
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -212,6 +213,21 @@ async def receive_logs(
             except Exception as e:
                 # Log but don't fail the alert creation
                 logger.error(f"Correlation check failed: {e}")
+
+            # Broadcast alert via WebSocket for real-time updates
+            try:
+                alert_broadcast = AlertBroadcast(
+                    alert_id=str(alert["alert_id"]),
+                    rule_id=rule_id,
+                    rule_title=alert.get("rule_title", "Unknown Rule"),
+                    severity=alert.get("severity", "medium"),
+                    timestamp=alert.get("@timestamp", ""),
+                    matched_log=enriched_log,
+                )
+                await manager.broadcast_alert(alert_broadcast)
+            except Exception as e:
+                # Log but don't fail the alert creation
+                logger.error(f"WebSocket broadcast failed: {e}")
 
     # Send notifications through the new notification system
     if alerts_created:

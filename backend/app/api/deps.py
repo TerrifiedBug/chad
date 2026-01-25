@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, WebSocket
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from opensearchpy import OpenSearch
 from sqlalchemy import select
@@ -14,6 +14,40 @@ from app.models.user import User
 from app.services.opensearch import create_client
 
 security = HTTPBearer()
+
+
+async def get_current_user_websocket(
+    websocket: WebSocket,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
+    """
+    Authenticate WebSocket connection using token from query parameter.
+
+    Returns the authenticated user or None if authentication fails.
+    Used by WebSocket endpoints which need to handle auth differently.
+    """
+    from fastapi import Query
+
+    # Get token from query parameter
+    token = websocket.query_params.get("token")
+    if not token:
+        return None
+
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        return None
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None or not user.is_active:
+        return None
+
+    return user
 
 
 async def get_current_user(

@@ -17,6 +17,7 @@ import { ChevronDown, LogOut, Settings, Key, Lock, User } from 'lucide-react'
 const navItems = [
   { href: '/', label: 'Dashboard', exact: true },
   { href: '/alerts', label: 'Alerts' },
+  { href: '/live', label: 'Live' },
   { href: '/rules', label: 'Rules' },
   { href: '/correlation', label: 'Correlation' },
   { href: '/sigmahq', label: 'SigmaHQ', permission: 'manage_sigmahq' },
