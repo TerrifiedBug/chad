@@ -202,3 +202,143 @@ detection:
         )
         # HTTPBearer returns 403 when no credentials provided
         assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_create_rule_has_initial_version_reason(self, authenticated_client: AsyncClient):
+        """Verify new rules have 'Initial version' change reason."""
+        # Create index pattern
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        assert pattern_response.status_code == 201
+        pattern_id = pattern_response.json()["id"]
+
+        # Create rule
+        yaml_content = """
+title: Test Detection Rule
+logsource:
+    product: windows
+    service: sysmon
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+"""
+        response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        rule_id = data["id"]
+
+        # Get rule details to check version history
+        response = await authenticated_client.get(f"/api/rules/{rule_id}")
+        assert response.status_code == 200
+        rule_detail = response.json()
+
+        # Verify version history has change_reason
+        assert len(rule_detail["versions"]) > 0
+        first_version = rule_detail["versions"][0]
+        assert first_version["change_reason"] == "Initial version"
+        assert "changed_by" in first_version
+
+    @pytest.mark.asyncio
+    async def test_update_rule_with_change_reason(self, authenticated_client: AsyncClient):
+        """Verify change_reason is stored when provided."""
+        # Create index pattern and rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Update rule with change_reason
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "yaml_content": new_yaml,
+                "change_reason": "Fixed detection logic",
+            },
+        )
+        assert response.status_code == 200
+
+        # Verify change_reason in version history
+        response = await authenticated_client.get(f"/api/rules/{rule_id}")
+        assert response.status_code == 200
+        rule_detail = response.json()
+
+        # Should have 2 versions now
+        assert len(rule_detail["versions"]) == 2
+        latest_version = rule_detail["versions"][0]  # Most recent is first
+        assert latest_version["change_reason"] == "Fixed detection logic"
+        assert latest_version["yaml_content"] == new_yaml
+
+    @pytest.mark.asyncio
+    async def test_update_rule_without_change_reason_uses_default(self, authenticated_client: AsyncClient):
+        """Verify default change_reason when not provided."""
+        # Create index pattern and rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Update rule WITHOUT change_reason
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "yaml_content": new_yaml,
+            },
+        )
+        assert response.status_code == 200
+
+        # Verify default change_reason in version history
+        response = await authenticated_client.get(f"/api/rules/{rule_id}")
+        assert response.status_code == 200
+        rule_detail = response.json()
+
+        # Should have 2 versions
+        assert len(rule_detail["versions"]) == 2
+        latest_version = rule_detail["versions"][0]
+        assert latest_version["change_reason"] == "Rule updated"
+        assert latest_version["yaml_content"] == new_yaml

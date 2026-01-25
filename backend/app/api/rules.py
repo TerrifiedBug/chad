@@ -351,7 +351,8 @@ async def update_rule(
         db.add(new_version)
 
     for field, value in update_data.items():
-        setattr(rule, field, value)
+        if field != "change_reason":  # Skip - belongs to RuleVersion, not Rule
+            setattr(rule, field, value)
 
     await db.commit()
     await db.refresh(rule)
