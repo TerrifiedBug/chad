@@ -244,13 +244,11 @@ async def get_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
 ):
+    # First get the rule
     result = await db.execute(
         select(Rule)
         .where(Rule.id == rule_id)
-        .options(
-            selectinload(Rule.index_pattern),
-            selectinload(Rule.versions).selectinload(RuleVersion.author),
-        )
+        .options(selectinload(Rule.index_pattern))
     )
     rule = result.scalar_one_or_none()
 
@@ -260,8 +258,17 @@ async def get_rule(
             detail="Rule not found",
         )
 
+    # Explicitly query versions in descending order to ensure fresh data
+    versions_result = await db.execute(
+        select(RuleVersion)
+        .where(RuleVersion.rule_id == rule_id)
+        .options(selectinload(RuleVersion.author))
+        .order_by(RuleVersion.version_number.desc())
+    )
+    versions = versions_result.scalars().all()
+
     # Compute current_version and needs_redeploy
-    current_version = rule.versions[0].version_number if rule.versions else 1
+    current_version = versions[0].version_number if versions else 1
     needs_redeploy = (
         rule.deployed_at is not None
         and rule.deployed_version is not None
@@ -270,8 +277,8 @@ async def get_rule(
 
     # Get last editor email
     last_edited_by = None
-    if rule.versions:
-        last_version = rule.versions[0]
+    if versions:
+        last_version = versions[0]
         if last_version.author:
             last_edited_by = last_version.author.email
 
@@ -296,7 +303,7 @@ async def get_rule(
         source=rule.source,
         sigmahq_path=rule.sigmahq_path,
         index_pattern=rule.index_pattern,
-        versions=rule.versions,
+        versions=versions,
         threshold_enabled=rule.threshold_enabled,
         threshold_count=rule.threshold_count,
         threshold_window_minutes=rule.threshold_window_minutes,
