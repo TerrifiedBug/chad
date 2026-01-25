@@ -10,6 +10,7 @@ from app.api.api_keys import router as api_keys_router
 from app.api.attack import router as attack_router
 from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
+from app.api.correlation_rules import router as correlation_rules_router
 from app.api.export import router as export_router
 from app.api.external import router as external_router
 from app.api.field_mappings import router as field_mappings_router
@@ -103,3 +104,4 @@ app.include_router(webhooks_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(jira_router, prefix="/api")
 app.include_router(ti_router, prefix="/api")
+app.include_router(correlation_rules_router, prefix="/api")

@@ -1,0 +1,55 @@
+"""Schemas for correlation rules."""
+
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+
+class CorrelationRuleBase(BaseModel):
+    """Base schema for correlation rules."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    rule_a_id: str
+    rule_b_id: str
+    entity_field: str = Field(..., max_length=100)
+    time_window_minutes: int = Field(..., ge=1, le=1440)
+    severity: str = Field(..., pattern="^(critical|high|medium|low|informational)$")
+    is_enabled: bool = True
+
+
+class CorrelationRuleCreate(CorrelationRuleBase):
+    """Schema for creating a correlation rule."""
+
+    pass
+
+
+class CorrelationRuleUpdate(BaseModel):
+    """Schema for updating a correlation rule."""
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    entity_field: str | None = Field(None, max_length=100)
+    time_window_minutes: int | None = Field(None, ge=1, le=1440)
+    severity: str | None = Field(None, pattern="^(critical|high|medium|low|informational)$")
+    is_enabled: bool | None = None
+
+
+class CorrelationRuleResponse(CorrelationRuleBase):
+    """Schema for correlation rule response."""
+
+    id: str
+    created_at: datetime
+    updated_at: datetime
+    created_by: str | None
+
+    # Include related rule info
+    rule_a_title: str | None = None
+    rule_b_title: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class CorrelationRuleListResponse(BaseModel):
+    """Schema for list of correlation rules."""
+
+    correlation_rules: list[CorrelationRuleResponse]
+    total: int
