@@ -4,6 +4,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.models.index_pattern import IndexPattern
+from app.models.notification_settings import NotificationSettings
 from app.models.rule import RuleStatus
 
 
@@ -342,3 +343,302 @@ detection:
         latest_version = rule_detail["versions"][0]
         assert latest_version["change_reason"] == "Rule updated"
         assert latest_version["yaml_content"] == new_yaml
+
+
+class TestMandatoryComments:
+    """Tests for mandatory change_reason validation."""
+
+    @pytest.mark.asyncio
+    async def test_update_rule_without_change_reason_when_mandatory_enabled_all_rules(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test that rule update fails when change_reason missing and mandatory comments enabled for all rules."""
+        # Enable mandatory comments for all rules
+        settings = NotificationSettings(mandatory_rule_comments=True, mandatory_comments_deployed_only=False)
+        test_session.add(settings)
+        await test_session.commit()
+
+        # Create index pattern and rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Try to update rule WITHOUT change_reason - should fail
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "yaml_content": new_yaml,
+            },
+        )
+        assert response.status_code == 400
+        assert "Change reason is required" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_update_rule_without_change_reason_when_mandatory_enabled_deployed_only(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test that undeployed rule can be updated without change_reason when mandatory is deployed-only."""
+        # Enable mandatory comments for deployed rules only
+        settings = NotificationSettings(mandatory_rule_comments=True, mandatory_comments_deployed_only=True)
+        test_session.add(settings)
+        await test_session.commit()
+
+        # Create index pattern and undeployed rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+                "status": "undeployed",  # Explicitly undeployed
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Try to update undeployed rule WITHOUT change_reason - should succeed
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "yaml_content": new_yaml,
+            },
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_update_deployed_rule_without_change_reason_when_mandatory_enabled_deployed_only(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test that deployed rule update fails when change_reason missing and mandatory is deployed-only."""
+        # Enable mandatory comments for deployed rules only
+        settings = NotificationSettings(mandatory_rule_comments=True, mandatory_comments_deployed_only=True)
+        test_session.add(settings)
+        await test_session.commit()
+
+        # Create index pattern and deployed rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+                "status": "deployed",  # Deployed rule
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Try to update deployed rule WITHOUT change_reason - should fail
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "yaml_content": new_yaml,
+            },
+        )
+        assert response.status_code == 400
+        assert "Change reason is required" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_update_rule_with_change_reason_when_mandatory_enabled(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test that rule update succeeds when change_reason is provided and mandatory comments enabled."""
+        # Enable mandatory comments
+        settings = NotificationSettings(mandatory_rule_comments=True, mandatory_comments_deployed_only=False)
+        test_session.add(settings)
+        await test_session.commit()
+
+        # Create index pattern and rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Update rule WITH change_reason - should succeed
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "yaml_content": new_yaml,
+                "change_reason": "Fixed detection logic to include EventID 2",
+            },
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_update_rule_without_change_reason_when_mandatory_disabled(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test that rule update succeeds without change_reason when mandatory comments disabled."""
+        # Disable mandatory comments
+        settings = NotificationSettings(mandatory_rule_comments=False, mandatory_comments_deployed_only=False)
+        test_session.add(settings)
+        await test_session.commit()
+
+        # Create index pattern and rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Update rule WITHOUT change_reason - should succeed
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "yaml_content": new_yaml,
+            },
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_update_rule_with_empty_change_reason_when_mandatory_enabled(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test that rule update fails when change_reason is empty string and mandatory comments enabled."""
+        # Enable mandatory comments
+        settings = NotificationSettings(mandatory_rule_comments=True, mandatory_comments_deployed_only=False)
+        test_session.add(settings)
+        await test_session.commit()
+
+        # Create index pattern and rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Try to update rule with empty change_reason - should fail
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "yaml_content": new_yaml,
+                "change_reason": "   ",  # Whitespace only
+            },
+        )
+        assert response.status_code == 400
+        assert "Change reason is required" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_update_rule_non_yaml_fields_without_change_reason_when_mandatory_enabled(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test that updating non-yaml fields doesn't require change_reason even when mandatory enabled."""
+        # Enable mandatory comments
+        settings = NotificationSettings(mandatory_rule_comments=True, mandatory_comments_deployed_only=False)
+        test_session.add(settings)
+        await test_session.commit()
+
+        # Create index pattern and rule
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Index Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        pattern_id = pattern_response.json()["id"]
+
+        create_response = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Test Rule",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "index_pattern_id": pattern_id,
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Update rule title (not yaml_content) WITHOUT change_reason - should succeed
+        response = await authenticated_client.patch(
+            f"/api/rules/{rule_id}",
+            json={
+                "title": "Updated Title",
+                "description": "Updated description",
+            },
+        )
+        assert response.status_code == 200
+

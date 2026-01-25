@@ -41,3 +41,10 @@ class UpdateAlertNotificationRequest(BaseModel):
     webhook_id: UUID
     severities: list[str]
     enabled: bool
+
+
+class MandatoryCommentsConfig(BaseModel):
+    """Configuration for mandatory rule change comments."""
+
+    mandatory_rule_comments: bool
+    mandatory_comments_deployed_only: bool

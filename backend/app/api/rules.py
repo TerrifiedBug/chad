@@ -329,6 +329,25 @@ async def update_rule(
     update_data = rule_data.model_dump(exclude_unset=True)
     old_status = rule.status
 
+    # Check if mandatory comments enabled
+    from app.models.notification_settings import NotificationSettings
+
+    settings_result = await db.execute(select(NotificationSettings).limit(1))
+    settings = settings_result.scalar_one_or_none()
+
+    if settings and settings.mandatory_rule_comments:
+        # Check if rule is deployed and setting is deployed-only
+        is_deployed = rule.status == RuleStatus.DEPLOYED
+        requires_comment = not settings.mandatory_comments_deployed_only or is_deployed
+
+        # If yaml_content is being updated, check for change_reason
+        if requires_comment and "yaml_content" in update_data:
+            if not update_data.get("change_reason") or not update_data.get("change_reason", "").strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Change reason is required when updating rules. Please explain why you're making this change.",
+                )
+
     # If yaml_content changed, create new version
     if "yaml_content" in update_data and update_data["yaml_content"] != rule.yaml_content:
         # Get latest version number

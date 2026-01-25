@@ -16,12 +16,14 @@ from app.api.deps import require_admin
 from app.db.session import get_db
 from app.models.notification_settings import (
     AlertNotificationSetting,
+    NotificationSettings,
     SystemNotificationSetting,
     Webhook,
 )
 from app.models.user import User
 from app.schemas.notification import (
     AlertNotificationConfig,
+    MandatoryCommentsConfig,
     NotificationSettingsResponse,
     SystemNotificationConfig,
     UpdateAlertNotificationRequest,
@@ -212,3 +214,63 @@ async def update_alert_notification(
     )
     await db.commit()
     return {"success": True}
+
+
+@router.get("/settings", response_model=MandatoryCommentsConfig)
+async def get_mandatory_comments_settings(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get mandatory comments configuration settings."""
+    result = await db.execute(select(NotificationSettings).limit(1))
+    settings = result.scalar_one_or_none()
+
+    if not settings:
+        # Return defaults if no settings exist
+        return MandatoryCommentsConfig(
+            mandatory_rule_comments=True,
+            mandatory_comments_deployed_only=False,
+        )
+
+    return MandatoryCommentsConfig(
+        mandatory_rule_comments=settings.mandatory_rule_comments,
+        mandatory_comments_deployed_only=settings.mandatory_comments_deployed_only,
+    )
+
+
+@router.put("/settings")
+async def update_mandatory_comments_settings(
+    data: MandatoryCommentsConfig,
+    request: Request,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update mandatory comments configuration settings."""
+    result = await db.execute(select(NotificationSettings).limit(1))
+    settings = result.scalar_one_or_none()
+
+    if settings:
+        settings.mandatory_rule_comments = data.mandatory_rule_comments
+        settings.mandatory_comments_deployed_only = data.mandatory_comments_deployed_only
+    else:
+        settings = NotificationSettings(
+            mandatory_rule_comments=data.mandatory_rule_comments,
+            mandatory_comments_deployed_only=data.mandatory_comments_deployed_only,
+        )
+        db.add(settings)
+
+    await audit_log(
+        db,
+        current_user.id,
+        "notification.settings.update",
+        "notification_setting",
+        "mandatory_comments",
+        {
+            "mandatory_rule_comments": data.mandatory_rule_comments,
+            "mandatory_comments_deployed_only": data.mandatory_comments_deployed_only,
+        },
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    return {"message": "Settings updated successfully"}
+
