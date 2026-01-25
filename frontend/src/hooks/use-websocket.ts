@@ -34,7 +34,21 @@ export function useWebSocket() {
 
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/alerts?token=${token}`
+
+    // For development, use the backend port
+    let wsUrl: string
+    if (window.location.hostname === 'localhost' && window.location.port === '3000') {
+      // Development: frontend on :3000, backend on :8000
+      wsUrl = `${protocol}//localhost:8000/ws/alerts?token=${token}`
+    } else if (window.location.hostname === 'localhost' && window.location.port === '8000') {
+      // Accessing frontend via backend port
+      wsUrl = `${protocol}//localhost:8000/ws/alerts?token=${token}`
+    } else {
+      // Production or other setups
+      wsUrl = `${protocol}//${window.location.host}/ws/alerts?token=${token}`
+    }
+
+    console.log('Connecting to WebSocket:', wsUrl.replace(/token=[^&]+/, 'token=REDACTED'))
 
     try {
       const ws = new WebSocket(wsUrl)
@@ -60,13 +74,19 @@ export function useWebSocket() {
 
       ws.onerror = (event) => {
         console.error('WebSocket error:', event)
-        setError('WebSocket connection error')
+        setError('WebSocket connection error - check console for details')
       }
 
-      ws.onclose = () => {
-        console.log('WebSocket disconnected')
+      ws.onclose = (event) => {
+        console.log('WebSocket disconnected:', event.code, event.reason)
         setIsConnected(false)
         wsRef.current = null
+
+        // Don't reconnect if it was a clean close (1000) or authentication failed (1008)
+        if (event.code === 1000 || event.code === 1008) {
+          console.log('WebSocket closed cleanly, not reconnecting')
+          return
+        }
 
         // Attempt to reconnect after 5 seconds
         if (reconnectTimeoutRef.current) {
@@ -79,7 +99,7 @@ export function useWebSocket() {
       }
     } catch (err) {
       console.error('Failed to create WebSocket connection:', err)
-      setError('Failed to connect to WebSocket')
+      setError(`Failed to connect: ${err}`)
     }
   }, []) // getToken is defined inside, so no deps needed
 
