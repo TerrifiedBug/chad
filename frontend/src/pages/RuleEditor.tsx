@@ -126,21 +126,10 @@ export default function RuleEditorPage() {
   const currentVersion = useMemo(() => {
     if (!ruleVersions || ruleVersions.length === 0) return null
 
-    console.log('[DEBUG] All versions:', ruleVersions.map(v => ({
-      version_number: v.version_number,
-      created_at: v.created_at
-    })))
-
     // Find version with highest version_number
     const latest = ruleVersions.reduce((latest, version) =>
       version.version_number > latest.version_number ? version : latest
     )
-
-    console.log('[DEBUG] Current (latest) version:', {
-      version_number: latest.version_number,
-      created_at: latest.created_at,
-      time_ago: formatDistanceToNow(new Date(latest.created_at), { addSuffix: true })
-    })
 
     return latest
   }, [ruleVersions])
@@ -317,16 +306,7 @@ export default function RuleEditorPage() {
     if (!id) return
     setIsLoading(true)
     try {
-      console.log('[DEBUG] loadRule: Fetching rule with id:', id)
       const rule = await rulesApi.get(id)
-      console.log('[DEBUG] loadRule: Got rule response, versions count:', rule.versions?.length)
-      if (rule.versions && rule.versions.length > 0) {
-        console.log('[DEBUG] loadRule: First 3 versions:', rule.versions.slice(0, 3).map(v => ({
-          version_number: v.version_number,
-          created_at: v.created_at,
-          changed_by: v.changed_by
-        })))
-      }
       setTitle(rule.title)
       setYamlContent(rule.yaml_content)
       setOriginalYaml(rule.yaml_content)
@@ -350,7 +330,6 @@ export default function RuleEditorPage() {
       setThresholdWindowMinutes(rule.threshold_window_minutes)
       setThresholdGroupBy(rule.threshold_group_by)
       // Store rule versions for current version display
-      console.log('[DEBUG] loadRule: Setting ruleVersions from API:', rule.versions)
       setRuleVersions(rule.versions || null)
 
       // Fetch activity data to get user emails for version authors
@@ -568,12 +547,8 @@ export default function RuleEditorPage() {
           change_reason: changeReason || 'Updated',
         })
         // Reload rule to get updated version
-        console.log('[DEBUG] handleSave: Reloading rule after update, id:', id)
         if (id) {
           await loadRule()
-          console.log('[DEBUG] handleSave: Rule reloaded successfully')
-        } else {
-          console.error('[DEBUG] handleSave: No id available, cannot reload rule')
         }
         setSaveSuccess(true)
         // Reset change reason
