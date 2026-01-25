@@ -7,8 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health_check import HealthCheckLog
+from app.models.jira_config import JiraConfig
 from app.models.setting import Setting
 from app.services.health_check import HealthCheckService
+from app.services.jira import JiraService, JiraAPIError
 from opensearchpy import OpenSearch
 
 
@@ -98,3 +100,62 @@ async def check_opensearch_health(db: AsyncSession):
             status="unhealthy",
             error_message=f"Unexpected error: {str(e)}"
         )
+
+
+async def check_jira_health(db: AsyncSession):
+    """Check Jira Cloud API connectivity."""
+    service = HealthCheckService(db)
+
+    # Get Jira config
+    result = await db.execute(select(JiraConfig).limit(1))
+    config = result.scalar_one_or_none()
+
+    if not config or not config.is_enabled:
+        await service.log_health_check(
+            service_type="jira",
+            service_name="Jira Cloud",
+            status="unhealthy",
+            error_message="Jira not configured or disabled"
+        )
+        return
+
+    try:
+        start_time = datetime.now(UTC)
+
+        # Create Jira service and test connectivity
+        jira = JiraService(
+            base_url=config.jira_url,
+            email=config.email,
+            api_token=config.api_token_encrypted
+        )
+
+        await jira.test_connection()
+
+        response_time = int((datetime.now(UTC) - start_time).total_seconds() * 1000)
+
+        await service.log_health_check(
+            service_type="jira",
+            service_name="Jira Cloud",
+            status="healthy",
+            response_time_ms=response_time
+        )
+        await service.update_jira_health(status="healthy", error=None)
+
+    except JiraAPIError as e:
+        error_msg = str(e) if e.message else "Jira API error"
+        await service.log_health_check(
+            service_type="jira",
+            service_name="Jira Cloud",
+            status="unhealthy",
+            error_message=error_msg
+        )
+        await service.update_jira_health(status="unhealthy", error=error_msg)
+
+    except Exception as e:
+        await service.log_health_check(
+            service_type="jira",
+            service_name="Jira Cloud",
+            status="unhealthy",
+            error_message=f"Unexpected error: {str(e)}"
+        )
+        await service.update_jira_health(status="unhealthy", error=str(e))
