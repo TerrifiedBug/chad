@@ -1439,3 +1439,57 @@ export const tiApi = {
   testSavedConnection: (sourceType: TISourceType) =>
     api.post<TITestResponse>(`/ti/${sourceType}/test-saved`),
 }
+
+// Correlation Rules types
+export type CorrelationRule = {
+  id: string
+  name: string
+  rule_a_id: string
+  rule_b_id: string
+  rule_a_title?: string
+  rule_b_title?: string
+  entity_field: string
+  time_window_minutes: number
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'informational'
+  is_enabled: boolean
+  created_at: string
+  updated_at: string
+  created_by?: string
+}
+
+export type CorrelationRuleCreate = {
+  name: string
+  rule_a_id: string
+  rule_b_id: string
+  entity_field: string
+  time_window_minutes: number
+  severity: string
+  is_enabled?: boolean
+}
+
+export type CorrelationRuleUpdate = {
+  name?: string
+  entity_field?: string
+  time_window_minutes?: number
+  severity?: string
+  is_enabled?: boolean
+}
+
+export type CorrelationRuleListResponse = {
+  correlation_rules: CorrelationRule[]
+  total: number
+}
+
+// Correlation Rules API
+export const correlationRulesApi = {
+  list: (includeDisabled = false) => {
+    const params = new URLSearchParams()
+    if (includeDisabled) params.append('include_disabled', 'true')
+    return api.get<CorrelationRuleListResponse>(`/correlation-rules?${params}`)
+  },
+  get: (id: string) => api.get<CorrelationRule>(`/correlation-rules/${id}`),
+  create: (data: CorrelationRuleCreate) => api.post<CorrelationRule>(`/correlation-rules`, data),
+  update: (id: string, data: CorrelationRuleUpdate) => api.patch<CorrelationRule>(`/correlation-rules/${id}`, data),
+  delete: (id: string) => api.delete(`/correlation-rules/${id}`),
+}
+

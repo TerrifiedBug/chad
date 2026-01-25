@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import {
   rulesApi,
+  correlationRulesApi,
   indexPatternsApi,
   IndexPattern,
   ValidationError,
@@ -11,6 +12,7 @@ import {
   RuleExceptionCreate,
   DeploymentUnmappedFieldsError,
   FieldMappingInfo,
+  CorrelationRule,
 } from '@/lib/api'
 import { YamlEditor } from '@/components/YamlEditor'
 import { Button } from '@/components/ui/button'
@@ -33,7 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -128,6 +130,10 @@ export default function RuleEditorPage() {
   const [isDeleteExceptionDialogOpen, setIsDeleteExceptionDialogOpen] = useState(false)
   const [isDeletingException, setIsDeletingException] = useState(false)
 
+  // Correlation rules state
+  const [correlationRules, setCorrelationRules] = useState<CorrelationRule[]>([])
+  const [isLoadingCorrelations, setIsLoadingCorrelations] = useState(false)
+
   // Snooze state
   const [snoozeUntil, setSnoozeUntil] = useState<string | null>(null)
   const [isSnoozing, setIsSnoozing] = useState(false)
@@ -152,6 +158,7 @@ export default function RuleEditorPage() {
   // Collapsible section state
   const [showThreshold, setShowThreshold] = useState(false)
   const [showExceptions, setShowExceptions] = useState(false)
+  const [showCorrelation, setShowCorrelation] = useState(false)
   const [showHistoricalTest, setShowHistoricalTest] = useState(false)
 
   // Unmapped fields dialog state
@@ -169,6 +176,7 @@ export default function RuleEditorPage() {
     if (!isNew) {
       loadRule()
       loadExceptions()
+      loadCorrelationRules()
     }
   }, [id])
 
@@ -206,6 +214,24 @@ export default function RuleEditorPage() {
       console.error('Failed to load exceptions:', err)
     } finally {
       setIsLoadingExceptions(false)
+    }
+  }
+
+  // Load correlation rules when rule ID is available
+  const loadCorrelationRules = async () => {
+    if (!id || isNew) return
+    setIsLoadingCorrelations(true)
+    try {
+      const result = await correlationRulesApi.list(true)
+      // Filter to only show correlation rules that use this rule
+      const relatedRules = result.correlation_rules.filter(
+        (rule) => rule.rule_a_id === id || rule.rule_b_id === id
+      )
+      setCorrelationRules(relatedRules)
+    } catch (err) {
+      console.error('Failed to load correlation rules:', err)
+    } finally {
+      setIsLoadingCorrelations(false)
     }
   }
 
@@ -1375,6 +1401,95 @@ export default function RuleEditorPage() {
                         {isAddingException ? 'Adding...' : 'Add Exception'}
                       </Button>
                     </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          {/* Correlation Rules Card - Only show for existing rules */}
+          {!isNew && (
+            <Card>
+              <CardHeader
+                className="py-3 cursor-pointer"
+                onClick={() => setShowCorrelation(!showCorrelation)}
+              >
+                <CardTitle className="text-sm font-medium flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    Correlation Rules
+                    {isLoadingCorrelations && (
+                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                    )}
+                    {correlationRules.length > 0 && (
+                      <span className="text-xs text-muted-foreground font-normal">
+                        ({correlationRules.length})
+                      </span>
+                    )}
+                  </span>
+                  {showCorrelation ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </CardTitle>
+              </CardHeader>
+              {showCorrelation && (
+                <CardContent className="space-y-4">
+                  {correlationRules.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      This rule is not used in any correlation rules.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {correlationRules.map((correlation) => (
+                        <div
+                          key={correlation.id}
+                          className="p-3 border rounded-md space-y-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-medium truncate">
+                                  {correlation.name}
+                                </div>
+                                {!correlation.is_enabled && (
+                                  <span className="text-xs text-muted-foreground">(Disabled)</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                <div>Correlates with:</div>
+                                <div className="font-mono">
+                                  {correlation.rule_a_id === id
+                                    ? (correlation.rule_b_title || correlation.rule_b_id)
+                                    : (correlation.rule_a_title || correlation.rule_a_id)}
+                                </div>
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                <div>Entity: <span className="font-mono">{correlation.entity_field}</span></div>
+                                <div>Window: {correlation.time_window_minutes} min</div>
+                                <div>Severity: {correlation.severity}</div>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate(`/correlation/${correlation.id}`)}
+                              className="shrink-0"
+                            >
+                              <Link className="h-4 w-4 mr-1" />
+                              View
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="pt-2 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate('/correlation/new')}
+                      className="w-full"
+                    >
+                      <Plus className="h-3 w-3 mr-2" />
+                      Create Correlation Rule
+                    </Button>
                   </div>
                 </CardContent>
               )}
