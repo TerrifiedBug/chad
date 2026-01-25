@@ -68,7 +68,6 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
             versionMap[v.version_number] = { change_reason: v.change_reason }
           })
           setRuleVersionsMap(versionMap)
-          console.log('[ActivityPanel] Loaded rule versions:', versionMap)
         }
       } catch (err) {
         if (!abortController.signal.aborted) {
@@ -123,13 +122,6 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
     // Get change_reason from the rule versions map we fetched
     const versionData = ruleVersionsMap[versionNumber]
     const actualChangeReason = versionData?.change_reason
-
-    console.log('[ActivityPanel] handleRestoreClick called with:', {
-      versionNumber,
-      actualChangeReason,
-      yaml: yaml.substring(0, 50) + '...',
-      availableVersions: Object.keys(ruleVersionsMap)
-    })
 
     setRestoreTarget({
       versionNumber,
