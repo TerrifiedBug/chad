@@ -183,6 +183,56 @@ async def get_health_status(
                 "last_check": last_test
             })
 
+    # GeoIP - show last update status
+    result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
+    geoip_setting = result.scalar_one_or_none()
+    if geoip_setting and geoip_setting.value:
+        last_update = geoip_setting.value
+        # Consider it healthy if updated within last 7 days, otherwise warning
+        from datetime import datetime, timedelta, UTC
+        last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
+        days_ago = (datetime.now(UTC) - last_update_dt).days
+        if days_ago <= 7:
+            status = "healthy"
+        elif days_ago <= 30:
+            status = "warning"
+        else:
+            status = "unhealthy"
+        services.append({
+            "service_type": "geoip",
+            "service_name": "GeoIP",
+            "status": status,
+            "last_check": last_update
+        })
+
+    # SigmaHQ - show last sync status
+    result = await db.execute(select(Setting).where(Setting.key == "sigmahq_sync"))
+    sigmahq_setting = result.scalar_one_or_none()
+    if sigmahq_setting and sigmahq_setting.value:
+        sigmahq_config = sigmahq_setting.value
+        if sigmahq_config.get("enabled"):
+            last_sync = sigmahq_config.get("last_sync")
+            services.append({
+                "service_type": "sigmahq",
+                "service_name": "SigmaHQ",
+                "status": "healthy" if last_sync else "unknown",
+                "last_check": last_sync
+            })
+
+    # MITRE ATT&CK - show last sync status
+    result = await db.execute(select(Setting).where(Setting.key == "attack_sync"))
+    attack_setting = result.scalar_one_or_none()
+    if attack_setting and attack_setting.value:
+        attack_config = attack_setting.value
+        if attack_config.get("enabled"):
+            last_sync = attack_config.get("last_sync")
+            services.append({
+                "service_type": "attack",
+                "service_name": "MITRE ATT&CK",
+                "status": "healthy" if last_sync else "unknown",
+                "last_check": last_sync
+            })
+
     # TI sources - show all enabled
     result = await db.execute(
         select(TISourceConfig).where(TISourceConfig.is_enabled == True)
