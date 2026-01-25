@@ -193,10 +193,22 @@ async def get_health_status(
         has_license = bool(geoip_config.get("license_key"))
 
         if enabled and has_license:
-            # Get last update time
+            # Get last update time - first try the setting, then check file directly
             last_update_result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
             geoip_last_update = last_update_result.scalar_one_or_none()
             last_update = geoip_last_update.value if geoip_last_update else None
+
+            # Fallback: check database file modification time
+            if not last_update:
+                try:
+                    from pathlib import Path
+                    from app.services.geoip import CITY_DB_PATH
+                    if CITY_DB_PATH.exists():
+                        stat = CITY_DB_PATH.stat()
+                        from datetime import datetime, UTC
+                        last_update = datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
+                except Exception:
+                    pass  # File doesn't exist or can't be read
 
             if last_update:
                 # Consider it healthy if updated within last 7 days, otherwise warning

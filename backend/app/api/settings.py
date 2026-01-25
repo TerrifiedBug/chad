@@ -697,6 +697,10 @@ async def download_geoip_database(
     result = await geoip_service.download_database(license_key)
 
     if result["success"]:
+        # Save last update timestamp (for health monitoring)
+        if result.get("info") and result["info"].get("modified_at"):
+            await set_setting(db, "geoip_last_update", result["info"]["modified_at"])
+
         await audit_log(
             db, _.id, "geoip.download", "settings", "geoip",
             {"success": True},
