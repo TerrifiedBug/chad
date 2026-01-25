@@ -56,7 +56,7 @@ async def websocket_alerts(
         await websocket.close(code=1008, reason="Authentication failed")
         return
 
-    logger.info(f"WebSocket authenticated for user {user.username} ({user.id})")
+    logger.info(f"WebSocket authenticated for user {user.email} ({user.id})")
 
     # Accept the connection and register with the manager
     await manager.connect(websocket, str(user.id))
@@ -77,8 +77,8 @@ async def websocket_alerts(
                 logger.debug(f"Received WebSocket message from {user.username}: {data}")
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for user {user.username}")
+        logger.info(f"WebSocket disconnected for user {user.email}")
         manager.disconnect(websocket, str(user.id))
     except Exception as e:
-        logger.error(f"WebSocket error for user {user.username}: {e}", exc_info=True)
+        logger.error(f"WebSocket error for user {user.email}: {e}", exc_info=True)
         manager.disconnect(websocket, str(user.id))
