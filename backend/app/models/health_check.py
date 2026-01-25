@@ -6,12 +6,9 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
-
-if TYPE_CHECKING:
-    from app.models.alert import Alert
 
 
 class HealthCheckLog(Base, UUIDMixin, TimestampMixin):
@@ -27,6 +24,3 @@ class HealthCheckLog(Base, UUIDMixin, TimestampMixin):
     checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-
-    # Relationships
-    alert: Mapped["Alert | None"] = relationship("Alert", back_populates="health_checks")
