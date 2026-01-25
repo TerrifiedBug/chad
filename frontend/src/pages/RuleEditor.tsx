@@ -4,6 +4,7 @@ import {
   rulesApi,
   correlationRulesApi,
   indexPatternsApi,
+  settingsApi,
   IndexPattern,
   ValidationError,
   LogMatchResult,
@@ -18,6 +19,7 @@ import { YamlEditor } from '@/components/YamlEditor'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -171,6 +173,11 @@ export default function RuleEditorPage() {
   // Map fields modal state
   const [mapFieldsModalOpen, setMapFieldsModalOpen] = useState(false)
 
+  // Change reason modal state
+  const [mandatoryComments, setMandatoryComments] = useState(true)
+  const [showChangeReason, setShowChangeReason] = useState(false)
+  const [changeReason, setChangeReason] = useState('')
+
   useEffect(() => {
     loadIndexPatterns()
     if (!isNew) {
@@ -202,6 +209,21 @@ export default function RuleEditorPage() {
       }
     }
   }, [isNew, cloneState])
+
+  // Load mandatory comments settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await settingsApi.getMandatoryCommentsSettings()
+        setMandatoryComments(settings.mandatory_rule_comments)
+      } catch (err) {
+        console.error('Failed to load mandatory comments settings:', err)
+        // Default to true on error to be safe
+        setMandatoryComments(true)
+      }
+    }
+    loadSettings()
+  }, [])
 
   // Load exceptions when rule ID is available
   const loadExceptions = async () => {
@@ -428,6 +450,12 @@ export default function RuleEditorPage() {
       return
     }
 
+    // If mandatory comments enabled and no change_reason provided, show modal
+    if (!isNew && mandatoryComments && !changeReason.trim()) {
+      setShowChangeReason(true)
+      return
+    }
+
     setIsSaving(true)
     setError('')
     setSaveSuccess(false)
@@ -460,10 +488,14 @@ export default function RuleEditorPage() {
           threshold_count: thresholdEnabled ? thresholdCount : null,
           threshold_window_minutes: thresholdEnabled ? thresholdWindowMinutes : null,
           threshold_group_by: thresholdEnabled ? thresholdGroupBy : null,
+          change_reason: changeReason || 'Updated',
         })
         // Reload rule to get updated version
         await loadRule()
         setSaveSuccess(true)
+        // Reset change reason
+        setChangeReason('')
+        setShowChangeReason(false)
         // Clear success message after 3 seconds
         setTimeout(() => setSaveSuccess(false), 3000)
       }
@@ -1570,6 +1602,50 @@ export default function RuleEditorPage() {
               }}
             >
               Map Fields
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Reason Modal */}
+      <Dialog open={showChangeReason} onOpenChange={setShowChangeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Reason Required</DialogTitle>
+            <DialogDescription>
+              Please explain why you're updating this rule. This helps maintain an audit trail of rule changes.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="change-reason">Reason for Change *</Label>
+              <Textarea
+                id="change-reason"
+                placeholder="Explain why you're making this change..."
+                value={changeReason}
+                onChange={(e) => setChangeReason(e.target.value)}
+                rows={4}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowChangeReason(false)
+                setChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!changeReason.trim() || isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save with Reason'}
             </Button>
           </DialogFooter>
         </DialogContent>

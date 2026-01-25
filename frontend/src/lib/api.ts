@@ -155,6 +155,9 @@ export const settingsApi = {
     api.get<SecuritySettings>('/settings/security'),
   updateSecuritySettings: (data: Partial<SecuritySettings>) =>
     api.put<SecuritySettings>('/settings/security', data),
+  // Notification settings
+  getMandatoryCommentsSettings: () =>
+    api.get<{ mandatory_rule_comments: boolean }>('/notifications/settings/public'),
 }
 
 // Exception types
@@ -273,6 +276,7 @@ export type RuleCreate = {
 
 export type RuleUpdate = Partial<RuleCreate> & {
   status?: RuleStatus
+  change_reason?: string
 }
 
 export type ValidationError = {

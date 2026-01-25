@@ -238,6 +238,21 @@ async def get_mandatory_comments_settings(
     )
 
 
+@router.get("/settings/public")
+async def get_mandatory_comments_settings_public(
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get mandatory comments configuration (public endpoint for all users)."""
+    result = await db.execute(select(NotificationSettings).limit(1))
+    settings = result.scalar_one_or_none()
+
+    if not settings:
+        # Return defaults if no settings exist
+        return {"mandatory_rule_comments": True}
+
+    return {"mandatory_rule_comments": settings.mandatory_rule_comments}
+
+
 @router.put("/settings")
 async def update_mandatory_comments_settings(
     data: MandatoryCommentsConfig,
