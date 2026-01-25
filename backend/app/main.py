@@ -58,6 +58,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
+    redirect_slashes=False,  # Disable automatic trailing slash redirects to avoid hostname issues in proxied environments
 )
 
 # Session middleware (required for OAuth state)
