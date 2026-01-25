@@ -13,7 +13,6 @@ from app.models.setting import Setting
 from app.services.health_check import HealthCheckService
 from app.services.jira import JiraService, JiraAPIError
 from opensearchpy import OpenSearch
-import httpx
 
 
 async def check_opensearch_health(db: AsyncSession):
@@ -165,6 +164,14 @@ async def check_jira_health(db: AsyncSession):
 
 async def check_ti_source_health(db: AsyncSession):
     """Check health of all enabled TI sources."""
+    from app.core.encryption import decrypt
+    from app.services.ti import (
+        VirusTotalClient,
+        AbuseIPDBClient,
+        GreyNoiseClient,
+        ThreatFoxClient,
+    )
+
     service = HealthCheckService(db)
 
     # Get all enabled TI sources
@@ -174,18 +181,39 @@ async def check_ti_source_health(db: AsyncSession):
     configs = result.scalars().all()
 
     for config in configs:
+        client = None
         try:
             start_time = datetime.now(UTC)
 
-            # Test connectivity based on source type
+            # Get API key
+            api_key = None
+            if config.api_key_encrypted:
+                api_key = decrypt(config.api_key_encrypted)
+
+            # Create client and test connectivity
             if config.source_type == "virustotal":
-                await _check_virustotal(config)
+                if not api_key:
+                    raise Exception("API key not configured")
+                client = VirusTotalClient(api_key)
+                success = await client.test_connection()
             elif config.source_type == "abuseipdb":
-                await _check_abuseipdb(config)
+                if not api_key:
+                    raise Exception("API key not configured")
+                client = AbuseIPDBClient(api_key)
+                success = await client.test_connection()
             elif config.source_type == "greynoise":
-                await _check_greynoise(config)
+                if not api_key:
+                    raise Exception("API key not configured")
+                client = GreyNoiseClient(api_key)
+                success = await client.test_connection()
             elif config.source_type == "threatfox":
-                await _check_threatfox(config)
+                client = ThreatFoxClient(api_key)
+                success = await client.test_connection()
+            else:
+                raise Exception(f"Unknown source type: {config.source_type}")
+
+            if not success:
+                raise Exception("Connection test failed")
 
             response_time = int((datetime.now(UTC) - start_time).total_seconds() * 1000)
 
@@ -216,65 +244,11 @@ async def check_ti_source_health(db: AsyncSession):
                 status="unhealthy",
                 error_message=error_msg
             )
+        finally:
+            if client:
+                try:
+                    await client.close()
+                except Exception:
+                    pass
 
     await db.commit()
-
-
-async def _check_virustotal(config: TISourceConfig):
-    """Check VirusTotal API connectivity."""
-    from app.core.encryption import decrypt
-
-    api_key = decrypt(config.api_key_encrypted)
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            "https://www.virustotal.com/vtapi/v2/ip-address/report",
-            params={"ip": "8.8.8.8"},  # Use Google DNS for testing
-            headers={"x-apikey": api_key}
-        )
-        response.raise_for_status()
-
-
-async def _check_abuseipdb(config: TISourceConfig):
-    """Check AbuseIPDB API connectivity."""
-    from app.core.encryption import decrypt
-
-    api_key = decrypt(config.api_key_encrypted)
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            "https://api.abuseipdb.com/api/v2/check",
-            params={"ipAddress": "8.8.8.8", "maxAgeInDays": "90"},
-            headers={"Key": api_key, "Accept": "application/json"}
-        )
-        response.raise_for_status()
-
-
-async def _check_greynoise(config: TISourceConfig):
-    """Check GreyNoise API connectivity."""
-    from app.core.encryption import decrypt
-
-    api_key = decrypt(config.api_key_encrypted)
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            "https://api.greynoise.io/v3/noise/quick/8.8.8.8",
-            headers={"key": api_key, "Accept": "application/json"}
-        )
-        response.raise_for_status()
-
-
-async def _check_threatfox(config: TISourceConfig):
-    """Check ThreatFox API connectivity."""
-    from app.core.encryption import decrypt
-
-    api_key = decrypt(config.api_key_encrypted)
-    base_url = config.instance_url or "https://threatfox.abuse.ch"
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            f"{base_url.rstrip('/')}/api/v1/",
-            params={"query": "get_iocs", "days_limit": "1"},
-            headers={"API-KEY": api_key}
-        )
-        response.raise_for_status()

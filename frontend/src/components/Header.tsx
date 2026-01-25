@@ -80,7 +80,7 @@ export function Header() {
           )}
         </div>
         <div className="flex items-center gap-4">
-          {isAuthenticated && hasPermission('manage_settings') && unhealthyCount > 0 && (
+          {isAuthenticated && hasPermission('manage_settings') && (
             <Button
               variant="ghost"
               size="sm"

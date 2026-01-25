@@ -74,7 +74,6 @@ export default function HealthPage() {
   // Service health state
   const [serviceHealth, setServiceHealth] = useState<ServiceHealthResponse | null>(null)
   const [serviceHealthLoading, setServiceHealthLoading] = useState(true)
-  const [testingService, setTestingService] = useState<string | null>(null)
 
   // Settings state
   const [showSettings, setShowSettings] = useState(false)
@@ -116,18 +115,6 @@ export default function HealthPage() {
       console.error('Failed to load service health:', err)
     } finally {
       setServiceHealthLoading(false)
-    }
-  }
-
-  const testService = async (serviceType: string) => {
-    setTestingService(serviceType)
-    try {
-      await api.post(`/health/test/${serviceType}`)
-      await loadServiceHealth()
-    } catch (err) {
-      console.error('Failed to test service:', err)
-    } finally {
-      setTestingService(null)
     }
   }
 
@@ -453,57 +440,9 @@ export default function HealthPage() {
                         </div>
                         <StatusIcon status={service.status} />
                       </div>
-                      <div className="flex gap-2 mt-3">
-                        {(service.service_type === 'jira' || service.service_type === 'opensearch') && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => testService(service.service_type)}
-                            disabled={testingService === service.service_type}
-                          >
-                            {testingService === service.service_type ? (
-                              <>
-                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                Testing...
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw className="h-3 w-3 mr-1" />
-                                Test
-                              </>
-                            )}
-                          </Button>
-                        )}
-                      </div>
                     </CardContent>
                   </Card>
                 ))}
-              </div>
-            )}
-
-            {/* Recent Health Checks */}
-            {serviceHealth && serviceHealth.recent_checks.length > 0 && (
-              <div className="mt-6 border-t pt-4">
-                <h4 className="font-medium mb-3">Recent Health Checks</h4>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {serviceHealth.recent_checks.map((check, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between text-sm p-2 rounded hover:bg-muted/50"
-                    >
-                      <div className="flex items-center gap-3">
-                        <StatusIcon status={check.status} />
-                        <div>
-                          <span className="font-medium">{check.service_name}</span>
-                          {check.error_message && (
-                            <span className="text-destructive ml-2">{check.error_message}</span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="text-xs text-muted-foreground">{formatDateTime(check.checked_at)}</span>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
           </CardContent>
