@@ -38,7 +38,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link } from 'lucide-react'
 import {
   Dialog,
@@ -912,23 +911,6 @@ export default function RuleEditorPage() {
         </div>
       </div>
 
-      {/* Current Version Info */}
-      {!isNew && ruleVersions && ruleVersions.length > 0 && (
-        <div className="mb-4 p-3 border rounded-lg bg-muted/50">
-          <div className="flex items-center gap-2 text-sm">
-            <Badge variant="outline">Current Version: v{currentVersion}</Badge>
-            <span className="text-muted-foreground">
-              Last updated {formatDistanceToNow(new Date(ruleVersions[0].created_at), { addSuffix: true })}
-            </span>
-          </div>
-          {ruleVersions[0].change_reason && (
-            <div className="mt-2 text-sm italic">
-              <span className="font-medium">Last change reason:</span> "{ruleVersions[0].change_reason}"
-            </div>
-          )}
-        </div>
-      )}
-
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
@@ -1167,6 +1149,39 @@ export default function RuleEditorPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Current Version Info Card - Only for existing rules */}
+          {!isNew && ruleVersions && ruleVersions.length > 0 && (
+            <Card>
+              <CardHeader className="py-3">
+                <CardTitle className="text-sm font-medium">Current Version</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Version:</span>
+                    <span className="font-medium">v{currentVersion}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Last updated:</span>
+                    <span className="text-muted-foreground">{formatDistanceToNow(new Date(ruleVersions[0].created_at), { addSuffix: true })}</span>
+                  </div>
+                  {ruleVersions[0].changed_by && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Changed by:</span>
+                      <span className="text-muted-foreground">{ruleVersions[0].changed_by}</span>
+                    </div>
+                  )}
+                </div>
+                {ruleVersions[0].change_reason && (
+                  <div className="mt-2 pt-2 border-t">
+                    <div className="text-xs text-muted-foreground mb-1">Change reason:</div>
+                    <p className="text-sm italic">"{ruleVersions[0].change_reason}"</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Test Card */}
           <Card>
