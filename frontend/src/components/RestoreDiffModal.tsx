@@ -37,6 +37,13 @@ export function RestoreDiffModal({
     return diffLines(currentYaml, targetYaml)
   }, [currentYaml, targetYaml])
 
+  // Debug: Log when modal opens and what targetChangeReason is
+  if (isOpen) {
+    console.log('[RestoreDiffModal] isOpen:', isOpen)
+    console.log('[RestoreDiffModal] targetChangeReason:', targetChangeReason)
+    console.log('[RestoreDiffModal] targetVersion:', targetVersion)
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
@@ -75,15 +82,15 @@ export function RestoreDiffModal({
           })}
         </div>
 
-        <div className="text-sm text-muted-foreground space-y-1">
+        <div className="text-sm text-muted-foreground space-y-2">
           <div>
             Showing changes: v{currentVersion} (current) → v{targetVersion} (restoring to)
           </div>
-          {targetChangeReason && (
-            <div className="italic">
-              Reason for v{targetVersion}: "{targetChangeReason}"
+          {targetChangeReason ? (
+            <div className="italic border-l-2 border-primary pl-2 py-1">
+              <span className="font-medium">Reason for v{targetVersion}:</span> "{targetChangeReason}"
             </div>
-          )}
+          ) : null}
         </div>
 
         <DialogFooter>
