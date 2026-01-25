@@ -130,7 +130,7 @@ async def get_health_status(
     """Get health status of all services."""
     services = []
 
-    # OpenSearch
+    # OpenSearch - always show if configured
     result = await db.execute(select(Setting).where(Setting.key == "opensearch"))
     opensearch_setting = result.scalar_one_or_none()
     if opensearch_setting:
@@ -147,10 +147,10 @@ async def get_health_status(
             "service_type": "opensearch",
             "service_name": "OpenSearch",
             "status": latest_log.status if latest_log else "unknown",
-            "last_check": latest_log.checked_at if latest_log else None
+            "last_check": latest_log.checked_at.isoformat() if latest_log and latest_log.checked_at else None
         })
 
-    # Jira
+    # Jira - only show if enabled
     result = await db.execute(select(JiraConfig).limit(1))
     jira_config = result.scalar_one_or_none()
     if jira_config and jira_config.is_enabled:
@@ -158,10 +158,10 @@ async def get_health_status(
             "service_type": "jira",
             "service_name": "Jira Cloud",
             "status": jira_config.last_health_status or "unknown",
-            "last_check": jira_config.last_health_check
+            "last_check": jira_config.last_health_check.isoformat() if jira_config.last_health_check else None
         })
 
-    # AI provider
+    # AI provider - show if configured
     result = await db.execute(select(Setting).where(Setting.key == "ai"))
     ai_setting = result.scalar_one_or_none()
     if ai_setting:
@@ -170,14 +170,19 @@ async def get_health_status(
         if provider != "disabled":
             last_test = ai_config.get("last_tested")
             last_test_success = ai_config.get("last_test_success")
+            # If never tested, show as unknown; otherwise show actual status
+            if last_test is None:
+                status = "unknown"
+            else:
+                status = "healthy" if last_test_success else "unhealthy"
             services.append({
                 "service_type": "ai",
                 "service_name": f"AI ({provider})",
-                "status": "healthy" if last_test_success else "unhealthy",
+                "status": status,
                 "last_check": last_test
             })
 
-    # TI sources
+    # TI sources - show all enabled
     result = await db.execute(
         select(TISourceConfig).where(TISourceConfig.is_enabled == True)
     )
@@ -187,7 +192,7 @@ async def get_health_status(
             "service_type": config.source_type,
             "service_name": config.source_type.replace("_", " ").title(),
             "status": config.last_health_status or "unknown",
-            "last_check": config.last_health_check
+            "last_check": config.last_health_check.isoformat() if config.last_health_check else None
         })
 
     # Get recent health checks for all services
@@ -206,7 +211,7 @@ async def get_health_status(
                 "service_name": c.service_name,
                 "status": c.status,
                 "error_message": c.error_message,
-                "checked_at": c.checked_at
+                "checked_at": c.checked_at.isoformat() if c.checked_at else None
             }
             for c in recent_checks
         ]
