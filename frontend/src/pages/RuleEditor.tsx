@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { formatDistanceToNow } from 'date-fns'
 import {
   rulesApi,
   correlationRulesApi,
@@ -37,6 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link } from 'lucide-react'
 import {
   Dialog,
@@ -117,6 +119,9 @@ export default function RuleEditorPage() {
   const [isDeploying, setIsDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
+
+  // Rule versions state
+  const [ruleVersions, setRuleVersions] = useState<any[] | null>(null)
 
   // Exception state
   const [exceptions, setExceptions] = useState<RuleException[]>([])
@@ -304,6 +309,8 @@ export default function RuleEditorPage() {
       setThresholdCount(rule.threshold_count)
       setThresholdWindowMinutes(rule.threshold_window_minutes)
       setThresholdGroupBy(rule.threshold_group_by)
+      // Store rule versions for current version display
+      setRuleVersions(rule.versions || null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule')
     } finally {
@@ -904,6 +911,23 @@ export default function RuleEditorPage() {
           </Button>
         </div>
       </div>
+
+      {/* Current Version Info */}
+      {!isNew && ruleVersions && ruleVersions.length > 0 && (
+        <div className="mb-4 p-3 border rounded-lg bg-muted/50">
+          <div className="flex items-center gap-2 text-sm">
+            <Badge variant="outline">Current Version: v{currentVersion}</Badge>
+            <span className="text-muted-foreground">
+              Last updated {formatDistanceToNow(new Date(ruleVersions[0].created_at), { addSuffix: true })}
+            </span>
+          </div>
+          {ruleVersions[0].change_reason && (
+            <div className="mt-2 text-sm italic">
+              <span className="font-medium">Last change reason:</span> "{ruleVersions[0].change_reason}"
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
