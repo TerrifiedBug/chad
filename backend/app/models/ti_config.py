@@ -2,7 +2,9 @@
 
 import enum
 
-from sqlalchemy import Boolean, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +41,11 @@ class TISourceConfig(Base, UUIDMixin, TimestampMixin):
     # Additional configuration stored as JSON
     # Examples: rate limits, cache TTL, enrichment fields, etc.
     config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
+
+    # Health monitoring
+    last_health_check: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_health_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    health_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     @property
     def source_type_enum(self) -> TISourceType | None:

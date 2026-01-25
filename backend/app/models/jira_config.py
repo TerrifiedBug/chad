@@ -1,6 +1,8 @@
 """Jira Cloud integration configuration model."""
 
-from sqlalchemy import Boolean, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,3 +22,8 @@ class JiraConfig(Base, UUIDMixin, TimestampMixin):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Severities to create Jira tickets for (e.g., ["critical", "high"])
     alert_severities: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+
+    # Health monitoring
+    last_health_check: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_health_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    health_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)
