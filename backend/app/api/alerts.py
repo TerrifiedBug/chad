@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_opensearch_client
+from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
 from app.db.session import get_db
 from app.utils.request import get_client_ip
 from app.models.user import User
@@ -80,7 +80,7 @@ async def update_alert_status(
     request: Request,
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
     index_pattern: str = Query("chad-alerts-*"),
 ):
     """Update alert status (acknowledge, resolve, mark as false positive)."""

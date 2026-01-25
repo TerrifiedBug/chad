@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/hooks/use-auth'
 import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -56,6 +57,7 @@ type Filters = {
 
 export default function RulesPage() {
   const navigate = useNavigate()
+  const { canManageRules, canDeployRules } = useAuth()
   const [rules, setRules] = useState<Rule[]>([])
   const [indexPatterns, setIndexPatterns] = useState<Record<string, IndexPattern>>({})
   const [indexPatternsList, setIndexPatternsList] = useState<IndexPattern[]>([])
@@ -394,7 +396,7 @@ export default function RulesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Rules</h1>
-        <Button onClick={() => navigate('/rules/new')}>
+        <Button onClick={() => navigate('/rules/new')} disabled={!canManageRules()}>
           <Plus className="h-4 w-4 mr-2" />
           Create Rule
         </Button>
@@ -802,7 +804,7 @@ export default function RulesPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleBulkAction('deploy')}
-                      disabled={isBulkOperating || isCheckingEligibility || (deploymentEligibility?.ineligible?.length ?? 0) > 0}
+                      disabled={isBulkOperating || isCheckingEligibility || !canDeployRules() || (deploymentEligibility?.ineligible?.length ?? 0) > 0}
                     >
                       <Rocket className="mr-2 h-4 w-4" /> Deploy
                     </Button>
@@ -814,12 +816,12 @@ export default function RulesPage() {
                   </TooltipContent>
                 )}
               </Tooltip>
-              <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating || !hasDeployedRules}>
+              <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating || !hasDeployedRules || !canDeployRules()}>
                 <X className="mr-2 h-4 w-4" /> Undeploy
               </Button>
               <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline" disabled={isBulkOperating}>
+                  <Button size="sm" variant="outline" disabled={isBulkOperating || !canDeployRules()}>
                     <Clock className="mr-2 h-4 w-4" /> Snooze
                   </Button>
                 </DropdownMenuTrigger>
@@ -834,10 +836,10 @@ export default function RulesPage() {
                   <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating || !hasSnoozedRules}>
+              <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating || !hasSnoozedRules || !canDeployRules()}>
                 <RotateCcw className="mr-2 h-4 w-4" /> Unsnooze
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')} disabled={isBulkOperating}>
+              <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')} disabled={isBulkOperating || !canManageRules()}>
                 <Trash2 className="mr-2 h-4 w-4" /> Delete
               </Button>
               <Button size="sm" variant="outline" onClick={handleBulkExport} disabled={isBulkOperating}>

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, require_admin, require_permission_dep
 from app.db.session import get_db
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion, SigmaHQType
 from app.models.setting import Setting
@@ -48,7 +48,7 @@ async def get_status(
 
 @router.post("/sync", response_model=SigmaHQSyncResponse)
 async def sync_repo(
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("manage_sigmahq"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Sync (clone or pull) the SigmaHQ repository."""
@@ -178,7 +178,7 @@ def _schema_to_model_sigmahq_type(schema_type: SigmaHQRuleType) -> SigmaHQType:
 async def import_rule(
     request: SigmaHQImportRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_sigmahq"))],
 ) -> SigmaHQImportResponse:
     """Import a SigmaHQ rule into CHAD."""
     if not sigmahq_service.is_repo_cloned():

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { alertsApi, Alert, AlertStatus, TIEnrichmentIndicator } from '@/lib/api'
+import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -238,6 +239,7 @@ function extractGeoIPData(doc: Record<string, unknown>): GeoIPEntry[] {
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
+  const { hasPermission } = useAuth()
   const [alert, setAlert] = useState<Alert | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -335,7 +337,7 @@ export default function AlertDetailPage() {
           <Select
             value={alert.status}
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}
-            disabled={isUpdating}
+            disabled={isUpdating || !hasPermission('manage_rules')}
           >
             <SelectTrigger className="w-40">
               <SelectValue />

@@ -66,6 +66,54 @@ async def require_admin(
     return current_user
 
 
+async def require_permission(
+    permission: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """
+    Check if current user has a specific permission.
+
+    Usage in endpoints:
+        current_user: Annotated[User, Depends(require_permission("manage_rules"))]
+    """
+    from app.services.permissions import has_permission
+
+    if not await has_permission(db, current_user, permission):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission required: {permission}",
+        )
+    return current_user
+
+
+def require_permission_dep(permission: str):
+    """
+    Create a dependency that requires a specific permission.
+
+    Usage:
+        @router.post(...)
+        async def endpoint(
+            current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+        ):
+            ...
+    """
+    async def check_permission(
+        db: Annotated[AsyncSession, Depends(get_db)],
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        from app.services.permissions import has_permission
+
+        if not await has_permission(db, current_user, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission required: {permission}",
+            )
+        return current_user
+
+    return check_permission
+
+
 async def get_opensearch_client(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],

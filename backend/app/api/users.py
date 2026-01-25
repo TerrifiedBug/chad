@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import validate_password_complexity
 from app.models.audit_log import AuditLog
-from app.api.deps import get_db, require_admin
+from app.api.deps import get_db, require_admin, require_permission_dep
 from app.models.setting import Setting
 from app.models.user import User, UserRole
 from app.services.audit import audit_log
@@ -83,7 +83,7 @@ async def create_user(
     data: UserCreate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_users"))],
 ):
     """Create a new user (admin only)."""
     # Check if email already exists
@@ -139,7 +139,7 @@ async def delete_user(
     user_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_users"))],
 ):
     """Delete a user (admin only)."""
     if user_id == current_user.id:
@@ -188,7 +188,7 @@ async def update_user(
     data: UserUpdate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_users"))],
 ):
     """Update a user's role or active status (admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -251,7 +251,7 @@ async def reset_user_password(
     user_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_users"))],
 ):
     """Reset a user's password and generate a temporary password (admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))

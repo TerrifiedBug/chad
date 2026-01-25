@@ -6,7 +6,7 @@ from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_opensearch_client, require_admin
+from app.api.deps import get_current_user, get_opensearch_client, require_admin, require_permission_dep
 from app.db.session import get_db
 from app.models.index_pattern import IndexPattern, generate_auth_token
 from app.models.rule import Rule
@@ -39,7 +39,7 @@ async def list_index_patterns(
 async def create_index_pattern(
     pattern_data: IndexPatternCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
 ):
     # Check for duplicate name
     result = await db.execute(
@@ -100,7 +100,7 @@ async def update_index_pattern(
     pattern_id: UUID,
     pattern_data: IndexPatternUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
 ):
     result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
@@ -167,7 +167,7 @@ async def update_index_pattern(
 async def delete_index_pattern(
     pattern_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
 ):
     result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
@@ -199,7 +199,7 @@ async def regenerate_auth_token(
     pattern_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
 ):
     """
     Regenerate the auth token for an index pattern.

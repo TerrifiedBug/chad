@@ -8,6 +8,14 @@ interface AuthContextType {
   isOpenSearchConfigured: boolean
   user: CurrentUser | null
   isAdmin: boolean
+  hasPermission: (permission: string) => boolean
+  canManageRules: () => boolean
+  canDeployRules: () => boolean
+  canManageSettings: () => boolean
+  canManageUsers: () => boolean
+  canManageApiKeys: () => boolean
+  canViewAudit: () => boolean
+  canManageSigmahq: () => boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   setup: (email: string, password: string) => Promise<void>
@@ -132,6 +140,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Permission helper functions
+  const hasPermission = (permission: string): boolean => {
+    if (!user?.permissions) return false
+    return user.permissions[permission] === true
+  }
+
+  const canManageRules = () => hasPermission('manage_rules')
+  const canDeployRules = () => hasPermission('deploy_rules')
+  const canManageSettings = () => hasPermission('manage_settings')
+  const canManageUsers = () => hasPermission('manage_users')
+  const canManageApiKeys = () => hasPermission('manage_api_keys')
+  const canViewAudit = () => hasPermission('view_audit')
+  const canManageSigmahq = () => hasPermission('manage_sigmahq')
+
   return (
     <AuthContext.Provider value={{
       isAuthenticated,
@@ -140,6 +162,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isOpenSearchConfigured,
       user,
       isAdmin: user?.role === 'admin',
+      hasPermission,
+      canManageRules,
+      canDeployRules,
+      canManageSettings,
+      canManageUsers,
+      canManageApiKeys,
+      canViewAudit,
+      canManageSigmahq,
       login,
       logout,
       setup,

@@ -18,22 +18,25 @@ const navItems = [
   { href: '/', label: 'Dashboard', exact: true },
   { href: '/alerts', label: 'Alerts' },
   { href: '/rules', label: 'Rules' },
-  { href: '/sigmahq', label: 'SigmaHQ' },
+  { href: '/sigmahq', label: 'SigmaHQ', permission: 'manage_sigmahq' },
   { href: '/attack', label: 'ATT&CK' },
-  { href: '/index-patterns', label: 'Index Patterns', adminOnly: true },
-  { href: '/field-mappings', label: 'Field Mappings', adminOnly: true },
-  { href: '/health', label: 'Health', adminOnly: true },
-  { href: '/settings', label: 'Settings', adminOnly: true },
+  { href: '/index-patterns', label: 'Index Patterns', permission: 'manage_settings' },
+  { href: '/field-mappings', label: 'Field Mappings', permission: 'manage_settings' },
+  { href: '/health', label: 'Health', permission: 'manage_settings' },
+  { href: '/settings', label: 'Settings', permission: 'manage_settings' },
 ]
 
 export function Header() {
-  const { isAuthenticated, isAdmin, user, logout } = useAuth()
+  const { isAuthenticated, isAdmin, user, logout, hasPermission } = useAuth()
   const { version, updateAvailable } = useVersion()
   const location = useLocation()
   const navigate = useNavigate()
 
-  // Filter nav items based on role
-  const visibleNavItems = navItems.filter(item => !item.adminOnly || isAdmin)
+  // Filter nav items based on permissions
+  const visibleNavItems = navItems.filter(item => {
+    if (!item.permission) return true
+    return hasPermission(item.permission)
+  })
 
   return (
     <header className="border-b">
@@ -95,16 +98,18 @@ export function Header() {
                   <User className="mr-2 h-4 w-4" />
                   Account
                 </DropdownMenuItem>
-                {isAdmin && (
+                {hasPermission('manage_settings') && (
                   <DropdownMenuItem onClick={() => navigate('/settings')}>
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem onClick={() => navigate('/settings/api-keys')}>
-                  <Key className="mr-2 h-4 w-4" />
-                  API Keys
-                </DropdownMenuItem>
+                {hasPermission('manage_api_keys') && (
+                  <DropdownMenuItem onClick={() => navigate('/settings/api-keys')}>
+                    <Key className="mr-2 h-4 w-4" />
+                    API Keys
+                  </DropdownMenuItem>
+                )}
                 {user.auth_method === 'local' && (
                   <DropdownMenuItem onClick={() => navigate('/change-password')}>
                     <Lock className="mr-2 h-4 w-4" />

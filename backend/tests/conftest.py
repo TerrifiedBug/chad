@@ -162,3 +162,76 @@ async def authenticated_client(
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def db_session(test_session: AsyncSession) -> AsyncSession:
+    """Alias for test_session for compatibility."""
+    yield test_session
+
+
+@pytest_asyncio.fixture(scope="function")
+async def sample_rules(test_session: AsyncSession, test_user):
+    """Create sample rules for correlation testing."""
+    from app.models.rule import Rule, RuleStatus, RuleSource
+    from app.models.index_pattern import IndexPattern
+
+    # Create an index pattern first
+    index_pattern = IndexPattern(
+        id=uuid.uuid4(),
+        name="logs-*",
+        title="Logs Index Pattern",
+    )
+    test_session.add(index_pattern)
+    await test_session.flush()
+
+    rule1 = Rule(
+        id=uuid.uuid4(),
+        title="Failed Login",
+        description="Detects failed logins",
+        yaml_content="detection:\n  selection:\n    event.action: 'failed-login'",
+        severity="medium",
+        status=RuleStatus.DEPLOYED,
+        source=RuleSource.USER,
+        index_pattern_id=index_pattern.id,
+        created_by=test_user.id,
+    )
+    rule2 = Rule(
+        id=uuid.uuid4(),
+        title="Successful Login",
+        description="Detects successful logins",
+        yaml_content="detection:\n  selection:\n    event.action: 'success-login'",
+        severity="high",
+        status=RuleStatus.DEPLOYED,
+        source=RuleSource.USER,
+        index_pattern_id=index_pattern.id,
+        created_by=test_user.id,
+    )
+
+    test_session.add(rule1)
+    test_session.add(rule2)
+    await test_session.commit()
+    await test_session.refresh(rule1)
+    await test_session.refresh(rule2)
+
+    return [rule1, rule2]
+
+
+@pytest_asyncio.fixture(scope="function")
+async def correlation_rule(test_session: AsyncSession, sample_rules):
+    """Create a sample correlation rule."""
+    from app.models.correlation_rule import CorrelationRule
+
+    rule = CorrelationRule(
+        name="Brute Force Success",
+        rule_a_id=sample_rules[0].id,
+        rule_b_id=sample_rules[1].id,
+        entity_field="source.ip",
+        time_window_minutes=5,
+        severity="high",
+        is_enabled=True,
+    )
+    test_session.add(rule)
+    await test_session.commit()
+    await test_session.refresh(rule)
+    return rule

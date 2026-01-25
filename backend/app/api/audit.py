@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_admin
+from app.api.deps import require_admin, require_permission_dep
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 @router.get("", response_model=AuditLogListResponse)
 async def list_audit_logs(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("view_audit"))],
     user_id: str | None = Query(None),
     action: str | None = Query(None),
     resource_type: str | None = Query(None),
@@ -94,7 +94,7 @@ async def list_audit_logs(
 @router.get("/actions")
 async def list_audit_actions(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("view_audit"))],
 ):
     """Get list of distinct action types for filtering."""
     result = await db.execute(select(AuditLog.action).distinct())
@@ -105,7 +105,7 @@ async def list_audit_actions(
 @router.get("/resource-types")
 async def list_resource_types(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("view_audit"))],
 ):
     """Get list of distinct resource types for filtering."""
     result = await db.execute(select(AuditLog.resource_type).distinct())
@@ -116,7 +116,7 @@ async def list_resource_types(
 @router.get("/export")
 async def export_audit_logs(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("view_audit"))],
     format: str = Query("csv", pattern="^(csv|json)$"),
     action: str | None = Query(None),
     resource_type: str | None = Query(None),

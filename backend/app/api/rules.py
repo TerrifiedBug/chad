@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional
+from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional, require_permission_dep
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.index_pattern import IndexPattern
@@ -192,7 +192,7 @@ async def create_rule(
     request: Request,
     rule_data: RuleCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
 ):
     rule = Rule(
         title=rule_data.title,
@@ -309,7 +309,7 @@ async def update_rule(
     rule_data: RuleUpdate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
     result = await db.execute(
@@ -388,7 +388,7 @@ async def delete_rule(
     rule_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
 ):
     result = await db.execute(select(Rule).where(Rule.id == rule_id))
     rule = result.scalar_one_or_none()
@@ -806,7 +806,7 @@ async def deploy_rule(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
 ):
     """
     Deploy a rule to its OpenSearch percolator index.
@@ -952,7 +952,7 @@ async def undeploy_rule(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
 ):
     """Remove a rule from its percolator index."""
     # Fetch rule with index pattern
@@ -1004,7 +1004,7 @@ async def rollback_rule(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
 ):
     """
     Rollback a rule to a previous version.
@@ -1116,7 +1116,7 @@ async def snooze_rule(
     snooze_request: SnoozeRequest,
     http_request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
     """Snooze a rule for the specified number of hours or indefinitely."""
@@ -1179,7 +1179,7 @@ async def unsnooze_rule(
     rule_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
     """Remove snooze from a rule."""
@@ -1243,7 +1243,7 @@ async def create_rule_exception(
     exception_data: RuleExceptionCreate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
 ):
     """Create a new exception for a rule."""
     # Verify rule exists
@@ -1277,7 +1277,7 @@ async def update_rule_exception(
     exception_data: RuleExceptionUpdate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
 ):
     """Update an exception (change fields or toggle active state)."""
     result = await db.execute(
@@ -1311,7 +1311,7 @@ async def delete_rule_exception(
     exception_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
 ):
     """Delete an exception."""
     result = await db.execute(
@@ -1339,7 +1339,7 @@ async def bulk_enable_rules(
     data: BulkOperationRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
     """Enable multiple rules (also clears any snooze)."""
@@ -1387,7 +1387,7 @@ async def bulk_delete_rules(
     data: BulkOperationRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
     """Delete multiple rules."""
@@ -1433,7 +1433,7 @@ async def bulk_deploy_rules(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
 ):
     """Deploy multiple rules to OpenSearch."""
     success = []
@@ -1527,7 +1527,7 @@ async def bulk_undeploy_rules(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
 ):
     """Undeploy multiple rules from OpenSearch."""
     success = []

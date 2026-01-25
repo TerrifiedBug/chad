@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, require_admin, require_permission_dep
 from app.core.config import APP_VERSION
 from app.core.encryption import decrypt, encrypt
 from app.db.session import get_db
@@ -494,7 +494,7 @@ async def save_opensearch_config(
     config: OpenSearchConfig,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
 ):
     """Save OpenSearch configuration after successful test."""
     # Check if settings already exist
@@ -573,7 +573,7 @@ async def get_app_url(
 async def set_app_url(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
 ):
     """Set APP_URL for SSO redirects and webhook links."""
     data = await request.json()
@@ -615,7 +615,7 @@ async def update_security_settings(
     data: SecuritySettings,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
 ):
     """Update security settings."""
     security = await get_setting(db, "security") or {}
@@ -655,7 +655,7 @@ async def get_geoip_settings(
 async def update_geoip_settings(
     data: GeoIPSettingsUpdate,
     request: Request,
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Update GeoIP enrichment settings."""
@@ -681,7 +681,7 @@ async def update_geoip_settings(
 @router.post("/geoip/download", response_model=GeoIPDownloadResponse)
 async def download_geoip_database(
     request: Request,
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Download/update the GeoIP database."""
@@ -730,7 +730,7 @@ async def update_setting(
     value: dict,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
 ):
     """Update a setting (admin only)."""
     # Don't allow updating opensearch via this endpoint (use dedicated endpoint)

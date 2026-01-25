@@ -751,6 +751,7 @@ export type CurrentUser = {
   auth_method: 'local' | 'sso'
   must_change_password: boolean
   totp_enabled?: boolean
+  permissions?: Record<string, boolean>
 }
 
 // 2FA types

@@ -398,8 +398,14 @@ async def change_password(
 @router.get("/me")
 async def get_current_user_info(
     current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Get current user info including role and 2FA status."""
+    """Get current user info including role, 2FA status, and permissions."""
+    from app.services.permissions import get_role_permissions
+
+    # Get user's permissions
+    permissions = await get_role_permissions(db, current_user.role)
+
     return {
         "id": str(current_user.id),
         "email": current_user.email,
@@ -408,6 +414,7 @@ async def get_current_user_info(
         "auth_method": "local" if current_user.password_hash else "sso",
         "must_change_password": current_user.must_change_password,
         "totp_enabled": current_user.totp_enabled,
+        "permissions": permissions,
     }
 
 
