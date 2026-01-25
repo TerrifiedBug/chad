@@ -336,7 +336,7 @@ class SchedulerService:
     async def _run_health_check(self):
         """Execute health monitoring check."""
         from app.services.health_monitor import check_index_health
-        from app.background.tasks.health_checks import check_opensearch_health, check_jira_health
+        from app.background.tasks.health_checks import check_opensearch_health, check_jira_health, check_ti_source_health
 
         logger.debug("Running scheduled health check")
         session = await self._get_session()
@@ -359,6 +359,13 @@ class SchedulerService:
                 logger.debug("Jira health check completed")
             except Exception as e:
                 logger.error(f"Jira health check failed: {e}")
+
+            # Check TI sources connectivity
+            try:
+                await check_ti_source_health(session)
+                logger.debug("TI source health check completed")
+            except Exception as e:
+                logger.error(f"TI source health check failed: {e}")
 
         except Exception as e:
             logger.error(f"Scheduled health check failed: {e}")

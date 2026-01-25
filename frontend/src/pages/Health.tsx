@@ -454,24 +454,26 @@ export default function HealthPage() {
                         <StatusIcon status={service.status} />
                       </div>
                       <div className="flex gap-2 mt-3">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => testService(service.service_type)}
-                          disabled={testingService === service.service_type}
-                        >
-                          {testingService === service.service_type ? (
-                            <>
-                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                              Testing...
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw className="h-3 w-3 mr-1" />
-                              Test
-                            </>
-                          )}
-                        </Button>
+                        {(service.service_type === 'jira' || service.service_type === 'opensearch') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => testService(service.service_type)}
+                            disabled={testingService === service.service_type}
+                          >
+                            {testingService === service.service_type ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                Testing...
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                                Test
+                              </>
+                            )}
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
