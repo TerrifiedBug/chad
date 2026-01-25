@@ -336,13 +336,30 @@ class SchedulerService:
     async def _run_health_check(self):
         """Execute health monitoring check."""
         from app.services.health_monitor import check_index_health
+        from app.background.tasks.health_checks import check_opensearch_health, check_jira_health
 
         logger.debug("Running scheduled health check")
         session = await self._get_session()
         try:
+            # Check index health
             issues = await check_index_health(session)
             if issues:
                 logger.info(f"Health check found {len(issues)} issues")
+
+            # Check OpenSearch connectivity
+            try:
+                await check_opensearch_health(session)
+                logger.debug("OpenSearch health check completed")
+            except Exception as e:
+                logger.error(f"OpenSearch health check failed: {e}")
+
+            # Check Jira connectivity
+            try:
+                await check_jira_health(session)
+                logger.debug("Jira health check completed")
+            except Exception as e:
+                logger.error(f"Jira health check failed: {e}")
+
         except Exception as e:
             logger.error(f"Scheduled health check failed: {e}")
         finally:
