@@ -217,6 +217,7 @@ async def create_rule(
         yaml_content=rule_data.yaml_content,
         changed_by=current_user.id,
         change_reason="Initial version",
+        created_at=datetime.now(UTC),
     )
     db.add(version)
 
@@ -373,6 +374,7 @@ async def update_rule(
             yaml_content=update_data["yaml_content"],
             changed_by=current_user.id,
             change_reason=update_data.get("change_reason", "Rule updated"),
+            created_at=datetime.now(UTC),
         )
         db.add(new_version)
 
@@ -1098,6 +1100,7 @@ async def rollback_rule(
         yaml_content=target_version.yaml_content,
         changed_by=current_user.id,
         change_reason=f"Rollback to version {target_version.version_number}",
+        created_at=datetime.now(UTC),
     )
     db.add(new_version)
 

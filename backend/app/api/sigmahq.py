@@ -229,6 +229,7 @@ async def import_rule(
         yaml_content=content,
         changed_by=current_user.id,
         change_reason="Imported from SigmaHQ",
+        created_at=datetime.now(UTC),
     )
     db.add(version)
 
