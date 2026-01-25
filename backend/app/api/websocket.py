@@ -45,16 +45,26 @@ async def websocket_alerts(
             }
         }
     """
+    # Log connection attempt
+    client_host = websocket.client
+    logger.info(f"WebSocket connection attempt from {client_host}")
+
     # Authenticate the WebSocket connection
     user = await get_current_user_websocket(websocket, db)
     if not user:
+        logger.warning(f"WebSocket authentication failed from {client_host}")
         await websocket.close(code=1008, reason="Authentication failed")
         return
+
+    logger.info(f"WebSocket authenticated for user {user.username} ({user.id})")
 
     # Accept the connection and register with the manager
     await manager.connect(websocket, str(user.id))
 
     try:
+        # Send a welcome message
+        await websocket.send_json({"type": "connected", "message": "WebSocket connected successfully"})
+
         # Keep the connection alive and handle incoming messages
         while True:
             # Wait for messages from client (for now we just echo ping/pong)
@@ -64,11 +74,11 @@ async def websocket_alerts(
             if data == "ping":
                 await websocket.send_text("pong")
             else:
-                logger.debug(f"Received WebSocket message: {data}")
+                logger.debug(f"Received WebSocket message from {user.username}: {data}")
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket, str(user.id))
         logger.info(f"WebSocket disconnected for user {user.username}")
+        manager.disconnect(websocket, str(user.id))
     except Exception as e:
-        logger.error(f"WebSocket error for user {user.username}: {e}")
+        logger.error(f"WebSocket error for user {user.username}: {e}", exc_info=True)
         manager.disconnect(websocket, str(user.id))
