@@ -156,7 +156,7 @@ export default function CorrelationRuleEditorPage() {
   // Load Sigma fields when both rules are selected
   useEffect(() => {
     if (formData.rule_a_id && formData.rule_b_id) {
-      loadCommonFields()
+      loadCommonFields(formData.entity_field)
     } else {
       setAvailableFields([])
       setRuleAFieldMappings([])
@@ -179,7 +179,7 @@ export default function CorrelationRuleEditorPage() {
     }
   }
 
-  async function loadCommonFields() {
+  async function loadCommonFields(currentEntityField?: string) {
     setIsLoadingFields(true)
     try {
       // Load fields for both rules in parallel using validation API
@@ -192,7 +192,13 @@ export default function CorrelationRuleEditorPage() {
       setRuleBFieldMappings(resultB.mappings)
 
       // Find intersection of fields (fields common to both rules)
-      const commonFields = resultA.fields.filter(field => resultB.fields.includes(field))
+      let commonFields = resultA.fields.filter(field => resultB.fields.includes(field))
+
+      // When editing, ensure the currently selected field is included in the list
+      // This handles cases where the field was removed from one rule but we want to keep it
+      if (currentEntityField && !commonFields.includes(currentEntityField)) {
+        commonFields = [...commonFields, currentEntityField]
+      }
 
       setAvailableFields(commonFields)
     } catch (err) {
@@ -330,7 +336,7 @@ export default function CorrelationRuleEditorPage() {
                 onValueChange={(value) => setFormData({ ...formData, entity_field: value })}
                 disabled={isSaving || isLoadingFields || !formData.rule_a_id}
               >
-                <SelectTrigger>
+                <SelectTrigger data-protonpass-ignore="true" data-lpignore="true" data-1p-ignore="true">
                   <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select entity field"} />
                 </SelectTrigger>
                 <SelectContent className="z-50 bg-popover max-h-[300px]">

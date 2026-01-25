@@ -555,10 +555,19 @@ export default function SettingsPage() {
           <Notifications />
         </TabsContent>
 
-        <TabsContent value="security" className="mt-4 space-y-6" data-form-type="other" data-lpignore="true" data-1p-ignore="true">
+        <TabsContent value="security" className="mt-4 space-y-6" data-form-type="other" data-lpignore="true" data-1p-ignore="true" data-protonpass-ignore="true">
           {/* Hidden autofill trap to prevent password managers from offering TOTP */}
           <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', opacity: 0 }}>
-            <input type="text" name="fake-otp" tabIndex={-1} autoComplete="off" />
+            <input
+              type="text"
+              name="otp"
+              id="trap-otp"
+              tabIndex={-1}
+              autoComplete="one-time-code"
+              data-protonpass-ignore="true"
+              data-lpignore="true"
+              data-1p-ignore="true"
+            />
           </div>
           <Card>
             <CardHeader>
