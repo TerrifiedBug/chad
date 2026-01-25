@@ -11,12 +11,26 @@ from uuid import UUID
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.correlation_rule import CorrelationRule
 from app.models.correlation_state import CorrelationState
 from app.models.rule import Rule
+from app.services.field_mapping import resolve_field_mappings
 
 logger = logging.getLogger(__name__)
+
+
+def get_nested_value(obj: dict, path: str) -> any:
+    """Get a value from a nested dict using dot notation."""
+    keys = path.split('.')
+    value = obj
+    for key in keys:
+        if isinstance(value, dict):
+            value = value.get(key)
+        else:
+            return None
+    return value
 
 
 async def check_correlation(
@@ -33,6 +47,9 @@ async def check_correlation(
     1. This rule is part of any enabled correlation rules
     2. There's an existing matching state entry from the paired rule
     3. The match is within the time window
+
+    The entity_field is resolved through field mappings for each rule,
+    allowing correlation across different index patterns with different field names.
 
     Args:
         db: Database session

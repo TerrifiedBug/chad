@@ -450,6 +450,9 @@ export const rulesApi = {
       limit: limit || 500,
     })
   },
+  // Get available fields for correlation
+  getFields: (ruleId: string) =>
+    api.get<{ fields: string[] }>(`/rules/${ruleId}/fields`),
 }
 
 // TI Indicator types for enrichment

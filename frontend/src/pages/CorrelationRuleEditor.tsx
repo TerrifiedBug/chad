@@ -39,28 +39,14 @@ const SEVERITY_OPTIONS = [
   { value: 'informational', label: 'Informational' },
 ]
 
-const ENTITY_FIELD_OPTIONS = [
-  { value: 'source.ip', label: 'Source IP' },
-  { value: 'source.address', label: 'Source Address' },
-  { value: 'destination.ip', label: 'Destination IP' },
-  { value: 'destination.address', label: 'Destination Address' },
-  { value: 'client.ip', label: 'Client IP' },
-  { value: 'client.address', label: 'Client Address' },
-  { value: 'server.ip', label: 'Server IP' },
-  { value: 'server.address', label: 'Server Address' },
-  { value: 'host.ip', label: 'Host IP' },
-  { value: 'host.name', label: 'Hostname' },
-  { value: 'user.id', label: 'User ID' },
-  { value: 'user.name', label: 'Username' },
-  { value: 'process.executable', label: 'Process Executable' },
-]
-
 export default function CorrelationRuleEditorPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const isEditing = Boolean(id)
 
   const [rules, setRules] = useState<Rule[]>([])
+  const [availableFields, setAvailableFields] = useState<string[]>([])
+  const [isLoadingFields, setIsLoadingFields] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
@@ -79,6 +65,28 @@ export default function CorrelationRuleEditorPage() {
     loadRules()
     if (id) loadRule(id)
   }, [id])
+
+  // Load available fields when rule_a_id changes
+  useEffect(() => {
+    if (formData.rule_a_id) {
+      loadFields(formData.rule_a_id)
+    } else {
+      setAvailableFields([])
+    }
+  }, [formData.rule_a_id])
+
+  const loadFields = async (ruleId: string) => {
+    setIsLoadingFields(true)
+    try {
+      const response = await rulesApi.getFields(ruleId)
+      setAvailableFields(response.fields || [])
+    } catch (err) {
+      console.error('Failed to load fields:', err)
+      setAvailableFields([])
+    } finally {
+      setIsLoadingFields(false)
+    }
+  }
 
   const loadRules = async () => {
     setIsLoading(true)
@@ -226,21 +234,29 @@ export default function CorrelationRuleEditorPage() {
               <Select
                 value={formData.entity_field}
                 onValueChange={(value) => setFormData({ ...formData, entity_field: value })}
-                disabled={isSaving}
+                disabled={isSaving || isLoadingFields || !formData.rule_a_id}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select entity field"} />
                 </SelectTrigger>
                 <SelectContent className="z-50 bg-popover">
-                  {ENTITY_FIELD_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
+                  {availableFields.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground">
+                      {formData.rule_a_id
+                        ? "No fields available. Select Rule A first."
+                        : "Select Rule A to load available fields"}
+                    </div>
+                  ) : (
+                    availableFields.map((field) => (
+                      <SelectItem key={field} value={field}>
+                        {field}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                The field from log documents used to match events (e.g., source IP address)
+                The field from log documents used to match events (loaded from Rule A's index pattern)
               </p>
             </div>
 

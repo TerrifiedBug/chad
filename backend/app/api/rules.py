@@ -1331,6 +1331,88 @@ async def delete_rule_exception(
     await db.commit()
 
 
+# Rule Fields Endpoint (for correlation)
+
+
+class RuleFieldsResponse(BaseModel):
+    """Available fields from a rule's index pattern, filtered for correlation entities."""
+    fields: list[str]  # List of field names suitable for correlation
+
+
+@router.get("/{rule_id}/fields", response_model=RuleFieldsResponse)
+async def get_rule_fields(
+    rule_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Get available fields from a rule's index pattern for correlation.
+
+    Returns fields that are suitable for entity correlation (IPs, names, IDs).
+    Filters out noise fields and shows only meaningful correlation entities.
+    """
+    # Get rule with index pattern
+    result = await db.execute(
+        select(Rule)
+        .where(Rule.id == rule_id)
+        .options(selectinload(Rule.index_pattern))
+    )
+    rule = result.scalar_one_or_none()
+
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    if rule.index_pattern is None:
+        raise HTTPException(status_code=400, detail="Rule has no index pattern")
+
+    # Get fields from OpenSearch index
+    try:
+        index_pattern = rule.index_pattern.pattern
+        # Get all fields from the index
+        all_fields = await get_index_fields(os_client, index_pattern)
+
+        # Filter to correlation-relevant fields (entity fields)
+        # These are fields that make sense to correlate events on
+        correlation_fields = []
+
+        # Patterns that indicate good correlation entities
+        entity_patterns = [
+            "ip", "address", "hostname", "host", "name", "id",
+            "user", "username", "email", "domain", "fqdn",
+            "process", "executable", "command", "hash",
+            "file", "path", "url", "uri"
+        ]
+
+        # Noise patterns to exclude
+        noise_patterns = [
+            "message", "@timestamp", "timestamp", "tags", "labels",
+            "offset", "position", "version", "agent", "ecs",
+            "event.", "cloud.", "service."
+        ]
+
+        for field in all_fields:
+            field_lower = field.lower()
+
+            # Skip noise fields
+            if any(field_lower.startswith(pattern) for pattern in noise_patterns):
+                continue
+
+            # Include if it looks like an entity field
+            if any(pattern in field_lower for pattern in entity_patterns):
+                correlation_fields.append(field)
+
+        # Sort and deduplicate
+        correlation_fields = sorted(set(correlation_fields))
+
+        return RuleFieldsResponse(fields=correlation_fields)
+
+    except Exception as e:
+        # If we can't get fields from OpenSearch, return empty list
+        # This allows the UI to still function
+        return RuleFieldsResponse(fields=[])
+
+
 # Bulk Operations Endpoints
 
 
