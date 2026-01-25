@@ -154,21 +154,28 @@ export default function CorrelationRuleEditorPage() {
     if (id) loadRule(id)
   }, [id])
 
-  // Load Sigma fields when both rules are selected (only for new rules)
+  // Load Sigma fields when both rules are selected (only for NEW rules, not editing)
   useEffect(() => {
-    // Skip if we're loading edit data or if this is an edit operation
-    if (isLoadingEditData || id) return
+    // Skip entirely if editing or loading edit data
+    if (id || isLoadingEditData) return
 
+    // Only proceed if both rules are selected for a NEW rule
     if (formData.rule_a_id && formData.rule_b_id) {
       loadCommonFields(formData.entity_field)
-    } else {
+    }
+  }, [formData.rule_a_id, formData.rule_b_id, id, isLoadingEditData])
+
+  // Clear fields when switching from editing to creating
+  useEffect(() => {
+    if (!id && !isLoadingEditData) {
       setAvailableFields([])
       setRuleAFieldMappings([])
       setRuleBFieldMappings([])
     }
-  }, [formData.rule_a_id, formData.rule_b_id, id, isLoadingEditData])
+  }, [id, isLoadingEditData])
 
   async function loadRuleFields(ruleId: string): Promise<{ fields: string[], mappings: FieldMappingInfo[] }> {
+    console.log('loadRuleFields called with:', ruleId)
     try {
       const rule = await rulesApi.get(ruleId)
       // Use validation API to get detected fields (same as RuleEditor)
@@ -183,13 +190,22 @@ export default function CorrelationRuleEditorPage() {
     }
   }
 
-  async function loadCommonFields(currentEntityField?: string) {
+  async function loadCommonFields(currentEntityField?: string, ruleAId?: string, ruleBId?: string) {
+    // Use passed IDs or fall back to formData (for new rule creation where IDs are set via UI)
+    const actualRuleAId = ruleAId || formData.rule_a_id
+    const actualRuleBId = ruleBId || formData.rule_b_id
+
+    if (!actualRuleAId || !actualRuleBId) {
+      console.log('loadCommonFields: skipping - missing rule IDs', { ruleAId, ruleBId, rule_a_id: formData.rule_a_id, rule_b_id: formData.rule_b_id })
+      return
+    }
+
     setIsLoadingFields(true)
     try {
       // Load fields for both rules in parallel using validation API
       const [resultA, resultB] = await Promise.all([
-        loadRuleFields(formData.rule_a_id!),
-        loadRuleFields(formData.rule_b_id!),
+        loadRuleFields(actualRuleAId),
+        loadRuleFields(actualRuleBId),
       ])
 
       setRuleAFieldMappings(resultA.mappings)
@@ -246,7 +262,8 @@ export default function CorrelationRuleEditorPage() {
         is_enabled: rule.is_enabled,
       })
       // Load common fields with the current entity_field to ensure it's in the list
-      await loadCommonFields(rule.entity_field)
+      // Pass the IDs directly to avoid race condition with formData state updates
+      await loadCommonFields(rule.entity_field, rule.rule_a_id, rule.rule_b_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load correlation rule')
     } finally {
