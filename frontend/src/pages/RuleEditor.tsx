@@ -122,6 +122,9 @@ export default function RuleEditorPage() {
   // Rule versions state
   const [ruleVersions, setRuleVersions] = useState<any[] | null>(null)
 
+  // Users state for mapping UUID to email
+  const [users, setUsers] = useState<Record<string, {email: string}>>({})
+
   // Exception state
   const [exceptions, setExceptions] = useState<RuleException[]>([])
   const [isLoadingExceptions, setIsLoadingExceptions] = useState(false)
@@ -310,6 +313,28 @@ export default function RuleEditorPage() {
       setThresholdGroupBy(rule.threshold_group_by)
       // Store rule versions for current version display
       setRuleVersions(rule.versions || null)
+
+      // Fetch activity data to get user emails for version authors
+      if (!isNew && rule.versions && rule.versions.length > 0) {
+        try {
+          const activityData = await rulesApi.getActivity(id)
+          // Create map: user_id -> email from activity data
+          const usersMap: Record<string, { email: string }> = {}
+          activityData.forEach((activity: any) => {
+            if (activity.type === 'version' && activity.data && activity.user_email) {
+              // The version's changed_by should match an activity entry
+              const versionNum = activity.data.version_number
+              const version = rule.versions.find((v: any) => v.version_number === versionNum)
+              if (version) {
+                usersMap[version.changed_by] = { email: activity.user_email }
+              }
+            }
+          })
+          setUsers(usersMap)
+        } catch (err) {
+          console.error('Failed to load activity data for user emails:', err)
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule')
     } finally {
@@ -754,7 +779,6 @@ export default function RuleEditorPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">
                 {isNew ? 'Create Rule' : 'Edit Rule'}
-                {!isNew && <span className="text-sm font-normal text-muted-foreground ml-2">v{currentVersion}</span>}
               </h1>
               {!isNew && ruleSource === 'sigmahq' && (
                 <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs" title={sigmahqPath ? `Imported from: ${sigmahqPath}` : 'Imported from SigmaHQ'}>
@@ -1169,7 +1193,9 @@ export default function RuleEditorPage() {
                   {ruleVersions[0].changed_by && (
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Changed by:</span>
-                      <span className="text-muted-foreground">{ruleVersions[0].changed_by}</span>
+                      <span className="text-muted-foreground">
+                        {users[ruleVersions[0].changed_by]?.email || ruleVersions[0].changed_by}
+                      </span>
                     </div>
                   )}
                 </div>
