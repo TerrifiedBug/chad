@@ -4,7 +4,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, Settings, ChevronDown, ChevronUp, Save, Loader2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, Settings, ChevronDown, ChevronUp, Save, Loader2, RefreshCw, Server } from 'lucide-react'
+import { api } from '@/lib/api'
+import { useAuth } from '@/hooks/use-auth'
+
+interface ServiceHealth {
+  service_type: string
+  service_name: string
+  status: string
+  last_check: string
+}
+
+interface HealthCheckLog {
+  service_type: string
+  service_name: string
+  status: string
+  error_message: string | null
+  checked_at: string
+}
+
+interface ServiceHealthResponse {
+  services: ServiceHealth[]
+  recent_checks: HealthCheckLog[]
+}
 
 const statusColors: Record<HealthStatus, string> = {
   healthy: 'text-green-600',
@@ -18,15 +40,23 @@ const statusBgColors: Record<HealthStatus, string> = {
   critical: 'bg-red-50 dark:bg-red-900/20',
 }
 
-const StatusIcon = ({ status }: { status: HealthStatus }) => {
+const StatusIcon = ({ status }: { status: HealthStatus | string }) => {
   switch (status) {
     case 'healthy':
       return <CheckCircle2 className="h-5 w-5 text-green-600" />
     case 'warning':
       return <AlertTriangle className="h-5 w-5 text-yellow-600" />
     case 'critical':
+    case 'unhealthy':
       return <AlertCircle className="h-5 w-5 text-red-600" />
+    default:
+      return <AlertCircle className="h-5 w-5 text-muted-foreground" />
   }
+}
+
+const formatDateTime = (dateStr: string) => {
+  const date = new Date(dateStr)
+  return date.toLocaleString()
 }
 
 function formatNumber(n: number): string {
@@ -36,9 +66,15 @@ function formatNumber(n: number): string {
 }
 
 export default function HealthPage() {
+  const { hasPermission } = useAuth()
   const [health, setHealth] = useState<IndexHealth[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // Service health state
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealthResponse | null>(null)
+  const [serviceHealthLoading, setServiceHealthLoading] = useState(true)
+  const [testingService, setTestingService] = useState<string | null>(null)
 
   // Settings state
   const [showSettings, setShowSettings] = useState(false)
@@ -49,9 +85,13 @@ export default function HealthPage() {
 
   useEffect(() => {
     loadHealth()
+    loadServiceHealth()
     loadSettings()
     // Refresh every 30 seconds
-    const interval = setInterval(loadHealth, 30000)
+    const interval = setInterval(() => {
+      loadHealth()
+      loadServiceHealth()
+    }, 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -64,6 +104,30 @@ export default function HealthPage() {
       setError(err instanceof Error ? err.message : 'Failed to load health data')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadServiceHealth = async () => {
+    setServiceHealthLoading(true)
+    try {
+      const data = await api.get<ServiceHealthResponse>('/health/status')
+      setServiceHealth(data)
+    } catch (err) {
+      console.error('Failed to load service health:', err)
+    } finally {
+      setServiceHealthLoading(false)
+    }
+  }
+
+  const testService = async (serviceType: string) => {
+    setTestingService(serviceType)
+    try {
+      await api.post(`/health/test/${serviceType}`)
+      await loadServiceHealth()
+    } catch (err) {
+      console.error('Failed to test service:', err)
+    } finally {
+      setTestingService(null)
     }
   }
 
@@ -341,6 +405,108 @@ export default function HealthPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* External Services Health */}
+      {hasPermission('manage_settings') && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Server className="h-5 w-5" />
+                External Services
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={loadServiceHealth}
+                disabled={serviceHealthLoading}
+              >
+                <RefreshCw className={`h-4 w-4 ${serviceHealthLoading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {serviceHealthLoading ? (
+              <div className="text-center py-4 text-muted-foreground">Loading service health...</div>
+            ) : !serviceHealth || serviceHealth.services.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground">No external services configured</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {serviceHealth.services.map((service) => (
+                  <Card
+                    key={service.service_type}
+                    className={
+                      service.status === 'unhealthy'
+                        ? 'bg-red-50 dark:bg-red-900/20'
+                        : service.status === 'warning'
+                        ? 'bg-yellow-50 dark:bg-yellow-900/20'
+                        : 'bg-green-50 dark:bg-green-900/20'
+                    }
+                  >
+                    <CardContent className="pt-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="font-medium">{service.service_name}</h4>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Last check: {service.last_check ? formatDateTime(service.last_check) : 'Never'}
+                          </p>
+                        </div>
+                        <StatusIcon status={service.status} />
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => testService(service.service_type)}
+                          disabled={testingService === service.service_type}
+                        >
+                          {testingService === service.service_type ? (
+                            <>
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              Testing...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              Test
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Recent Health Checks */}
+            {serviceHealth && serviceHealth.recent_checks.length > 0 && (
+              <div className="mt-6 border-t pt-4">
+                <h4 className="font-medium mb-3">Recent Health Checks</h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {serviceHealth.recent_checks.map((check, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between text-sm p-2 rounded hover:bg-muted/50"
+                    >
+                      <div className="flex items-center gap-3">
+                        <StatusIcon status={check.status} />
+                        <div>
+                          <span className="font-medium">{check.service_name}</span>
+                          {check.error_message && (
+                            <span className="text-destructive ml-2">{check.error_message}</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{formatDateTime(check.checked_at)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Index Pattern Health Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
