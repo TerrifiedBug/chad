@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
+import { useAuth } from '@/hooks/use-auth'
 import {
   rulesApi,
   correlationRulesApi,
@@ -77,7 +78,9 @@ export default function RuleEditorPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
+  const { hasPermission } = useAuth()
   const isNew = !id || id === 'new'
+  const canManageRules = hasPermission('manage_rules')
 
   // Get clone state from navigation (if cloning a rule)
   const cloneState = location.state as LocationState | null
@@ -680,7 +683,7 @@ export default function RuleEditorPage() {
 
   // Snooze handlers
   const handleSnooze = async (hours: number) => {
-    if (!id) return
+    if (!id || !canManageRules) return
     setIsSnoozing(true)
     try {
       const result = await rulesApi.snooze(id, hours, false)
@@ -695,7 +698,7 @@ export default function RuleEditorPage() {
   }
 
   const handleSnoozeIndefinite = async () => {
-    if (!id) return
+    if (!id || !canManageRules) return
     setIsSnoozing(true)
     try {
       const result = await rulesApi.snooze(id, undefined, true)
@@ -738,6 +741,7 @@ export default function RuleEditorPage() {
 
   // Clone rule handler
   const handleClone = () => {
+    if (!canManageRules) return
     // Navigate to new rule with current content
     navigate('/rules/new', {
       state: {
@@ -761,7 +765,7 @@ export default function RuleEditorPage() {
 
   // Delete rule handler
   const handleDeleteRule = async () => {
-    if (!id) return
+    if (!id || !canManageRules) return
     setIsDeletingRule(true)
     try {
       await rulesApi.delete(id)
@@ -913,7 +917,7 @@ export default function RuleEditorPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="z-50 bg-popover">
-                <DropdownMenuItem onClick={handleClone}>
+                <DropdownMenuItem onClick={handleClone} disabled={!canManageRules}>
                   <Copy className="mr-2 h-4 w-4" /> Clone Rule
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleExportYaml}>
@@ -923,6 +927,7 @@ export default function RuleEditorPage() {
                 <DropdownMenuItem
                   onClick={() => setShowDeleteConfirm(true)}
                   className="text-destructive focus:text-destructive"
+                  disabled={!canManageRules}
                 >
                   <Trash2 className="mr-2 h-4 w-4" /> Delete Rule
                 </DropdownMenuItem>
