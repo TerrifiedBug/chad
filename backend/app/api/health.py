@@ -130,6 +130,26 @@ async def get_health_status(
     """Get health status of all services."""
     services = []
 
+    # OpenSearch
+    result = await db.execute(select(Setting).where(Setting.key == "opensearch"))
+    opensearch_setting = result.scalar_one_or_none()
+    if opensearch_setting:
+        # Get most recent health check log for OpenSearch
+        log_result = await db.execute(
+            select(HealthCheckLog)
+            .where(HealthCheckLog.service_type == "opensearch")
+            .order_by(HealthCheckLog.checked_at.desc())
+            .limit(1)
+        )
+        latest_log = log_result.scalar_one_or_none()
+
+        services.append({
+            "service_type": "opensearch",
+            "service_name": "OpenSearch",
+            "status": latest_log.status if latest_log else "unknown",
+            "last_check": latest_log.checked_at if latest_log else None
+        })
+
     # Jira
     result = await db.execute(select(JiraConfig).limit(1))
     jira_config = result.scalar_one_or_none()
@@ -140,6 +160,22 @@ async def get_health_status(
             "status": jira_config.last_health_status or "unknown",
             "last_check": jira_config.last_health_check
         })
+
+    # AI provider
+    result = await db.execute(select(Setting).where(Setting.key == "ai"))
+    ai_setting = result.scalar_one_or_none()
+    if ai_setting:
+        ai_config = ai_setting.value or {}
+        provider = ai_config.get("ai_provider", "disabled")
+        if provider != "disabled":
+            last_test = ai_config.get("last_tested")
+            last_test_success = ai_config.get("last_test_success")
+            services.append({
+                "service_type": "ai",
+                "service_name": f"AI ({provider})",
+                "status": "healthy" if last_test_success else "unhealthy",
+                "last_check": last_test
+            })
 
     # TI sources
     result = await db.execute(
@@ -184,7 +220,7 @@ async def test_service_health(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Manually trigger health check for a service."""
-    from app.background.tasks.health_checks import check_jira_health, check_opensearch_health
+    from app.background.tasks.health_checks import check_jira_health, check_opensearch_health, check_ti_source_health
 
     if service_type == "jira":
         await check_jira_health(db)
@@ -192,5 +228,10 @@ async def test_service_health(
     elif service_type == "opensearch":
         await check_opensearch_health(db)
         return {"message": "OpenSearch health check triggered"}
+    elif service_type == "ai":
+        # Trigger AI ping
+        from app.services.scheduler import scheduler_service
+        await scheduler_service._run_ai_ping()
+        return {"message": "AI connectivity check triggered"}
 
     return {"error": "Unknown service"}, 400
