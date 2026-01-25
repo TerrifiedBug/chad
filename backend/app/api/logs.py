@@ -28,6 +28,7 @@ from app.services.alerts import AlertService, should_suppress_alert
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
+from app.services.correlation import check_correlation
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -193,6 +194,35 @@ async def receive_logs(
             )
             alerts_created.append(alert)
             total_matches += 1
+
+            # Check for correlation triggers
+            # For now, we'll use a common entity field like source.ip
+            # TODO: Make entity field configurable per rule
+            entity_field = "source.ip"
+            entity_value = get_nested_value(enriched_log, entity_field) or get_nested_value(enriched_log, "source.address")
+
+            if entity_value:
+                try:
+                    triggered_correlations = await check_correlation(
+                        db,
+                        rule_id=UUID(rule_id),
+                        entity_field=entity_field,
+                        entity_value=str(entity_value),
+                        log_document=enriched_log,
+                    )
+                    if triggered_correlations:
+                        # For now, just log the correlation
+                        # TODO: Create correlation alerts or store them
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(
+                            f"Correlation triggered for rule {rule_id}: "
+                            f"{len(triggered_correlations)} correlation(s) detected"
+                        )
+                except Exception as e:
+                    # Log but don't fail the alert creation
+                    import logging
+                    logging.getLogger(__name__).error(f"Correlation check failed: {e}")
 
     # Send notifications through the new notification system
     if alerts_created:

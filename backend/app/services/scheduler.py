@@ -127,6 +127,9 @@ class SchedulerService:
             # Add health check job (runs every minute)
             self._schedule_health_check()
 
+            # Add correlation state cleanup job (runs every 5 minutes)
+            self._schedule_correlation_cleanup()
+
             logger.info("Scheduler jobs synced from settings")
 
         finally:
@@ -143,6 +146,18 @@ class SchedulerService:
             misfire_grace_time=60,  # 1 minute grace period
         )
         logger.info("Scheduled health_check job (every 1 minute)")
+
+    def _schedule_correlation_cleanup(self):
+        """Schedule the correlation state cleanup job."""
+        scheduler.add_job(
+            self._run_correlation_cleanup,
+            trigger=IntervalTrigger(minutes=5),
+            id="correlation_cleanup",
+            name="correlation state cleanup",
+            replace_existing=True,
+            misfire_grace_time=300,  # 5 minute grace period
+        )
+        logger.info("Scheduled correlation_cleanup job (every 5 minutes)")
 
     def _schedule_job(self, job_id: str, func, frequency: str):
         """Schedule or reschedule a job."""
@@ -499,6 +514,22 @@ class SchedulerService:
         if job:
             return job.next_run_time
         return None
+
+    async def _run_correlation_cleanup(self):
+        """Execute correlation state cleanup job."""
+        from app.services.correlation import cleanup_expired_states
+
+        logger.debug("Running scheduled correlation state cleanup")
+        session = await self._get_session()
+        try:
+            count = await cleanup_expired_states(session)
+            await session.commit()
+            if count > 0:
+                logger.info(f"Correlation cleanup: removed {count} expired states")
+        except Exception as e:
+            logger.error(f"Scheduled correlation cleanup failed: {e}")
+        finally:
+            await session.close()
 
 
 # Singleton instance
