@@ -183,35 +183,41 @@ async def get_health_status(
                 "last_check": last_test
             })
 
-    # GeoIP - show if configured (has license key)
-    result = await db.execute(select(Setting).where(Setting.key == "geoip_license_key"))
-    geoip_key_setting = result.scalar_one_or_none()
-    if geoip_key_setting and geoip_key_setting.value:
-        # Get last update time
-        result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
-        geoip_last_update = result.scalar_one_or_none()
-        last_update = geoip_last_update.value if geoip_last_update else None
+    # GeoIP - show if configured
+    result = await db.execute(select(Setting).where(Setting.key == "geoip"))
+    geoip_setting = result.scalar_one_or_or_none()
+    if geoip_setting and geoip_setting.value:
+        geoip_config = geoip_setting.value
+        # Check if enabled and has license key
+        enabled = geoip_config.get("enabled", False)
+        has_license = bool(geoip_config.get("license_key"))
 
-        if last_update:
-            # Consider it healthy if updated within last 7 days, otherwise warning
-            from datetime import datetime, timedelta, UTC
-            last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
-            days_ago = (datetime.now(UTC) - last_update_dt).days
-            if days_ago <= 7:
-                status = "healthy"
-            elif days_ago <= 30:
-                status = "warning"
+        if enabled and has_license:
+            # Get last update time
+            result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
+            geoip_last_update = result.scalar_one_or_none()
+            last_update = geoip_last_update.value if geoip_last_update else None
+
+            if last_update:
+                # Consider it healthy if updated within last 7 days, otherwise warning
+                from datetime import datetime, timedelta, UTC
+                last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
+                days_ago = (datetime.now(UTC) - last_update_dt).days
+                if days_ago <= 7:
+                    status = "healthy"
+                elif days_ago <= 30:
+                    status = "warning"
+                else:
+                    status = "unhealthy"
             else:
-                status = "unhealthy"
-        else:
-            status = "unknown"
+                status = "unknown"
 
-        services.append({
-            "service_type": "geoip",
-            "service_name": "GeoIP",
-            "status": status,
-            "last_check": last_update
-        })
+            services.append({
+                "service_type": "geoip",
+                "service_name": "GeoIP",
+                "status": status,
+                "last_check": last_update
+            })
 
     # SigmaHQ - show if configured
     result = await db.execute(select(Setting).where(Setting.key == "sigmahq_sync"))
