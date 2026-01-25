@@ -13,9 +13,23 @@ class ApiClient {
   }
 
   async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
-      headers: this.getHeaders(),
-    })
+    // Add cache-busting for rule detail requests
+    let fetchPath = path
+    let fetchOptions: RequestInit = { headers: this.getHeaders() }
+
+    // Add cache control headers for rules endpoint to prevent caching
+    if (path.includes('/rules/') && !path.includes('/rules/validate') && !path.includes('/rules/test')) {
+      fetchOptions = {
+        ...fetchOptions,
+        cache: 'no-store',
+        headers: {
+          ...this.getHeaders(),
+          'Cache-Control': 'no-cache',
+        },
+      }
+    }
+
+    const response = await fetch(`${API_BASE}${fetchPath}`, fetchOptions)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
       throw new Error(error.detail || 'Request failed')
