@@ -93,3 +93,14 @@ class NotificationSettings(Base, TimestampMixin):
     # Rule comment governance
     mandatory_rule_comments: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     mandatory_comments_deployed_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Health check intervals (in minutes)
+    jira_health_interval: Mapped[int] = mapped_column(Integer, default=15)
+    sigmahq_health_interval: Mapped[int] = mapped_column(Integer, default=60)
+    mitre_health_interval: Mapped[int] = mapped_column(Integer, default=60)
+    opensearch_health_interval: Mapped[int] = mapped_column(Integer, default=5)
+    ti_health_interval: Mapped[int] = mapped_column(Integer, default=30)
+
+    # Health alert preferences
+    health_alert_webhook_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    health_alert_severity: Mapped[str] = mapped_column(String(20), default="warning")
