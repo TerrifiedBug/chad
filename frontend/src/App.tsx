@@ -23,6 +23,8 @@ import HealthPage from '@/pages/Health'
 import FieldMappingsPage from '@/pages/FieldMappings'
 import AttackMatrixPage from '@/pages/AttackMatrix'
 import AccountPage from '@/pages/Account'
+import CorrelationRulesPage from '@/pages/CorrelationRules'
+import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -111,6 +113,36 @@ function AppRoutes() {
             <Header />
             <main className="px-6 py-8">
               <RuleEditorPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/correlation" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <CorrelationRulesPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/correlation/new" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <CorrelationRuleEditorPage />
+            </main>
+          </div>
+        </ProtectedRoute>
+      } />
+      <Route path="/correlation/:id" element={
+        <ProtectedRoute>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <main className="px-6 py-8">
+              <CorrelationRuleEditorPage />
             </main>
           </div>
         </ProtectedRoute>
