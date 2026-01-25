@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.encryption import decrypt
 from app.models.ti_config import TISourceConfig, TISourceType
 from app.services.ti.abuseipdb import AbuseIPDBClient
+from app.services.ti.abuse_ch import AbuseCHClient
+from app.services.ti.alienvault_otx import AlienVaultOTXClient
 from app.services.ti.base import (
     TIClient,
     TIIndicatorType,
@@ -18,6 +20,8 @@ from app.services.ti.base import (
     TIRiskLevel,
 )
 from app.services.ti.greynoise import GreyNoiseClient
+from app.services.ti.misp import MISPClient
+from app.services.ti.phishtank import PhishTankClient
 from app.services.ti.threatfox import ThreatFoxClient
 from app.services.ti.virustotal import VirusTotalClient
 
@@ -114,6 +118,7 @@ class TIEnrichmentManager:
             api_key = decrypt(config.api_key_encrypted)
 
         source_type = config.source_type
+        instance_url = config.instance_url
 
         match source_type:
             case TISourceType.VIRUSTOTAL.value:
@@ -137,6 +142,29 @@ class TIEnrichmentManager:
             case TISourceType.THREATFOX.value:
                 # ThreatFox doesn't require an API key
                 return ThreatFoxClient(api_key)
+
+            case TISourceType.MISP.value:
+                if not api_key:
+                    logger.warning("MISP requires an API key")
+                    return None
+                if not instance_url:
+                    logger.warning("MISP requires an instance URL")
+                    return None
+                return MISPClient(api_key, instance_url)
+
+            case TISourceType.ABUSE_CH.value:
+                # abuse.ch (URLhaus) doesn't require an API key
+                return AbuseCHClient(api_key)
+
+            case TISourceType.ALIENVAULT_OTX.value:
+                if not api_key:
+                    logger.warning("AlienVault OTX requires an API key")
+                    return None
+                return AlienVaultOTXClient(api_key)
+
+            case TISourceType.PHISHTANK.value:
+                # PhishTank doesn't require an API key
+                return PhishTankClient(api_key)
 
             case _:
                 logger.warning(f"Unknown TI source type: {source_type}")
