@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,3 +82,14 @@ class AlertNotificationSetting(Base, UUIDMixin):
 
     # Relationships
     webhook: Mapped[Webhook] = relationship("Webhook", back_populates="alert_notification")
+
+
+class NotificationSettings(Base, TimestampMixin):
+    """Global notification configuration settings (singleton model)."""
+
+    __tablename__ = "notification_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Rule comment governance
+    mandatory_rule_comments: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    mandatory_comments_deployed_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

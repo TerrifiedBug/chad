@@ -9,6 +9,7 @@ from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.login_attempt import LoginAttempt
 from app.models.notification_settings import (
     AlertNotificationSetting,
+    NotificationSettings,
     SystemNotificationSetting,
     Webhook,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "ExceptionOperator",
     "IndexPattern",
     "LoginAttempt",
+    "NotificationSettings",
     "RolePermission",
     "Rule",
     "RuleAttackMapping",
