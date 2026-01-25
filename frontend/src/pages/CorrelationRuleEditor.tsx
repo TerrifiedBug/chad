@@ -50,12 +50,14 @@ export default function CorrelationRuleEditorPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
+  const [ruleAFields, setRuleAFields] = useState<string[]>([])
+  const [ruleBFields, setRuleBFields] = useState<string[]>([])
 
   const [formData, setFormData] = useState({
     name: '',
     rule_a_id: '',
     rule_b_id: '',
-    entity_field: 'source.ip',
+    entity_field: '',
     time_window_minutes: 5,
     severity: 'high' as const,
     is_enabled: true,
@@ -66,44 +68,48 @@ export default function CorrelationRuleEditorPage() {
     if (id) loadRule(id)
   }, [id])
 
-  // Load available fields when rule_a_id changes
+  // Load Sigma fields when both rules are selected
   useEffect(() => {
-    if (formData.rule_a_id) {
-      loadFields(formData.rule_a_id)
+    if (formData.rule_a_id && formData.rule_b_id) {
+      loadCommonFields()
     } else {
       setAvailableFields([])
+      setRuleAFields([])
+      setRuleBFields([])
     }
-  }, [formData.rule_a_id])
+  }, [formData.rule_a_id, formData.rule_b_id])
 
-  const loadFields = async (ruleId: string) => {
+  async function loadRuleFields(ruleId: string): Promise<string[]> {
+    try {
+      const rule = await rulesApi.get(ruleId)
+      // Use validation API to get detected fields (same as RuleEditor)
+      const result = await rulesApi.validate(rule.yaml_content, rule.index_pattern_id)
+      return result.fields || []
+    } catch (err) {
+      console.error('Failed to load rule fields:', err)
+      return []
+    }
+  }
+
+  async function loadCommonFields() {
     setIsLoadingFields(true)
     try {
-      const response = await rulesApi.getFields(ruleId)
-      const fields = response.fields || []
+      // Load fields for both rules in parallel using validation API
+      const [fieldsA, fieldsB] = await Promise.all([
+        loadRuleFields(formData.rule_a_id!),
+        loadRuleFields(formData.rule_b_id!),
+      ])
 
-      // If no fields returned, use fallback common entity fields
-      if (fields.length === 0) {
-        console.warn('No fields returned from API, using fallback entity fields')
-        const fallbackFields = [
-          'source.ip', 'source.address', 'destination.ip', 'destination.address',
-          'client.ip', 'client.address', 'server.ip', 'server.address',
-          'host.ip', 'host.name', 'user.id', 'user.name',
-          'process.executable', 'process.command_line',
-        ]
-        setAvailableFields(fallbackFields)
-      } else {
-        setAvailableFields(fields)
-      }
+      setRuleAFields(fieldsA)
+      setRuleBFields(fieldsB)
+
+      // Find intersection of fields (fields common to both rules)
+      const commonFields = fieldsA.filter(field => fieldsB.includes(field))
+
+      setAvailableFields(commonFields)
     } catch (err) {
-      console.error('Failed to load fields:', err)
-      // Use fallback fields on error
-      const fallbackFields = [
-        'source.ip', 'source.address', 'destination.ip', 'destination.address',
-        'client.ip', 'client.address', 'server.ip', 'server.address',
-        'host.ip', 'host.name', 'user.id', 'user.name',
-        'process.executable', 'process.command_line',
-      ]
-      setAvailableFields(fallbackFields)
+      console.error('Failed to load common fields:', err)
+      setAvailableFields([])
     } finally {
       setIsLoadingFields(false)
     }
@@ -277,7 +283,7 @@ export default function CorrelationRuleEditorPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                The field used to match events across both rules. This field must exist in the log data after field mappings are applied.
+                The Sigma field name from both rules used to correlate events. This field must be detected by both rules.
               </p>
             </div>
 
