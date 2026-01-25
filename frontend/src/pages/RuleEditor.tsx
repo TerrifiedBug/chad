@@ -125,6 +125,9 @@ export default function RuleEditorPage() {
   // Users state for mapping UUID to email
   const [users, setUsers] = useState<Record<string, {email: string}>>({})
 
+  // Track original YAML for dirty state
+  const [originalYaml, setOriginalYaml] = useState('')
+
   // Exception state
   const [exceptions, setExceptions] = useState<RuleException[]>([])
   const [isLoadingExceptions, setIsLoadingExceptions] = useState(false)
@@ -293,6 +296,7 @@ export default function RuleEditorPage() {
       const rule = await rulesApi.get(id)
       setTitle(rule.title)
       setYamlContent(rule.yaml_content)
+      setOriginalYaml(rule.yaml_content)
       setSeverity(rule.severity)
       setIndexPatternId(rule.index_pattern_id)
       setDescription(rule.description || '')
@@ -463,6 +467,11 @@ export default function RuleEditorPage() {
     } catch (err) {
       setError(err instanceof Error ? `Format failed: ${err.message}` : 'Format failed')
     }
+  }
+
+  // Check if YAML has changes from original
+  const hasChanges = () => {
+    return yamlContent !== originalYaml
   }
 
   const handleSave = async () => {
@@ -697,6 +706,7 @@ export default function RuleEditorPage() {
     try {
       const version = await rulesApi.getVersion(id!, versionNumber)
       setYamlContent(version.yaml_content)
+      setOriginalYaml(version.yaml_content) // Update baseline to restored version
       setIsActivityOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to restore version')
@@ -929,7 +939,7 @@ export default function RuleEditorPage() {
               </Button>
             )
           )}
-          <Button onClick={handleSave} disabled={isSaving || !isValid}>
+          <Button onClick={handleSave} disabled={isSaving || !isValid || (!isNew && !hasChanges())}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </div>
@@ -1175,39 +1185,44 @@ export default function RuleEditorPage() {
           </Card>
 
           {/* Current Version Info Card - Only for existing rules */}
-          {!isNew && ruleVersions && ruleVersions.length > 0 && (
-            <Card>
-              <CardHeader className="py-3">
-                <CardTitle className="text-sm font-medium">Current Version</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="space-y-1 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Version:</span>
-                    <span className="font-medium">v{currentVersion}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Last updated:</span>
-                    <span className="text-muted-foreground">{formatDistanceToNow(new Date(ruleVersions[0].created_at), { addSuffix: true })}</span>
-                  </div>
-                  {ruleVersions[0].changed_by && (
+          {!isNew && ruleVersions && ruleVersions.length > 0 && (() => {
+            // Sort versions by version_number descending to get most recent
+            const sortedVersions = [...ruleVersions].sort((a, b) => b.version_number - a.version_number)
+            const currentVersionData = sortedVersions[0] // Most recent
+            return (
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-medium">Current Version</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="space-y-1 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Changed by:</span>
-                      <span className="text-muted-foreground">
-                        {users[ruleVersions[0].changed_by]?.email || ruleVersions[0].changed_by}
-                      </span>
+                      <span className="text-muted-foreground">Version:</span>
+                      <span className="font-medium">v{currentVersion}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Last updated:</span>
+                      <span className="text-muted-foreground">{formatDistanceToNow(new Date(currentVersionData.created_at), { addSuffix: true })}</span>
+                    </div>
+                    {currentVersionData.changed_by && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Changed by:</span>
+                        <span className="text-muted-foreground">
+                          {users[currentVersionData.changed_by]?.email || currentVersionData.changed_by}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {currentVersionData.change_reason && (
+                    <div className="mt-2 pt-2 border-t">
+                      <div className="text-xs text-muted-foreground mb-1">Change reason:</div>
+                      <p className="text-sm italic">"{currentVersionData.change_reason}"</p>
                     </div>
                   )}
-                </div>
-                {ruleVersions[0].change_reason && (
-                  <div className="mt-2 pt-2 border-t">
-                    <div className="text-xs text-muted-foreground mb-1">Change reason:</div>
-                    <p className="text-sm italic">"{ruleVersions[0].change_reason}"</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                </CardContent>
+              </Card>
+            )
+          })()}
 
           {/* Test Card */}
           <Card>
