@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { rulesApi, correlationRulesApi, Rule } from '@/lib/api'
+import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -52,6 +52,8 @@ export default function CorrelationRuleEditorPage() {
   const [error, setError] = useState('')
   const [ruleAFields, setRuleAFields] = useState<string[]>([])
   const [ruleBFields, setRuleBFields] = useState<string[]>([])
+  const [ruleAFieldMappings, setRuleAFieldMappings] = useState<FieldMappingInfo[]>([])
+  const [ruleBFieldMappings, setRuleBFieldMappings] = useState<FieldMappingInfo[]>([])
 
   const [formData, setFormData] = useState({
     name: '',
@@ -76,18 +78,23 @@ export default function CorrelationRuleEditorPage() {
       setAvailableFields([])
       setRuleAFields([])
       setRuleBFields([])
+      setRuleAFieldMappings([])
+      setRuleBFieldMappings([])
     }
   }, [formData.rule_a_id, formData.rule_b_id])
 
-  async function loadRuleFields(ruleId: string): Promise<string[]> {
+  async function loadRuleFields(ruleId: string): Promise<{ fields: string[], mappings: FieldMappingInfo[] }> {
     try {
       const rule = await rulesApi.get(ruleId)
       // Use validation API to get detected fields (same as RuleEditor)
       const result = await rulesApi.validate(rule.yaml_content, rule.index_pattern_id)
-      return result.fields || []
+      return {
+        fields: result.fields || [],
+        mappings: result.field_mappings || [],
+      }
     } catch (err) {
       console.error('Failed to load rule fields:', err)
-      return []
+      return { fields: [], mappings: [] }
     }
   }
 
@@ -95,16 +102,18 @@ export default function CorrelationRuleEditorPage() {
     setIsLoadingFields(true)
     try {
       // Load fields for both rules in parallel using validation API
-      const [fieldsA, fieldsB] = await Promise.all([
+      const [resultA, resultB] = await Promise.all([
         loadRuleFields(formData.rule_a_id!),
         loadRuleFields(formData.rule_b_id!),
       ])
 
-      setRuleAFields(fieldsA)
-      setRuleBFields(fieldsB)
+      setRuleAFields(resultA.fields)
+      setRuleBFields(resultB.fields)
+      setRuleAFieldMappings(resultA.mappings)
+      setRuleBFieldMappings(resultB.mappings)
 
       // Find intersection of fields (fields common to both rules)
-      const commonFields = fieldsA.filter(field => fieldsB.includes(field))
+      const commonFields = resultA.fields.filter(field => resultB.fields.includes(field))
 
       setAvailableFields(commonFields)
     } catch (err) {
@@ -113,6 +122,12 @@ export default function CorrelationRuleEditorPage() {
     } finally {
       setIsLoadingFields(false)
     }
+  }
+
+  // Helper to get target field for a Sigma field from mappings
+  function getTargetField(sigmaField: string, mappings: FieldMappingInfo[]): string | null {
+    const mapping = mappings.find(m => m.sigma_field === sigmaField)
+    return mapping?.target_field || null
   }
 
   const loadRules = async () => {
@@ -266,12 +281,12 @@ export default function CorrelationRuleEditorPage() {
                 <SelectTrigger>
                   <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select entity field"} />
                 </SelectTrigger>
-                <SelectContent className="z-50 bg-popover">
+                <SelectContent className="z-50 bg-popover max-h-[300px]">
                   {availableFields.length === 0 ? (
                     <div className="p-2 text-sm text-muted-foreground">
                       {formData.rule_a_id
-                        ? "No fields available. Select Rule A first."
-                        : "Select Rule A to load available fields"}
+                        ? "No common fields found between the two rules."
+                        : "Select both rules to load common fields"}
                     </div>
                   ) : (
                     availableFields.map((field) => (
@@ -282,6 +297,13 @@ export default function CorrelationRuleEditorPage() {
                   )}
                 </SelectContent>
               </Select>
+              {formData.entity_field && (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                  <div className="font-medium mb-1">Field Mappings:</div>
+                  <div>Rule A: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleAFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
+                  <div>Rule B: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleBFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 The Sigma field name from both rules used to correlate events. This field must be detected by both rules.
               </p>
