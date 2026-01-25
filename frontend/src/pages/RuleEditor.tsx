@@ -118,7 +118,6 @@ export default function RuleEditorPage() {
   const [isDeploying, setIsDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
-  const [thresholdSuccess, setThresholdSuccess] = useState('')
 
   // Rule versions state
   const [ruleVersions, setRuleVersions] = useState<any[] | null>(null)
@@ -137,6 +136,7 @@ export default function RuleEditorPage() {
 
   // Track original YAML for dirty state
   const [originalYaml, setOriginalYaml] = useState('')
+  const [originalThresholdEnabled, setOriginalThresholdEnabled] = useState(false)
 
   // Exception state
   const [exceptions, setExceptions] = useState<RuleException[]>([])
@@ -322,6 +322,7 @@ export default function RuleEditorPage() {
       setSigmahqPath(rule.sigmahq_path || null)
       // Load threshold settings
       setThresholdEnabled(rule.threshold_enabled)
+      setOriginalThresholdEnabled(rule.threshold_enabled)
       setThresholdCount(rule.threshold_count)
       setThresholdWindowMinutes(rule.threshold_window_minutes)
       setThresholdGroupBy(rule.threshold_group_by)
@@ -481,7 +482,9 @@ export default function RuleEditorPage() {
 
   // Check if YAML has changes from original
   const hasChanges = () => {
-    return yamlContent !== originalYaml
+    // Consider it changed if YAML is different OR threshold enabled/disabled
+    return yamlContent !== originalYaml ||
+           thresholdEnabled !== originalThresholdEnabled
   }
 
   const handleSave = async () => {
@@ -645,28 +648,9 @@ export default function RuleEditorPage() {
     }
   }
 
-  // Auto-save threshold toggle immediately
-  const handleThresholdToggle = async (enabled: boolean) => {
-    if (!id) return
-    // Update state immediately for UI responsiveness
+  // Simple threshold toggle handler (no auto-save)
+  const handleThresholdToggle = (enabled: boolean) => {
     setThresholdEnabled(enabled)
-
-    try {
-      await rulesApi.update(id, {
-        threshold_enabled: enabled,
-        threshold_count: enabled ? thresholdCount : null,
-        threshold_window_minutes: enabled ? thresholdWindowMinutes : null,
-        threshold_group_by: enabled ? thresholdGroupBy : null,
-      })
-      // Show success message
-      setThresholdSuccess(enabled ? 'Threshold alerting enabled' : 'Threshold alerting disabled')
-      // Clear success message after 3 seconds
-      setTimeout(() => setThresholdSuccess(''), 3000)
-    } catch (err) {
-      // Revert on error
-      setThresholdEnabled(!enabled)
-      setError(err instanceof Error ? err.message : 'Failed to update threshold alerting')
-    }
   }
 
   const openDeleteExceptionDialog = (exception: RuleException) => {
@@ -990,13 +974,6 @@ export default function RuleEditorPage() {
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           Deployment error: {deployError}
-        </div>
-      )}
-
-      {thresholdSuccess && (
-        <div className="bg-green-500/10 text-green-600 text-sm p-3 rounded-md flex items-center gap-2">
-          <Check className="h-4 w-4" />
-          {thresholdSuccess}
         </div>
       )}
 
