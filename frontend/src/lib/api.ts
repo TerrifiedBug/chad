@@ -253,6 +253,8 @@ export type RuleVersion = {
   version_number: number
   yaml_content: string
   created_at: string
+  change_reason: string
+  changed_by: string
 }
 
 export type RuleDetail = Rule & {
