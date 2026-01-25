@@ -240,6 +240,8 @@ export default function CorrelationRuleEditorPage() {
         severity: rule.severity as any,
         is_enabled: rule.is_enabled,
       })
+      // Load common fields with the current entity_field to ensure it's in the list
+      await loadCommonFields(rule.entity_field)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load correlation rule')
     } finally {
