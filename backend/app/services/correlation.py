@@ -16,7 +16,6 @@ from sqlalchemy.orm import selectinload
 from app.models.correlation_rule import CorrelationRule
 from app.models.correlation_state import CorrelationState
 from app.models.rule import Rule
-from app.services.field_mapping import resolve_field_mappings
 
 logger = logging.getLogger(__name__)
 
