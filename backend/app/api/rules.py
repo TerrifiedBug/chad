@@ -369,6 +369,22 @@ async def update_rule(
         )
         db.add(new_version)
 
+        # Audit log for rule update
+        client_ip = request.client.host if request.client else None
+        await audit_log(
+            db,
+            current_user.id,
+            "rule_updated",
+            "rule",
+            str(rule_id),
+            {
+                "rule_title": rule.title,
+                "version_number": next_version,
+                "change_reason": update_data.get("change_reason", "Rule updated"),
+            },
+            ip_address=client_ip,
+        )
+
     for field, value in update_data.items():
         if field != "change_reason":  # Skip - belongs to RuleVersion, not Rule
             setattr(rule, field, value)

@@ -19,6 +19,7 @@ interface RestoreDiffModalProps {
   targetVersion: number
   currentVersion: number
   isRestoring: boolean
+  targetChangeReason?: string
 }
 
 export function RestoreDiffModal({
@@ -30,6 +31,7 @@ export function RestoreDiffModal({
   targetVersion,
   currentVersion,
   isRestoring,
+  targetChangeReason,
 }: RestoreDiffModalProps) {
   const diff = useMemo(() => {
     return diffLines(currentYaml, targetYaml)
@@ -73,8 +75,15 @@ export function RestoreDiffModal({
           })}
         </div>
 
-        <div className="text-sm text-muted-foreground">
-          Showing changes: v{currentVersion} (current) → v{targetVersion} (restoring to)
+        <div className="text-sm text-muted-foreground space-y-1">
+          <div>
+            Showing changes: v{currentVersion} (current) → v{targetVersion} (restoring to)
+          </div>
+          {targetChangeReason && (
+            <div className="italic">
+              Reason for v{targetVersion}: "{targetChangeReason}"
+            </div>
+          )}
         </div>
 
         <DialogFooter>
