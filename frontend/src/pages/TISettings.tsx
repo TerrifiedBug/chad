@@ -93,7 +93,7 @@ export default function TISettings() {
       )
       showToast(
         `${info.name} ${newEnabled ? 'enabled' : 'disabled'}`,
-        newEnabled ? 'success' : 'default'
+        newEnabled ? 'success' : 'info'
       )
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update', 'error')

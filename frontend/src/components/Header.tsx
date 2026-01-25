@@ -29,7 +29,7 @@ const navItems = [
 ]
 
 export function Header() {
-  const { isAuthenticated, isAdmin, user, logout, hasPermission } = useAuth()
+  const { isAuthenticated, user, logout, hasPermission } = useAuth()
   const { version, updateAvailable } = useVersion()
   const location = useLocation()
   const navigate = useNavigate()

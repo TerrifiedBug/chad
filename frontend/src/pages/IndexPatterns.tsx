@@ -9,11 +9,9 @@ import {
   TI_SOURCE_SUPPORTED_TYPES,
   TISourceType,
   TIIndicatorType,
-  TIFieldConfig,
   TISourceConfigForPattern,
   tiApi,
   healthApi,
-  IndexHealth,
   HealthStatus,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'

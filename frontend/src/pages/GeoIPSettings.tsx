@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { ArrowRight, Check, Download, Globe, Loader2 } from 'lucide-react'
+import { Check, Download, Globe, Loader2 } from 'lucide-react'
 
 export default function GeoIPSettings() {
   const { showToast } = useToast()

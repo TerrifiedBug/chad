@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, Shield, ShieldAlert, Link as LinkIcon } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon } from 'lucide-react'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',

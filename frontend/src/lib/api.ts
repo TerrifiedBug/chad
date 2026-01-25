@@ -696,6 +696,7 @@ export type UserInfo = {
   is_active: boolean
   created_at: string
   auth_method: 'local' | 'sso'
+  totp_enabled?: boolean
 }
 
 export type UserCreate = {
