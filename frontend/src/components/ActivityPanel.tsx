@@ -222,6 +222,11 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
                     {activity.user_email && <span> by {activity.user_email}</span>}
                   </div>
+                  {activity.data.change_reason && typeof activity.data.change_reason === 'string' ? (
+                    <p className="text-sm mt-2 text-muted-foreground italic">
+                      "{activity.data.change_reason}"
+                    </p>
+                  ) : null}
                 </div>
                 {Number(activity.data.version_number) === currentVersion ? (
                   <span className="text-xs text-muted-foreground px-2">(Current)</span>
