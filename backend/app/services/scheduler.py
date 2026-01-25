@@ -360,6 +360,13 @@ class SchedulerService:
             except Exception as e:
                 logger.error(f"Jira health check failed: {e}")
 
+            # Check AI connectivity (free endpoints, no token cost)
+            try:
+                await self._run_ai_ping()
+                logger.debug("AI health check completed")
+            except Exception as e:
+                logger.error(f"AI health check failed: {e}")
+
             # Check TI sources connectivity
             try:
                 await check_ti_source_health(session)
@@ -373,26 +380,14 @@ class SchedulerService:
             await session.close()
 
     async def _configure_ai_ping_job(self, session: AsyncSession):
-        """Configure the AI connectivity ping job (runs hourly if AI is enabled)."""
-        result = await session.execute(select(Setting).where(Setting.key == "ai"))
-        setting = result.scalar_one_or_none()
-        ai_settings = setting.value if setting else {}
-
-        provider = ai_settings.get("ai_provider", "disabled")
-
-        if provider != "disabled":
-            # Schedule hourly ping
-            scheduler.add_job(
-                self._run_ai_ping,
-                trigger=IntervalTrigger(hours=1),
-                id="ai_ping",
-                name="AI connectivity ping",
-                replace_existing=True,
-                misfire_grace_time=300,  # 5 minute grace period
-            )
-            logger.info("Scheduled AI connectivity ping (every hour)")
-        else:
-            self._remove_job("ai_ping")
+        """
+        AI connectivity ping is now part of the main health check that runs every minute.
+        This method is kept for compatibility but no longer schedules a separate job.
+        """
+        # AI health checks are now run every minute in _run_health_check()
+        # Remove any old hourly job if it exists
+        self._remove_job("ai_ping")
+        logger.debug("AI health checks now run every minute via main health check")
 
     async def _run_ai_ping(self):
         """Execute AI connectivity ping (lightweight, no token consumption)."""
