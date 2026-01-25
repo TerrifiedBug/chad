@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, Alert, AlertStatus, TIEnrichmentIndicator } from '@/lib/api'
+import { alertsApi, correlationRulesApi, Alert, AlertStatus, TIEnrichmentIndicator, CorrelationRule } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, Shield, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, Shield, ShieldAlert, Link as LinkIcon } from 'lucide-react'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -184,6 +184,72 @@ function TIEnrichmentCard({ indicators }: { indicators: TIEnrichmentIndicator[] 
   )
 }
 
+// Correlation Info card component
+function CorrelationInfoCard({ correlations, ruleId }: { correlations: CorrelationRule[], ruleId: string }) {
+  if (correlations.length === 0) {
+    return null
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <LinkIcon className="h-4 w-4" />
+          Correlation Rules ({correlations.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          This alert is part of {correlations.length} correlation rule(s) that detect patterns across multiple events.
+        </p>
+        {correlations.map((correlation) => (
+          <div
+            key={correlation.id}
+            className="p-3 border rounded-md space-y-2 hover:bg-muted/50 transition-colors"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-medium truncate">
+                    {correlation.name}
+                  </div>
+                  {!correlation.is_enabled && (
+                    <span className="text-xs text-muted-foreground">(Disabled)</span>
+                  )}
+                  <Badge
+                    className={`text-xs ${
+                      severityColors[correlation.severity] || 'bg-gray-500 text-white'
+                    }`}
+                  >
+                    {correlation.severity}
+                  </Badge>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  <div>Correlates with:</div>
+                  <div className="font-mono">
+                    {correlation.rule_a_id === ruleId
+                      ? (correlation.rule_b_title || correlation.rule_b_id)
+                      : (correlation.rule_a_title || correlation.rule_a_id)}
+                  </div>
+                  <div className="mt-1">
+                    Entity: <span className="font-mono">{correlation.entity_field}</span> • Window: {correlation.time_window_minutes} min
+                  </div>
+                </div>
+              </div>
+              <Link
+                to={`/correlation/${correlation.id}`}
+                className="shrink-0 text-xs text-primary hover:underline"
+              >
+                View Rule
+              </Link>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 // GeoIP data extraction helper
 interface GeoIPEntry {
   field: string
@@ -244,6 +310,7 @@ export default function AlertDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
   const [error, setError] = useState('')
+  const [correlations, setCorrelations] = useState<CorrelationRule[]>([])
 
   useEffect(() => {
     if (id) {
@@ -258,10 +325,27 @@ export default function AlertDetailPage() {
     try {
       const data = await alertsApi.get(id)
       setAlert(data)
+      // Load correlation rules that involve this alert's rule
+      if (data.rule_id) {
+        loadCorrelations(data.rule_id)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load alert')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadCorrelations = async (ruleId: string) => {
+    try {
+      const result = await correlationRulesApi.list(true)
+      // Filter to only show correlation rules that use this rule
+      const relatedRules = result.correlation_rules.filter(
+        (rule) => rule.rule_a_id === ruleId || rule.rule_b_id === ruleId
+      )
+      setCorrelations(relatedRules)
+    } catch (err) {
+      console.error('Failed to load correlation rules:', err)
     }
   }
 
@@ -476,6 +560,9 @@ export default function AlertDetailPage() {
           {alert.ti_enrichment && alert.ti_enrichment.indicators.length > 0 && (
             <TIEnrichmentCard indicators={alert.ti_enrichment.indicators} />
           )}
+
+          {/* Correlation Rules - shown if any correlation rules involve this alert's rule */}
+          <CorrelationInfoCard correlations={correlations} ruleId={alert.rule_id} />
         </div>
 
         {/* Log Document */}
