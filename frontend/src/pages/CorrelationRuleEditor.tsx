@@ -12,12 +12,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { ChevronLeft, Loader2 } from 'lucide-react'
+import { ChevronLeft, Loader2, Check, ChevronDown } from 'lucide-react'
 
 const TIME_WINDOW_OPTIONS = [
   { value: 1, label: '1 minute' },
@@ -38,6 +43,86 @@ const SEVERITY_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'informational', label: 'Informational' },
 ]
+
+// Searchable Rule Selector Component
+function SearchableRuleSelector({
+  rules,
+  value,
+  onChange,
+  disabled,
+  placeholder,
+  excludeRuleId,
+}: {
+  rules: Rule[]
+  value: string
+  onChange: (value: string) => void
+  disabled?: boolean
+  placeholder: string
+  excludeRuleId?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+
+  const filteredRules = rules.filter(
+    (rule) =>
+      rule.id !== excludeRuleId &&
+      rule.title.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const selectedRule = rules.find((r) => r.id === value)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className="w-full justify-between"
+        >
+          {selectedRule ? selectedRule.title : placeholder}
+          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[300px] p-0">
+        <div className="p-2">
+          <Input
+            placeholder="Search rules..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9"
+            autoFocus
+          />
+        </div>
+        <div className="max-h-[300px] overflow-y-auto">
+          {filteredRules.length === 0 ? (
+            <div className="p-2 text-sm text-muted-foreground text-center">
+              {search ? 'No matching rules found' : 'No rules available'}
+            </div>
+          ) : (
+            filteredRules.map((rule) => (
+              <button
+                key={rule.id}
+                onClick={() => {
+                  onChange(rule.id)
+                  setOpen(false)
+                  setSearch('')
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+              >
+                <Check
+                  className={`h-4 w-4 ${value === rule.id ? 'opacity-100' : 'opacity-0'}`}
+                />
+                <span className="flex-1 text-left">{rule.title}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export default function CorrelationRuleEditorPage() {
   const navigate = useNavigate()
@@ -180,11 +265,6 @@ export default function CorrelationRuleEditorPage() {
     }
   }
 
-  // Filtered rules for Rule B dropdown (excludes Rule A only)
-  const filteredRulesForRuleB = rules.filter(
-    (rule) => rule.id !== formData.rule_a_id
-  )
-
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center gap-4">
@@ -228,47 +308,25 @@ export default function CorrelationRuleEditorPage() {
 
             <div className="space-y-2">
               <Label htmlFor="rule_a">First Rule (Rule A)</Label>
-              <Select
+              <SearchableRuleSelector
+                rules={rules}
                 value={formData.rule_a_id}
-                onValueChange={(value) => setFormData({ ...formData, rule_a_id: value })}
+                onChange={(value) => setFormData({ ...formData, rule_a_id: value })}
                 disabled={isLoading || isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select first rule" />
-                </SelectTrigger>
-                <SelectContent className="z-50 bg-popover max-h-[300px]">
-                  {rules.map((rule) => (
-                    <SelectItem key={rule.id} value={rule.id}>
-                      {rule.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select first rule"
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="rule_b">Second Rule (Rule B)</Label>
-              <Select
+              <SearchableRuleSelector
+                rules={rules}
                 value={formData.rule_b_id}
-                onValueChange={(value) => setFormData({ ...formData, rule_b_id: value })}
+                onChange={(value) => setFormData({ ...formData, rule_b_id: value })}
                 disabled={isLoading || isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select second rule" />
-                </SelectTrigger>
-                <SelectContent className="z-50 bg-popover max-h-[300px]">
-                  {filteredRulesForRuleB.map((rule) => (
-                    <SelectItem key={rule.id} value={rule.id}>
-                      {rule.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {formData.rule_a_id === formData.rule_b_id && (
-                <p className="text-xs text-destructive">
-                  Rule B cannot be the same as Rule A
-                </p>
-              )}
+                placeholder="Select second rule"
+                excludeRuleId={formData.rule_a_id}
+              />
             </div>
 
             <div className="space-y-2">
@@ -374,7 +432,7 @@ export default function CorrelationRuleEditorPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSaving || isLoading || !formData.name || !formData.rule_a_id || !formData.rule_b_id || formData.rule_a_id === formData.rule_b_id}>
+              <Button type="submit" disabled={isSaving || isLoading || !formData.name || !formData.rule_a_id || !formData.rule_b_id}>
                 {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {isEditing ? 'Update' : 'Create'} Rule
               </Button>
