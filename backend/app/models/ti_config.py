@@ -18,6 +18,10 @@ class TISourceType(str, enum.Enum):
     ABUSEIPDB = "abuseipdb"
     GREYNOISE = "greynoise"
     THREATFOX = "threatfox"
+    MISP = "misp"
+    ABUSE_CH = "abuse_ch"
+    ALIENVAULT_OTX = "alienvault_otx"
+    PHISHTANK = "phishtank"
 
 
 class TISourceConfig(Base, UUIDMixin, TimestampMixin):
@@ -25,7 +29,7 @@ class TISourceConfig(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "ti_source_config"
 
-    # Source type (virustotal, abuseipdb, greynoise, threatfox)
+    # Source type (virustotal, abuseipdb, greynoise, threatfox, misp, abuse_ch, alienvault_otx, phishtank)
     # Stored as String, validated via Python Enum
     source_type: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
 
