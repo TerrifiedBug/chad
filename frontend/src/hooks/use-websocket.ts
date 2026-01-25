@@ -63,9 +63,16 @@ export function useWebSocket() {
       ws.onmessage = (event) => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
+          console.log('WebSocket message received:', message.type)
+
           if (message.type === 'alert') {
             console.log('Alert received via WebSocket:', message.data)
             setAlerts((prev) => [message.data, ...prev])
+          } else if (message.type === 'connected') {
+            console.log('WebSocket welcome message:', message.message)
+          } else if (message.type === 'pong') {
+            // Server responded to our ping
+            console.debug('Pong received')
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err)
