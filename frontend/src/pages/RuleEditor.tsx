@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -113,14 +113,24 @@ export default function RuleEditorPage() {
   // Deployment state
   const [deployedAt, setDeployedAt] = useState<string | null>(null)
   const [deployedVersion, setDeployedVersion] = useState<number | null>(null)
-  const [currentVersion, setCurrentVersion] = useState<number>(1)
+  const [currentVersionNumber, setCurrentVersionNumber] = useState<number>(1)
   const [needsRedeploy, setNeedsRedeploy] = useState(false)
   const [isDeploying, setIsDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [thresholdSuccess, setThresholdSuccess] = useState('')
 
   // Rule versions state
   const [ruleVersions, setRuleVersions] = useState<any[] | null>(null)
+
+  // Compute the current (most recent) version using useMemo
+  const currentVersion = useMemo(() => {
+    if (!ruleVersions || ruleVersions.length === 0) return null
+    // Find version with highest version_number
+    return ruleVersions.reduce((latest, version) =>
+      version.version_number > latest.version_number ? version : latest
+    )
+  }, [ruleVersions])
 
   // Users state for mapping UUID to email
   const [users, setUsers] = useState<Record<string, {email: string}>>({})
@@ -302,7 +312,7 @@ export default function RuleEditorPage() {
       setDescription(rule.description || '')
       setDeployedAt(rule.deployed_at)
       setDeployedVersion(rule.deployed_version)
-      setCurrentVersion(rule.current_version)
+      setCurrentVersionNumber(rule.current_version)
       setNeedsRedeploy(rule.needs_redeploy)
       setStatus(rule.status as 'deployed' | 'undeployed' | 'snoozed')
       setSnoozeIndefinite(rule.snooze_indefinite || false)
@@ -635,6 +645,30 @@ export default function RuleEditorPage() {
     }
   }
 
+  // Auto-save threshold toggle immediately
+  const handleThresholdToggle = async (enabled: boolean) => {
+    if (!id) return
+    // Update state immediately for UI responsiveness
+    setThresholdEnabled(enabled)
+
+    try {
+      await rulesApi.update(id, {
+        threshold_enabled: enabled,
+        threshold_count: enabled ? thresholdCount : null,
+        threshold_window_minutes: enabled ? thresholdWindowMinutes : null,
+        threshold_group_by: enabled ? thresholdGroupBy : null,
+      })
+      // Show success message
+      setThresholdSuccess(enabled ? 'Threshold alerting enabled' : 'Threshold alerting disabled')
+      // Clear success message after 3 seconds
+      setTimeout(() => setThresholdSuccess(''), 3000)
+    } catch (err) {
+      // Revert on error
+      setThresholdEnabled(!enabled)
+      setError(err instanceof Error ? err.message : 'Failed to update threshold alerting')
+    }
+  }
+
   const openDeleteExceptionDialog = (exception: RuleException) => {
     setExceptionToDelete(exception)
     setIsDeleteExceptionDialogOpen(true)
@@ -804,10 +838,10 @@ export default function RuleEditorPage() {
               )}
             </div>
             {!isNew && deployedAt && (
-              <p className={`text-xs ${deployedVersion === currentVersion ? 'text-green-600' : 'text-yellow-600'}`}>
-                {deployedVersion === currentVersion
+              <p className={`text-xs ${deployedVersion === currentVersionNumber ? 'text-green-600' : 'text-yellow-600'}`}>
+                {deployedVersion === currentVersionNumber
                   ? `Deployed v${deployedVersion}`
-                  : `Deployed v${deployedVersion} (current is v${currentVersion} - redeploy needed)`
+                  : `Deployed v${deployedVersion} (current is v${currentVersionNumber} - redeploy needed)`
                 }
               </p>
             )}
@@ -956,6 +990,13 @@ export default function RuleEditorPage() {
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           Deployment error: {deployError}
+        </div>
+      )}
+
+      {thresholdSuccess && (
+        <div className="bg-green-500/10 text-green-600 text-sm p-3 rounded-md flex items-center gap-2">
+          <Check className="h-4 w-4" />
+          {thresholdSuccess}
         </div>
       )}
 
@@ -1185,44 +1226,39 @@ export default function RuleEditorPage() {
           </Card>
 
           {/* Current Version Info Card - Only for existing rules */}
-          {!isNew && ruleVersions && ruleVersions.length > 0 && (() => {
-            // Sort versions by version_number descending to get most recent
-            const sortedVersions = [...ruleVersions].sort((a, b) => b.version_number - a.version_number)
-            const currentVersionData = sortedVersions[0] // Most recent
-            return (
-              <Card>
-                <CardHeader className="py-3">
-                  <CardTitle className="text-sm font-medium">Current Version</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="space-y-1 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Version:</span>
-                      <span className="font-medium">v{currentVersion}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Last updated:</span>
-                      <span className="text-muted-foreground">{formatDistanceToNow(new Date(currentVersionData.created_at), { addSuffix: true })}</span>
-                    </div>
-                    {currentVersionData.changed_by && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Changed by:</span>
-                        <span className="text-muted-foreground">
-                          {users[currentVersionData.changed_by]?.email || currentVersionData.changed_by}
-                        </span>
-                      </div>
-                    )}
+          {!isNew && currentVersion && (
+            <Card>
+              <CardHeader className="py-3">
+                <CardTitle className="text-sm font-medium">Current Version</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Version:</span>
+                    <span className="font-medium">v{currentVersion.version_number}</span>
                   </div>
-                  {currentVersionData.change_reason && (
-                    <div className="mt-2 pt-2 border-t">
-                      <div className="text-xs text-muted-foreground mb-1">Change reason:</div>
-                      <p className="text-sm italic">"{currentVersionData.change_reason}"</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Last updated:</span>
+                    <span className="text-muted-foreground">{formatDistanceToNow(new Date(currentVersion.created_at), { addSuffix: true })}</span>
+                  </div>
+                  {currentVersion.changed_by && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Changed by:</span>
+                      <span className="text-muted-foreground">
+                        {users[currentVersion.changed_by]?.email || currentVersion.changed_by}
+                      </span>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            )
-          })()}
+                </div>
+                {currentVersion.change_reason && (
+                  <div className="mt-2 pt-2 border-t">
+                    <div className="text-xs text-muted-foreground mb-1">Change reason:</div>
+                    <p className="text-sm italic">"{currentVersion.change_reason}"</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Test Card */}
           <Card>
@@ -1315,7 +1351,7 @@ export default function RuleEditorPage() {
                   <Switch
                     id="threshold-enabled"
                     checked={thresholdEnabled}
-                    onCheckedChange={setThresholdEnabled}
+                    onCheckedChange={handleThresholdToggle}
                   />
                 </div>
                 {thresholdEnabled && (
