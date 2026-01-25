@@ -3,7 +3,7 @@ import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import { ToastProvider } from '@/components/ui/toast-provider'
 import { Header } from '@/components/Header'
-import { AdminRoute } from '@/components/AdminRoute'
+import { ProtectedRoute } from '@/components/protected-route'
 import SetupPage from '@/pages/Setup'
 import LoginPage from '@/pages/Login'
 import OpenSearchWizard from '@/pages/OpenSearchWizard'
@@ -119,7 +119,7 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/correlation" element={
-        <ProtectedRoute>
+        <ProtectedRoute permission="manage_correlation">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
@@ -129,7 +129,7 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/correlation/new" element={
-        <ProtectedRoute>
+        <ProtectedRoute permission="manage_correlation">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
@@ -139,7 +139,7 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/correlation/:id" element={
-        <ProtectedRoute>
+        <ProtectedRoute permission="manage_correlation">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
@@ -189,34 +189,34 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/settings" element={
-        <AdminRoute>
+        <ProtectedRoute permission="manage_settings">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <SettingsPage />
             </main>
           </div>
-        </AdminRoute>
+        </ProtectedRoute>
       } />
       <Route path="/settings/users" element={
-        <AdminRoute>
+        <ProtectedRoute permission="manage_users">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <UsersPage />
             </main>
           </div>
-        </AdminRoute>
+        </ProtectedRoute>
       } />
       <Route path="/settings/audit" element={
-        <AdminRoute>
+        <ProtectedRoute permission="view_audit">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <AuditLogPage />
             </main>
           </div>
-        </AdminRoute>
+        </ProtectedRoute>
       } />
       <Route path="/change-password" element={
         <ProtectedRoute>
@@ -249,7 +249,7 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/sigmahq" element={
-        <ProtectedRoute>
+        <ProtectedRoute permission="manage_sigmahq">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
@@ -259,24 +259,24 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/health" element={
-        <AdminRoute>
+        <ProtectedRoute permission="manage_settings">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <HealthPage />
             </main>
           </div>
-        </AdminRoute>
+        </ProtectedRoute>
       } />
       <Route path="/field-mappings" element={
-        <AdminRoute>
+        <ProtectedRoute permission="manage_settings">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <FieldMappingsPage />
             </main>
           </div>
-        </AdminRoute>
+        </ProtectedRoute>
       } />
       <Route path="/attack" element={
         <ProtectedRoute>
