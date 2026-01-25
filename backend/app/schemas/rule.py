@@ -32,6 +32,7 @@ class RuleUpdate(BaseModel):
     severity: str | None = None
     status: RuleStatus | None = None
     index_pattern_id: UUID | None = None
+    change_reason: str | None = None
     # Threshold alerting
     threshold_enabled: bool | None = None
     threshold_count: int | None = None
@@ -44,6 +45,8 @@ class RuleVersionResponse(BaseModel):
     version_number: int
     yaml_content: str
     created_at: datetime
+    change_reason: str
+    changed_by: UUID
 
     class Config:
         from_attributes = True
