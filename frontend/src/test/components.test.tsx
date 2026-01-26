@@ -15,7 +15,7 @@ describe('UI Components', () => {
     it('should render variant styles', () => {
       render(<Button variant="destructive">Delete</Button>);
       const button = screen.getByRole('button');
-      expect(button).toHaveClass('destructive');
+      expect(button).toHaveClass('bg-destructive');
     });
 
     it('should be disabled when specified', () => {
@@ -39,7 +39,7 @@ describe('UI Components', () => {
     });
 
     it('should accept text input', () => {
-      const { container } = render(<Input />);
+      const { container } = render(<Input type="text" />);
       const input = container.querySelector('input');
       expect(input).toHaveAttribute('type', 'text');
     });
@@ -64,14 +64,14 @@ describe('UI Components', () => {
 
     it('should apply variant classes', () => {
       const { container } = render(<Badge variant="secondary">Label</Badge>);
-      const badge = container.querySelector('.badge');
-      expect(badge).toHaveClass('secondary');
+      const badge = container.querySelector('div');
+      expect(badge).toHaveClass('bg-secondary');
     });
 
     it('should apply outline variant', () => {
       const { container } = render(<Badge variant="outline">Outline</Badge>);
-      const badge = container.querySelector('.badge');
-      expect(badge).toHaveClass('outline');
+      const badge = container.querySelector('div');
+      expect(badge).toHaveClass('text-foreground');
     });
   });
 });
@@ -100,7 +100,7 @@ describe('Form Components', () => {
 describe('Security Components', () => {
   describe('Password Input', () => {
     it('should hide password characters', () => {
-      const { container } = render(<Input type="password" value="secret123" />);
+      const { container } = render(<Input type="password" defaultValue="secret123" />);
       const input = container.querySelector('input') as HTMLInputElement;
       expect(input.type).toBe('password');
       expect(input.value).toBe('secret123');
@@ -109,7 +109,7 @@ describe('Security Components', () => {
     it('should toggle visibility when button clicked', () => {
       const { container } = render(
         <div>
-          <Input type="password" value="password" />
+          <Input type="password" defaultValue="password" />
         </div>
       );
       const input = container.querySelector('input') as HTMLInputElement;

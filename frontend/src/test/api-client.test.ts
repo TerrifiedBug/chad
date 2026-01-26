@@ -24,23 +24,35 @@ describe('API Client CSRF Handling', () => {
 
     await apiClient.get('/test');
 
-    // Token should be stored in memory for next request
-    const secondCall = vi.mocked(global.fetch).mock.calls[1];
-    expect(secondCall).toBeDefined();
+    // Verify fetch was called
+    expect(vi.mocked(global.fetch)).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(global.fetch).mock.calls[0];
+    expect(call).toBeDefined();
   });
 
   it('should include CSRF token in POST requests', async () => {
-    vi.mocked(global.fetch).mockResolvedValueOnce({
-      ok: true,
-      headers: {
-        get: (name: string) => name === 'X-CSRF-Token' ? 'test-csrf-token' : null,
-      },
-      json: async () => ({ success: true }),
-    } as Response);
+    // Mock GET request that returns CSRF token
+    vi.mocked(global.fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) => name === 'X-CSRF-Token' ? 'test-csrf-token' : null,
+        },
+        json: async () => ({ data: 'test' }),
+      } as Response)
+      // Mock POST request
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: () => null,
+        },
+        json: async () => ({ success: true }),
+      } as Response);
 
     await apiClient.get('/test'); // Get CSRF token
     await apiClient.post('/submit', { data: 'test' });
 
+    expect(vi.mocked(global.fetch)).toHaveBeenCalledTimes(2);
     const postCall = vi.mocked(global.fetch).mock.calls[1];
     expect(postCall).toBeDefined();
     const headers = postCall[1]?.headers as Record<string, string>;
@@ -82,13 +94,23 @@ describe('API Client CSRF Handling', () => {
   });
 
   it('should handle missing CSRF token gracefully', async () => {
-    vi.mocked(global.fetch).mockResolvedValueOnce({
-      ok: true,
-      headers: {
-        get: (_name: string) => null,
-      },
-      json: async () => ({ data: 'test' }),
-    } as Response);
+    // Mock GET request without CSRF token
+    vi.mocked(global.fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (_name: string) => null,
+        },
+        json: async () => ({ data: 'test' }),
+      } as Response)
+      // Mock POST request
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (_name: string) => null,
+        },
+        json: async () => ({ success: true }),
+      } as Response);
 
     // First request without CSRF token
     await apiClient.get('/test');
@@ -111,6 +133,10 @@ describe('API Client Error Handling', () => {
   it('should throw error with detail from response', async () => {
     vi.mocked(global.fetch).mockResolvedValueOnce({
       ok: false,
+      status: 401,
+      headers: {
+        get: () => null,
+      },
       json: async () => ({ detail: 'Unauthorized access' }),
     } as Response);
 
@@ -120,6 +146,10 @@ describe('API Client Error Handling', () => {
   it('should throw generic error when response has no detail', async () => {
     vi.mocked(global.fetch).mockResolvedValueOnce({
       ok: false,
+      status: 400,
+      headers: {
+        get: () => null,
+      },
       json: async () => ({ error: 'Some error' }),
     } as Response);
 
@@ -129,6 +159,10 @@ describe('API Client Error Handling', () => {
   it('should throw generic error when JSON parsing fails', async () => {
     vi.mocked(global.fetch).mockResolvedValueOnce({
       ok: false,
+      status: 500,
+      headers: {
+        get: () => null,
+      },
       json: async () => {
         throw new Error('Invalid JSON');
       },

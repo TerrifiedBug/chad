@@ -47,13 +47,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      // Check for SSO token in URL (returned from SSO callback)
+      // Check for SSO exchange code in URL (returned from SSO callback)
       const urlParams = new URLSearchParams(window.location.search)
-      const ssoToken = urlParams.get('sso_token')
-      if (ssoToken) {
-        // Store the SSO token
-        localStorage.setItem('chad-token', ssoToken)
-        // Clean up URL (remove the token from URL bar)
+      const ssoCode = urlParams.get('sso_code')
+      if (ssoCode) {
+        // Exchange code for token via POST
+        try {
+          const response = await api.post<TokenResponse>('/auth/sso/exchange', { code: ssoCode })
+          localStorage.setItem('chad-token', response.access_token)
+        } catch {
+          // Exchange failed - clear the code
+          console.error('SSO code exchange failed')
+        }
+        // Clean up URL (remove the code from URL bar)
         window.history.replaceState({}, '', '/')
       }
 

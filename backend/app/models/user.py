@@ -1,6 +1,6 @@
 from enum import Enum
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,3 +26,6 @@ class User(Base, UUIDMixin, TimestampMixin):
     totp_secret: Mapped[str | None] = mapped_column(String(32), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_backup_codes: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+
+    # Token version for invalidating all tokens on password change
+    token_version: Mapped[int] = mapped_column(default=0, nullable=False)

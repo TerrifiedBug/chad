@@ -33,26 +33,30 @@ export function useWebSocket() {
       return
     }
 
-    // Determine WebSocket URL based on current location
+    // Determine WebSocket URL
+    // Support override via environment variable for proxy/reverse-proxy scenarios
+    // Set VITE_WS_URL environment variable to customize (e.g., "wss://backend.example.com/ws/alerts")
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
 
-    // For development, use the backend port
     let wsUrl: string
-    if (window.location.hostname === 'localhost' && window.location.port === '3000') {
-      // Development: frontend on :3000, backend on :8000
-      wsUrl = `${protocol}//localhost:8000/ws/alerts?token=${token}`
-    } else if (window.location.hostname === 'localhost' && window.location.port === '8000') {
-      // Accessing frontend via backend port
-      wsUrl = `${protocol}//localhost:8000/ws/alerts?token=${token}`
+    if (import.meta.env.VITE_WS_URL) {
+      // Use configured WebSocket URL (for proxy/custom deployments)
+      wsUrl = import.meta.env.VITE_WS_URL
+    } else if (window.location.hostname === 'localhost' && window.location.port === '3000') {
+      // Development: frontend on :3000, backend on :8000 (no nginx proxy in dev)
+      wsUrl = `${protocol}//localhost:8000/ws/alerts`
     } else {
-      // Production or other setups
-      wsUrl = `${protocol}//${window.location.host}/ws/alerts?token=${token}`
+      // Default: WebSocket goes through the same host:port as the frontend
+      // This works when nginx/proxy correctly forwards /ws/ to backend
+      wsUrl = `${protocol}//${window.location.host}/ws/alerts`
     }
 
-    console.log('Connecting to WebSocket:', wsUrl.replace(/token=[^&]+/, 'token=REDACTED'))
+    console.log('Connecting to WebSocket:', wsUrl.replace(token, 'REDACTED'))
 
     try {
-      const ws = new WebSocket(wsUrl)
+      // Use Sec-WebSocket-Protocol header with Bearer token for authentication
+      // This prevents token exposure in URL logs/history
+      const ws = new WebSocket(wsUrl, ['Bearer', token])
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -68,7 +72,7 @@ export function useWebSocket() {
 
           if (message.type === 'alert') {
             console.log('Alert received via WebSocket:', message.data)
-            setAlerts((prev) => [message.data, ...prev])
+            setAlerts((prev) => [message.data as AlertData, ...prev])
           } else if (message.type === 'connected') {
             console.log('WebSocket welcome message:', message.message)
           } else if (message.type === 'pong') {

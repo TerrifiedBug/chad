@@ -184,7 +184,7 @@ def _get_role_from_claims(userinfo: dict, sso_config: dict) -> UserRole | None:
     return None
 
 
-async def create_token_with_dynamic_timeout(user_id: str, db: AsyncSession) -> str:
+async def create_token_with_dynamic_timeout(user_id: str, db: AsyncSession, token_version: int = 0) -> str:
     """Create JWT with configurable expiration from settings."""
     session_config = await get_setting(db, "session")
     timeout_minutes = (
@@ -193,7 +193,7 @@ async def create_token_with_dynamic_timeout(user_id: str, db: AsyncSession) -> s
         else DEFAULT_SESSION_TIMEOUT_MINUTES
     )
     expires_delta = timedelta(minutes=timeout_minutes)
-    return create_access_token(data={"sub": user_id}, expires_delta=expires_delta)
+    return create_access_token(data={"sub": user_id}, expires_delta=expires_delta, token_version=token_version)
 
 
 @router.get("/setup-status")
@@ -240,7 +240,7 @@ async def initial_setup(
     await db.refresh(admin)
 
     # Generate token with dynamic timeout
-    access_token = await create_token_with_dynamic_timeout(str(admin.id), db)
+    access_token = await create_token_with_dynamic_timeout(str(admin.id), db, admin.token_version)
     return TokenResponse(access_token=access_token)
 
 
@@ -385,7 +385,7 @@ async def login(
     if security_settings and security_settings.get("force_2fa_on_signup", False):
         # User needs to set up 2FA before they can fully log in
         await clear_failed_attempts(db, email)
-        access_token = await create_token_with_dynamic_timeout(str(user.id), db)
+        access_token = await create_token_with_dynamic_timeout(str(user.id), db, user.token_version)
         await audit_log(
             db, user.id, "user.login", "user", str(user.id),
             {"email": user.email, "auth_method": "local", "requires_2fa_setup": True}, ip_address=ip_address
@@ -397,7 +397,7 @@ async def login(
     await clear_failed_attempts(db, email)
 
     # Generate token with dynamic timeout
-    access_token = await create_token_with_dynamic_timeout(str(user.id), db)
+    access_token = await create_token_with_dynamic_timeout(str(user.id), db, user.token_version)
     await audit_log(
         db, user.id, "user.login", "user", str(user.id),
         {"email": user.email, "auth_method": "local"}, ip_address=ip_address
@@ -484,6 +484,7 @@ async def change_password(
     # Update password and clear the must_change_password flag
     current_user.password_hash = get_password_hash(new_password)
     current_user.must_change_password = False
+    current_user.token_version += 1  # Invalidate all existing tokens
 
     # Single atomic commit for both password update and audit log
     await db.commit()
@@ -676,17 +677,76 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
         error_params = urlencode({"sso_error": "User account is inactive"})
         return RedirectResponse(url=f"{frontend_url}/login?{error_params}")
 
-    # Create JWT token
-    access_token = await create_token_with_dynamic_timeout(str(user.id), db)
+    # Generate short-lived exchange code (30 second validity)
+    import secrets
+    exchange_code = secrets.token_urlsafe(32)
+
+    # Store in database with user_id and expiration
+    from app.models.two_factor_token import TwoFactorToken
+    await TwoFactorToken.create_token(
+        db,
+        user_id=exchange_code,  # Use code as the lookup key
+        token_type="sso_exchange",
+        token_data=str(user.id),  # Store user_id
+        expires_minutes=0.5,  # 30 seconds
+    )
+
+    # Audit log the SSO login
     await audit_log(
         db, user.id, "user.login", "user", str(user.id),
         {"email": user.email, "auth_method": "sso"}, ip_address=get_client_ip(request)
     )
     await db.commit()
 
-    # Redirect to frontend with token
-    # The frontend will extract this and store it
-    return RedirectResponse(url=f"{frontend_url}/?sso_token={access_token}")
+    # Redirect with exchange code instead of token
+    return RedirectResponse(url=f"{frontend_url}/?sso_code={exchange_code}")
+
+
+@router.post("/sso/exchange")
+async def sso_exchange_token(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Exchange SSO code for JWT token."""
+    data = await request.json()
+    code = data.get("code")
+
+    if not code:
+        raise HTTPException(400, "Exchange code required")
+
+    # Look up the exchange token
+    from app.models.two_factor_token import TwoFactorToken
+    exchange_token = await TwoFactorToken.get_valid_token(
+        db,
+        user_id=code,  # Use code as the lookup key
+        token_type="sso_exchange",
+    )
+
+    if not exchange_token:
+        raise HTTPException(401, "Invalid or expired exchange code")
+
+    user_id = exchange_token.token_data
+
+    # Get user and generate token
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise HTTPException(403, "User not found or inactive")
+
+    # Delete the exchange token (single-use)
+    await TwoFactorToken.delete_token(db, user_id=code, token_type="sso_exchange")
+
+    # Generate JWT
+    access_token = await create_token_with_dynamic_timeout(str(user.id), db, user.token_version)
+
+    await audit_log(
+        db, user.id, "user.login", "user", str(user.id),
+        {"email": user.email, "auth_method": "sso"}, ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return TokenResponse(access_token=access_token)
 
 
 # ============================================================================
@@ -847,7 +907,7 @@ async def login_2fa(
     # Delete the pending token after successful verification
     await TwoFactorToken.delete_token(db, user_id=request.token, token_type=TOKEN_TYPE_LOGIN)
 
-    access_token = await create_token_with_dynamic_timeout(str(user.id), db)
+    access_token = await create_token_with_dynamic_timeout(str(user.id), db, user.token_version)
     await audit_log(
         db, user.id, "user.login", "user", str(user.id), {"email": user.email, "auth_method": "local", "2fa": True}
     )

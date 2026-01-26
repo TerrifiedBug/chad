@@ -26,11 +26,10 @@ async def websocket_alerts(
     """
     WebSocket endpoint for real-time alert streaming.
 
-    Clients connect to this endpoint to receive alerts in real-time.
-    The connection is authenticated via JWT token in the query parameter.
+    Authentication via Sec-WebSocket-Protocol header with Bearer token.
+    Format: "Bearer, <jwt_token>"
 
-    Query parameters:
-        token: JWT authentication token
+    For backward compatibility, also accepts token via query parameter.
 
     Message format:
         {
@@ -49,7 +48,7 @@ async def websocket_alerts(
     client_host = websocket.client
     logger.info(f"WebSocket connection attempt from {client_host}")
 
-    # Authenticate the WebSocket connection
+    # Authenticate the WebSocket connection BEFORE accepting
     user = await get_current_user_websocket(websocket, db)
     if not user:
         logger.warning(f"WebSocket authentication failed from {client_host}")
@@ -59,6 +58,8 @@ async def websocket_alerts(
     logger.info(f"WebSocket authenticated for user {user.email} ({user.id})")
 
     # Accept the connection and register with the manager
+    # Must accept before sending messages
+    await websocket.accept(subprotocol='Bearer')
     await manager.connect(websocket, str(user.id))
 
     try:

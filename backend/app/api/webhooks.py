@@ -4,7 +4,9 @@ Webhooks API endpoints.
 Manage webhook endpoints for notifications. Admin access required.
 """
 
+import ipaddress
 from typing import Annotated
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -27,6 +29,55 @@ from app.services.audit import audit_log
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+def is_safe_webhook_url(url: str) -> tuple[bool, str | None]:
+    """Validate webhook URL is safe and doesn't point to internal services.
+
+    Returns:
+        Tuple of (is_safe, error_message)
+    """
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+
+        if not hostname:
+            return False, "Invalid URL: no hostname"
+
+        # Block private IP ranges
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return False, f"Cannot use private IP: {hostname}"
+        except ValueError:
+            # Not an IP address, continue with hostname checks
+            pass
+
+        # Block metadata endpoints
+        if hostname == "169.254.169.254":
+            return False, "Cloud metadata endpoint not allowed"
+
+        # Block localhost variants
+        blocked_hostnames = {
+            "localhost", "127.0.0.1", "[::1]", "0.0.0.0",
+            "localhost.localdomain", "ip6-localhost", "ip6-loopback"
+        }
+        if hostname.lower() in blocked_hostnames:
+            return False, f"Cannot use localhost: {hostname}"
+
+        # Block internal hostname patterns
+        hostname_lower = hostname.lower()
+        internal_patterns = [
+            ".internal.", ".local.", ".corp.", ".private.",
+            ".intranet.", ".lan.", "localhost"
+        ]
+        if any(pattern in hostname_lower for pattern in internal_patterns):
+            return False, f"Internal hostname not allowed: {hostname}"
+
+        return True, None
+
+    except Exception as e:
+        return False, "Invalid URL format"
 
 
 @router.get("", response_model=list[WebhookResponse])
@@ -60,6 +111,11 @@ async def create_webhook(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Create a new webhook."""
+    # Validate URL is safe
+    is_safe, error_msg = is_safe_webhook_url(str(data.url))
+    if not is_safe:
+        raise HTTPException(status_code=400, detail=error_msg)
+
     # Check for duplicate name
     existing = await db.execute(select(Webhook).where(Webhook.name == data.name))
     if existing.scalar_one_or_none():
@@ -137,6 +193,12 @@ async def update_webhook(
     webhook = await db.get(Webhook, webhook_id)
     if not webhook:
         raise HTTPException(status_code=404, detail="Webhook not found")
+
+    # Validate URL if being updated
+    if data.url is not None:
+        is_safe, error_msg = is_safe_webhook_url(str(data.url))
+        if not is_safe:
+            raise HTTPException(status_code=400, detail=error_msg)
 
     if data.name is not None:
         webhook.name = data.name

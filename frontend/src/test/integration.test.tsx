@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import React from 'react';
+import { AuthProvider } from '@/hooks/use-auth';
+
+// Wrapper for tests that need AuthProvider
+const createWrapper = () => {
+  return function AuthProviderWrapper({ children }: any) {
+    return <AuthProvider>{children}</AuthProvider>;
+  };
+};
 
 describe('Integration Tests', () => {
   beforeEach(() => {
@@ -10,20 +19,82 @@ describe('Integration Tests', () => {
 
   describe('Authentication Flow', () => {
     it('should complete full login flow', async () => {
-      // Mock successful login response
-      vi.mocked(global.fetch).mockResolvedValueOnce({
-        ok: true,
-        headers: {
-          get: (name: string) => name === 'X-CSRF-Token' ? 'csrf-token' : null,
-        },
-        json: async () => ({
-          access_token: 'test-token',
-          user: { email: 'test@example.com', role: 'analyst' },
-        }),
-      } as Response);
+      // Track which API calls are made
+      const calls: string[] = [];
+
+      // Mock all the API calls that happen during mount and login
+      vi.mocked(global.fetch).mockImplementation((url: string) => {
+        calls.push(url);
+
+        // Setup status check (happens on mount and after login)
+        if (url === '/api/auth/setup-status') {
+          return Promise.resolve({
+            ok: true,
+            headers: {
+              get: (name: string) => name === 'X-CSRF-Token' ? 'csrf-token' : null,
+            },
+            json: async () => ({ setup_completed: true }),
+          } as Response);
+        }
+
+        // Login POST request
+        if (url === '/api/auth/login' || url === '/api/auth/login') {
+          return Promise.resolve({
+            ok: true,
+            headers: {
+              get: (name: string) => name === 'X-CSRF-Token' ? 'csrf-token' : null,
+            },
+            json: async () => ({
+              access_token: 'test-token',
+              token_type: 'bearer',
+            }),
+          } as Response);
+        }
+
+        // getMe call (happens after login)
+        if (url === '/api/auth/me') {
+          return Promise.resolve({
+            ok: true,
+            headers: {
+              get: () => null,
+            },
+            json: async () => ({
+              id: '123',
+              email: 'test@example.com',
+              role: 'analyst',
+              is_active: true,
+              auth_method: 'local',
+              must_change_password: false,
+            }),
+          } as Response);
+        }
+
+        // OpenSearch status check (happens after login)
+        if (url === '/api/settings/opensearch/status') {
+          return Promise.resolve({
+            ok: true,
+            headers: {
+              get: () => null,
+            },
+            json: async () => ({ configured: true }),
+          } as Response);
+        }
+
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
 
       const { useAuth } = await import('@/hooks/use-auth');
-      const { result } = renderHook(() => useAuth());
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      // Wait for initial auth check
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      // Clear calls from mount
+      calls.length = 0;
 
       // Login
       await act(async () => {

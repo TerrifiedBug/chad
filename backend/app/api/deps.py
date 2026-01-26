@@ -21,15 +21,29 @@ async def get_current_user_websocket(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User | None:
     """
-    Authenticate WebSocket connection using token from query parameter.
+    Authenticate WebSocket connection using token from header.
 
     Returns the authenticated user or None if authentication fails.
     Used by WebSocket endpoints which need to handle auth differently.
-    """
-    from fastapi import Query
 
-    # Get token from query parameter
-    token = websocket.query_params.get("token")
+    Supports:
+    - Sec-WebSocket-Protocol header: "Bearer, <jwt_token>"
+    - Query parameter fallback: ?token=<jwt_token>
+    """
+    # Get token from Sec-WebSocket-Protocol header
+    protocols = websocket.headers.get("sec-websocket-protocol", "")
+    token = None
+
+    # Parse protocols - format: "Bearer, <token>"
+    if protocols:
+        parts = [p.strip() for p in protocols.split(",")]
+        if len(parts) >= 2 and parts[0] == "Bearer":
+            token = parts[1]
+
+    # Fallback to query param for backward compatibility
+    if not token:
+        token = websocket.query_params.get("token")
+
     if not token:
         return None
 
@@ -38,6 +52,8 @@ async def get_current_user_websocket(
         return None
 
     user_id = payload.get("sub")
+    token_version = payload.get("tv", 0)  # Get token version from JWT
+
     if user_id is None:
         return None
 
@@ -45,6 +61,10 @@ async def get_current_user_websocket(
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active:
+        return None
+
+    # Validate token version
+    if user.token_version != token_version:
         return None
 
     return user
@@ -63,6 +83,8 @@ async def get_current_user(
         )
 
     user_id = payload.get("sub")
+    token_version = payload.get("tv", 0)  # Get token version from JWT
+
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -82,6 +104,13 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is inactive",
+        )
+
+    # Validate token version
+    if user.token_version != token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been invalidated",
         )
 
     return user

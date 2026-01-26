@@ -7,6 +7,10 @@ vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),
   },
+  settingsApi: {
+    getVersion: vi.fn(),
+    checkForUpdates: vi.fn(),
+  },
 }));
 
 describe('useHealthStatus Hook', () => {
@@ -15,30 +19,33 @@ describe('useHealthStatus Hook', () => {
     global.fetch = vi.fn();
   });
 
-  it('should initialize with no unhealthy services', () => {
-    vi.mocked(global.fetch).mockResolvedValueOnce({
-      ok: true,
-      headers: { get: vi.fn() },
-      json: async () => ({ services: [] }),
-    } as Response);
+  it('should initialize with no unhealthy services', async () => {
+    const { api } = await import('@/lib/api');
+    vi.mocked(api.get).mockResolvedValueOnce({
+      services: [],
+      recent_checks: [],
+    });
 
     const { result } = renderHook(() => useHealthStatus());
+
+    // Wait for the hook to finish loading
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
 
     expect(result.current.unhealthyCount).toBe(0);
   });
 
   it('should count unhealthy services', async () => {
-    vi.mocked(global.fetch).mockResolvedValueOnce({
-      ok: true,
-      headers: { get: vi.fn() },
-      json: async () => ({
-        services: [
-          { service_type: 'database', status: 'healthy' },
-          { service_type: 'opensearch', status: 'unhealthy' },
-          { service_type: 'scheduler', status: 'warning' },
-        ],
-      }),
-    } as Response);
+    const { api } = await import('@/lib/api');
+    vi.mocked(api.get).mockResolvedValueOnce({
+      services: [
+        { service_type: 'database', service_name: 'db', status: 'healthy', last_check: '2024-01-01' },
+        { service_type: 'opensearch', service_name: 'os', status: 'unhealthy', last_check: '2024-01-01' },
+        { service_type: 'scheduler', service_name: 'sched', status: 'warning', last_check: '2024-01-01' },
+      ],
+      recent_checks: [],
+    });
 
     const { result } = renderHook(() => useHealthStatus());
 
@@ -49,13 +56,14 @@ describe('useHealthStatus Hook', () => {
   });
 
   it('should handle API errors gracefully', async () => {
-    vi.mocked(global.fetch).mockRejectedValueOnce(new Error('Network error'));
+    const { api } = await import('@/lib/api');
+    vi.mocked(api.get).mockRejectedValueOnce(new Error('Network error'));
 
     const { result } = renderHook(() => useHealthStatus());
 
     // Should not throw, just handle error
     await waitFor(() => {
-      expect(result.current).toBeDefined();
+      expect(result.current.error).toBe('Failed to fetch health status');
     });
   });
 });
@@ -67,13 +75,12 @@ describe('useVersion Hook', () => {
 
   it('should parse version from package.json', async () => {
     // Mock version hook behavior
-    const { useVersion } = await import('@/hooks/use-version');
-    vi.mocked(global.fetch).mockResolvedValueOnce({
-      ok: true,
-      headers: { get: vi.fn() },
-      json: async () => ({ version: '1.0.0' }),
-    } as Response);
+    const { settingsApi } = await import('@/lib/api');
+    vi.mocked(settingsApi.getVersion).mockResolvedValueOnce({
+      version: '1.0.0',
+    });
 
+    const { useVersion } = await import('@/hooks/use-version');
     const { result } = renderHook(() => useVersion());
 
     await waitFor(() => {

@@ -94,23 +94,32 @@ class Settings(BaseSettings):
         ]
 
         if v.lower() in insecure_defaults:
-            # In development, allow insecure defaults with a warning
-            # Check if we're in debug mode by looking at the model
-            # We need to check the full model values, not just this field
-            # For now, we'll issue a warning but allow it in dev
+            # CRITICAL: In production, reject insecure defaults outright
+            # In development (DEBUG=True), allow with warning
+            # We need to check if DEBUG is set in the environment
+            debug_mode = os.environ.get("DEBUG", "").lower() in ("true", "1", "yes")
+
+            if not debug_mode:
+                raise ValueError(
+                    f"{info.field_name} is using an insecure default value. "
+                    f"This is NEVER acceptable in production. "
+                    f"Generate a secure key using: openssl rand -base64 32"
+                )
+
+            # Development mode - log warning
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(
-                f"{info.field_name} is using an insecure default value. "
+                f"{info.field_name} is using an insecure default value in DEBUG mode. "
                 f"This is acceptable for development but MUST be changed in production!"
             )
-
-        # Minimum length check (only enforce in production if not using default)
-        if len(v) < 32 and v.lower() not in ["dev-secret-key-change-in-prod", "dev-session-key-change-in-prod"]:
-            raise ValueError(
-                f"{info.field_name} must be at least 32 characters long for security. "
-                f"Generate a secure key using: openssl rand -base64 32"
-            )
+        else:
+            # Minimum length check (only if not using default)
+            if len(v) < 32:
+                raise ValueError(
+                    f"{info.field_name} must be at least 32 characters long for security. "
+                    f"Generate a secure key using: openssl rand -base64 32"
+                )
 
         return v
 

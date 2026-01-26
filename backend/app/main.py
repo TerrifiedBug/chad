@@ -47,6 +47,45 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown."""
     # Startup
+    # CRITICAL SECURITY CHECK: Reject insecure secret defaults in production
+    if not settings.DEBUG:
+        insecure_defaults = [
+            "dev-secret-key-change-in-prod",
+            "dev-session-key-change-in-prod",
+            "default-dev-key-change-in-prod",
+            "secret",
+            "changeme",
+        ]
+
+        critical_failures = []
+
+        if settings.JWT_SECRET_KEY.lower() in insecure_defaults:
+            critical_failures.append(
+                "JWT_SECRET_KEY is using insecure default in production. "
+                "Set a secure secret via environment variable: "
+                "JWT_SECRET_KEY=$(openssl rand -base64 32)"
+            )
+
+        if settings.SESSION_SECRET_KEY.lower() in insecure_defaults:
+            critical_failures.append(
+                "SESSION_SECRET_KEY is using insecure default in production. "
+                "Set a secure secret via environment variable: "
+                "SESSION_SECRET_KEY=$(openssl rand -base64 32)"
+            )
+
+        encryption_key = os.environ.get("CHAD_ENCRYPTION_KEY", "")
+        if encryption_key.lower() in insecure_defaults:
+            critical_failures.append(
+                "CHAD_ENCRYPTION_KEY is using insecure default in production. "
+                "Set a secure key via environment variable: "
+                "CHAD_ENCRYPTION_KEY=$(openssl rand -base64 32)"
+            )
+
+        if critical_failures:
+            raise RuntimeError(
+                "CRITICAL SECURITY CONFIGURATION ERROR:\n" + "\n".join(f"  - {msg}" for msg in critical_failures)
+            )
+
     logger.info("Starting scheduler service")
     scheduler_service.start()
     try:

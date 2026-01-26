@@ -29,11 +29,22 @@ def get_encryption_key() -> bytes:
     ]
 
     if secret.lower() in insecure_defaults:
-        # In development, allow insecure defaults with a warning
+        # CRITICAL: In production, reject insecure defaults outright
+        # In development (DEBUG=True), allow with warning
+        debug_mode = os.environ.get("DEBUG", "").lower() in ("true", "1", "yes")
+
+        if not debug_mode:
+            raise ValueError(
+                "CHAD_ENCRYPTION_KEY is using an insecure default value. "
+                "This is NEVER acceptable in production. "
+                "Generate a secure key using: openssl rand -base64 32"
+            )
+
+        # Development mode - log warning
         import logging
         logger = logging.getLogger(__name__)
         logger.warning(
-            "CHAD_ENCRYPTION_KEY is using an insecure default value. "
+            "CHAD_ENCRYPTION_KEY is using an insecure default value in DEBUG mode. "
             "This is acceptable for development but MUST be changed in production!"
         )
     # Minimum length check (only enforce if not using default)

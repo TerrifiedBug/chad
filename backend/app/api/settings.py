@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import Annotated
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -26,6 +27,44 @@ from app.services.webhooks import get_app_url_for_webhooks, send_webhook
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+# Index pattern validation
+ALLOWED_INDEX_PREFIXES = ["logs-", "alerts-", "events-", "sigma-"]
+ALLOWED_INDEX_PATTERN = re.compile(r'^[a-z][a-z0-9_-]*\*?$')
+
+
+def validate_index_pattern(pattern: str) -> tuple[bool, str]:
+    """Validate index pattern is safe and within allowed prefixes.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not pattern:
+        return False, "Pattern cannot be empty"
+
+    # Block wildcard-only patterns
+    if pattern in ("*", "*/*"):
+        return False, "Wildcard-only patterns are not allowed"
+
+    # Block path traversal attempts
+    if "../" in pattern or "./" in pattern:
+        return False, "Path traversal detected in pattern"
+
+    # Check for allowed prefixes
+    has_valid_prefix = any(
+        pattern.startswith(prefix) or pattern.startswith(prefix.replace("-", "_"))
+        for prefix in ALLOWED_INDEX_PREFIXES
+    )
+
+    if not has_valid_prefix:
+        return False, f"Pattern must start with one of: {', '.join(ALLOWED_INDEX_PREFIXES)}"
+
+    # Validate pattern format
+    if not ALLOWED_INDEX_PATTERN.match(pattern.rstrip("*")):
+        return False, "Pattern contains invalid characters"
+
+    return True, ""
 
 
 # Version response models
@@ -152,6 +191,64 @@ async def test_opensearch_connection(
             for step in result.steps
         ],
     )
+
+
+class IndexPatternTestRequest(BaseModel):
+    pattern: str
+
+
+class IndexPatternTestResponse(BaseModel):
+    valid: bool
+    pattern: str
+    matching_indices: int | None = None
+    indices: list[str] | None = None
+    error: str | None = None
+
+
+@router.post("/test-index-pattern", response_model=IndexPatternTestResponse)
+async def test_index_pattern(
+    data: IndexPatternTestRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Test OpenSearch index pattern with validation."""
+    from app.api.deps import get_opensearch_client_optional
+
+    # Validate pattern first
+    is_valid, error_msg = validate_index_pattern(data.pattern)
+    if not is_valid:
+        return IndexPatternTestResponse(
+            valid=False,
+            pattern=data.pattern,
+            error=error_msg,
+        )
+
+    # Get OpenSearch client and test
+    opensearch_client = await get_opensearch_client_optional(db)
+    if not opensearch_client:
+        return IndexPatternTestResponse(
+            valid=False,
+            pattern=data.pattern,
+            error="OpenSearch not configured",
+        )
+
+    try:
+        # Test if pattern returns any indices
+        response = opensearch_client.indices.get(index=data.pattern, ignore_unavailable=True)
+        indices = list(response.keys()) if response else []
+
+        return IndexPatternTestResponse(
+            valid=True,
+            pattern=data.pattern,
+            matching_indices=len(indices),
+            indices=indices[:10],  # Limit to first 10
+        )
+    except Exception as e:
+        return IndexPatternTestResponse(
+            valid=False,
+            pattern=data.pattern,
+            error=f"Pattern test failed: {str(e)}",
+        )
 
 
 @router.post("/webhooks/test", response_model=WebhookTestResponse)

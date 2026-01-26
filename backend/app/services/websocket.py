@@ -40,13 +40,14 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket, user_id: str):
         """
-        Accept and register a new WebSocket connection.
+        Register a new WebSocket connection.
+
+        Note: The WebSocket should already be accepted before calling this method.
 
         Args:
             websocket: The WebSocket connection
             user_id: The user ID for this connection
         """
-        await websocket.accept()
         self._all_connections.add(websocket)
 
         if user_id not in self.active_connections:

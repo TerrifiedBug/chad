@@ -1,6 +1,6 @@
 const API_BASE = '/api'
 
-class ApiClient {
+export class ApiClient {
   private csrfToken: string | null = null
 
   private updateCsrfToken(response: Response): void {

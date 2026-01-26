@@ -29,10 +29,13 @@ describe('API Client', () => {
       const mockFetch = global.fetch as ReturnType<typeof vi.fn>;
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: {
+          get: vi.fn(),
+        },
         json: async () => ({}),
-      });
+      } as Response);
 
-      localStorage.setItem('token', 'test-token');
+      localStorage.setItem('chad-token', 'test-token');
       await api.get('/test');
 
       expect(mockFetch).toHaveBeenCalledWith(

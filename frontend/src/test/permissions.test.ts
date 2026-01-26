@@ -17,7 +17,7 @@ describe('Permission Checks', () => {
   it('should deny access when user lacks permission', () => {
     const { result } = renderHook(() =>
       usePermissions({
-        permissions: ['manage_rules'],
+        permissions: ['view_rules'],
       })
     );
 
