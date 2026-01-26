@@ -98,11 +98,6 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
   }
 
   const handleRestoreClick = (versionNumber: number, yaml: string, changeReason?: string) => {
-    console.log('[ActivityPanel] handleRestoreClick called with:', {
-      versionNumber,
-      changeReason,
-      yaml: yaml.substring(0, 50) + '...'
-    })
     setRestoreTarget({ versionNumber, yaml, changeReason })
   }
 
@@ -236,9 +231,6 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     size="sm"
                     className="h-7 text-xs"
                     onClick={() => {
-                      console.log('[ActivityPanel] DEBUG activity.data:', activity.data)
-                      console.log('[ActivityPanel] DEBUG yaml_content type:', typeof activity.data.yaml_content)
-                      console.log('[ActivityPanel] DEBUG change_reason:', activity.data.change_reason)
                       handleRestoreClick(
                         Number(activity.data.version_number),
                         String(activity.data.yaml_content),

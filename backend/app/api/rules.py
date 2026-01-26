@@ -1813,6 +1813,7 @@ async def get_rule_activity(
                 data={
                     "version_number": v.version_number,
                     "yaml_content": v.yaml_content,
+                    "change_reason": v.change_reason,
                 },
             )
         )

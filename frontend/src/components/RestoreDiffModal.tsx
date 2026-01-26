@@ -33,36 +33,8 @@ export function RestoreDiffModal({
   isRestoring,
   targetChangeReason,
 }: RestoreDiffModalProps) {
-  // Debug log props
-  if (isOpen) {
-    console.log('[RestoreDiffModal] isOpen:', isOpen)
-    console.log('[RestoreDiffModal] targetChangeReason:', targetChangeReason)
-    console.log('[RestoreDiffModal] targetVersion:', targetVersion, 'type:', typeof targetVersion)
-    console.log('[RestoreDiffModal] currentVersion:', currentVersion, 'type:', typeof currentVersion)
-    console.log('[RestoreDiffModal] currentYaml type:', typeof currentYaml)
-    console.log('[RestoreDiffModal] targetYaml type:', typeof targetYaml)
-    console.log('[RestoreDiffModal] targetYaml first 100 chars:', String(targetYaml).substring(0, 100))
-
-    // Check if any props are objects
-    if (typeof targetVersion === 'object' && targetVersion !== null) {
-      console.log('[RestoreDiffModal] ERROR: targetVersion is an object!', Object.keys(targetVersion))
-    }
-    if (typeof currentVersion === 'object' && currentVersion !== null) {
-      console.log('[RestoreDiffModal] ERROR: currentVersion is an object!', Object.keys(currentVersion))
-    }
-  }
-
   const diff = useMemo(() => {
-    console.log('[RestoreDiffModal] Computing diff...')
-    const result = diffLines(currentYaml, targetYaml)
-    console.log('[RestoreDiffModal] Diff result type:', typeof result)
-    console.log('[RestoreDiffModal] Diff result is array:', Array.isArray(result))
-    console.log('[RestoreDiffModal] Diff length:', result.length)
-    if (result.length > 0) {
-      console.log('[RestoreDiffModal] First diff part:', result[0])
-      console.log('[RestoreDiffModal] First diff part.value type:', typeof result[0].value)
-    }
-    return result
+    return diffLines(currentYaml, targetYaml)
   }, [currentYaml, targetYaml])
 
   return (
