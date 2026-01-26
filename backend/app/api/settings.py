@@ -658,36 +658,6 @@ async def list_settings(
     return {s.key: _mask_sensitive(s.key, s.value) for s in settings}
 
 
-# APP_URL endpoints - must be defined BEFORE the generic /{key} route
-@router.get("/app-url")
-async def get_app_url(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
-):
-    """Get configured APP_URL."""
-    setting = await get_setting(db, "app_url")
-    return {"url": setting.get("url", "") if setting else ""}
-
-
-@router.put("/app-url")
-async def set_app_url(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
-):
-    """Set APP_URL for SSO redirects and webhook links."""
-    data = await request.json()
-    url = data.get("url", "").strip().rstrip("/")
-
-    if url and not url.startswith(("http://", "https://")):
-        raise HTTPException(400, "URL must start with http:// or https://")
-
-    await set_setting(db, "app_url", {"url": url})
-    await audit_log(db, current_user.id, "settings.update", "settings", "app_url", {"url": url}, ip_address=get_client_ip(request))
-    await db.commit()
-    return {"success": True}
-
-
 # Security settings models
 class SecuritySettings(BaseModel):
     force_2fa_on_signup: bool = False
