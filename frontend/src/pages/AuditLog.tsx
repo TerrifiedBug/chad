@@ -340,7 +340,7 @@ export default function AuditLogPage() {
                   <TableCell className="font-medium">
                     {entry.user_email || (entry.user_id ? 'Unknown User' : 'System')}
                   </TableCell>
-                  <TableCell>{formatAction(entry.action, entry.details)}</TableCell>
+                  <TableCell>{formatAction(entry.action, entry.details ?? undefined)}</TableCell>
                   <TableCell>{formatResourceType(entry.resource_type)}</TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {entry.resource_id ? entry.resource_id.slice(0, 8) + '...' : '-'}
@@ -426,7 +426,7 @@ export default function AuditLogPage() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Action:</span>
-                  <p className="font-medium">{formatAction(selectedEntry.action, selectedEntry.details)}</p>
+                  <p className="font-medium">{formatAction(selectedEntry.action, selectedEntry.details ?? undefined)}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Resource Type:</span>

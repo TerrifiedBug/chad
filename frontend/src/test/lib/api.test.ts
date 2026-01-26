@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api } from '@/lib/api';
+import { createSuccessResponse } from '../mocks';
 
 describe('API Client', () => {
   beforeEach(() => {
@@ -27,13 +28,9 @@ describe('API Client', () => {
   describe('request formatting', () => {
     it('should include auth token in headers', async () => {
       const mockFetch = global.fetch as ReturnType<typeof vi.fn>;
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        headers: {
-          get: vi.fn(),
-        },
-        json: async () => ({}),
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        createSuccessResponse({})
+      );
 
       localStorage.setItem('chad-token', 'test-token');
       await api.get('/test');

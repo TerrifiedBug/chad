@@ -46,7 +46,10 @@ describe('Utility Functions', () => {
   describe('debounce', () => {
     it('should delay function execution', async () => {
       let count = 0;
-      const fn = (x: number) => { count += x; };
+      const fn = (...args: unknown[]) => {
+        const nums = args as number[];
+        count += nums.reduce((a, b) => a + b, 0);
+      };
 
       // Simple debounce implementation
       function debounce<T extends (...args: unknown[]) => unknown>(

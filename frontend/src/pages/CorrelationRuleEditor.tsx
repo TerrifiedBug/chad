@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo } from '@/lib/api'
+import type { Severity } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -140,13 +141,21 @@ export default function CorrelationRuleEditorPage() {
   const [ruleBFieldMappings, setRuleBFieldMappings] = useState<FieldMappingInfo[]>([])
   const [isLoadingEditData, setIsLoadingEditData] = useState(false) // Track if editing data is loading
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string
+    rule_a_id: string
+    rule_b_id: string
+    entity_field: string
+    time_window_minutes: number
+    severity: Severity
+    is_enabled: boolean
+  }>({
     name: '',
     rule_a_id: '',
     rule_b_id: '',
     entity_field: '',
     time_window_minutes: 5,
-    severity: 'high' as const,
+    severity: 'high',
     is_enabled: true,
   })
 
@@ -277,7 +286,7 @@ export default function CorrelationRuleEditorPage() {
   // Helper function to get target field from mappings
   const getTargetField = (sigmaField: string, mappings: FieldMappingInfo[]): string | undefined => {
     const mapping = mappings.find(m => m.sigma_field === sigmaField)
-    return mapping?.target_field
+    return mapping?.target_field ?? undefined
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -428,7 +437,7 @@ export default function CorrelationRuleEditorPage() {
         <Label htmlFor="severity">Severity</Label>
         <Select
           value={formData.severity}
-          onValueChange={(value) => setFormData({ ...formData, severity: value as 'critical' | 'high' | 'medium' | 'low' | 'informational' })}
+          onValueChange={(value) => setFormData({ ...formData, severity: value as Severity })}
           disabled={isSaving}
         >
           <SelectTrigger>

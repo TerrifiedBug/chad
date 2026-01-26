@@ -10,6 +10,10 @@ import type {
   StagedChange,
   StagedChangeType,
   StagedChangeAction,
+  ExceptionChangeData,
+  FieldMappingChangeData,
+  CorrelationChangeData,
+  ThresholdChangeData,
 } from '@/types/staging'
 
 export function useRuleStaging(_ruleId: string) {
@@ -21,8 +25,8 @@ export function useRuleStaging(_ruleId: string) {
     type: StagedChangeType,
     action: StagedChangeAction,
     entity: string,
-    data: unknown,
-    originalData?: unknown
+    data: ExceptionChangeData | FieldMappingChangeData | CorrelationChangeData | ThresholdChangeData | Record<string, unknown>,
+    originalData?: ExceptionChangeData | FieldMappingChangeData | CorrelationChangeData | ThresholdChangeData | Record<string, unknown>
   ) => {
     const change: StagedChange = {
       id: `${type}-${action}-${entity}-${Date.now()}`,

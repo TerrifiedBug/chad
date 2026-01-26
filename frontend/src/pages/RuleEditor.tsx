@@ -17,6 +17,7 @@ import {
   FieldMappingInfo,
   CorrelationRule,
 } from '@/lib/api'
+import type { RuleVersion } from '@/types/api'
 import { YamlEditor } from '@/components/YamlEditor'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { Button } from '@/components/ui/button'
@@ -314,10 +315,13 @@ export default function RuleEditorPage() {
           activityData.forEach((activity: Record<string, unknown>) => {
             if (activity.type === 'version' && activity.data && activity.user_email) {
               // The version's changed_by should match an activity entry
-              const versionNum = activity.data.version_number
-              const version = rule.versions.find((v: { version_number: number }) => v.version_number === versionNum)
-              if (version) {
-                usersMap[version.changed_by] = { email: activity.user_email }
+              const data = activity.data as { version_number?: number }
+              const versionNum = data.version_number
+              if (versionNum) {
+                const version = rule.versions.find((v: RuleVersion) => v.version_number === versionNum)
+                if (version) {
+                  usersMap[version.changed_by] = { email: activity.user_email as string }
+                }
               }
             }
           })

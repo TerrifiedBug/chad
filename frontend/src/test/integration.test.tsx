@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import React from 'react';
 import { AuthProvider } from '@/hooks/use-auth';
+import { createMockResponse, createSuccessResponse, createErrorResponse } from './mocks';
 
 // Wrapper for tests that need AuthProvider
 const createWrapper = () => {
@@ -23,64 +23,59 @@ describe('Integration Tests', () => {
       const calls: string[] = [];
 
       // Mock all the API calls that happen during mount and login
-      vi.mocked(global.fetch).mockImplementation((url: string) => {
-        calls.push(url);
+      vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+        const urlStr = url.toString();
+        calls.push(urlStr);
 
         // Setup status check (happens on mount and after login)
-        if (url === '/api/auth/setup-status') {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => name === 'X-CSRF-Token' ? 'csrf-token' : null,
-            },
-            json: async () => ({ setup_completed: true }),
-          } as Response);
+        if (urlStr === '/api/auth/setup-status') {
+          return Promise.resolve(
+            createMockResponse({
+              ok: true,
+              headers: {
+                'X-CSRF-Token': 'csrf-token',
+              },
+              json: async () => ({ setup_completed: true }),
+            })
+          );
         }
 
         // Login POST request
-        if (url === '/api/auth/login' || url === '/api/auth/login') {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => name === 'X-CSRF-Token' ? 'csrf-token' : null,
-            },
-            json: async () => ({
-              access_token: 'test-token',
-              token_type: 'bearer',
-            }),
-          } as Response);
+        if (urlStr === '/api/auth/login') {
+          return Promise.resolve(
+            createMockResponse({
+              ok: true,
+              headers: {
+                'X-CSRF-Token': 'csrf-token',
+              },
+              json: async () => ({
+                access_token: 'test-token',
+                token_type: 'bearer',
+              }),
+            })
+          );
         }
 
         // getMe call (happens after login)
-        if (url === '/api/auth/me') {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: () => null,
-            },
-            json: async () => ({
+        if (urlStr === '/api/auth/me') {
+          return Promise.resolve(
+            createSuccessResponse({
               id: '123',
               email: 'test@example.com',
               role: 'analyst',
               is_active: true,
               auth_method: 'local',
               must_change_password: false,
-            }),
-          } as Response);
+            })
+          );
         }
 
         // OpenSearch status check (happens after login)
-        if (url === '/api/settings/opensearch/status') {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: () => null,
-            },
-            json: async () => ({ configured: true }),
-          } as Response);
+        if (urlStr === '/api/settings/opensearch/status') {
+          return Promise.resolve(createSuccessResponse({ configured: true }));
         }
 
-        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+        return Promise.reject(new Error(`Unexpected URL: ${urlStr}`));
       });
 
       const { useAuth } = await import('@/hooks/use-auth');
@@ -108,16 +103,18 @@ describe('Integration Tests', () => {
 
     it('should handle 2FA flow', async () => {
       // Mock 2FA required response
-      vi.mocked(global.fetch).mockResolvedValueOnce({
-        ok: true,
-        headers: {
-          get: (name: string) => name === 'X-CSRF-Token' ? 'csrf-token' : null,
-        },
-        json: async () => ({
-          requires_2fa: true,
-          '2fa_token': '2fa-token',
-        }),
-      } as Response);
+      vi.mocked(global.fetch).mockResolvedValueOnce(
+        createMockResponse({
+          ok: true,
+          headers: {
+            'X-CSRF-Token': 'csrf-token',
+          },
+          json: async () => ({
+            requires_2fa: true,
+            '2fa_token': '2fa-token',
+          }),
+        })
+      );
 
       const { authApi } = await import('@/lib/api');
       const response = await authApi.loginRaw('test@example.com', 'password');
@@ -133,19 +130,21 @@ describe('Integration Tests', () => {
 
       vi.mocked(global.fetch).mockImplementation((url) => {
         if (url === '/api/test') {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => {
-                if (name === 'X-CSRF-Token') {
-                  csrfTokenReceived = true;
-                  return 'test-csrf-token';
-                }
-                return null;
+          return Promise.resolve(
+            createMockResponse({
+              ok: true,
+              headers: {
+                get: ((name: string) => {
+                  if (name === 'X-CSRF-Token') {
+                    csrfTokenReceived = true;
+                    return 'test-csrf-token';
+                  }
+                  return null;
+                }) as any,
               },
-            },
-            json: async () => ({ data: 'test' }),
-          } as Response);
+              json: async () => ({ data: 'test' }),
+            })
+          );
         }
         return Promise.reject(new Error('Not found'));
       });
@@ -162,21 +161,19 @@ describe('Integration Tests', () => {
 
       vi.mocked(global.fetch).mockImplementation((url, options) => {
         if (url === '/api/submit') {
-          csrfHeaderIncluded = options?.headers?.['X-CSRF-Token'] === 'test-token';
-          return Promise.resolve({
-            ok: true,
-            headers: { get: vi.fn() },
-            json: async () => ({ success: true }),
-          } as Response);
+          csrfHeaderIncluded = (options?.headers as Record<string, string>)?.['X-CSRF-Token'] === 'test-token';
+          return Promise.resolve(createSuccessResponse({ success: true }));
         }
         // Return CSRF token for other requests
-        return Promise.resolve({
-          ok: true,
-          headers: {
-            get: (name: string) => name === 'X-CSRF-Token' ? 'test-token' : null,
-          },
-          json: async () => ({ data: 'test' }),
-        } as Response);
+        return Promise.resolve(
+          createMockResponse({
+            ok: true,
+            headers: {
+              'X-CSRF-Token': 'test-token',
+            },
+            json: async () => ({ data: 'test' }),
+          })
+        );
       });
 
       const { api } = await import('@/lib/api');
@@ -230,12 +227,9 @@ describe('Integration Tests', () => {
     });
 
     it('should handle 401 unauthorized', async () => {
-      vi.mocked(global.fetch).mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        headers: { get: vi.fn() },
-        json: async () => ({ detail: 'Unauthorized' }),
-      } as Response);
+      vi.mocked(global.fetch).mockResolvedValueOnce(
+        createErrorResponse('Unauthorized', 401)
+      );
 
       const { api } = await import('@/lib/api');
 
@@ -243,12 +237,9 @@ describe('Integration Tests', () => {
     });
 
     it('should handle 403 forbidden', async () => {
-      vi.mocked(global.fetch).mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        headers: { get: vi.fn() },
-        json: async () => ({ detail: 'Forbidden' }),
-      } as Response);
+      vi.mocked(global.fetch).mockResolvedValueOnce(
+        createErrorResponse('Forbidden', 403)
+      );
 
       const { api } = await import('@/lib/api');
 
@@ -256,12 +247,9 @@ describe('Integration Tests', () => {
     });
 
     it('should handle 500 server error', async () => {
-      vi.mocked(global.fetch).mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        headers: { get: vi.fn() },
-        json: async () => ({ detail: 'Internal server error' }),
-      } as Response);
+      vi.mocked(global.fetch).mockResolvedValueOnce(
+        createErrorResponse('Internal server error', 500)
+      );
 
       const { api } = await import('@/lib/api');
 
@@ -271,11 +259,11 @@ describe('Integration Tests', () => {
 
   describe('Data Loading States', () => {
     it('should show loading state while fetching', async () => {
-      let resolveFetch: (value: unknown) => void;
+      let resolveFetch: (value: Response) => void;
 
       vi.mocked(global.fetch).mockImplementationOnce(() => {
         return new Promise((resolve) => {
-          resolveFetch = resolve;
+          resolveFetch = resolve as any;
         });
       });
 
@@ -286,11 +274,9 @@ describe('Integration Tests', () => {
       // Should be in loading state initially
       // After promise resolves, should have data
       await act(async () => {
-        resolveFetch!({
-          ok: true,
-          headers: { get: vi.fn() },
-          json: async () => ({ services: [] }),
-        });
+        (resolveFetch as any)(
+          createSuccessResponse({ services: [] })
+        );
       });
 
       await waitFor(() => {

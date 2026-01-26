@@ -32,19 +32,17 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 // Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
-  constructor() {}
-  disconnect() {}
-  observe() {}
-  takeRecords() {
-    return [];
-  }
-  unobserve() {}
-} as unknown;
+global.IntersectionObserver = vi.fn().mockImplementation(() => ({
+  disconnect: vi.fn(),
+  observe: vi.fn(),
+  takeRecords: vi.fn(() => []),
+  unobserve: vi.fn(),
+})) as unknown as typeof IntersectionObserver;
 
-// Mock scrollTo
-window.scrollTo = vi.fn();
-window.scrollBy = vi.fn();
+// Mock scrollTo and scrollBy
+const mockScroll = vi.fn();
+window.scrollTo = mockScroll as any;
+window.scrollBy = mockScroll as any;
 
 // Mock localStorage
 const localStorageMock = (() => {
