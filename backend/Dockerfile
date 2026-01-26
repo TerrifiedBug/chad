@@ -1,14 +1,13 @@
-FROM python:3.11-alpine
+FROM python:3.11-slim
 
 WORKDIR /app
 
 # Install system dependencies
-RUN apk add --no-cache \
-    postgresql-dev \
-    gcc \
-    musl-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
     git \
-    libffi-dev
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
