@@ -45,6 +45,7 @@ jobs:
     name: Trivy Docker Scan
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     strategy:
       fail-fast: false
@@ -60,7 +61,6 @@ jobs:
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
-        continue-on-error: true
         with:
           context: ./${{ matrix.image }}
           tags: chad-${{ matrix.image }}:scan
@@ -70,7 +70,6 @@ jobs:
 
       - name: Run Trivy on Docker image
         uses: aquasecurity/trivy-action@master
-        continue-on-error: true
         with:
           image-ref: 'chad-${{ matrix.image }}:scan'
           format: 'sarif'
