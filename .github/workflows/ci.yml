@@ -106,7 +106,7 @@ jobs:
           for script in log-ingestion.js baseline.js stress.js; do
             echo "Validating $script..."
             docker run --rm \
-              -v "${WORKSPACE}/load-tests/scripts:/scripts" \
+              -v "${WORKSPACE}/tests/load/scripts:/scripts" \
               grafana/k6 inspect /scripts/$script
           done
           echo "All k6 scripts validated successfully"

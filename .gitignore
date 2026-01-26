@@ -42,4 +42,4 @@ htmlcov/
 *.log
 
 # Load test results
-load-tests/results/*.json
+tests/load/results/*.json
