@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   security-events: write
 
 jobs:
@@ -34,7 +35,7 @@ jobs:
           vuln-type: 'os,library'
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v2
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -77,7 +78,7 @@ jobs:
           vuln-type: 'os,library'
 
       - name: Upload Trivy Docker results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v2
         if: always()
         with:
           sarif_file: 'trivy-docker-${{ matrix.image }}.sarif'
