@@ -2,7 +2,8 @@
 FROM node:20-slim AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# Regenerate package-lock.json for Linux platform (fixes npm optional dependency bug)
+RUN rm -f package-lock.json && npm install
 COPY . .
 RUN npm run build
 
