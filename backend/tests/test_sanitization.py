@@ -176,3 +176,42 @@ class TestSanitizeUserInput:
         """Empty input should return empty string."""
         assert sanitize_user_input(None) == ""
         assert sanitize_user_input("") == ""
+
+
+class TestNh3LibrarySmokeTest:
+    """
+    Smoke test to catch nh3 library API breaking changes.
+
+    This test ensures that the nh3 library integration works correctly
+    and will catch breaking API changes in future dependency updates.
+    Run this after updating nh3 to verify compatibility.
+    """
+
+    def test_nh3_basic_functionality(self):
+        """
+        Test that nh3.clean() works with current API.
+
+        This is a canary test - if this fails after a dependency update,
+        it means nh3's API has changed and needs code fixes.
+        """
+        # Test basic HTML sanitization
+        result = sanitize_html("<p>Hello</p><script>alert('xss')</script>")
+
+        # Verify safe content is preserved
+        assert "<p>Hello</p>" in result or "Hello" in result
+
+        # Verify dangerous content is removed
+        assert "<script>" not in result
+        assert "alert" not in result
+
+    def test_nh3_with_allowed_tags(self):
+        """Test that nh3 respects the allowed tags configuration."""
+        # Test with various safe tags
+        html = "<h1>Title</h1><p>Paragraph</p><strong>Bold</strong><code>Code</code>"
+        result = sanitize_html(html)
+
+        # All these tags should be preserved
+        assert "<h1>" in result
+        assert "<p>" in result
+        assert "<strong>" in result
+        assert "<code>" in result

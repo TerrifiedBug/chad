@@ -60,7 +60,6 @@ def sanitize_html(html: Optional[str], allow_tags: Optional[list[str]] = None) -
         return nh3.clean(
             html,
             tags=set(allowed_tags),
-            allow_vulnerable_tags=False,  # Don't allow script/style tags even if specified
         )
 
     # Fallback: Use regex-based sanitization (less secure, use nh3!)
