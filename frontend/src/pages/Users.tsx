@@ -32,6 +32,7 @@ import { Switch } from '@/components/ui/switch'
 import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
 // Password complexity validation
 function validatePasswordComplexity(password: string) {
@@ -428,7 +429,9 @@ export default function UsersPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(user.created_at).toLocaleDateString()}
+                    <TimestampTooltip timestamp={user.created_at}>
+                      <span>{new Date(user.created_at).toLocaleDateString()}</span>
+                    </TimestampTooltip>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
