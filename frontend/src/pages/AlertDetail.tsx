@@ -18,6 +18,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2 } from 'lucide-react'
+import { TimestampTooltip } from '../components/timestamp-tooltip'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -537,16 +538,28 @@ export default function AlertDetailPage() {
             <CardContent className="space-y-2 text-sm">
               <div>
                 <span className="text-muted-foreground">Created:</span>
-                <div>{formatDate(alert.created_at)}</div>
+                <div>
+                  <TimestampTooltip timestamp={alert.created_at}>
+                    <span>{formatDate(alert.created_at)}</span>
+                  </TimestampTooltip>
+                </div>
               </div>
               <div>
                 <span className="text-muted-foreground">Updated:</span>
-                <div>{formatDate(alert.updated_at)}</div>
+                <div>
+                  <TimestampTooltip timestamp={alert.updated_at}>
+                    <span>{formatDate(alert.updated_at)}</span>
+                  </TimestampTooltip>
+                </div>
               </div>
               {alert.acknowledged_at && (
                 <div>
                   <span className="text-muted-foreground">Acknowledged:</span>
-                  <div>{formatDate(alert.acknowledged_at)}</div>
+                  <div>
+                    <TimestampTooltip timestamp={alert.acknowledged_at}>
+                      <span>{formatDate(alert.acknowledged_at)}</span>
+                    </TimestampTooltip>
+                  </div>
                 </div>
               )}
             </CardContent>
