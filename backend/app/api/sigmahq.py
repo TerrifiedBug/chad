@@ -23,6 +23,8 @@ from app.schemas.sigmahq import (
     SigmaHQStatusResponse,
     SigmaHQSyncResponse,
 )
+from app.services.audit import audit_log
+from app.services.notification import send_system_notification
 from app.services.sigmahq import RuleType, sigmahq_service
 
 router = APIRouter(prefix="/sigmahq", tags=["sigmahq"])
@@ -48,7 +50,7 @@ async def get_status(
 
 @router.post("/sync", response_model=SigmaHQSyncResponse)
 async def sync_repo(
-    _: Annotated[User, Depends(require_permission_dep("manage_sigmahq"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_sigmahq"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Sync (clone or pull) the SigmaHQ repository."""
@@ -68,6 +70,51 @@ async def sync_repo(
         else:
             db.add(Setting(key="sigmahq_sync", value={"last_sync": datetime.now(UTC).isoformat()}))
         await db.commit()
+
+    # Log to audit
+    await audit_log(
+        db,
+        current_user.id,
+        "sigmahq.sync.manual",
+        "system",
+        None,
+        {"success": result.success, "rule_count": result.rule_count},
+    )
+    await db.commit()
+
+    # Send notifications matching scheduled sync behavior
+    if result.success:
+        # Send sync completion notification
+        await send_system_notification(
+            db,
+            "sigmahq_sync_complete",
+            {
+                "rule_count": result.rule_count,
+                "new_rules": result.new_rules if hasattr(result, "new_rules") else 0,
+                "message": result.message,
+            },
+        )
+
+        # Send new rules notification if there are new rules
+        if hasattr(result, "new_rules") and result.new_rules > 0:
+            await send_system_notification(
+                db,
+                "sigmahq_new_rules",
+                {
+                    "count": result.new_rules,
+                    "source": "sigmahq",
+                },
+            )
+    else:
+        # Send sync failure notification
+        await send_system_notification(
+            db,
+            "sync_failed",
+            {
+                "sync_type": "sigmahq",
+                "error": result.error if hasattr(result, "error") else result.message,
+            },
+        )
 
     return SigmaHQSyncResponse(
         success=result.success,

@@ -2,18 +2,31 @@
 """Tests for the SigmaHQ API endpoints."""
 
 import uuid
+from dataclasses import dataclass
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock, call
 
 from app.core.security import create_access_token, get_password_hash
 from app.db.session import get_db
 from app.main import app
 from app.models.index_pattern import IndexPattern
 from app.models.user import User, UserRole
+
+
+@dataclass
+class MockSyncResult:
+    """Mock sync result object."""
+    success: bool
+    message: str
+    commit_hash: str | None = None
+    rule_counts: dict | None = None
+    rule_count: int | None = None
+    error: str | None = None
+    new_rules: int = 0
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -141,14 +154,16 @@ class TestSigmaHQSync:
     @pytest.mark.asyncio
     async def test_sync_triggers_clone_when_not_cloned(self, authenticated_client: AsyncClient):
         """Sync clones repo when not already cloned."""
-        with patch("app.api.sigmahq.sigmahq_service") as mock_service:
+        with patch("app.api.sigmahq.sigmahq_service") as mock_service, \
+             patch("app.api.sigmahq.send_system_notification"), \
+             patch("app.api.sigmahq.audit_log"):
             mock_service.is_repo_cloned.return_value = False
-            mock_service.clone_repo.return_value = MagicMock(
+            mock_service.clone_repo.return_value = MockSyncResult(
                 success=True,
                 message="Repository cloned successfully",
                 commit_hash="abc123",
                 rule_counts={"detection": 2500, "threat_hunting": 100, "emerging_threats": 50},
-                error=None,
+                rule_count=2650,
             )
 
             response = await authenticated_client.post("/api/sigmahq/sync")
@@ -163,14 +178,16 @@ class TestSigmaHQSync:
     @pytest.mark.asyncio
     async def test_sync_triggers_pull_when_cloned(self, authenticated_client: AsyncClient):
         """Sync pulls when repo is already cloned."""
-        with patch("app.api.sigmahq.sigmahq_service") as mock_service:
+        with patch("app.api.sigmahq.sigmahq_service") as mock_service, \
+             patch("app.api.sigmahq.send_system_notification"), \
+             patch("app.api.sigmahq.audit_log"):
             mock_service.is_repo_cloned.return_value = True
-            mock_service.pull_repo.return_value = MagicMock(
+            mock_service.pull_repo.return_value = MockSyncResult(
                 success=True,
                 message="Repository updated successfully",
                 commit_hash="def456",
                 rule_counts={"detection": 2600, "threat_hunting": 105, "emerging_threats": 52},
-                error=None,
+                rule_count=2757,
             )
 
             response = await authenticated_client.post("/api/sigmahq/sync")
@@ -180,6 +197,85 @@ class TestSigmaHQSync:
             mock_service.clone_repo.assert_not_called()
             data = response.json()
             assert data["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_sync_sends_notifications_on_success(self, authenticated_client: AsyncClient):
+        """Sync sends notifications on successful sync."""
+        with patch("app.api.sigmahq.sigmahq_service") as mock_service, \
+             patch("app.api.sigmahq.send_system_notification") as mock_notify, \
+             patch("app.api.sigmahq.audit_log") as mock_audit:
+            mock_service.is_repo_cloned.return_value = True
+            mock_service.pull_repo.return_value = MockSyncResult(
+                success=True,
+                message="Repository updated successfully",
+                commit_hash="def456",
+                rule_count=2652,
+                rule_counts={"detection": 2600, "threat_hunting": 105, "emerging_threats": 52},
+                new_rules=10,
+            )
+            mock_audit.return_value = MagicMock()
+
+            response = await authenticated_client.post("/api/sigmahq/sync")
+
+            assert response.status_code == 200
+            # Verify audit log was called
+            mock_audit.assert_called_once()
+            # Verify sync_complete notification was sent
+            assert mock_notify.call_count >= 1
+            call_args = mock_notify.call_args_list
+            # Check for sync_complete notification
+            sync_complete_calls = [c for c in call_args if "sigmahq_sync_complete" in str(c)]
+            assert len(sync_complete_calls) > 0, "sync_complete notification should be sent"
+
+    @pytest.mark.asyncio
+    async def test_sync_sends_new_rules_notification(self, authenticated_client: AsyncClient):
+        """Sync sends new rules notification when new rules are available."""
+        with patch("app.api.sigmahq.sigmahq_service") as mock_service, \
+             patch("app.api.sigmahq.send_system_notification") as mock_notify, \
+             patch("app.api.sigmahq.audit_log") as mock_audit:
+            mock_service.is_repo_cloned.return_value = True
+            mock_service.pull_repo.return_value = MockSyncResult(
+                success=True,
+                message="Repository updated with new rules",
+                commit_hash="xyz789",
+                rule_count=2700,
+                rule_counts={"detection": 2650, "threat_hunting": 110, "emerging_threats": 55},
+                new_rules=48,
+            )
+            mock_audit.return_value = MagicMock()
+
+            response = await authenticated_client.post("/api/sigmahq/sync")
+
+            assert response.status_code == 200
+            # Verify new_rules notification was sent
+            call_args = mock_notify.call_args_list
+            new_rules_calls = [c for c in call_args if "sigmahq_new_rules" in str(c)]
+            assert len(new_rules_calls) > 0, "new_rules notification should be sent when new rules exist"
+
+    @pytest.mark.asyncio
+    async def test_sync_sends_failure_notification_on_error(self, authenticated_client: AsyncClient):
+        """Sync sends failure notification when sync fails."""
+        with patch("app.api.sigmahq.sigmahq_service") as mock_service, \
+             patch("app.api.sigmahq.send_system_notification") as mock_notify, \
+             patch("app.api.sigmahq.audit_log") as mock_audit:
+            mock_service.is_repo_cloned.return_value = True
+            mock_service.pull_repo.return_value = MockSyncResult(
+                success=False,
+                message="Sync failed",
+                error="Network error",
+                rule_count=None,
+            )
+            mock_audit.return_value = MagicMock()
+
+            response = await authenticated_client.post("/api/sigmahq/sync")
+
+            assert response.status_code == 200  # Endpoint still returns 200
+            data = response.json()
+            assert data["success"] is False
+            # Verify sync_failed notification was sent
+            call_args = mock_notify.call_args_list
+            failed_calls = [c for c in call_args if "sync_failed" in str(c)]
+            assert len(failed_calls) > 0, "sync_failed notification should be sent on error"
 
 
 class TestSigmaHQRules:
