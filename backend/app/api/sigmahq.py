@@ -60,6 +60,10 @@ async def sync_repo(
         result = sigmahq_service.clone_repo()
 
     # Update last_sync time in settings
+    total_rules = 0
+    if result.success and result.rule_counts:
+        total_rules = sum(result.rule_counts.values())
+
     if result.success:
         setting_result = await db.execute(
             select(Setting).where(Setting.key == "sigmahq_sync")
@@ -78,7 +82,7 @@ async def sync_repo(
         "sigmahq.sync.manual",
         "system",
         None,
-        {"success": result.success, "rule_count": result.rule_count},
+        {"success": result.success, "rule_count": total_rules},
     )
     await db.commit()
 
@@ -89,22 +93,11 @@ async def sync_repo(
             db,
             "sigmahq_sync_complete",
             {
-                "rule_count": result.rule_count,
-                "new_rules": result.new_rules if hasattr(result, "new_rules") else 0,
+                "rule_count": total_rules,
                 "message": result.message,
+                "commit_hash": result.commit_hash,
             },
         )
-
-        # Send new rules notification if there are new rules
-        if hasattr(result, "new_rules") and result.new_rules > 0:
-            await send_system_notification(
-                db,
-                "sigmahq_new_rules",
-                {
-                    "count": result.new_rules,
-                    "source": "sigmahq",
-                },
-            )
     else:
         # Send sync failure notification
         await send_system_notification(
