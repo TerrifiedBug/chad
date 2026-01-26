@@ -27,7 +27,7 @@ import CorrelationRulesPage from '@/pages/CorrelationRules'
 import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
 import LiveAlertFeedPage from '@/pages/LiveAlertFeed'
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function AuthRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
   const location = useLocation()
 
@@ -79,54 +79,54 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <Dashboard />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/rules" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <RulesPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/rules/new" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <RuleEditorPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/rules/:id" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <RuleEditorPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/correlation" element={
-        <ProtectedRoute permission="manage_correlation">
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <CorrelationRulesPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/correlation/new" element={
         <ProtectedRoute permission="manage_correlation">
@@ -149,44 +149,44 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/index-patterns" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <IndexPatternsPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/alerts" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <AlertsPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/alerts/:id" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <AlertDetailPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/live" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <LiveAlertFeedPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/settings" element={
         <ProtectedRoute permission="manage_settings">
@@ -219,34 +219,34 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/change-password" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <ChangePasswordPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/account" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <AccountPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/settings/api-keys" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <ApiKeysPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/sigmahq" element={
         <ProtectedRoute permission="manage_sigmahq">
@@ -279,24 +279,24 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/attack" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <AttackMatrixPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/opensearch-wizard" element={
-        <ProtectedRoute>
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <OpenSearchWizard />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -16,7 +16,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from '@/components/ui/card'
 import {
   Collapsible,
@@ -214,15 +213,14 @@ export default function TISettings() {
             <Shield className="h-5 w-5" />
             Threat Intelligence Sources
           </CardTitle>
-          <CardDescription>
-            Configure external threat intelligence providers to automatically enrich alerts
-            with reputation data, risk scores, and indicator context.
+          <div className="text-sm text-muted-foreground">
+            <span>Configure external threat intelligence providers to automatically enrich alerts with reputation data, risk scores, and indicator context.</span>
             {getEnabledCount() > 0 && (
               <span className="ml-2">
                 <Badge variant="secondary">{getEnabledCount()} enabled</Badge>
               </span>
             )}
-          </CardDescription>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {sources.map((source) => {

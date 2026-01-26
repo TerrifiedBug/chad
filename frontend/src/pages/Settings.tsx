@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
-import JiraSettings from '@/pages/JiraSettings'
 import TISettings from '@/pages/TISettings'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
@@ -1218,7 +1217,6 @@ export default function SettingsPage() {
           <div className="space-y-6">
             <GeoIPSettings />
             <TISettings />
-            <JiraSettings />
           </div>
         </TabsContent>
 

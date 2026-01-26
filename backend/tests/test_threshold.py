@@ -127,6 +127,41 @@ class TestThresholdLogic:
         await test_session.commit()
 
     @pytest.mark.asyncio
+    async def test_threshold_defaults_when_not_specified(
+        self, test_session: AsyncSession, index_pattern: IndexPattern, test_user: User
+    ):
+        """Threshold should use defaults (5 count, 10 min window) when not specified."""
+        rule = Rule(
+            id=uuid.uuid4(),
+            title="Threshold Default Test Rule",
+            description="A rule with threshold enabled but no count/window",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 4625\n  condition: selection",
+            severity="medium",
+            status=RuleStatus.DEPLOYED,
+            index_pattern_id=index_pattern.id,
+            created_by=test_user.id,
+            threshold_enabled=True,
+            # Note: threshold_count and threshold_window_minutes are None
+        )
+        test_session.add(rule)
+        await test_session.commit()
+        await test_session.refresh(rule)
+
+        log = {"user": {"name": "jsmith"}, "EventID": 4625}
+
+        # Should use default threshold of 5 matches in 10 minutes
+        # First 4 matches should not trigger
+        for i in range(4):
+            result = await check_threshold(test_session, rule, log, f"log-{i}")
+            assert result is False, f"Match {i+1} should not trigger with default threshold"
+
+        # 5th match should trigger
+        result = await check_threshold(test_session, rule, log, "log-4")
+        assert result is True, "5th match should trigger with default threshold of 5"
+
+        await test_session.commit()
+
+    @pytest.mark.asyncio
     async def test_threshold_met(
         self, test_session: AsyncSession, threshold_rule: Rule
     ):

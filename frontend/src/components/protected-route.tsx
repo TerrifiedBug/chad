@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
+import { useEffect, useRef } from 'react'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -13,9 +14,10 @@ export function ProtectedRoute({
   permission,
   redirectTo = '/dashboard',
 }: ProtectedRouteProps) {
-  const { hasPermission, isAuthenticated, isLoading } = useAuth()
+  const { hasPermission, isAuthenticated, isLoading, user } = useAuth()
   const location = useLocation()
   const { showToast } = useToast()
+  const hasLoggedRef = useRef<string>('')
 
   // Show loading state while checking auth
   if (isLoading) {
@@ -33,8 +35,32 @@ export function ProtectedRoute({
 
   // Authenticated but missing permission
   if (permission && !hasPermission(permission)) {
-    // Show toast notification
-    showToast('You do not have permission to access this page', 'error')
+    const logKey = `${location.pathname}-${permission}`
+
+    useEffect(() => {
+      // Only log and show toast once per route access
+      if (hasLoggedRef.current !== logKey) {
+        hasLoggedRef.current = logKey
+
+        // Log access denied attempt
+        fetch('/api/audit/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'route_access_denied',
+            details: {
+              route: location.pathname,
+              reason: `Insufficient permissions: ${permission} required`,
+              user_role: user?.role || 'unknown',
+            }
+          })
+        }).catch(console.error) // Silently fail if audit logging fails
+
+        // Show toast notification
+        showToast('You do not have permission to access this page', 'error')
+      }
+    }, [location.pathname, permission, user?.role, logKey, showToast])
+
     return <Navigate to={redirectTo} replace />
   }
 

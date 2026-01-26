@@ -214,7 +214,7 @@ export type RuleExceptionUpdate = {
 
 // Activity types
 export type ActivityItem = {
-  type: 'version' | 'deploy' | 'undeploy' | 'comment'
+  type: 'version' | 'deploy' | 'undeploy' | 'comment' | 'exception' | 'threshold'
   timestamp: string
   user_email: string | null
   data: Record<string, unknown>
@@ -1148,6 +1148,14 @@ export type HealthSettings = {
   queue_critical: number
 }
 
+export type HealthIntervals = {
+  jira_interval_seconds: number
+  sigmahq_interval_seconds: number
+  mitre_attack_interval_seconds: number
+  opensearch_interval_seconds: number
+  ti_interval_seconds: number
+}
+
 // Health API
 export const healthApi = {
   listIndices: () =>
@@ -1160,6 +1168,10 @@ export const healthApi = {
     api.get<HealthSettings>('/health/settings'),
   updateSettings: (data: Partial<HealthSettings>) =>
     api.put<HealthSettings>('/health/settings', data),
+  getIntervals: () =>
+    api.get<HealthIntervals>('/health/intervals'),
+  updateIntervals: (data: HealthIntervals) =>
+    api.put<HealthIntervals>('/health/intervals', data),
 }
 
 // Notification settings types

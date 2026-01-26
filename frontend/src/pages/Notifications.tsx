@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { webhooksApi, notificationsApi, jiraApi, Webhook, WebhookProvider, NotificationSettings, JiraConfig } from '@/lib/api'
+import { webhooksApi, notificationsApi, jiraApi, Webhook, WebhookProvider, NotificationSettings, JiraConfig, JiraConfigUpdate, JiraProject, JiraIssueType } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,6 +44,7 @@ import {
   Send,
   Settings,
   Trash2,
+  TestTube,
 } from 'lucide-react'
 
 // System event configuration with grouping
@@ -57,10 +58,9 @@ const SYSTEM_EVENT_GROUPS = [
   {
     name: 'Sync Events',
     events: [
-      { id: 'sigmahq_sync_complete', label: 'SigmaHQ Sync Complete' },
+      { id: 'sigmahq_sync_complete', label: 'Sigma Sync - All Completions', description: 'Fires on every successful sync (manual or scheduled)' },
       { id: 'attack_sync_complete', label: 'ATT&CK Sync Complete' },
-      { id: 'sigmahq_new_rules', label: 'New Rules Available' },
-      { id: 'sync_failed', label: 'Sync Failed' },
+      { id: 'sigmahq_new_rules', label: 'Sigma Sync - New Rules Only', description: 'Fires only when new or updated rules are found' },
       { id: 'sigmahq_sync_failed', label: 'SigmaHQ Sync Failed' },
       { id: 'attack_sync_failed', label: 'ATT&CK Sync Failed' },
     ],
@@ -143,6 +143,14 @@ export default function Notifications() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [webhookToDelete, setWebhookToDelete] = useState<Webhook | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Jira modal state
+  const [jiraModalOpen, setJiraModalOpen] = useState(false)
+  const [jiraFormData, setJiraFormData] = useState<Partial<JiraConfigUpdate>>({})
+  const [jiraProjects, setJiraProjects] = useState<JiraProject[]>([])
+  const [jiraIssueTypes, setJiraIssueTypes] = useState<JiraIssueType[]>([])
+  const [isSavingJira, setIsSavingJira] = useState(false)
+  const [isTestingJira, setIsTestingJira] = useState(false)
 
   // Test state
   const [testingId, setTestingId] = useState<string | null>(null)
@@ -228,6 +236,96 @@ export default function Notifications() {
   const openDeleteModal = (webhook: Webhook) => {
     setWebhookToDelete(webhook)
     setDeleteModalOpen(true)
+  }
+
+  const openJiraModal = () => {
+    // Initialize form data with current config or empty values for new setup
+    setJiraFormData({
+      jira_url: jiraConfig?.jira_url || '',
+      email: jiraConfig?.email || '',
+      default_project: jiraConfig?.default_project || '',
+      default_issue_type: jiraConfig?.default_issue_type || '',
+      is_enabled: jiraConfig?.is_enabled ?? false,
+      alert_severities: jiraConfig?.alert_severities || [],
+    })
+
+    // Clear existing projects/issue types when opening for fresh setup
+    if (!jiraConfig) {
+      setJiraProjects([])
+      setJiraIssueTypes([])
+    } else if (jiraConfig.jira_url && jiraConfig.has_api_token) {
+      // Load projects if we have a URL
+      loadJiraProjects(jiraConfig.jira_url)
+    }
+
+    setJiraModalOpen(true)
+  }
+
+  const loadJiraProjects = async (jiraUrl: string) => {
+    try {
+      const projects = await jiraApi.getProjects()
+      setJiraProjects(projects)
+
+      // Load issue types for the first project
+      if (projects.length > 0 && jiraFormData?.default_project) {
+        const projectKey = projects.find(p => p.key === jiraFormData.default_project)?.key || projects[0].key
+        await loadJiraIssueTypes(projectKey)
+      }
+    } catch (err) {
+      console.error('Failed to load Jira projects:', err)
+    }
+  }
+
+  const loadJiraIssueTypes = async (projectKey: string) => {
+    try {
+      const issueTypes = await jiraApi.getIssueTypes(projectKey)
+      setJiraIssueTypes(issueTypes)
+    } catch (err) {
+      console.error('Failed to load Jira issue types:', err)
+    }
+  }
+
+  const handleSaveJira = async () => {
+    if (!jiraFormData) return
+
+    setIsSavingJira(true)
+    try {
+      const updated = await jiraApi.updateConfig(jiraFormData as JiraConfigUpdate)
+      setJiraConfig(updated)
+      setJiraConfigured(!!updated)
+      setJiraModalOpen(false)
+      showToast('Jira configuration saved successfully')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save Jira configuration', 'error')
+    } finally {
+      setIsSavingJira(false)
+    }
+  }
+
+  const handleTestJira = async () => {
+    if (!jiraFormData?.jira_url || !jiraFormData?.email) {
+      showToast('Jira URL and email are required to test', 'error')
+      return
+    }
+
+    setIsTestingJira(true)
+    try {
+      const result = await jiraApi.testConnection({
+        jira_url: jiraFormData.jira_url,
+        email: jiraFormData.email,
+        api_token: jiraFormData.api_token || '',
+      })
+
+      if (result.success) {
+        showToast(`Successfully connected to ${result.server_title || 'Jira'}`)
+      } else {
+        showToast(result.error || 'Connection failed', 'error')
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Connection test failed', 'error')
+    } finally {
+      setIsTestingJira(false)
+    }
   }
 
   // Check if a webhook is enabled for a system event
@@ -355,19 +453,22 @@ export default function Notifications() {
             {group.events.map(event => {
               const isEnabled = isSystemEventEnabled(event.id, webhookId)
               const isSaving = savingSystem === `${event.id}-${webhookId}`
+              const hasDescription = 'description' in event
               return (
-                <label
-                  key={event.id}
-                  className="flex items-center gap-2 cursor-pointer"
-                >
-                  <Checkbox
-                    checked={isEnabled}
-                    onCheckedChange={() => toggleSystemEvent(event.id, webhookId)}
-                    disabled={isSaving}
-                  />
-                  <span className="text-sm">{event.label}</span>
-                  {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
-                </label>
+                <div key={event.id} className="space-y-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={isEnabled}
+                      onCheckedChange={() => toggleSystemEvent(event.id, webhookId)}
+                      disabled={isSaving}
+                    />
+                    <span className="text-sm">{event.label}</span>
+                    {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                  </label>
+                  {hasDescription && (
+                    <p className="text-xs text-muted-foreground pl-6">{event.description}</p>
+                  )}
+                </div>
               )
             })}
           </div>
@@ -504,7 +605,7 @@ export default function Notifications() {
       </div>
 
       {/* Jira Integration Status */}
-      <Card className={!jiraConfigured || !jiraConfig?.is_enabled ? 'opacity-60' : ''}>
+      <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -549,11 +650,16 @@ export default function Notifications() {
                 </p>
               </div>
             </div>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/settings?tab=integrations">
-                <Settings className="h-4 w-4 mr-1" />
-                Configure
-              </Link>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                openJiraModal()
+              }}
+            >
+              <Settings className="h-4 w-4 mr-1" />
+              {jiraConfigured ? 'Configure' : 'Setup'}
             </Button>
           </div>
         </CardHeader>
@@ -769,6 +875,184 @@ export default function Notifications() {
         onConfirm={handleDelete}
         isDeleting={isDeleting}
       />
+
+      {/* Jira Configuration Modal */}
+      <Dialog open={jiraModalOpen} onOpenChange={setJiraModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configure Jira Integration</DialogTitle>
+            <DialogDescription>
+              Configure Jira Cloud to automatically create tickets for alerts
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+              {/* Jira URL */}
+              <div className="space-y-2">
+                <Label htmlFor="jira-url">Jira URL *</Label>
+                <Input
+                  id="jira-url"
+                  placeholder="https://your-domain.atlassian.net"
+                  value={jiraFormData.jira_url || ''}
+                  onChange={e => setJiraFormData({ ...jiraFormData, jira_url: e.target.value })}
+                />
+              </div>
+
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="jira-email">Email *</Label>
+                <Input
+                  id="jira-email"
+                  type="email"
+                  placeholder="user@example.com"
+                  value={jiraFormData.email || ''}
+                  onChange={e => setJiraFormData({ ...jiraFormData, email: e.target.value })}
+                />
+              </div>
+
+              {/* API Token */}
+              <div className="space-y-2">
+                <Label htmlFor="jira-token">API Token</Label>
+                <Input
+                  id="jira-token"
+                  type="password"
+                  placeholder="Leave blank to keep existing"
+                  value={jiraFormData.api_token || ''}
+                  onChange={e => setJiraFormData({ ...jiraFormData, api_token: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {jiraConfig?.has_api_token ? 'Leave blank to keep existing token' : 'Generate from Jira User Settings'}
+                </p>
+              </div>
+
+              {/* Default Project */}
+              <div className="space-y-2">
+                <Label htmlFor="jira-project">Default Project *</Label>
+                <Select
+                  value={jiraFormData.default_project}
+                  onValueChange={value => {
+                    setJiraFormData({ ...jiraFormData, default_project: value })
+                    loadJiraIssueTypes(value)
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jiraProjects.map(project => (
+                      <SelectItem key={project.key} value={project.key}>
+                        {project.name} ({project.key})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Default Issue Type */}
+              <div className="space-y-2">
+                <Label htmlFor="jira-issue-type">Default Issue Type *</Label>
+                <Select
+                  value={jiraFormData.default_issue_type}
+                  onValueChange={value => setJiraFormData({ ...jiraFormData, default_issue_type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select issue type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jiraIssueTypes.map(issueType => (
+                      <SelectItem key={issueType.id} value={issueType.name}>
+                        {issueType.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Alert Severities */}
+              <div className="space-y-2">
+                <Label>Alert Severities for Ticket Creation</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {ALERT_SEVERITIES.map(severity => (
+                    <div key={severity.id} className="flex items-center gap-2 p-2 border rounded">
+                      <Checkbox
+                        id={`severity-${severity.id}`}
+                        checked={jiraFormData.alert_severities?.includes(severity.id) || false}
+                        onCheckedChange={checked => {
+                          const current = jiraFormData.alert_severities || []
+                          setJiraFormData({
+                            ...jiraFormData,
+                            alert_severities: checked
+                              ? [...current, severity.id]
+                              : current.filter(s => s !== severity.id),
+                          })
+                        }}
+                      />
+                      <label
+                        htmlFor={`severity-${severity.id}`}
+                        className="text-sm cursor-pointer flex items-center gap-2"
+                      >
+                        <span className={`w-3 h-3 rounded-full ${severity.color}`} />
+                        {severity.label}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Enabled Switch */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Enabled</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Create tickets for alerts when enabled
+                  </p>
+                </div>
+                <Switch
+                  checked={jiraFormData.is_enabled}
+                  onCheckedChange={enabled => setJiraFormData({ ...jiraFormData, is_enabled: enabled })}
+                />
+              </div>
+
+              {/* Test Connection */}
+              <div className="flex items-center gap-2 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={handleTestJira}
+                  disabled={isTestingJira || !jiraFormData.jira_url || !jiraFormData.email}
+                  className="flex-1"
+                >
+                  {isTestingJira ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <TestTube className="mr-2 h-4 w-4" />
+                      Test Connection
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setJiraModalOpen(false)} disabled={isSavingJira}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveJira} disabled={isSavingJira || !jiraFormData.jira_url || !jiraFormData.email || !jiraFormData.default_project || !jiraFormData.default_issue_type}>
+              {isSavingJira ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>Save Configuration</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

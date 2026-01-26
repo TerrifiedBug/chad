@@ -16,6 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { RefreshCw, ExternalLink, X, ChevronRight, Shield, Target } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 
 type CoverageLevel = 'none' | 'low' | 'medium' | 'high'
 
@@ -42,6 +43,7 @@ const coverageTextColors: Record<CoverageLevel, string> = {
 
 export default function AttackMatrixPage() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
   const [matrix, setMatrix] = useState<AttackMatrixResponse | null>(null)
   const [coverage, setCoverage] = useState<AttackCoverageResponse | null>(null)
   const [selectedTechnique, setSelectedTechnique] = useState<TechniqueDetailResponse | null>(null)
@@ -156,7 +158,7 @@ export default function AttackMatrixPage() {
     return (
       <div className="space-y-4">
         <div className="bg-destructive/10 text-destructive p-4 rounded-md">{error}</div>
-        <Button onClick={handleSync} disabled={isSyncing}>
+        <Button onClick={handleSync} disabled={isSyncing || !hasPermission('manage_settings')}>
           <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
           Sync ATT&CK Data
         </Button>
@@ -182,7 +184,7 @@ export default function AttackMatrixPage() {
             <p className="text-muted-foreground mb-4">
               The MITRE ATT&CK framework hasn't been synced yet. Click the button below to download the latest techniques.
             </p>
-            <Button onClick={handleSync} disabled={isSyncing}>
+            <Button onClick={handleSync} disabled={isSyncing || !hasPermission('manage_settings')}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
               {isSyncing ? 'Syncing...' : 'Sync ATT&CK Framework'}
             </Button>
@@ -203,7 +205,7 @@ export default function AttackMatrixPage() {
           </h1>
           <p className="text-muted-foreground">Visualize detection coverage across the ATT&CK Enterprise Matrix</p>
         </div>
-        <Button onClick={handleSync} disabled={isSyncing} variant="outline">
+        <Button onClick={handleSync} disabled={isSyncing || !hasPermission('manage_settings')} variant="outline">
           <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
           Sync
         </Button>

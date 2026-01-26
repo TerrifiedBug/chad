@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -120,6 +120,68 @@ async def update_health_settings(
         latency_ms=thresholds.get("latency_ms", DEFAULT_LATENCY_MS),
         queue_warning=thresholds.get("queue_warning", DEFAULT_QUEUE_WARNING),
         queue_critical=thresholds.get("queue_critical", DEFAULT_QUEUE_CRITICAL),
+    )
+
+
+# Health Check Interval Configuration
+class HealthIntervalConfig(BaseModel):
+    """Health check interval configuration."""
+
+    jira_interval_seconds: int = Field(ge=60, le=3600, default=900, description="Jira health check interval (15 min default)")
+    sigmahq_interval_seconds: int = Field(ge=60, le=3600, default=3600, description="SigmaHQ health check interval (60 min default)")
+    mitre_attack_interval_seconds: int = Field(ge=60, le=3600, default=3600, description="MITRE ATT&CK health check interval (60 min default)")
+    opensearch_interval_seconds: int = Field(ge=30, le=600, default=300, description="OpenSearch health check interval (5 min default)")
+    ti_interval_seconds: int = Field(ge=60, le=3600, default=1800, description="TI sources health check interval (30 min default)")
+
+
+class HealthIntervalResponse(BaseModel):
+    """Response for health interval settings."""
+
+    jira_interval_seconds: int
+    sigmahq_interval_seconds: int
+    mitre_attack_interval_seconds: int
+    opensearch_interval_seconds: int
+    ti_interval_seconds: int
+
+
+@router.get("/intervals", response_model=HealthIntervalResponse)
+async def get_health_intervals(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Get health check interval configuration."""
+    setting = await get_setting(db, "health_check_intervals")
+    intervals = setting or {}
+
+    return HealthIntervalResponse(
+        jira_interval_seconds=intervals.get("jira_interval_seconds", 900),
+        sigmahq_interval_seconds=intervals.get("sigmahq_interval_seconds", 3600),
+        mitre_attack_interval_seconds=intervals.get("mitre_attack_interval_seconds", 3600),
+        opensearch_interval_seconds=intervals.get("opensearch_interval_seconds", 300),
+        ti_interval_seconds=intervals.get("ti_interval_seconds", 1800),
+    )
+
+
+@router.put("/intervals", response_model=HealthIntervalResponse)
+async def update_health_intervals(
+    config: HealthIntervalConfig,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Update health check interval configuration."""
+    # Save to settings
+    await set_setting(db, "health_check_intervals", config.model_dump())
+
+    # Update scheduler intervals
+    from app.services.scheduler import scheduler_service
+    await scheduler_service.update_health_check_intervals(config.model_dump())
+
+    return HealthIntervalResponse(
+        jira_interval_seconds=config.jira_interval_seconds,
+        sigmahq_interval_seconds=config.sigmahq_interval_seconds,
+        mitre_attack_interval_seconds=config.mitre_attack_interval_seconds,
+        opensearch_interval_seconds=config.opensearch_interval_seconds,
+        ti_interval_seconds=config.ti_interval_seconds,
     )
 
 

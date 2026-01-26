@@ -489,13 +489,13 @@ export default function CorrelationRuleEditorPage() {
       </Card>
 
       {/* Activity Panel - only show when editing */}
-      {isEditing && correlationId && (
+      {isEditing && id && (
         <Card>
           <CardHeader>
             <CardTitle>Activity Log</CardTitle>
           </CardHeader>
           <CardContent>
-            <CorrelationActivityPanel correlationId={correlationId} />
+            <CorrelationActivityPanel correlationId={id} />
           </CardContent>
         </Card>
       )}

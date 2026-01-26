@@ -45,8 +45,9 @@ async def check_threshold(
     if not rule.threshold_enabled:
         return True  # No threshold, always alert
 
-    if not rule.threshold_count or not rule.threshold_window_minutes:
-        return True  # Threshold config incomplete, fall back to immediate alert
+    # Use defaults if count/window not specified (5 matches in 10 minutes)
+    threshold_count = rule.threshold_count or 5
+    threshold_window_minutes = rule.threshold_window_minutes or 10
 
     # Extract group value if configured
     group_value = None
@@ -63,7 +64,7 @@ async def check_threshold(
     await db.flush()
 
     # Count matches in window
-    window_start = datetime.now(timezone.utc) - timedelta(minutes=rule.threshold_window_minutes)
+    window_start = datetime.now(timezone.utc) - timedelta(minutes=threshold_window_minutes)
 
     query = select(func.count(ThresholdMatch.id)).where(
         ThresholdMatch.rule_id == rule.id,
@@ -79,7 +80,7 @@ async def check_threshold(
     count = result.scalar() or 0
 
     # Check if threshold met
-    if count >= rule.threshold_count:
+    if count >= threshold_count:
         # Clean up matches for this group to prevent repeated alerts
         await cleanup_threshold_matches(db, rule.id, group_value, window_start)
         return True

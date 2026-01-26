@@ -34,6 +34,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_api_keys": True,
         "view_audit": True,
         "manage_sigmahq": True,
+        "manage_correlation": True,
     },
     "analyst": {
         "manage_users": False,
@@ -43,6 +44,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_api_keys": True,
         "view_audit": True,
         "manage_sigmahq": True,
+        "manage_correlation": True,
     },
     "viewer": {
         "manage_users": False,
@@ -52,6 +54,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_api_keys": False,
         "view_audit": False,
         "manage_sigmahq": False,
+        "manage_correlation": False,
     },
 }
 
@@ -63,4 +66,5 @@ PERMISSION_DESCRIPTIONS = {
     "manage_api_keys": "Create and revoke API keys",
     "view_audit": "Access the audit log viewer",
     "manage_sigmahq": "Sync and import SigmaHQ rules",
+    "manage_correlation": "Create, edit, and delete correlation rules",
 }

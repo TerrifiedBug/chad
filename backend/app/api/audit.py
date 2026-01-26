@@ -6,16 +6,47 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_admin, require_permission_dep
+from app.api.deps import require_admin, require_permission_dep, get_current_user
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.schemas.audit import AuditLogEntry, AuditLogListResponse
 
 router = APIRouter(prefix="/audit", tags=["audit"])
+
+
+class AccessDeniedLog(BaseModel):
+    """Schema for logging access denied events."""
+    action: str = "route_access_denied"
+    details: dict
+
+
+@router.post("/log")
+async def log_access_denied(
+    log_data: AccessDeniedLog,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_user)],
+):
+    """
+    Log access denied event to audit log.
+
+    Called by frontend when user attempts to access a route without permission.
+    """
+    # Create audit log entry
+    log = AuditLog(
+        user_id=current_user.id if current_user else None,
+        action=log_data.action,
+        resource_type="route",
+        details=log_data.details,
+    )
+    db.add(log)
+    await db.commit()
+
+    return {"success": True}
 
 
 @router.get("", response_model=AuditLogListResponse)

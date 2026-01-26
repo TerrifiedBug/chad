@@ -550,6 +550,29 @@ class SchedulerService:
         finally:
             await session.close()
 
+    async def update_health_check_intervals(self, intervals: dict):
+        """
+        Update health check intervals.
+
+        Note: The current implementation runs all health checks every minute.
+        The intervals are stored in settings and will be used by future
+        optimizations to run each service check at its configured interval.
+
+        For now, this just stores the configuration for reference.
+        """
+        session = await self._get_session()
+        try:
+            from app.services.settings import set_setting
+            await set_setting(session, "health_check_intervals", intervals)
+            await session.commit()
+            logger.info(f"Health check intervals updated: {intervals}")
+        except Exception as e:
+            logger.error(f"Failed to update health check intervals: {e}")
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
 
 # Singleton instance
 scheduler_service = SchedulerService()
