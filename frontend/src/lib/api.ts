@@ -1,21 +1,39 @@
 const API_BASE = '/api'
 
 class ApiClient {
-  private getHeaders(): HeadersInit {
+  private csrfToken: string | null = null
+
+  private updateCsrfToken(response: Response): void {
+    // CSRF middleware sends token in X-CSRF-Token response header for JavaScript access
+    const token = response.headers.get('X-CSRF-Token')
+    if (token) {
+      this.csrfToken = token
+    }
+  }
+
+  private getHeaders(method: string = 'GET'): HeadersInit {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     }
+
+    // Add JWT token if available
     const token = localStorage.getItem('chad-token')
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
     }
+
+    // Add CSRF token for state-changing methods (POST, PATCH, PUT, DELETE)
+    if (method !== 'GET' && method !== 'HEAD' && this.csrfToken) {
+      headers['X-CSRF-Token'] = this.csrfToken
+    }
+
     return headers
   }
 
   async get<T>(path: string): Promise<T> {
     // Add cache-busting for rule detail requests
     const fetchPath = path
-    let fetchOptions: RequestInit = { headers: this.getHeaders() }
+    let fetchOptions: RequestInit = { headers: this.getHeaders('GET') }
 
     // Add cache control headers for rules endpoint to prevent caching
     if (path.includes('/rules/') && !path.includes('/rules/validate') && !path.includes('/rules/test')) {
@@ -23,13 +41,14 @@ class ApiClient {
         ...fetchOptions,
         cache: 'no-store',
         headers: {
-          ...this.getHeaders(),
+          ...this.getHeaders('GET'),
           'Cache-Control': 'no-cache',
         },
       }
     }
 
     const response = await fetch(`${API_BASE}${fetchPath}`, fetchOptions)
+    this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
       throw new Error(error.detail || 'Request failed')
@@ -40,9 +59,10 @@ class ApiClient {
   async post<T>(path: string, data?: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
-      headers: this.getHeaders(),
+      headers: this.getHeaders('POST'),
       body: data ? JSON.stringify(data) : undefined,
     })
+    this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
       throw new Error(error.detail || 'Request failed')
@@ -53,9 +73,10 @@ class ApiClient {
   async patch<T>(path: string, data: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'PATCH',
-      headers: this.getHeaders(),
+      headers: this.getHeaders('PATCH'),
       body: JSON.stringify(data),
     })
+    this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
       throw new Error(error.detail || 'Request failed')
@@ -66,8 +87,9 @@ class ApiClient {
   async delete(path: string): Promise<void> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'DELETE',
-      headers: this.getHeaders(),
+      headers: this.getHeaders('DELETE'),
     })
+    this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
       throw new Error(error.detail || 'Request failed')
@@ -77,9 +99,10 @@ class ApiClient {
   async put<T>(path: string, data: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'PUT',
-      headers: this.getHeaders(),
+      headers: this.getHeaders('PUT'),
       body: JSON.stringify(data),
     })
+    this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
       throw new Error(error.detail || 'Request failed')

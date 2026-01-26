@@ -1,8 +1,12 @@
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from opensearchpy import OpenSearch
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -141,8 +145,8 @@ def validate_opensearch_connection(
             # Try to clean up before returning
             try:
                 client.indices.delete(index=test_index)
-            except:
-                pass
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup test index after query error: {cleanup_error}")
             return ValidationResult(success=False, steps=steps)
 
         # Step 5: Run percolate query
@@ -167,8 +171,8 @@ def validate_opensearch_connection(
             # Try to clean up before returning
             try:
                 client.indices.delete(index=test_index)
-            except:
-                pass
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup test index after percolate error: {cleanup_error}")
             return ValidationResult(success=False, steps=steps)
 
         # Step 6: Cleanup
@@ -191,8 +195,8 @@ def validate_opensearch_connection(
         if client:
             try:
                 client.indices.delete(index=test_index, ignore=[404])
-            except:
-                pass
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup test index in finally block: {cleanup_error}")
 
 
 def get_index_fields(client: OpenSearch, pattern: str) -> set[str]:

@@ -36,6 +36,7 @@ from app.api.users import router as users_router
 from app.api.webhooks import router as webhooks_router
 from app.api.websocket import router as websocket_router
 from app.core.config import settings
+from app.core.csrf import CSRFMiddleware
 from app.core.middleware import ErrorResponseMiddleware, RequestValidationMiddleware
 from app.services.scheduler import scheduler_service
 
@@ -70,12 +71,19 @@ app = FastAPI(
 )
 
 # Session middleware (required for OAuth state)
+# SameSite=lax is required for OAuth to work (callback from identity provider)
+# CSRF protection is still provided by the CSRF middleware
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SESSION_SECRET_KEY,  # Separate from JWT secret for key separation
     same_site="lax",  # Required for OAuth redirects (cross-origin callbacks)
     https_only=not settings.DEBUG,  # Enforce HTTPS in production
+    max_age=3600,  # 1 hour session
 )
+
+# CSRF Protection Middleware (defense-in-depth)
+# Provides CSRF protection on top of JWT authentication
+app.add_middleware(CSRFMiddleware)
 
 # CORS middleware
 app.add_middleware(
@@ -84,6 +92,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-CSRF-Token"],  # Expose CSRF token to JavaScript
 )
 
 
@@ -126,11 +135,13 @@ async def add_security_headers(request: Request, call_next):
         # Enforce HTTPS for 1 year including subdomains
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
-    # Content Security Policy (basic - tighten based on your needs)
-    # For now, allow same-origin and data: for images
+    # Content Security Policy (tightened)
+    # Removed 'unsafe-inline' from script-src - Vite bundles all scripts externally
+    # Keep 'unsafe-eval' for now - some libraries use Function() constructor
+    # Keep 'unsafe-inline' in style-src - Radix UI uses inline styles for dynamic values
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "script-src 'self' 'unsafe-eval'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: https:; "
         "font-src 'self'; "

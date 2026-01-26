@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { useAuth } from '@/hooks/use-auth'
@@ -125,7 +125,7 @@ export default function RuleEditorPage() {
   const [saveSuccess, setSaveSuccess] = useState(false)
 
   // Rule versions state
-  const [ruleVersions, setRuleVersions] = useState<any[] | null>(null)
+  const [ruleVersions, setRuleVersions] = useState<RuleVersion[] | null>(null)
 
   // Compute the current (most recent) version using useMemo
   const currentVersion = useMemo(() => {
@@ -207,6 +207,133 @@ export default function RuleEditorPage() {
   const [showChangeReason, setShowChangeReason] = useState(false)
   const [changeReason, setChangeReason] = useState('')
 
+  // Load functions - must be declared before useEffect that uses them
+  const loadExceptions = useCallback(async () => {
+    if (!id || isNew) return
+    setIsLoadingExceptions(true)
+    try {
+      const result = await rulesApi.listExceptions(id)
+      setExceptions(result)
+    } catch (err) {
+      console.error('Failed to load exceptions:', err)
+    } finally {
+      setIsLoadingExceptions(false)
+    }
+  }, [id, isNew])
+
+  // Load correlation rules when rule ID is available
+  const loadCorrelationRules = useCallback(async () => {
+    if (!id || isNew) return
+    setIsLoadingCorrelations(true)
+    try {
+      const result = await correlationRulesApi.list(true)
+      // Filter to only show correlation rules that use this rule
+      const relatedRules = result.correlation_rules.filter(
+        (rule) => rule.rule_a_id === id || rule.rule_b_id === id
+      )
+      setCorrelationRules(relatedRules)
+    } catch (err) {
+      console.error('Failed to load correlation rules:', err)
+    } finally {
+      setIsLoadingCorrelations(false)
+    }
+  }, [id, isNew])
+
+  const loadIndexPatterns = useCallback(async () => {
+    try {
+      const patterns = await indexPatternsApi.list()
+      setIndexPatterns(patterns)
+      if (patterns.length > 0 && !indexPatternId) {
+        setIndexPatternId(patterns[0].id)
+      }
+    } catch (err) {
+      console.error('Failed to load index patterns:', err)
+    }
+  }, [indexPatternId])
+
+  const validateRule = useCallback(async () => {
+    setIsValidating(true)
+    try {
+      const result = await rulesApi.validate(
+        yamlContent,
+        indexPatternId || undefined
+      )
+      setValidationErrors(result.errors)
+      setIsValid(result.valid)
+      setGeneratedQuery(result.opensearch_query || null)
+      setDetectedFields(result.fields || [])
+      setFieldMappings(result.field_mappings || [])
+    } catch (err) {
+      setValidationErrors([
+        { type: 'error', message: err instanceof Error ? err.message : 'Validation failed' },
+      ])
+      setIsValid(false)
+      setDetectedFields([])
+      setFieldMappings([])
+    } finally {
+      setIsValidating(false)
+    }
+  }, [yamlContent, indexPatternId])
+
+  const loadRule = useCallback(async () => {
+    if (!id) return
+    setIsLoading(true)
+    try {
+      const rule = await rulesApi.get(id)
+      setTitle(rule.title)
+      setYamlContent(rule.yaml_content)
+      setOriginalYaml(rule.yaml_content)
+      setSeverity(rule.severity)
+      setIndexPatternId(rule.index_pattern_id)
+      setDescription(rule.description || '')
+      setDeployedAt(rule.deployed_at)
+      setDeployedVersion(rule.deployed_version)
+      setCurrentVersionNumber(rule.current_version)
+      setNeedsRedeploy(rule.needs_redeploy)
+      setStatus(rule.status as 'deployed' | 'undeployed' | 'snoozed')
+      setSnoozeIndefinite(rule.snooze_indefinite || false)
+      setSnoozeUntil(rule.snooze_until)
+      // Track rule source
+      setRuleSource(rule.source as 'user' | 'sigmahq' || 'user')
+      setSigmahqPath(rule.sigmahq_path || null)
+      // Load threshold settings
+      setThresholdEnabled(rule.threshold_enabled)
+      setOriginalThresholdEnabled(rule.threshold_enabled)
+      setThresholdCount(rule.threshold_count)
+      setThresholdWindowMinutes(rule.threshold_window_minutes)
+      setThresholdGroupBy(rule.threshold_group_by)
+      // Store rule versions for current version display
+      setRuleVersions(rule.versions || null)
+
+      // Fetch activity data to get user emails for version authors
+      if (!isNew && rule.versions && rule.versions.length > 0) {
+        try {
+          const activityData = await rulesApi.getActivity(id)
+          // Create map: user_id -> email from activity data
+          const usersMap: Record<string, { email: string }> = {}
+          activityData.forEach((activity: Record<string, unknown>) => {
+            if (activity.type === 'version' && activity.data && activity.user_email) {
+              // The version's changed_by should match an activity entry
+              const versionNum = activity.data.version_number
+              const version = rule.versions.find((v: { version_number: number }) => v.version_number === versionNum)
+              if (version) {
+                usersMap[version.changed_by] = { email: activity.user_email }
+              }
+            }
+          })
+          setUsers(usersMap)
+        } catch (err) {
+          console.error('Failed to load activity data for user emails:', err)
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load rule')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [id, isNew])
+
+  // Effects - must come after all useCallback declarations
   useEffect(() => {
     loadIndexPatterns()
     if (!isNew) {
@@ -214,7 +341,7 @@ export default function RuleEditorPage() {
       loadExceptions()
       loadCorrelationRules()
     }
-  }, [id])
+  }, [id, isNew, loadIndexPatterns, loadRule, loadExceptions, loadCorrelationRules])
 
   // Handle clone state from navigation
   useEffect(() => {
@@ -254,38 +381,6 @@ export default function RuleEditorPage() {
     loadSettings()
   }, [])
 
-  // Load exceptions when rule ID is available
-  const loadExceptions = async () => {
-    if (!id || isNew) return
-    setIsLoadingExceptions(true)
-    try {
-      const result = await rulesApi.listExceptions(id)
-      setExceptions(result)
-    } catch (err) {
-      console.error('Failed to load exceptions:', err)
-    } finally {
-      setIsLoadingExceptions(false)
-    }
-  }
-
-  // Load correlation rules when rule ID is available
-  const loadCorrelationRules = async () => {
-    if (!id || isNew) return
-    setIsLoadingCorrelations(true)
-    try {
-      const result = await correlationRulesApi.list(true)
-      // Filter to only show correlation rules that use this rule
-      const relatedRules = result.correlation_rules.filter(
-        (rule) => rule.rule_a_id === id || rule.rule_b_id === id
-      )
-      setCorrelationRules(relatedRules)
-    } catch (err) {
-      console.error('Failed to load correlation rules:', err)
-    } finally {
-      setIsLoadingCorrelations(false)
-    }
-  }
-
   // Debounced validation
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -294,101 +389,7 @@ export default function RuleEditorPage() {
       }
     }, 500)
     return () => clearTimeout(timer)
-  }, [yamlContent, indexPatternId])
-
-  const loadIndexPatterns = async () => {
-    try {
-      const patterns = await indexPatternsApi.list()
-      setIndexPatterns(patterns)
-      if (patterns.length > 0 && !indexPatternId) {
-        setIndexPatternId(patterns[0].id)
-      }
-    } catch (err) {
-      console.error('Failed to load index patterns:', err)
-    }
-  }
-
-  const loadRule = async () => {
-    if (!id) return
-    setIsLoading(true)
-    try {
-      const rule = await rulesApi.get(id)
-      setTitle(rule.title)
-      setYamlContent(rule.yaml_content)
-      setOriginalYaml(rule.yaml_content)
-      setSeverity(rule.severity)
-      setIndexPatternId(rule.index_pattern_id)
-      setDescription(rule.description || '')
-      setDeployedAt(rule.deployed_at)
-      setDeployedVersion(rule.deployed_version)
-      setCurrentVersionNumber(rule.current_version)
-      setNeedsRedeploy(rule.needs_redeploy)
-      setStatus(rule.status as 'deployed' | 'undeployed' | 'snoozed')
-      setSnoozeIndefinite(rule.snooze_indefinite || false)
-      setSnoozeUntil(rule.snooze_until)
-      // Track rule source
-      setRuleSource(rule.source as 'user' | 'sigmahq' || 'user')
-      setSigmahqPath(rule.sigmahq_path || null)
-      // Load threshold settings
-      setThresholdEnabled(rule.threshold_enabled)
-      setOriginalThresholdEnabled(rule.threshold_enabled)
-      setThresholdCount(rule.threshold_count)
-      setThresholdWindowMinutes(rule.threshold_window_minutes)
-      setThresholdGroupBy(rule.threshold_group_by)
-      // Store rule versions for current version display
-      setRuleVersions(rule.versions || null)
-
-      // Fetch activity data to get user emails for version authors
-      if (!isNew && rule.versions && rule.versions.length > 0) {
-        try {
-          const activityData = await rulesApi.getActivity(id)
-          // Create map: user_id -> email from activity data
-          const usersMap: Record<string, { email: string }> = {}
-          activityData.forEach((activity: any) => {
-            if (activity.type === 'version' && activity.data && activity.user_email) {
-              // The version's changed_by should match an activity entry
-              const versionNum = activity.data.version_number
-              const version = rule.versions.find((v: any) => v.version_number === versionNum)
-              if (version) {
-                usersMap[version.changed_by] = { email: activity.user_email }
-              }
-            }
-          })
-          setUsers(usersMap)
-        } catch (err) {
-          console.error('Failed to load activity data for user emails:', err)
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load rule')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const validateRule = async () => {
-    setIsValidating(true)
-    try {
-      const result = await rulesApi.validate(
-        yamlContent,
-        indexPatternId || undefined
-      )
-      setValidationErrors(result.errors)
-      setIsValid(result.valid)
-      setGeneratedQuery(result.opensearch_query || null)
-      setDetectedFields(result.fields || [])
-      setFieldMappings(result.field_mappings || [])
-    } catch (err) {
-      setValidationErrors([
-        { type: 'error', message: err instanceof Error ? err.message : 'Validation failed' },
-      ])
-      setIsValid(false)
-      setDetectedFields([])
-      setFieldMappings([])
-    } finally {
-      setIsValidating(false)
-    }
-  }
+  }, [yamlContent, indexPatternId, validateRule])
 
   const handleTest = async () => {
     setIsTesting(true)
@@ -1703,7 +1704,6 @@ export default function RuleEditorPage() {
           isOpen={isActivityOpen}
           onClose={() => setIsActivityOpen(false)}
           onRestore={handleRestoreVersion}
-          canManageRules={canManageRules}
         />
       )}
 

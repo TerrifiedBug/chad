@@ -1,7 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useVersion } from '@/hooks/use-version'
-import { useHealthStatus } from '@/hooks/useHealthStatus'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { NotificationBell } from '@/components/NotificationBell'
 import { Button } from '@/components/ui/button'
@@ -33,7 +32,6 @@ const navItems = [
 export function Header() {
   const { isAuthenticated, user, logout, hasPermission } = useAuth()
   const { version, updateAvailable } = useVersion()
-  const { unhealthyCount } = useHealthStatus()
   const location = useLocation()
   const navigate = useNavigate()
 

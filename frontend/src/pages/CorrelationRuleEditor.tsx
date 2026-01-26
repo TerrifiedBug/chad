@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -150,31 +150,7 @@ export default function CorrelationRuleEditorPage() {
     is_enabled: true,
   })
 
-  useEffect(() => {
-    loadRules()
-    if (id) loadRule(id)
-  }, [id])
-
-  // Load Sigma fields when both rules are selected (only for NEW rules, not editing)
-  useEffect(() => {
-    // Skip entirely if editing or loading edit data
-    if (id || isLoadingEditData) return
-
-    // Only proceed if both rules are selected for a NEW rule
-    if (formData.rule_a_id && formData.rule_b_id) {
-      loadCommonFields(formData.entity_field)
-    }
-  }, [formData.rule_a_id, formData.rule_b_id, id, isLoadingEditData])
-
-  // Clear fields when switching from editing to creating
-  useEffect(() => {
-    if (!id && !isLoadingEditData) {
-      setAvailableFields([])
-      setRuleAFieldMappings([])
-      setRuleBFieldMappings([])
-    }
-  }, [id, isLoadingEditData])
-
+  // Load functions - must be declared before useEffect that uses them
   async function loadRuleFields(ruleId: string): Promise<{ fields: string[], mappings: FieldMappingInfo[] }> {
     try {
       const rule = await rulesApi.get(ruleId)
@@ -190,7 +166,7 @@ export default function CorrelationRuleEditorPage() {
     }
   }
 
-  async function loadCommonFields(currentEntityField?: string, ruleAId?: string, ruleBId?: string) {
+  const loadCommonFields = useCallback(async (currentEntityField?: string, ruleAId?: string, ruleBId?: string) => {
     // Use passed IDs or fall back to formData (for new rule creation where IDs are set via UI)
     const actualRuleAId = ruleAId || formData.rule_a_id
     const actualRuleBId = ruleBId || formData.rule_b_id
@@ -207,32 +183,33 @@ export default function CorrelationRuleEditorPage() {
         loadRuleFields(actualRuleBId),
       ])
 
+      // Find common fields
+      const commonFields = resultA.fields.filter((field) =>
+        resultB.fields.includes(field)
+      )
+
+      setAvailableFields(commonFields)
       setRuleAFieldMappings(resultA.mappings)
       setRuleBFieldMappings(resultB.mappings)
 
-      // Find intersection of fields (fields common to both rules)
-      let commonFields = resultA.fields.filter(field => resultB.fields.includes(field))
-
-      // When editing, ensure the currently selected field is included in the list
-      // This handles cases where the field was removed from one rule but we want to keep it
-      if (currentEntityField && !commonFields.includes(currentEntityField)) {
-        commonFields = [...commonFields, currentEntityField]
+      // Auto-select entity field if:
+      // 1. We're editing (id exists) and currentEntityField is provided
+      // 2. The currentEntityField is in the common fields
+      // 3. No entity field is currently selected in formData
+      if (currentEntityField && commonFields.includes(currentEntityField) && !formData.entity_field) {
+        setFormData((prev) => ({ ...prev, entity_field: currentEntityField }))
       }
-
-      setAvailableFields(commonFields)
+      // If current entity_field is no longer in common fields, clear it
+      if (formData.entity_field && !commonFields.includes(formData.entity_field)) {
+        setFormData((prev) => ({ ...prev, entity_field: '' }))
+      }
     } catch (err) {
       console.error('Failed to load common fields:', err)
       setAvailableFields([])
     } finally {
       setIsLoadingFields(false)
     }
-  }
-
-  // Helper to get target field for a Sigma field from mappings
-  function getTargetField(sigmaField: string, mappings: FieldMappingInfo[]): string | null {
-    const mapping = mappings.find(m => m.sigma_field === sigmaField)
-    return mapping?.target_field || null
-  }
+  }, [formData.rule_a_id, formData.rule_b_id, formData.entity_field])
 
   const loadRules = async () => {
     setIsLoading(true)
@@ -246,7 +223,7 @@ export default function CorrelationRuleEditorPage() {
     }
   }
 
-  const loadRule = async (ruleId: string) => {
+  const loadRule = useCallback(async (ruleId: string) => {
     setIsLoadingEditData(true)
     setIsLoading(true)
     try {
@@ -257,7 +234,7 @@ export default function CorrelationRuleEditorPage() {
         rule_b_id: rule.rule_b_id,
         entity_field: rule.entity_field,
         time_window_minutes: rule.time_window_minutes,
-        severity: rule.severity as any,
+        severity: rule.severity,
         is_enabled: rule.is_enabled,
       })
       // Load common fields with the current entity_field to ensure it's in the list
@@ -269,6 +246,38 @@ export default function CorrelationRuleEditorPage() {
       setIsLoadingEditData(false)
       setIsLoading(false)
     }
+  }, [loadCommonFields])
+
+  useEffect(() => {
+    loadRules()
+    if (id) loadRule(id)
+  }, [id, loadRule])
+
+  // Load Sigma fields when both rules are selected (only for NEW rules, not editing)
+  useEffect(() => {
+    // Skip entirely if editing or loading edit data
+    if (id || isLoadingEditData) return
+
+    // Only proceed if both rules are selected for a NEW rule
+    if (formData.rule_a_id && formData.rule_b_id) {
+      loadCommonFields(formData.entity_field)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.rule_a_id, formData.rule_b_id, id, isLoadingEditData, formData.entity_field])
+
+  // Clear fields when switching from editing to creating
+  useEffect(() => {
+    if (!id && !isLoadingEditData) {
+      setAvailableFields([])
+      setRuleAFieldMappings([])
+      setRuleBFieldMappings([])
+    }
+  }, [id, isLoadingEditData])
+
+  // Helper function to get target field from mappings
+  const getTargetField = (sigmaField: string, mappings: FieldMappingInfo[]): string | undefined => {
+    const mapping = mappings.find(m => m.sigma_field === sigmaField)
+    return mapping?.target_field
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -419,7 +428,7 @@ export default function CorrelationRuleEditorPage() {
         <Label htmlFor="severity">Severity</Label>
         <Select
           value={formData.severity}
-          onValueChange={(value) => setFormData({ ...formData, severity: value as any })}
+          onValueChange={(value) => setFormData({ ...formData, severity: value as 'critical' | 'high' | 'medium' | 'low' | 'informational' })}
           disabled={isSaving}
         >
           <SelectTrigger>

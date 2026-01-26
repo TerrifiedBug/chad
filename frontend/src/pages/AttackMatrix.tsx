@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   attackApi,
@@ -57,18 +57,8 @@ export default function AttackMatrixPage() {
   const [selectedSeverities, setSelectedSeverities] = useState<string[]>([])
   const [selectedIndexPattern, setSelectedIndexPattern] = useState<string>('')
 
-  useEffect(() => {
-    loadData()
-    loadIndexPatterns()
-  }, [])
-
-  useEffect(() => {
-    if (matrix) {
-      loadCoverage()
-    }
-  }, [deployedOnly, selectedSeverities, selectedIndexPattern])
-
-  const loadData = async () => {
+  // Load functions - must be declared before useEffect that uses them
+  const loadData = useCallback(async () => {
     try {
       setIsLoading(true)
       const matrixData = await attackApi.getMatrix()
@@ -81,9 +71,9 @@ export default function AttackMatrixPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
 
-  const loadCoverage = async () => {
+  const loadCoverage = useCallback(async () => {
     try {
       const params: { deployed_only?: boolean; severity?: string[]; index_pattern_id?: string } = {}
       if (deployedOnly) params.deployed_only = true
@@ -94,7 +84,18 @@ export default function AttackMatrixPage() {
     } catch (err) {
       console.error('Failed to load coverage:', err)
     }
-  }
+  }, [deployedOnly, selectedSeverities, selectedIndexPattern])
+
+  useEffect(() => {
+    loadData()
+    loadIndexPatterns()
+  }, [loadData])
+
+  useEffect(() => {
+    if (matrix) {
+      loadCoverage()
+    }
+  }, [deployedOnly, selectedSeverities, selectedIndexPattern, matrix, loadCoverage])
 
   const loadIndexPatterns = async () => {
     try {

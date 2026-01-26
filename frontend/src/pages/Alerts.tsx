@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { alertsApi, Alert, AlertStatus, AlertCountsResponse } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -60,16 +60,8 @@ export default function AlertsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
 
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setPage(1)
-  }, [statusFilter, severityFilter])
-
-  useEffect(() => {
-    loadData()
-  }, [statusFilter, severityFilter, page, pageSize])
-
-  const loadData = async () => {
+  // Load data function - must be declared before useEffect that uses it
+  const loadData = useCallback(async () => {
     setIsLoading(true)
     setError('')
     try {
@@ -91,7 +83,16 @@ export default function AlertsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [statusFilter, severityFilter, page, pageSize])
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter, severityFilter])
+
+  useEffect(() => {
+    loadData()
+  }, [statusFilter, severityFilter, page, pageSize, loadData])
 
   const totalPages = Math.ceil(total / pageSize)
   const canGoPrevious = page > 1

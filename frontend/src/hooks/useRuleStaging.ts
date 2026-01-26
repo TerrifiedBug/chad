@@ -21,8 +21,8 @@ export function useRuleStaging(_ruleId: string) {
     type: StagedChangeType,
     action: StagedChangeAction,
     entity: string,
-    data: any,
-    originalData?: any
+    data: unknown,
+    originalData?: unknown
   ) => {
     const change: StagedChange = {
       id: `${type}-${action}-${entity}-${Date.now()}`,

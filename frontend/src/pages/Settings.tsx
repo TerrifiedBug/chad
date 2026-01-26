@@ -162,7 +162,7 @@ export default function SettingsPage() {
     try {
       const response = await settingsApi.getAppUrl()
       setAppUrl(response.url || '')
-    } catch (err) {
+    } catch {
       console.log('Failed to load APP_URL')
     }
   }
@@ -246,7 +246,7 @@ export default function SettingsPage() {
           setAiLastTestSuccess(ai.last_test_success as boolean)
         }
       }
-    } catch (err) {
+    } catch {
       // Settings may not exist yet, that's okay
       console.log('No settings found, using defaults')
     } finally {
@@ -258,7 +258,7 @@ export default function SettingsPage() {
     try {
       const status = await settingsApi.getOpenSearchStatus()
       setOsStatus(status)
-    } catch (err) {
+    } catch {
       console.log('Failed to load OpenSearch status')
     }
   }

@@ -57,7 +57,7 @@ export default function TISettings() {
     try {
       const response = await tiApi.listSources()
       setSources(response.sources)
-    } catch (err) {
+    } catch {
       console.log('Failed to load TI sources')
     } finally {
       setIsLoading(false)

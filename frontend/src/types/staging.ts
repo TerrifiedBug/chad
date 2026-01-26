@@ -13,8 +13,8 @@ export interface StagedChange {
   type: StagedChangeType
   action: StagedChangeAction
   entity: string
-  data: any
-  originalData?: any
+  data: ExceptionChangeData | FieldMappingChangeData | CorrelationChangeData | ThresholdChangeData | Record<string, unknown>
+  originalData?: ExceptionChangeData | FieldMappingChangeData | CorrelationChangeData | ThresholdChangeData | Record<string, unknown>
   timestamp: Date
 }
 

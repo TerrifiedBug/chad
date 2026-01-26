@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { DateRange } from 'react-day-picker'
 import { auditApi, AuditLogEntry, AuditLogListResponse } from '@/lib/api'
@@ -59,28 +59,8 @@ export default function AuditLogPage() {
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
 
-  useEffect(() => {
-    loadFilterOptions()
-  }, [])
-
-  useEffect(() => {
-    loadAuditLogs()
-  }, [actionFilter, resourceTypeFilter, dateRange, currentPage])
-
-  const loadFilterOptions = async () => {
-    try {
-      const [actionsRes, typesRes] = await Promise.all([
-        auditApi.getActions(),
-        auditApi.getResourceTypes(),
-      ])
-      setActions(actionsRes.actions)
-      setResourceTypes(typesRes.resource_types)
-    } catch (err) {
-      console.log('Failed to load filter options')
-    }
-  }
-
-  const loadAuditLogs = async () => {
+  // Load functions - must be declared before useEffect that uses them
+  const loadAuditLogs = useCallback(async () => {
     setIsLoading(true)
     setError('')
     try {
@@ -105,7 +85,28 @@ export default function AuditLogPage() {
     } finally {
       setIsLoading(false)
     }
+  }, [actionFilter, resourceTypeFilter, dateRange, currentPage])
+
+  const loadFilterOptions = async () => {
+    try {
+      const [actionsRes, typesRes] = await Promise.all([
+        auditApi.getActions(),
+        auditApi.getResourceTypes(),
+      ])
+      setActions(actionsRes.actions)
+      setResourceTypes(typesRes.resource_types)
+    } catch {
+      console.log('Failed to load filter options')
+    }
   }
+
+  useEffect(() => {
+    loadFilterOptions()
+  }, [])
+
+  useEffect(() => {
+    loadAuditLogs()
+  }, [loadAuditLogs])
 
   const handleViewDetails = (entry: AuditLogEntry) => {
     setSelectedEntry(entry)
@@ -117,7 +118,7 @@ export default function AuditLogPage() {
     return date.toLocaleString()
   }
 
-  const formatAction = (action: string, details?: any) => {
+  const formatAction = (action: string, details?: Record<string, unknown>) => {
     // Special formatting for correlation rule events
     if (action.startsWith('correlation_rule_')) {
       const actions: Record<string, string> = {
@@ -197,7 +198,7 @@ export default function AuditLogPage() {
       a.download = `audit_logs.${format}`
       a.click()
       URL.revokeObjectURL(url)
-    } catch (err) {
+    } catch {
       setError('Export failed')
     }
   }

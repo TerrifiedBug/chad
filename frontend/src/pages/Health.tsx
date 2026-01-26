@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { healthApi, IndexHealth, HealthStatus, HealthSettings } from '@/lib/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -323,7 +323,7 @@ export default function HealthPage() {
                       id="no-data-minutes"
                       type="number"
                       min="1"
-                      value={settingsForm.no_data_minutes}
+                      value={settingsForm!.no_data_minutes}
                       onChange={(e) =>
                         setSettingsForm({
                           ...settingsForm!,
@@ -340,7 +340,7 @@ export default function HealthPage() {
                       type="number"
                       min="0"
                       step="0.1"
-                      value={settingsForm.error_rate_percent}
+                      value={settingsForm!.error_rate_percent}
                       onChange={(e) =>
                         setSettingsForm({
                           ...settingsForm!,
@@ -356,7 +356,7 @@ export default function HealthPage() {
                       id="latency-ms"
                       type="number"
                       min="1"
-                      value={settingsForm.latency_ms}
+                      value={settingsForm!.latency_ms}
                       onChange={(e) =>
                         setSettingsForm({
                           ...settingsForm!,
@@ -372,7 +372,7 @@ export default function HealthPage() {
                       id="queue-warning"
                       type="number"
                       min="1"
-                      value={settingsForm.queue_warning}
+                      value={settingsForm!.queue_warning}
                       onChange={(e) =>
                         setSettingsForm({
                           ...settingsForm!,
@@ -388,7 +388,7 @@ export default function HealthPage() {
                       id="queue-critical"
                       type="number"
                       min="1"
-                      value={settingsForm.queue_critical}
+                      value={settingsForm!.queue_critical}
                       onChange={(e) =>
                         setSettingsForm({
                           ...settingsForm!,

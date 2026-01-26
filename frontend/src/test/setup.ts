@@ -1,21 +1,15 @@
 import { vi, afterEach } from 'vitest';
-import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
+import * as matchers from '@testing-library/jest-dom/matchers';
+import { expect } from 'vitest';
+
+// Extend Vitest's expect with jest-dom matchers
+expect.extend(matchers);
 
 // Cleanup after each test
 afterEach(() => {
   cleanup();
 });
-
-// Mock API calls
-vi.mock('@/lib/api', () => ({
-  api: {
-    get: vi.fn(),
-    post: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
 
 // Mock window.matchMedia for responsive components
 Object.defineProperty(window, 'matchMedia', {
@@ -41,5 +35,9 @@ global.IntersectionObserver = class IntersectionObserver {
     return [];
   }
   unobserve() {}
-} as any;
+} as unknown;
+
+// Mock scrollTo
+window.scrollTo = vi.fn();
+window.scrollBy = vi.fn();
 

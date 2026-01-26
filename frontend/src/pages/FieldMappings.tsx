@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   fieldMappingsApi,
@@ -74,9 +74,31 @@ export default function FieldMappingsPage() {
   const [isSuggesting, setIsSuggesting] = useState(false)
   const [savingSuggestions, setSavingSuggestions] = useState<Set<string>>(new Set())
 
+  // Load functions - must be declared before useEffect that uses them
+  const loadData = useCallback(async () => {
+    try {
+      const patterns = await indexPatternsApi.list()
+      setIndexPatterns(patterns)
+    } catch {
+      showToast('Failed to load index patterns', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [showToast])
+
+  const loadMappings = useCallback(async () => {
+    try {
+      const indexPatternId = activeTab === 'global' ? null : activeTab
+      const data = await fieldMappingsApi.list(indexPatternId)
+      setMappings(data)
+    } catch {
+      showToast('Failed to load field mappings', 'error')
+    }
+  }, [activeTab, showToast])
+
   useEffect(() => {
     loadData()
-  }, [])
+  }, [loadData])
 
   // Handle URL parameters from rule deployment redirect
   useEffect(() => {
@@ -113,35 +135,14 @@ export default function FieldMappingsPage() {
 
   useEffect(() => {
     loadMappings()
-  }, [activeTab])
-
-  const loadData = async () => {
-    try {
-      const patterns = await indexPatternsApi.list()
-      setIndexPatterns(patterns)
-    } catch (err) {
-      showToast('Failed to load index patterns', 'error')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const loadMappings = async () => {
-    try {
-      const indexPatternId = activeTab === 'global' ? null : activeTab
-      const data = await fieldMappingsApi.list(indexPatternId)
-      setMappings(data)
-    } catch (err) {
-      showToast('Failed to load mappings', 'error')
-    }
-  }
+  }, [activeTab, loadMappings])
 
   const loadAvailableFields = async (indexPatternId: string) => {
     setIsLoadingFields(true)
     try {
       const fields = await indexPatternsApi.getFields(indexPatternId)
       setAvailableFields(fields.sort())
-    } catch (err) {
+    } catch {
       // Silent fail - user can still type manually
       setAvailableFields([])
     } finally {

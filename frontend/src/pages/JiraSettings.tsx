@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   jiraApi,
   JiraConfig,
@@ -72,18 +72,21 @@ export default function JiraSettings() {
     server_title?: string | null
   } | null>(null)
 
-  useEffect(() => {
-    loadConfig()
+  // Load functions - must be declared before useEffect that uses them
+  const loadProjects = useCallback(async () => {
+    setLoadingProjects(true)
+    try {
+      const projectList = await jiraApi.getProjects()
+      setProjects(projectList)
+    } catch {
+      console.log('Failed to load Jira projects')
+    } finally {
+      setLoadingProjects(false)
+    }
   }, [])
 
-  // Load issue types when project changes
-  useEffect(() => {
-    if (defaultProject && configured) {
-      loadIssueTypes(defaultProject)
-    }
-  }, [defaultProject, configured])
-
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
+    setIsLoading(true)
     try {
       const status = await jiraApi.getConfig()
       setConfigured(status.configured)
@@ -99,36 +102,35 @@ export default function JiraSettings() {
         // Load projects if configured
         loadProjects()
       }
-    } catch (err) {
+    } catch {
       console.log('Failed to load Jira config')
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [loadProjects])
 
-  const loadProjects = async () => {
-    setLoadingProjects(true)
-    try {
-      const projectList = await jiraApi.getProjects()
-      setProjects(projectList)
-    } catch (err) {
-      console.log('Failed to load Jira projects')
-    } finally {
-      setLoadingProjects(false)
-    }
-  }
-
-  const loadIssueTypes = async (projectKey: string) => {
+  const loadIssueTypes = useCallback(async (projectKey: string) => {
     setLoadingIssueTypes(true)
     try {
       const types = await jiraApi.getIssueTypes(projectKey)
       setIssueTypes(types)
-    } catch (err) {
+    } catch {
       console.log('Failed to load issue types')
     } finally {
       setLoadingIssueTypes(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadConfig()
+  }, [loadConfig])
+
+  // Load issue types when project changes
+  useEffect(() => {
+    if (defaultProject && configured) {
+      loadIssueTypes(defaultProject)
+    }
+  }, [defaultProject, configured, loadIssueTypes])
 
   const handleTestConnection = async () => {
     if (!jiraUrl || !email || !apiToken) {

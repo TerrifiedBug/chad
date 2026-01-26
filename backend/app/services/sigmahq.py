@@ -3,12 +3,18 @@ SigmaHQ integration service for managing the SigmaHQ rule repository.
 
 Handles git operations (clone, pull) and file system access to rules.
 """
+import logging
+import re
 import subprocess
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
+
+
+logger = logging.getLogger(__name__)
 
 
 class RuleType(str, Enum):
@@ -37,8 +43,60 @@ class SigmaHQService:
     DEFAULT_REPO_URL = "https://github.com/SigmaHQ/sigma.git"
     DEFAULT_BASE_PATH = Path("/data/sigmahq")
 
+    # Allowed git repositories (whitelist)
+    ALLOWED_GIT_HOSTS = [
+        "github.com",
+        "gitlab.com",
+        "bitbucket.org",
+    ]
+
     def __init__(self, base_path: Path | None = None):
         self.base_path = base_path or self.DEFAULT_BASE_PATH
+
+    @staticmethod
+    def validate_git_url(url: str) -> tuple[bool, str | None]:
+        """
+        Validate that a git URL is safe to use.
+
+        Args:
+            url: The git repository URL to validate
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not url or not url.strip():
+            return False, "URL cannot be empty"
+
+        try:
+            parsed = urlparse(url.strip())
+
+            # Must be https or git protocol for security
+            if parsed.scheme not in ["https", "git"]:
+                return False, "Only HTTPS and Git protocol URLs are allowed"
+
+            # Must have a hostname
+            if not parsed.hostname:
+                return False, "Invalid URL format"
+
+            # Check hostname against whitelist
+            if parsed.hostname not in SigmaHQService.ALLOWED_GIT_HOSTS:
+                return False, f"Repository host '{parsed.hostname}' is not allowed. Allowed hosts: {', '.join(SigmaHQService.ALLOWED_GIT_HOSTS)}"
+
+            # Prevent file system traversal attempts in path
+            if "../" in url or url.startswith("/") or url.startswith("~"):
+                return False, "Invalid URL format: path traversal detected"
+
+            # Basic format check for git URLs
+            if parsed.scheme == "git" and "//" not in url:
+                return False, "Invalid git URL format"
+
+            logger.info(f"Git URL validation passed: {url[:50]}...")
+
+            return True, None
+
+        except Exception as e:
+            logger.error(f"Error validating git URL: {e}")
+            return False, f"URL validation failed: {str(e)}"
 
     def get_rules_directory(self, rule_type: RuleType = RuleType.DETECTION) -> Path:
         """Get the path to a rules directory by type."""
@@ -53,6 +111,16 @@ class SigmaHQService:
     def clone_repo(self, repo_url: str | None = None) -> SyncResult:
         """Clone the SigmaHQ repository."""
         url = repo_url or self.DEFAULT_REPO_URL
+
+        # Validate URL before executing git command
+        is_valid, error_msg = self.validate_git_url(url)
+        if not is_valid:
+            logger.warning(f"CSRF/Security: Invalid git URL blocked: {url} - {error_msg}")
+            return SyncResult(
+                success=False,
+                message="Invalid repository URL",
+                error=error_msg,
+            )
 
         if self.is_repo_cloned():
             return SyncResult(

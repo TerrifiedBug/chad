@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -51,15 +51,8 @@ export function MapFieldsModal({
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Load available fields from index when modal opens
-  useEffect(() => {
-    if (open && indexPatternId) {
-      loadIndexFields()
-      initializeMappings()
-    }
-  }, [open, indexPatternId, unmappedFields])
-
-  const loadIndexFields = async () => {
+  // Load functions - must be declared before useEffect that uses them
+  const loadIndexFields = useCallback(async () => {
     setIsLoading(true)
     try {
       // Get index pattern details
@@ -76,9 +69,9 @@ export function MapFieldsModal({
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [indexPatternId])
 
-  const initializeMappings = () => {
+  const initializeMappings = useCallback(() => {
     setMappings(
       unmappedFields.map((field) => ({
         sigmaField: field,
@@ -87,7 +80,15 @@ export function MapFieldsModal({
       }))
     )
     setActiveDropdown(null)
-  }
+  }, [unmappedFields])
+
+  // Load available fields from index when modal opens
+  useEffect(() => {
+    if (open && indexPatternId) {
+      loadIndexFields()
+      initializeMappings()
+    }
+  }, [open, indexPatternId, unmappedFields, initializeMappings, loadIndexFields])
 
   // Handle click outside to close dropdown
   useEffect(() => {

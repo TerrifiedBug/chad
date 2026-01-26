@@ -28,8 +28,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   // Cleanup timeouts on unmount
   useEffect(() => {
+    const currentRefs = timeoutRefs.current
     return () => {
-      timeoutRefs.current.forEach((timeoutId) => clearTimeout(timeoutId))
+      currentRefs.forEach((timeoutId) => clearTimeout(timeoutId))
     }
   }, [])
 
@@ -41,7 +42,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       timeoutRefs.current.delete(id)
     }, 3000)
     timeoutRefs.current.set(id, timeoutId)
-  }, [])
+  }, [timeoutRefs])
 
   const getToastClasses = (type: ToastType) => {
     switch (type) {

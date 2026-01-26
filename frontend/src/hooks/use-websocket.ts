@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 
 interface WebSocketMessage {
   type: string
-  data?: any
+  data?: unknown
   message?: string
 }
 

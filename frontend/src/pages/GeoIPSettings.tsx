@@ -36,7 +36,7 @@ export default function GeoIPSettings() {
     try {
       const data = await geoipApi.getSettings()
       setSettings(data)
-    } catch (err) {
+    } catch {
       console.log('Failed to load GeoIP settings')
     } finally {
       setIsLoading(false)

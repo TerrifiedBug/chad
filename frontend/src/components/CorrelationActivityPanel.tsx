@@ -11,7 +11,7 @@ interface AuditItem {
   action: string
   user_email: string | null
   created_at: string
-  details: any
+  details: Record<string, unknown>
 }
 
 export function CorrelationActivityPanel({ correlationId }: CorrelationActivityPanelProps) {

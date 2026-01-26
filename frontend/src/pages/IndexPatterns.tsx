@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   indexPatternsApi,
   IndexPattern,
@@ -120,12 +120,8 @@ export default function IndexPatternsPage() {
   // Track if user has manually edited percolator_index
   const [percolatorIndexManuallyEdited, setPercolatorIndexManuallyEdited] = useState(false)
 
-  useEffect(() => {
-    loadPatterns()
-    loadTiSources()
-  }, [])
-
-  const loadTiSources = async () => {
+  // Load functions - must be declared before useEffect that uses them
+  const loadTiSources = useCallback(async () => {
     try {
       const status = await tiApi.listSources()
       // Get sources that have API keys configured (sources is an array)
@@ -137,9 +133,9 @@ export default function IndexPatternsPage() {
       // If TI sources fail to load, continue without them
       setAvailableTiSources([])
     }
-  }
+  }, [])
 
-  const loadPatterns = async () => {
+  const loadPatterns = useCallback(async () => {
     setIsLoading(true)
     setError('')
     try {
@@ -151,7 +147,12 @@ export default function IndexPatternsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadPatterns()
+    loadTiSources()
+  }, [loadPatterns, loadTiSources])
 
   const loadHealthData = async () => {
     try {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { alertsApi, correlationRulesApi, Alert, AlertStatus, TIEnrichmentIndicator, CorrelationRule } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
@@ -378,13 +378,8 @@ export default function AlertDetailPage() {
   const [error, setError] = useState('')
   const [correlations, setCorrelations] = useState<CorrelationRule[]>([])
 
-  useEffect(() => {
-    if (id) {
-      loadAlert()
-    }
-  }, [id])
-
-  const loadAlert = async () => {
+  // Load alert function - must be declared before useEffect that uses it
+  const loadAlert = useCallback(async () => {
     if (!id) return
     setIsLoading(true)
     setError('')
@@ -400,7 +395,13 @@ export default function AlertDetailPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [id])
+
+  useEffect(() => {
+    if (id) {
+      loadAlert()
+    }
+  }, [id, loadAlert])
 
   const loadCorrelations = async (ruleId: string) => {
     try {

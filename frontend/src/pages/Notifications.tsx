@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useCallback } from 'react'
 import { webhooksApi, notificationsApi, jiraApi, Webhook, WebhookProvider, NotificationSettings, JiraConfig, JiraConfigUpdate, JiraProject, JiraIssueType } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
@@ -255,13 +254,13 @@ export default function Notifications() {
       setJiraIssueTypes([])
     } else if (jiraConfig.jira_url && jiraConfig.has_api_token) {
       // Load projects if we have a URL
-      loadJiraProjects(jiraConfig.jira_url)
+      loadJiraProjects()
     }
 
     setJiraModalOpen(true)
   }
 
-  const loadJiraProjects = async (jiraUrl: string) => {
+  const loadJiraProjects = async () => {
     try {
       const projects = await jiraApi.getProjects()
       setJiraProjects(projects)
@@ -421,11 +420,8 @@ export default function Notifications() {
     }
   }
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
+  // Load data function - must be declared before useEffect that uses it
+  const loadData = useCallback(async () => {
     try {
       const [webhooksData, notificationData, jiraStatus] = await Promise.all([
         webhooksApi.list(),
@@ -441,7 +437,11 @@ export default function Notifications() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [showToast])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const SystemEventsSection = ({ webhookId }: { webhookId: string }) => (
     <div className="space-y-4">
