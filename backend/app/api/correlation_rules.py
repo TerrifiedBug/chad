@@ -190,6 +190,7 @@ async def create_correlation_rule(
         },
         ip_address=get_client_ip(request),
     )
+    await db.commit()
 
     return CorrelationRuleResponse(
         id=str(rule.id),
@@ -267,6 +268,7 @@ async def update_correlation_rule(
         },
         ip_address=get_client_ip(request),
     )
+    await db.commit()
 
     # Get rule titles
     rule_a_result = await db.execute(
@@ -337,6 +339,7 @@ async def delete_correlation_rule(
         rule_details,
         ip_address=get_client_ip(request),
     )
+    await db.commit()
 
     return {"message": "Correlation rule deleted"}
 
@@ -377,6 +380,7 @@ async def toggle_correlation_rule(
         },
         ip_address=get_client_ip(request),
     )
+    await db.commit()
 
     # Get rule titles
     rule_a_result = await db.execute(
