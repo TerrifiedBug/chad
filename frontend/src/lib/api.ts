@@ -1,3 +1,5 @@
+import { getErrorMessage, logError } from './errors'
+
 const API_BASE = '/api'
 
 export class ApiClient {
@@ -51,7 +53,8 @@ export class ApiClient {
     this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-      throw new Error(error.detail || 'Request failed')
+      logError(error, 'GET ' + path)
+      throw new Error(getErrorMessage(error))
     }
     return response.json()
   }
@@ -65,7 +68,8 @@ export class ApiClient {
     this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-      throw new Error(error.detail || 'Request failed')
+      logError(error, 'POST ' + path)
+      throw new Error(getErrorMessage(error))
     }
     return response.json()
   }
@@ -79,7 +83,8 @@ export class ApiClient {
     this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-      throw new Error(error.detail || 'Request failed')
+      logError(error, 'PATCH ' + path)
+      throw new Error(getErrorMessage(error))
     }
     return response.json()
   }
@@ -92,7 +97,8 @@ export class ApiClient {
     this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-      throw new Error(error.detail || 'Request failed')
+      logError(error, 'DELETE ' + path)
+      throw new Error(getErrorMessage(error))
     }
   }
 
@@ -105,7 +111,8 @@ export class ApiClient {
     this.updateCsrfToken(response)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-      throw new Error(error.detail || 'Request failed')
+      logError(error, 'PUT ' + path)
+      throw new Error(getErrorMessage(error))
     }
     return response.json()
   }
@@ -429,18 +436,19 @@ export const rulesApi = {
     })
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-      // Check if this is an unmapped fields error
-      if (error.error === 'unmapped_fields') {
+      logError(error, 'deploy')
+      // Check if this is an unmapped fields error (legacy format)
+      if ((error as { error?: string }).error === 'unmapped_fields') {
         throw new DeploymentUnmappedFieldsError(error as UnmappedFieldsError)
       }
-      throw new Error(error.detail || error.message || 'Request failed')
+      throw new Error(getErrorMessage(error))
     }
     return response.json()
   },
   undeploy: (id: string) =>
     api.post<{ success: boolean }>(`/rules/${id}/undeploy`),
   rollback: (id: string, version: number) =>
-    api.post<RuleDeployResponse>(`/rules/${id}/rollback`, { version }),
+    api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`),
   // Exceptions
   listExceptions: (ruleId: string) =>
     api.get<RuleException[]>(`/rules/${ruleId}/exceptions`),

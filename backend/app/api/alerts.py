@@ -2,11 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
+from app.core.errors import not_found
 from app.db.session import get_db
 from app.utils.request import get_client_ip
 from app.models.user import User
@@ -68,7 +69,7 @@ async def get_alert(
     alert = alert_service.get_alert(index_pattern, alert_id)
 
     if alert is None:
-        raise HTTPException(404, "Alert not found")
+        raise not_found("Alert", details={"alert_id": alert_id})
 
     return alert
 
@@ -89,7 +90,7 @@ async def update_alert_status(
     # First find the alert to get its index
     alert = alert_service.get_alert(index_pattern, alert_id)
     if alert is None:
-        raise HTTPException(404, "Alert not found")
+        raise not_found("Alert", details={"alert_id": alert_id})
 
     # Find the actual index the alert is in
     result = os_client.search(
@@ -98,7 +99,7 @@ async def update_alert_status(
     )
     hits = result.get("hits", {}).get("hits", [])
     if not hits:
-        raise HTTPException(404, "Alert not found")
+        raise not_found("Alert", details={"alert_id": alert_id})
 
     alert_index = hits[0]["_index"]
 

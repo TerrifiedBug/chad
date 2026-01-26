@@ -2,8 +2,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.core.sanitization import sanitize_html
 from app.models.rule import RuleSource, RuleStatus
 from app.schemas.index_pattern import IndexPatternResponse
 
@@ -14,6 +15,14 @@ class RuleBase(BaseModel):
     yaml_content: str
     severity: str = "medium"
     index_pattern_id: UUID
+
+    @field_validator('description')
+    @classmethod
+    def sanitize_description(cls, v: str | None) -> str | None:
+        """Sanitize HTML in description to prevent XSS."""
+        if v is None:
+            return None
+        return sanitize_html(v, allow_tags=['p', 'br', 'strong', 'em', 'u', 'a', 'ul', 'ol', 'li', 'code', 'pre'])
 
 
 class RuleCreate(RuleBase):

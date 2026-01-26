@@ -1111,46 +1111,6 @@ async def rollback_rule(
     await audit_log(db, current_user.id, "rule.rollback", "rule", str(rule.id), {"title": rule.title, "from_version": version_number, "to_version": new_version_number}, ip_address=get_client_ip(request))
     await db.commit()
 
-    # If rule was deployed, redeploy with new content
-    if rule.deployed_at is not None:
-        # First validate the rule
-        validation = sigma_service.translate_and_validate(rule.yaml_content)
-        if validation.success:
-            # Extract fields and resolve mappings
-            sigma_fields = list(validation.fields or set())
-            field_mappings_dict: dict[str, str] = {}
-
-            if sigma_fields and rule.index_pattern_id:
-                resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
-                field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
-
-            # Translate with field mappings
-            translation = sigma_service.translate_with_mappings(
-                rule.yaml_content, field_mappings_dict if field_mappings_dict else None
-            )
-            if translation.success:
-                percolator = PercolatorService(os_client)
-                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-
-                parsed_rule = yaml.safe_load(rule.yaml_content)
-                tags = parsed_rule.get("tags", [])
-
-                # Extract inner query for percolator
-                percolator_query = translation.query.get("query", translation.query)
-
-                percolator.deploy_rule(
-                    percolator_index=percolator_index,
-                    rule_id=str(rule.id),
-                    query=percolator_query,
-                    title=rule.title,
-                    severity=rule.severity,
-                    tags=tags,
-                    enabled=(rule.status == RuleStatus.DEPLOYED),
-                )
-
-                rule.deployed_version = new_version_number
-                await db.commit()
-
     return RuleRollbackResponse(
         success=True,
         new_version_number=new_version_number,
@@ -1897,4 +1857,6 @@ async def get_rule_version(
         version_number=version.version_number,
         yaml_content=version.yaml_content,
         created_at=version.created_at,
+        change_reason=version.change_reason,
+        changed_by=version.changed_by,
     )

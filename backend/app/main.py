@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
@@ -9,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from app.core.errors import http_error_handler, HTTPError
+from app.core.logging import setup_logging
 
 from app.api.alerts import router as alerts_router
 from app.api.api_keys import router as api_keys_router
@@ -46,6 +50,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown."""
+    # Setup structured logging first
+    setup_logging()
+
     # Startup
     # CRITICAL SECURITY CHECK: Reject insecure secret defaults in production
     if not settings.DEBUG:
@@ -109,6 +116,36 @@ app = FastAPI(
     redirect_slashes=False,  # Disable automatic trailing slash redirects to avoid hostname issues in proxied environments
 )
 
+# Register custom exception handler for standardized error responses
+app.add_exception_handler(HTTPError, http_error_handler)
+
+# Request ID middleware (add first for request tracking)
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    """Add unique request ID for tracking and debugging."""
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+
+    # Bind request_id to structlog context if available
+    try:
+        import structlog
+        # Bind request_id to all log entries during this request
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+    except ImportError:
+        pass  # structlog not available, skip
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+
+    # Clear contextvars after request
+    try:
+        structlog.contextvars.clear_contextvars()
+    except Exception:
+        pass
+
+    return response
+
 # Session middleware (required for OAuth state)
 # SameSite=lax is required for OAuth to work (callback from identity provider)
 # CSRF protection is still provided by the CSRF middleware
@@ -168,6 +205,33 @@ async def add_security_headers(request: Request, call_next):
 
     # Referrer policy for privacy
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Permissions-Policy (formerly Feature-Policy)
+    # Control which browser features can be used
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), "
+        "microphone=(), "
+        "camera=(), "
+        "payment=(), "
+        "usb=(), "
+        "magnetometer=(), "
+        "gyroscope=(), "
+        "accelerometer=()"
+    )
+
+    # Cross-Origin-Opener-Policy
+    # Isolate browsing contexts and prevent window.opener access
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+
+    # Cross-Origin-Resource-Policy
+    # Prevent other origins from reading resources
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+
+    # Cross-Origin-Embedder-Policy
+    # Require CORP headers for cross-origin resources
+    # Note: Set to 'credentialless' instead of 'require-corp' to allow third-party scripts
+    # This is more compatible while still providing security benefits
+    response.headers["Cross-Origin-Embedder-Policy"] = "credentialless"
 
     # Only enable HSTS in production with HTTPS
     if not settings.DEBUG:

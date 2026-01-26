@@ -734,9 +734,9 @@ export default function RuleEditorPage() {
   // Restore version handler for activity panel
   const handleRestoreVersion = async (versionNumber: number) => {
     try {
-      const version = await rulesApi.getVersion(id!, versionNumber)
-      setYamlContent(version.yaml_content)
-      setOriginalYaml(version.yaml_content) // Update baseline to restored version
+      await rulesApi.rollback(id!, versionNumber)
+      // Reload the rule to get the new version
+      await loadRule()
       setIsActivityOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to restore version')
