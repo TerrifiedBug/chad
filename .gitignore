@@ -44,3 +44,6 @@ test-results/
 
 # Load test results
 tests/load/results/*.json
+
+# Git worktrees
+.worktrees/
