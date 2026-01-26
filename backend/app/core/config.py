@@ -71,8 +71,13 @@ class Settings(BaseSettings):
     # Only set explicitly for local dev with different ports
     FRONTEND_URL: str = "/"
 
-    # Note: APP_URL is now managed via GUI in Settings > General
-    # Use app.services.settings.get_app_url() to retrieve it
+    # Application URL (from environment)
+    # Public URL where the application is accessible
+    # Used for CSRF validation, webhook URLs, SSO redirects
+    APP_URL: str | None = None
+
+    # Trusted proxies (for X-Forwarded-* headers)
+    TRUSTED_PROXIES: str = "*"  # Trust all proxies in production
 
     @field_validator('JWT_SECRET_KEY', 'SESSION_SECRET_KEY')
     @classmethod
