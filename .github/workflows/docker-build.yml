@@ -56,7 +56,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
-          no-cache: true  # Clear poisoned layers from macOS node_modules
 
       - name: Extract metadata for backend
         id: meta-backend
