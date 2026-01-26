@@ -15,6 +15,15 @@ on:
       - 'frontend/vite.config.ts'
   pull_request:
     branches: [main]
+    paths:
+      - 'backend/app/**'
+      - 'backend/Dockerfile'
+      - 'backend/pyproject.toml'
+      - 'backend/requirements.txt'
+      - 'frontend/src/**'
+      - 'frontend/Dockerfile'
+      - 'frontend/package.json'
+      - 'frontend/vite.config.ts'
   workflow_dispatch:  # Allow manual triggering
 
 env:
