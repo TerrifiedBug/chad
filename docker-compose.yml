@@ -15,7 +15,7 @@ services:
       retries: 5
 
   backend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-local}/chad-backend:${VERSION:-latest}
+    image: ghcr.io/TerrifiedBug/chad-backend:${VERSION:-latest}
     environment:
       # Database
       - POSTGRES_HOST=postgres
@@ -34,7 +34,7 @@ services:
       - chad_data:/data
 
   frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-local}/chad-frontend:${VERSION:-latest}
+    image: ghcr.io/TerrifiedBug/chad-frontend:${VERSION:-latest}
     ports:
       - "80:80"
     depends_on:
