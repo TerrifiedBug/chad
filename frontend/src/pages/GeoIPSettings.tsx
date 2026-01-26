@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Check, Download, Globe, Loader2 } from 'lucide-react'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
 export default function GeoIPSettings() {
   const { showToast } = useToast()
@@ -199,7 +200,10 @@ export default function GeoIPSettings() {
                     Available ({settings.database_info.size_mb.toFixed(1)} MB)
                     <br />
                     <span className="text-xs">
-                      Last updated: {new Date(settings.database_info.modified_at).toLocaleString()}
+                      Last updated:{' '}
+                      <TimestampTooltip timestamp={settings.database_info.modified_at}>
+                        <span>{new Date(settings.database_info.modified_at).toLocaleString()}</span>
+                      </TimestampTooltip>
                     </span>
                   </p>
                 ) : (
