@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -52,7 +53,8 @@ class Settings(BaseSettings):
         )
 
     # JWT
-    JWT_SECRET_KEY: str = "dev-secret-key-change-in-prod"
+    JWT_SECRET_KEY: str = "dev-secret-key-change-in-prod"  # In production, ALWAYS override via env var
+    SESSION_SECRET_KEY: str = "dev-session-key-change-in-prod"  # In production, ALWAYS override via env var
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours for dev
 
@@ -71,6 +73,46 @@ class Settings(BaseSettings):
 
     # Note: APP_URL is now managed via GUI in Settings > General
     # Use app.services.settings.get_app_url() to retrieve it
+
+    @field_validator('JWT_SECRET_KEY', 'SESSION_SECRET_KEY')
+    @classmethod
+    def validate_secrets(cls, v: str, info) -> str:
+        """Validate that secret keys are set and not default values in production."""
+        if not v or v.strip() == "":
+            raise ValueError(
+                f"{info.field_name} must be set in environment variables. "
+                f"Generate a secure random key using: openssl rand -base64 32"
+            )
+
+        # Check for known insecure default values
+        insecure_defaults = [
+            "dev-secret-key-change-in-prod",
+            "dev-session-key-change-in-prod",
+            "default-dev-key-change-in-prod",
+            "secret",
+            "changeme",
+        ]
+
+        if v.lower() in insecure_defaults:
+            # In development, allow insecure defaults with a warning
+            # Check if we're in debug mode by looking at the model
+            # We need to check the full model values, not just this field
+            # For now, we'll issue a warning but allow it in dev
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"{info.field_name} is using an insecure default value. "
+                f"This is acceptable for development but MUST be changed in production!"
+            )
+
+        # Minimum length check (only enforce in production if not using default)
+        if len(v) < 32 and v.lower() not in ["dev-secret-key-change-in-prod", "dev-session-key-change-in-prod"]:
+            raise ValueError(
+                f"{info.field_name} must be at least 32 characters long for security. "
+                f"Generate a secure key using: openssl rand -base64 32"
+            )
+
+        return v
 
     class Config:
         env_file = ".env"

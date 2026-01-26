@@ -19,25 +19,11 @@ export function ProtectedRoute({
   const { showToast } = useToast()
   const hasLoggedRef = useRef<string>('')
 
-  // Show loading state while checking auth
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading...</div>
-      </div>
-    )
-  }
-
-  // Not authenticated
-  if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />
-  }
-
-  // Authenticated but missing permission
-  if (permission && !hasPermission(permission)) {
-    const logKey = `${location.pathname}-${permission}`
-
-    useEffect(() => {
+  // Log access denied attempts (must be before conditional returns)
+  const logKey = `${location.pathname}-${permission}`
+  useEffect(() => {
+    // Only log and show toast if user is authenticated but lacks permission
+    if (isAuthenticated && permission && !hasPermission(permission)) {
       // Only log and show toast once per route access
       if (hasLoggedRef.current !== logKey) {
         hasLoggedRef.current = logKey
@@ -59,8 +45,25 @@ export function ProtectedRoute({
         // Show toast notification
         showToast('You do not have permission to access this page', 'error')
       }
-    }, [location.pathname, permission, user?.role, logKey, showToast])
+    }
+  }, [isAuthenticated, permission, hasPermission, location.pathname, user?.role, logKey, showToast])
 
+  // Show loading state while checking auth
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  // Not authenticated
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // Authenticated but missing permission
+  if (permission && !hasPermission(permission)) {
     return <Navigate to={redirectTo} replace />
   }
 

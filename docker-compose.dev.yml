@@ -29,6 +29,7 @@ services:
       - POSTGRES_DB=chad
       # Security (CHANGE IN PRODUCTION)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-prod}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}
       # Frontend URL for SSO redirects (local dev needs explicit URL due to different ports)
       - FRONTEND_URL=http://localhost:3000
     ports:

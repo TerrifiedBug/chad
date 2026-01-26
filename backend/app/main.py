@@ -1,13 +1,20 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.alerts import router as alerts_router
 from app.api.api_keys import router as api_keys_router
 from app.api.attack import router as attack_router
+from app.api.circuit_breakers import router as circuit_breakers_router
+from app.api.deps import get_db
 from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
 from app.api.correlation_rules import router as correlation_rules_router
@@ -29,6 +36,7 @@ from app.api.users import router as users_router
 from app.api.webhooks import router as webhooks_router
 from app.api.websocket import router as websocket_router
 from app.core.config import settings
+from app.core.middleware import ErrorResponseMiddleware, RequestValidationMiddleware
 from app.services.scheduler import scheduler_service
 
 logger = logging.getLogger(__name__)
@@ -64,9 +72,9 @@ app = FastAPI(
 # Session middleware (required for OAuth state)
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.JWT_SECRET_KEY,
-    same_site="lax",  # Required for OAuth redirects
-    https_only=False,  # Security handled via same_site; APP_URL is now db-configurable
+    secret_key=settings.SESSION_SECRET_KEY,  # Separate from JWT secret for key separation
+    same_site="lax",  # Required for OAuth redirects (cross-origin callbacks)
+    https_only=not settings.DEBUG,  # Enforce HTTPS in production
 )
 
 # CORS middleware
@@ -79,9 +87,117 @@ app.add_middleware(
 )
 
 
+# Production security middleware
+if not settings.DEBUG:
+    # Prevent host header attacks (configure allowed hosts via env var)
+    allowed_hosts = os.environ.get("ALLOWED_HOSTS", "")
+    if allowed_hosts:
+        app.add_middleware(
+            TrustedHostMiddleware,
+            allowed_hosts=[h.strip() for h in allowed_hosts.split(",")]
+        )
+
+    # NOTE: HTTPSRedirectMiddleware is disabled when behind reverse proxy
+    # The reverse proxy (nginx) handles HTTPS termination
+    # Only enable if FastAPI is directly exposed to the internet
+    # app.add_middleware(HTTPSRedirectMiddleware)
+
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add OWASP-recommended security headers to all responses."""
+    response = await call_next(request)
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Prevent clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # Enable browser XSS filter (not needed in modern browsers but defense-in-depth)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # Referrer policy for privacy
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Only enable HSTS in production with HTTPS
+    if not settings.DEBUG:
+        # Enforce HTTPS for 1 year including subdomains
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # Content Security Policy (basic - tighten based on your needs)
+    # For now, allow same-origin and data: for images
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
+
+    return response
+
+
+# Request validation middleware
+app.add_middleware(
+    RequestValidationMiddleware,
+    max_request_size=10 * 1024 * 1024,  # 10 MB
+    enforce_content_type=True,
+)
+
+
+# Error response middleware (add last to catch all errors)
+app.add_middleware(ErrorResponseMiddleware)
+
+
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """Health check endpoint for container orchestration.
+
+    Returns 200 if all critical services are healthy, 503 otherwise.
+    Checks database connectivity and returns appropriate status codes.
+    """
+    from sqlalchemy import text
+
+    checks = {
+        "status": "healthy",
+        "database": False,
+        "opensearch": False,
+    }
+
+    # Check database connectivity
+    try:
+        await db.execute(text("SELECT 1"))
+        checks["database"] = True
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        checks["status"] = "unhealthy"
+
+    # Check OpenSearch if configured (optional - don't fail health if not configured)
+    try:
+        from app.services.settings import get_setting
+        opensearch_setting = await get_setting(db, "opensearch")
+        if opensearch_setting:
+            # OpenSearch is configured, check connectivity
+            from app.services.opensearch import get_opensearch_client
+            client = get_opensearch_client()
+            if client:
+                info = await client.info()
+                if info and info.get("status") == 200:
+                    checks["opensearch"] = True
+    except Exception as e:
+        logger.warning(f"OpenSearch health check failed: {e}")
+        # Don't fail the health check for OpenSearch issues (it's optional)
+        checks["opensearch"] = False
+
+    # Determine overall status
+    # Database is critical - must be healthy
+    status_code = 200 if checks["database"] else 503
+
+    return JSONResponse(content=checks, status_code=status_code)
 
 
 # Include routers with /api prefix
@@ -89,6 +205,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(rules_router, prefix="/api")
 app.include_router(index_patterns_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
+app.include_router(circuit_breakers_router, prefix="/api")
 app.include_router(alerts_router, prefix="/api")
 app.include_router(logs_router, prefix="/api")
 app.include_router(stats_router, prefix="/api")

@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from app.core.circuit_breaker import get_circuit_breaker
 from app.core.encryption import decrypt
 from app.models.jira_config import JiraConfig
 
@@ -43,6 +44,15 @@ class JiraService:
         self._default_project = config.default_project
         self._default_issue_type = config.default_issue_type
 
+        # Initialize circuit breaker for Jira API calls
+        # Opens after 5 consecutive failures, tries again after 60 seconds
+        self._circuit_breaker = get_circuit_breaker(
+            service_name="jira",
+            failure_threshold=5,
+            recovery_timeout=60.0,
+            expected_exception=(JiraAPIError, httpx.TimeoutException, httpx.RequestError),
+        )
+
     def _get_auth_header(self) -> str:
         """
         Generate Basic Auth header value.
@@ -74,7 +84,7 @@ class JiraService:
         timeout: float = 30.0,
     ) -> dict[str, Any]:
         """
-        Make an HTTP request to the Jira API.
+        Make an HTTP request to the Jira API (protected by circuit breaker).
 
         Args:
             method: HTTP method (GET, POST, etc.)
@@ -88,9 +98,10 @@ class JiraService:
         Raises:
             JiraAPIError: If the API returns an error
         """
-        url = f"{self._base_url}{endpoint}"
+        # Define the actual HTTP request logic
+        async def _execute_request() -> dict[str, Any]:
+            url = f"{self._base_url}{endpoint}"
 
-        try:
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method=method,
@@ -127,17 +138,16 @@ class JiraService:
                     details=error_details,
                 )
 
-        except httpx.TimeoutException as e:
-            logger.error(f"Jira API timeout: {url}")
-            raise JiraAPIError(
-                message="Request timed out while connecting to Jira",
-                details={"timeout": timeout},
-            ) from e
-        except httpx.RequestError as e:
-            logger.error(f"Jira API network error: {e}")
-            raise JiraAPIError(
-                message=f"Network error while connecting to Jira: {str(e)}",
-            ) from e
+        # Execute through circuit breaker
+        try:
+            return await self._circuit_breaker.call(_execute_request)
+        except Exception as e:
+            # Re-raise known exceptions
+            if isinstance(e, (JiraAPIError, httpx.TimeoutException, httpx.RequestError)):
+                raise
+            # Wrap unexpected exceptions
+            logger.error(f"Unexpected error in Jira API call: {e}")
+            raise JiraAPIError(message=f"Unexpected error: {str(e)}") from e
 
     async def test_connection(self) -> bool:
         """

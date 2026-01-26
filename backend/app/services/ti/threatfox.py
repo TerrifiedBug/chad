@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from app.core.circuit_breaker import get_circuit_breaker
 from app.services.ti.base import (
     TIClient,
     TIIndicatorType,
@@ -53,8 +54,16 @@ class ThreatFoxClient(TIClient):
             timeout=timeout,
         )
 
+        # Initialize circuit breaker for ThreatFox API calls
+        self._circuit_breaker = get_circuit_breaker(
+            service_name="threatfox",
+            failure_threshold=5,
+            recovery_timeout=60.0,
+            expected_exception=(httpx.HTTPError, httpx.TimeoutException, httpx.RequestError),
+        )
+
     async def _search_ioc(self, search_term: str) -> dict[str, Any] | None:
-        """Search for an IOC in ThreatFox.
+        """Search for an IOC in ThreatFox (protected by circuit breaker).
 
         Args:
             search_term: The IOC to search for.
@@ -62,7 +71,8 @@ class ThreatFoxClient(TIClient):
         Returns:
             Search results or None if not found.
         """
-        try:
+        # Define the actual API request logic
+        async def _execute_search() -> dict[str, Any]:
             response = await self._client.post(
                 "/",
                 json={
@@ -75,12 +85,23 @@ class ThreatFoxClient(TIClient):
 
             # ThreatFox returns query_status: "no_result" when not found
             if data.get("query_status") != "ok":
-                return None
+                # Return a special marker for "not found" (not an error)
+                return {"_not_found": True}
 
             return data
 
+        # Execute through circuit breaker
+        try:
+            result = await self._circuit_breaker.call(_execute_search)
+
+            # Check if it's a "not found" result
+            if isinstance(result, dict) and result.get("_not_found"):
+                return None
+
+            return result
+
         except Exception as e:
-            logger.error(f"ThreatFox search error: {e}")
+            logger.error(f"ThreatFox search error for '{search_term}': {e}")
             raise
 
     def _calculate_risk_level(self, confidence_level: int | None) -> TIRiskLevel:

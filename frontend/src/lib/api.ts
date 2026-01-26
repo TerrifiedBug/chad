@@ -14,7 +14,7 @@ class ApiClient {
 
   async get<T>(path: string): Promise<T> {
     // Add cache-busting for rule detail requests
-    let fetchPath = path
+    const fetchPath = path
     let fetchOptions: RequestInit = { headers: this.getHeaders() }
 
     // Add cache control headers for rules endpoint to prevent caching
