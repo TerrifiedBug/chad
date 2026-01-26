@@ -1,10 +1,17 @@
 # Build stage
 FROM node:20-slim AS build
 WORKDIR /app
-COPY package*.json ./
-# Regenerate package-lock.json for Linux platform (fixes npm optional dependency bug)
-RUN rm -f package-lock.json && npm install
+
+# Copy only dependency files first (cache-friendly)
+COPY package.json package-lock.json ./
+
+# Install deps for *this OS*
+RUN npm ci
+
+# Now copy the rest of the source
 COPY . .
+
+# Build
 RUN npm run build
 
 # Production stage
