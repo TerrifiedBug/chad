@@ -1,4 +1,10 @@
 import { format } from 'date-fns'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './ui/tooltip'
 
 interface TimestampTooltipProps {
   timestamp: string | null
@@ -13,9 +19,16 @@ export function TimestampTooltip({ timestamp, children }: TimestampTooltipProps)
     const fullDate = format(date, 'MMM d, yyyy HH:mm:ss UTC')
 
     return (
-      <div title={fullDate} className="inline-block cursor-help">
-        {children}
-      </div>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-block cursor-help">{children}</span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{fullDate}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     )
   } catch {
     return children
