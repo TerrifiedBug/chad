@@ -165,7 +165,7 @@ export default function CorrelationRulesPage() {
                       </TimestampTooltip>
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
-                      -
+                      {rule.last_edited_by || '-'}
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>

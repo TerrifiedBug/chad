@@ -39,6 +39,7 @@ class CorrelationRuleResponse(CorrelationRuleBase):
     created_at: datetime
     updated_at: datetime
     created_by: str | None
+    last_edited_by: str | None = None
 
     # Include related rule info
     rule_a_title: str | None = None

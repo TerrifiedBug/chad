@@ -39,7 +39,10 @@ async def list_correlation_rules(
     result = await db.execute(query)
     rules = result.scalars().all()
 
-    # Enrich with rule titles
+    # Enrich with rule titles and last edited by
+    from app.models.audit_log import AuditLog
+    from app.models.user import User
+
     rule_responses = []
     for rule in rules:
         # Get rule A title
@@ -54,6 +57,21 @@ async def list_correlation_rules(
         )
         rule_b_title = rule_b_result.scalar_one_or_none()
 
+        # Get last edited by from audit logs
+        last_edited_by = None
+        audit_result = await db.execute(
+            select(AuditLog, User)
+            .join(User, AuditLog.user_id == User.id, isouter=True)
+            .where(AuditLog.resource_type == "correlation_rule")
+            .where(AuditLog.resource_id == str(rule.id))
+            .where(AuditLog.action.in_(["correlation_rule_created", "correlation_rule_updated"]))
+            .order_by(AuditLog.created_at.desc())
+            .limit(1)
+        )
+        audit_entry = audit_result.first()
+        if audit_entry and audit_entry.User:
+            last_edited_by = audit_entry.User.email
+
         rule_responses.append(
             CorrelationRuleResponse(
                 id=str(rule.id),
@@ -67,6 +85,7 @@ async def list_correlation_rules(
                 created_at=rule.created_at,
                 updated_at=rule.updated_at,
                 created_by=str(rule.created_by) if rule.created_by else None,
+                last_edited_by=last_edited_by,
                 rule_a_title=rule_a_title,
                 rule_b_title=rule_b_title,
             )
@@ -104,6 +123,24 @@ async def get_correlation_rule(
     )
     rule_b_title = rule_b_result.scalar_one_or_none()
 
+    # Get last edited by from audit logs
+    from app.models.audit_log import AuditLog
+    from app.models.user import User
+
+    last_edited_by = None
+    audit_result = await db.execute(
+        select(AuditLog, User)
+        .join(User, AuditLog.user_id == User.id, isouter=True)
+        .where(AuditLog.resource_type == "correlation_rule")
+        .where(AuditLog.resource_id == rule_id)
+        .where(AuditLog.action.in_(["correlation_rule_created", "correlation_rule_updated"]))
+        .order_by(AuditLog.created_at.desc())
+        .limit(1)
+    )
+    audit_entry = audit_result.first()
+    if audit_entry and audit_entry.User:
+        last_edited_by = audit_entry.User.email
+
     return CorrelationRuleResponse(
         id=str(rule.id),
         name=rule.name,
@@ -116,6 +153,7 @@ async def get_correlation_rule(
         created_at=rule.created_at,
         updated_at=rule.updated_at,
         created_by=str(rule.created_by) if rule.created_by else None,
+        last_edited_by=last_edited_by,
         rule_a_title=rule_a_title,
         rule_b_title=rule_b_title,
     )

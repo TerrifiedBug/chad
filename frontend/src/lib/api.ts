@@ -1543,6 +1543,7 @@ export type CorrelationRule = {
   created_at: string
   updated_at: string
   created_by?: string
+  last_edited_by?: string | null
 }
 
 export type CorrelationRuleCreate = {
