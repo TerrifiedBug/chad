@@ -394,6 +394,36 @@ async def update_rule(
             ip_address=client_ip,
         )
 
+    # Check for threshold changes and log them
+    threshold_fields = ["threshold_enabled", "threshold_count", "threshold_window_minutes", "threshold_group_by"]
+    threshold_changes = {}
+    for field in threshold_fields:
+        if field in update_data:
+            old_value = getattr(rule, field, None)
+            new_value = update_data[field]
+            if old_value != new_value:
+                threshold_changes[field] = {"old": old_value, "new": new_value}
+
+    if threshold_changes:
+        # Determine action type based on what changed
+        if "threshold_enabled" in threshold_changes:
+            action = "threshold_enabled" if threshold_changes["threshold_enabled"]["new"] else "threshold_disabled"
+        else:
+            action = "threshold_updated"
+
+        await audit_log(
+            db,
+            current_user.id,
+            action,
+            "rule",
+            str(rule_id),
+            {
+                "rule_title": rule.title,
+                "changes": threshold_changes,
+            },
+            ip_address=get_client_ip(request),
+        )
+
     for field, value in update_data.items():
         if field != "change_reason":  # Skip - belongs to RuleVersion, not Rule
             setattr(rule, field, value)
@@ -1311,7 +1341,21 @@ async def create_rule_exception(
     db.add(exception)
     await db.commit()
     await db.refresh(exception)
-    await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field}, ip_address=get_client_ip(request))
+    await audit_log(
+        db,
+        current_user.id,
+        "exception.create",
+        "rule_exception",
+        str(rule_id),
+        {
+            "exception_id": str(exception.id),
+            "field": exception.field,
+            "operator": exception.operator,
+            "value": exception.value,
+            "reason": exception.reason,
+        },
+        ip_address=get_client_ip(request),
+    )
     await db.commit()
     return exception
 
@@ -1346,7 +1390,18 @@ async def update_rule_exception(
 
     await db.commit()
     await db.refresh(exception)
-    await audit_log(db, current_user.id, "exception.update", "rule_exception", str(exception.id), {"rule_id": str(rule_id)}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "exception.update", "rule_exception", str(rule_id),
+        {
+            "exception_id": str(exception.id),
+            "field": exception.field,
+            "operator": exception.operator,
+            "value": exception.value,
+            "reason": exception.reason,
+            "is_active": exception.is_active,
+        },
+        ip_address=get_client_ip(request),
+    )
     await db.commit()
     return exception
 
@@ -1375,7 +1430,18 @@ async def delete_rule_exception(
         raise HTTPException(status_code=404, detail="Exception not found")
 
     # Capture details before delete
-    await audit_log(db, current_user.id, "exception.delete", "rule_exception", str(exception_id), {"rule_id": str(rule_id)}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "exception.delete", "rule_exception", str(rule_id),
+        {
+            "exception_id": str(exception_id),
+            "field": exception.field,
+            "operator": exception.operator,
+            "value": exception.value,
+            "reason": exception.reason,
+            "is_active": exception.is_active,
+        },
+        ip_address=get_client_ip(request),
+    )
     await db.delete(exception)
     await db.commit()
 
@@ -1813,6 +1879,7 @@ async def get_rule_activity(
                 data={
                     "version_number": v.version_number,
                     "yaml_content": v.yaml_content,
+                    "change_reason": v.change_reason,
                 },
             )
         )
@@ -1840,18 +1907,41 @@ async def get_rule_activity(
         .outerjoin(User, AuditLog.user_id == User.id)
         .where(
             AuditLog.resource_id == str(rule_id),
-            AuditLog.action.in_(["rule.deploy", "rule.undeploy"]),
+            AuditLog.action.in_(["rule.deploy", "rule.undeploy", "exception.create", "exception.update", "exception.delete", "threshold_enabled", "threshold_disabled", "threshold_updated"]),
         )
     )
     for a, user in audit_result:
-        activities.append(
-            ActivityItem(
-                type="deploy" if a.action == "rule.deploy" else "undeploy",
-                timestamp=a.created_at,
-                user_email=user.email if user else None,
-                data=a.details or {},
+        if a.action in ["rule.deploy", "rule.undeploy"]:
+            activities.append(
+                ActivityItem(
+                    type="deploy" if a.action == "rule.deploy" else "undeploy",
+                    timestamp=a.created_at,
+                    user_email=user.email if user else None,
+                    data=a.details or {},
+                )
             )
-        )
+        elif a.action.startswith("exception."):
+            # Extract action from "exception.create", "exception.update", etc.
+            action = a.action.split(".", 1)[1]  # "create", "update", "delete"
+            activities.append(
+                ActivityItem(
+                    type="exception",
+                    timestamp=a.created_at,
+                    user_email=user.email if user else None,
+                    data={**(a.details or {}), "action": action},
+                )
+            )
+        elif a.action.startswith("threshold_"):
+            # Extract action from "threshold_enabled", "threshold_disabled", "threshold_updated"
+            action = a.action.split("_", 1)[1]  # "enabled", "disabled", "updated"
+            activities.append(
+                ActivityItem(
+                    type="threshold",
+                    timestamp=a.created_at,
+                    user_email=user.email if user else None,
+                    data={**(a.details or {}), "action": action},
+                )
+            )
 
     # Sort by timestamp descending
     activities.sort(key=lambda x: x.timestamp, reverse=True)

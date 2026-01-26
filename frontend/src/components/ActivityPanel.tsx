@@ -101,7 +101,9 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
   }
 
   const handleRestoreClick = (versionNumber: number, yaml: string, changeReason?: string) => {
-    setRestoreTarget({ versionNumber, yaml, changeReason })
+    // Ensure changeReason is always a string if provided
+    const safeChangeReason = changeReason && typeof changeReason === 'string' ? changeReason : undefined
+    setRestoreTarget({ versionNumber, yaml, changeReason: safeChangeReason })
   }
 
   const handleRestoreConfirm = async () => {
@@ -288,7 +290,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     onClick={() => handleRestoreClick(
                       Number(activity.data.version_number),
                       String(activity.data.yaml_content),
-                      activity.data.change_reason && typeof activity.data.change_reason === 'string' ? activity.data.change_reason : undefined
+                      activity.data.change_reason as string | undefined
                     )}
                   >
                     <RotateCcw className="h-3 w-3 mr-1" />
