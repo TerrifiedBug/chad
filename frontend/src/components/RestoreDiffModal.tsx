@@ -37,6 +37,13 @@ export function RestoreDiffModal({
     return diffLines(currentYaml, targetYaml)
   }, [currentYaml, targetYaml])
 
+  // Debug: Log when modal opens and what targetChangeReason is
+  if (isOpen) {
+    console.log('[RestoreDiffModal] isOpen:', isOpen)
+    console.log('[RestoreDiffModal] targetChangeReason:', targetChangeReason)
+    console.log('[RestoreDiffModal] targetVersion:', targetVersion)
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">

@@ -1,13 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, GitCommit, Rocket, MessageSquare, RotateCcw, ShieldAlert, TrendingUp } from 'lucide-react'
+import { X, GitCommit, Rocket, MessageSquare, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TooltipProvider } from '@/components/ui/tooltip'
 import { rulesApi, ActivityItem } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
 import { RestoreDiffModal } from './RestoreDiffModal'
-import { TimestampTooltip } from './timestamp-tooltip'
 
 interface ActivityPanelProps {
   ruleId: string
@@ -16,10 +14,9 @@ interface ActivityPanelProps {
   isOpen: boolean
   onClose: () => void
   onRestore: (versionNumber: number) => void
-  canManageRules?: boolean
 }
 
-export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onClose, onRestore, canManageRules = true }: ActivityPanelProps) {
+export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onClose, onRestore }: ActivityPanelProps) {
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
@@ -101,9 +98,12 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
   }
 
   const handleRestoreClick = (versionNumber: number, yaml: string, changeReason?: string) => {
-    // Ensure changeReason is always a string if provided
-    const safeChangeReason = changeReason && typeof changeReason === 'string' ? changeReason : undefined
-    setRestoreTarget({ versionNumber, yaml, changeReason: safeChangeReason })
+    console.log('[ActivityPanel] handleRestoreClick called with:', {
+      versionNumber,
+      changeReason,
+      yaml: yaml.substring(0, 50) + '...'
+    })
+    setRestoreTarget({ versionNumber, yaml, changeReason })
   }
 
   const handleRestoreConfirm = async () => {
@@ -120,7 +120,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
   if (!isOpen) return null
 
   return (
-    <TooltipProvider>
+    <>
       {/* Overlay for click-to-close */}
       <div
         className="fixed inset-0 bg-black/20 z-40"
@@ -159,8 +159,6 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     {activity.type === 'deploy' && <Rocket className="h-4 w-4 text-green-500" />}
                     {activity.type === 'undeploy' && <Rocket className="h-4 w-4 text-orange-500" />}
                     {activity.type === 'comment' && <MessageSquare className="h-4 w-4 text-purple-500" />}
-                    {activity.type === 'exception' && <ShieldAlert className="h-4 w-4 text-yellow-500" />}
-                    {activity.type === 'threshold' && <TrendingUp className="h-4 w-4 text-blue-500" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 text-sm">
@@ -173,61 +171,14 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                       {activity.type === 'comment' && (
                         <span className="font-medium">{activity.user_email}</span>
                       )}
-                      {activity.type === 'exception' && (
-                        <span className="text-yellow-600 font-medium">
-                          Exception {(() => {
-                            const action = String(activity.data.action || '')
-                            if (action === 'create') return 'Created'
-                            if (action === 'delete') return 'Deleted'
-                            if (action === 'update') {
-                              // Check if it's being enabled/disabled based on is_active
-                              const isActive = activity.data.is_active === true
-                              return isActive ? 'Enabled' : 'Disabled'
-                            }
-                            return 'Changed'
-                          })()}
-                        </span>
-                      )}
-                      {activity.type === 'threshold' && (
-                        <span className="text-blue-600 font-medium">
-                          Threshold Alerting {(() => {
-                            const action = String(activity.data.action || '')
-                            if (action === 'enabled') return 'Enabled'
-                            if (action === 'disabled') return 'Disabled'
-                            return 'Updated'
-                          })()}
-                        </span>
-                      )}
                     </div>
 
                     {activity.type === 'comment' && (
                       <p className="text-sm mt-1">{String(activity.data.content)}</p>
                     )}
 
-                    {activity.type === 'exception' && !!activity.data.reason && (
-                      <p className="text-sm mt-1 italic text-muted-foreground">Reason: {String(activity.data.reason)}</p>
-                    )}
-
-                    {activity.type === 'exception' && (
-                      <p className="text-sm mt-1">
-                        {String(activity.data.field)} {String(activity.data.operator)} {String(activity.data.value)}
-                      </p>
-                    )}
-
-                    {activity.type === 'threshold' && !!activity.data.changes && (
-                      <p className="text-sm mt-1 text-muted-foreground">
-                        {Object.entries(activity.data.changes as Record<string, {old: unknown, new: unknown}>).map(([field, values]) => {
-                          // Format field names nicely
-                          const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-                          return `${fieldName}: ${String(values.old)} → ${String(values.new)}`
-                        }).join(', ')}
-                      </p>
-                    )}
-
                     <div className="text-xs text-muted-foreground mt-1">
-                      <TimestampTooltip timestamp={activity.timestamp}>
-                        <span>{formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}</span>
-                      </TimestampTooltip>
+                      {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
                       {activity.user_email && activity.type !== 'comment' && (
                         <span> by {activity.user_email}</span>
                       )}
@@ -273,24 +224,21 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     <span className="text-muted-foreground">created</span>
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    <TimestampTooltip timestamp={activity.timestamp}>
-                      <span>{formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}</span>
-                    </TimestampTooltip>
+                    {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
                     {activity.user_email && <span> by {activity.user_email}</span>}
                   </div>
                 </div>
-                {Number(activity.data.version_number) === Number(currentVersion) ? (
+                {Number(activity.data.version_number) === currentVersion ? (
                   <span className="text-xs text-muted-foreground px-2">(Current)</span>
                 ) : (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs"
-                    disabled={!canManageRules}
                     onClick={() => handleRestoreClick(
                       Number(activity.data.version_number),
                       String(activity.data.yaml_content),
-                      activity.data.change_reason as string | undefined
+                      activity.data.change_reason && typeof activity.data.change_reason === 'string' ? activity.data.change_reason : undefined
                     )}
                   >
                     <RotateCcw className="h-3 w-3 mr-1" />
@@ -317,6 +265,6 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
           targetChangeReason={restoreTarget.changeReason}
         />
       )}
-    </TooltipProvider>
+    </>
   )
 }
