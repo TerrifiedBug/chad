@@ -312,8 +312,161 @@ export default function CorrelationRuleEditorPage() {
     )
   }
 
+  const formContent = (
+    <>
+      {error && (
+        <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="name">Name</Label>
+        <Input
+          id="name"
+          placeholder="e.g., Brute Force Success"
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="rule_a">First Rule (Rule A)</Label>
+        <SearchableRuleSelector
+          rules={rules}
+          value={formData.rule_a_id}
+          onChange={(value) => setFormData({ ...formData, rule_a_id: value })}
+          disabled={isLoading || isSaving}
+          placeholder="Select first rule"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="rule_b">Second Rule (Rule B)</Label>
+        <SearchableRuleSelector
+          rules={rules}
+          value={formData.rule_b_id}
+          onChange={(value) => setFormData({ ...formData, rule_b_id: value })}
+          disabled={isLoading || isSaving}
+          placeholder="Select second rule"
+          excludeRuleId={formData.rule_a_id}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="entity_field">Entity Field to Correlate</Label>
+        <Select
+          value={formData.entity_field}
+          onValueChange={(value) => setFormData({ ...formData, entity_field: value })}
+          disabled={isSaving || isLoadingFields || !formData.rule_a_id}
+        >
+          <SelectTrigger data-protonpass-ignore="true" data-lpignore="true" data-1p-ignore="true">
+            <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select entity field"} />
+          </SelectTrigger>
+          <SelectContent className="z-50 bg-popover max-h-[300px]">
+            {availableFields.length === 0 ? (
+              <div className="p-2 text-sm text-muted-foreground">
+                {formData.rule_a_id
+                  ? "No common fields found between the two rules."
+                  : "Select both rules to load common fields"}
+              </div>
+            ) : (
+              availableFields.map((field) => (
+                <SelectItem key={field} value={field}>
+                  {field}
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+        {formData.entity_field && (
+          <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+            <div className="font-medium mb-1">Field Mappings:</div>
+            <div>Rule A: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleAFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
+            <div>Rule B: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleBFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          The Sigma field name from both rules used to correlate events. This field must be detected by both rules.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="time_window">Time Window</Label>
+        <Select
+          value={String(formData.time_window_minutes)}
+          onValueChange={(value) => setFormData({ ...formData, time_window_minutes: Number(value) })}
+          disabled={isSaving}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="z-50 bg-popover">
+            {TIME_WINDOW_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={String(option.value)}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Maximum time allowed between Rule A and Rule B matches
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="severity">Severity</Label>
+        <Select
+          value={formData.severity}
+          onValueChange={(value) => setFormData({ ...formData, severity: value as any })}
+          disabled={isSaving}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="z-50 bg-popover">
+            {SEVERITY_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex items-center space-x-2">
+        <input
+          type="checkbox"
+          id="is_enabled"
+          checked={formData.is_enabled}
+          onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked })}
+          className="rounded"
+        />
+        <Label htmlFor="is_enabled" className="cursor-pointer">
+          Enabled
+        </Label>
+      </div>
+
+      <div className="flex gap-2 pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => navigate('/correlation')}
+          disabled={isSaving}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isSaving || isLoading || !formData.name || !formData.rule_a_id || !formData.rule_b_id}>
+          {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          {isEditing ? 'Update' : 'Create'} Rule
+        </Button>
+      </div>
+    </>
+  )
+
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className={`space-y-6 ${isEditing ? 'max-w-6xl' : 'max-w-2xl'}`}>
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate('/correlation')}>
           <ChevronLeft className="h-4 w-4" />
@@ -330,172 +483,43 @@ export default function CorrelationRuleEditorPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Rule Configuration</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
-                {error}
-              </div>
-            )}
+      {isEditing && id ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main form - takes 2 columns */}
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Rule Configuration</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  {formContent}
+                </form>
+              </CardContent>
+            </Card>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                placeholder="e.g., Brute Force Success"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="rule_a">First Rule (Rule A)</Label>
-              <SearchableRuleSelector
-                rules={rules}
-                value={formData.rule_a_id}
-                onChange={(value) => setFormData({ ...formData, rule_a_id: value })}
-                disabled={isLoading || isSaving}
-                placeholder="Select first rule"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="rule_b">Second Rule (Rule B)</Label>
-              <SearchableRuleSelector
-                rules={rules}
-                value={formData.rule_b_id}
-                onChange={(value) => setFormData({ ...formData, rule_b_id: value })}
-                disabled={isLoading || isSaving}
-                placeholder="Select second rule"
-                excludeRuleId={formData.rule_a_id}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="entity_field">Entity Field to Correlate</Label>
-              <Select
-                value={formData.entity_field}
-                onValueChange={(value) => setFormData({ ...formData, entity_field: value })}
-                disabled={isSaving || isLoadingFields || !formData.rule_a_id}
-              >
-                <SelectTrigger data-protonpass-ignore="true" data-lpignore="true" data-1p-ignore="true">
-                  <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select entity field"} />
-                </SelectTrigger>
-                <SelectContent className="z-50 bg-popover max-h-[300px]">
-                  {availableFields.length === 0 ? (
-                    <div className="p-2 text-sm text-muted-foreground">
-                      {formData.rule_a_id
-                        ? "No common fields found between the two rules."
-                        : "Select both rules to load common fields"}
-                    </div>
-                  ) : (
-                    availableFields.map((field) => (
-                      <SelectItem key={field} value={field}>
-                        {field}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-              {formData.entity_field && (
-                <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                  <div className="font-medium mb-1">Field Mappings:</div>
-                  <div>Rule A: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleAFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
-                  <div>Rule B: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleBFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                The Sigma field name from both rules used to correlate events. This field must be detected by both rules.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="time_window">Time Window</Label>
-              <Select
-                value={String(formData.time_window_minutes)}
-                onValueChange={(value) => setFormData({ ...formData, time_window_minutes: Number(value) })}
-                disabled={isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="z-50 bg-popover">
-                  {TIME_WINDOW_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={String(option.value)}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Maximum time allowed between Rule A and Rule B matches
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="severity">Severity</Label>
-              <Select
-                value={formData.severity}
-                onValueChange={(value) => setFormData({ ...formData, severity: value as any })}
-                disabled={isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="z-50 bg-popover">
-                  {SEVERITY_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="is_enabled"
-                checked={formData.is_enabled}
-                onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked })}
-                className="rounded"
-              />
-              <Label htmlFor="is_enabled" className="cursor-pointer">
-                Enabled
-              </Label>
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate('/correlation')}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSaving || isLoading || !formData.name || !formData.rule_a_id || !formData.rule_b_id}>
-                {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {isEditing ? 'Update' : 'Create'} Rule
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Activity Panel - only show when editing */}
-      {isEditing && id && (
+          {/* Activity Panel - takes 1 column */}
+          <div className="lg:col-span-1">
+            <Card>
+              <CardHeader>
+                <CardTitle>Activity Log</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CorrelationActivityPanel correlationId={id} />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Activity Log</CardTitle>
+            <CardTitle>Rule Configuration</CardTitle>
           </CardHeader>
           <CardContent>
-            <CorrelationActivityPanel correlationId={id} />
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {formContent}
+            </form>
           </CardContent>
         </Card>
       )}
