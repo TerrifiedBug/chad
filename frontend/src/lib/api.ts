@@ -1,4 +1,4 @@
-import { getErrorMessage, logError } from './errors'
+import { getErrorMessage, logError, isApiError, isLegacyError } from './errors'
 
 const API_BASE = '/api'
 
@@ -52,7 +52,11 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${fetchPath}`, fetchOptions)
     this.updateCsrfToken(response)
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      // If JSON parsed but isn't a recognized format, use fallback
+      if (!isApiError(error) && !isLegacyError(error)) {
+        error = { detail: 'Request failed' }
+      }
       logError(error, 'GET ' + path)
       throw new Error(getErrorMessage(error))
     }
@@ -67,7 +71,11 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      // If JSON parsed but isn't a recognized format, use fallback
+      if (!isApiError(error) && !isLegacyError(error)) {
+        error = { detail: 'Request failed' }
+      }
       logError(error, 'POST ' + path)
       throw new Error(getErrorMessage(error))
     }
@@ -82,7 +90,11 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      // If JSON parsed but isn't a recognized format, use fallback
+      if (!isApiError(error) && !isLegacyError(error)) {
+        error = { detail: 'Request failed' }
+      }
       logError(error, 'PATCH ' + path)
       throw new Error(getErrorMessage(error))
     }
@@ -96,7 +108,11 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      // If JSON parsed but isn't a recognized format, use fallback
+      if (!isApiError(error) && !isLegacyError(error)) {
+        error = { detail: 'Request failed' }
+      }
       logError(error, 'DELETE ' + path)
       throw new Error(getErrorMessage(error))
     }
@@ -110,7 +126,11 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      // If JSON parsed but isn't a recognized format, use fallback
+      if (!isApiError(error) && !isLegacyError(error)) {
+        error = { detail: 'Request failed' }
+      }
       logError(error, 'PUT ' + path)
       throw new Error(getErrorMessage(error))
     }
@@ -435,7 +455,11 @@ export const rulesApi = {
       },
     })
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      // If JSON parsed but isn't a recognized format, use fallback
+      if (!isApiError(error) && !isLegacyError(error)) {
+        error = { detail: 'Request failed' }
+      }
       logError(error, 'deploy')
       // Check if this is an unmapped fields error (legacy format)
       if ((error as { error?: string }).error === 'unmapped_fields') {

@@ -1,4 +1,4 @@
-import { vi, afterEach } from 'vitest';
+import { vi, afterEach, beforeEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { expect } from 'vitest';
@@ -9,6 +9,11 @@ expect.extend(matchers);
 // Cleanup after each test
 afterEach(() => {
   cleanup();
+});
+
+// Clear localStorage before each test
+beforeEach(() => {
+  localStorage.clear();
 });
 
 // Mock window.matchMedia for responsive components
@@ -40,4 +45,26 @@ global.IntersectionObserver = class IntersectionObserver {
 // Mock scrollTo
 window.scrollTo = vi.fn();
 window.scrollBy = vi.fn();
+
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = value.toString();
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+    get length() {
+      return Object.keys(store).length;
+    },
+    key: (index: number) => Object.keys(store)[index] ?? null,
+  };
+})();
+global.localStorage = localStorageMock as unknown as Storage;
 
