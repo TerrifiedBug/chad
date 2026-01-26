@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react'
 import { healthApi, IndexHealth, HealthStatus, HealthSettings } from '@/lib/api'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, Settings, ChevronDown, ChevronUp, Save, Loader2, RefreshCw, Server } from 'lucide-react'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, Settings, ChevronDown, ChevronUp, Save, Loader2, RefreshCw, Server, ChevronRight } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { api } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
+import { HealthCheckSettings } from '@/components/HealthCheckSettings'
 
 interface ServiceHealth {
   service_type: string
@@ -76,6 +82,9 @@ export default function HealthPage() {
   // Service health state
   const [serviceHealth, setServiceHealth] = useState<ServiceHealthResponse | null>(null)
   const [serviceHealthLoading, setServiceHealthLoading] = useState(true)
+
+  // Status popover state
+  const [statusPopoverOpen, setStatusPopoverOpen] = useState(false)
 
   // Settings state
   const [showSettings, setShowSettings] = useState(false)
@@ -161,6 +170,12 @@ export default function HealthPage() {
     return worst
   }, 'healthy' as HealthStatus)
 
+  // Get problematic index patterns for the popover
+  const problematicPatterns = health.filter(h => h.status === 'warning' || h.status === 'critical')
+
+  // Get problematic external services for the popover
+  const problematicServices = serviceHealth?.services.filter(s => s.status === 'warning' || s.status === 'unhealthy') || []
+
   // Aggregate totals
   const totals = health.reduce(
     (acc, h) => ({
@@ -187,12 +202,83 @@ export default function HealthPage() {
           <h1 className="text-2xl font-bold">System Health</h1>
           <p className="text-muted-foreground">Monitor index pattern health and performance</p>
         </div>
-        <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${statusBgColors[overallStatus]}`}>
-          <StatusIcon status={overallStatus} />
-          <span className={`font-medium capitalize ${statusColors[overallStatus]}`}>
-            {overallStatus === 'healthy' ? 'All Systems Healthy' : `System ${overallStatus}`}
-          </span>
-        </div>
+        <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg ${statusBgColors[overallStatus]} hover:${statusBgColors[overallStatus]}`}
+            >
+              <StatusIcon status={overallStatus} />
+              <span className={`font-medium capitalize ${statusColors[overallStatus]}`}>
+                {overallStatus === 'healthy' ? 'All Systems Healthy' : `System ${overallStatus}`}
+              </span>
+              {(problematicPatterns.length > 0 || problematicServices.length > 0) && (
+                <ChevronDown className={`h-4 w-4 transition-transform ${statusPopoverOpen ? 'rotate-180' : ''}`} />
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80" align="end">
+            {(problematicPatterns.length === 0 && problematicServices.length === 0) ? (
+              <div className="text-sm text-muted-foreground">All systems operating normally</div>
+            ) : (
+              <div className="space-y-3">
+                {problematicPatterns.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                      Index Patterns
+                    </h4>
+                    <div className="space-y-1">
+                      {problematicPatterns.map((pattern, index) => (
+                        <div key={`${pattern.index_pattern_id}-${index}`} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <StatusIcon status={pattern.status} />
+                            <span className="truncate font-medium">{pattern.index_pattern_name}</span>
+                          </div>
+                          <span className={`text-xs capitalize ${statusColors[pattern.status as HealthStatus]}`}>
+                            {pattern.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {problematicServices.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                      <Server className="h-4 w-4 text-red-600" />
+                      External Services
+                    </h4>
+                    <div className="space-y-1">
+                      {problematicServices.map((service, index) => (
+                        <div key={`${service.service_type}-${index}`} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <StatusIcon status={service.status} />
+                            <span className="truncate font-medium">{service.service_name}</span>
+                          </div>
+                          <span className="text-xs text-muted-foreground capitalize">
+                            {service.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setStatusPopoverOpen(false)}
+                >
+                  View details in dashboard below
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
 
       {error && (
@@ -202,8 +288,8 @@ export default function HealthPage() {
         </div>
       )}
 
-      {/* Settings Panel */}
-      {settings && settingsForm && (
+      {/* Global Settings Panel - Merged */}
+      {hasPermission('manage_settings') && (
         <Card>
           <button
             type="button"
@@ -212,7 +298,7 @@ export default function HealthPage() {
           >
             <div className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              <span className="font-medium">Global Alerting Thresholds</span>
+              <span className="font-medium">Global Settings</span>
             </div>
             {showSettings ? (
               <ChevronUp className="h-4 w-4" />
@@ -222,99 +308,112 @@ export default function HealthPage() {
           </button>
 
           {showSettings && (
-            <CardContent className="pt-0 border-t">
-              <p className="text-sm text-muted-foreground mb-4">
-                These thresholds are used by default for all index patterns unless overridden in the index pattern settings.
-              </p>
+            <CardContent className="pt-0 border-t space-y-6">
+              {/* Alerting Thresholds Section */}
+              <div>
+                <h4 className="text-sm font-medium mb-2">Alerting Thresholds</h4>
+                <p className="text-xs text-muted-foreground mb-4">
+                  These thresholds are used by default for all index patterns unless overridden.
+                </p>
 
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="no-data-minutes" className="text-sm">No Data (min)</Label>
-                  <Input
-                    id="no-data-minutes"
-                    type="number"
-                    min="1"
-                    value={settingsForm.no_data_minutes}
-                    onChange={(e) =>
-                      setSettingsForm({
-                        ...settingsForm,
-                        no_data_minutes: parseInt(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="no-data-minutes" className="text-xs">No Data (min)</Label>
+                    <Input
+                      id="no-data-minutes"
+                      type="number"
+                      min="1"
+                      value={settingsForm.no_data_minutes}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm,
+                          no_data_minutes: parseInt(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="error-rate" className="text-sm">Error Rate (%)</Label>
-                  <Input
-                    id="error-rate"
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={settingsForm.error_rate_percent}
-                    onChange={(e) =>
-                      setSettingsForm({
-                        ...settingsForm,
-                        error_rate_percent: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="error-rate" className="text-xs">Error Rate (%)</Label>
+                    <Input
+                      id="error-rate"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={settingsForm.error_rate_percent}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm,
+                          error_rate_percent: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="latency-ms" className="text-sm">Latency (ms)</Label>
-                  <Input
-                    id="latency-ms"
-                    type="number"
-                    min="1"
-                    value={settingsForm.latency_ms}
-                    onChange={(e) =>
-                      setSettingsForm({
-                        ...settingsForm,
-                        latency_ms: parseInt(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="latency-ms" className="text-xs">Latency (ms)</Label>
+                    <Input
+                      id="latency-ms"
+                      type="number"
+                      min="1"
+                      value={settingsForm.latency_ms}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm,
+                          latency_ms: parseInt(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="queue-warning" className="text-sm">Queue Warning</Label>
-                  <Input
-                    id="queue-warning"
-                    type="number"
-                    min="1"
-                    value={settingsForm.queue_warning}
-                    onChange={(e) =>
-                      setSettingsForm({
-                        ...settingsForm,
-                        queue_warning: parseInt(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="queue-warning" className="text-xs">Queue Warning</Label>
+                    <Input
+                      id="queue-warning"
+                      type="number"
+                      min="1"
+                      value={settingsForm.queue_warning}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm,
+                          queue_warning: parseInt(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="queue-critical" className="text-sm">Queue Critical</Label>
-                  <Input
-                    id="queue-critical"
-                    type="number"
-                    min="1"
-                    value={settingsForm.queue_critical}
-                    onChange={(e) =>
-                      setSettingsForm({
-                        ...settingsForm,
-                        queue_critical: parseInt(e.target.value) || 0,
-                      })
-                    }
-                  />
+                  <div className="space-y-2">
+                    <Label htmlFor="queue-critical" className="text-xs">Queue Critical</Label>
+                    <Input
+                      id="queue-critical"
+                      type="number"
+                      min="1"
+                      value={settingsForm.queue_critical}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm,
+                          queue_critical: parseInt(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
                 </div>
               </div>
 
+              {/* Health Check Intervals Section */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-2">Health Check Intervals</h4>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Configure how frequently the system checks health status of external services.
+                </p>
+                <HealthCheckSettings />
+              </div>
+
               {settingsError && (
-                <div className="mt-4 text-sm text-destructive">{settingsError}</div>
+                <div className="text-sm text-destructive">{settingsError}</div>
               )}
 
-              <div className="mt-4 flex justify-end">
+              <div className="flex justify-end pt-2 border-t">
                 <Button
                   onClick={handleSaveSettings}
                   disabled={!hasSettingsChanged || isSavingSettings}

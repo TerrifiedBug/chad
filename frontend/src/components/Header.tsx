@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useVersion } from '@/hooks/use-version'
 import { useHealthStatus } from '@/hooks/useHealthStatus'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { NotificationBell } from '@/components/NotificationBell'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -13,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, LogOut, Settings, Key, Lock, User, Bell } from 'lucide-react'
+import { ChevronDown, LogOut, Settings, Key, Lock, User } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Dashboard', exact: true },
@@ -80,22 +81,7 @@ export function Header() {
           )}
         </div>
         <div className="flex items-center gap-4">
-          {isAuthenticated && hasPermission('manage_settings') && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="relative gap-1"
-              onClick={() => navigate('/health')}
-            >
-              <Bell className="h-4 w-4" />
-              {unhealthyCount > 0 && (
-                <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-xs flex items-center justify-center text-white font-bold">
-                  {unhealthyCount}
-                </span>
-              )}
-              <span className="sr-only">Health alerts</span>
-            </Button>
-          )}
+          {isAuthenticated && <NotificationBell />}
           {isAuthenticated && user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

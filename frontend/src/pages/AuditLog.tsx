@@ -117,7 +117,24 @@ export default function AuditLogPage() {
     return date.toLocaleString()
   }
 
-  const formatAction = (action: string) => {
+  const formatAction = (action: string, details?: any) => {
+    // Special formatting for correlation rule events
+    if (action.startsWith('correlation_rule_')) {
+      const actions: Record<string, string> = {
+        correlation_rule_created: 'Created correlation rule',
+        correlation_rule_updated: 'Updated correlation rule',
+        correlation_rule_deleted: 'Deleted correlation rule',
+        correlation_rule_enabled: 'Enabled correlation rule',
+        correlation_rule_disabled: 'Disabled correlation rule',
+      }
+      const formatted = actions[action] || action
+      // Add rule name if available
+      if (details?.name) {
+        return `${formatted}: ${details.name}`
+      }
+      return formatted
+    }
+
     // Convert snake_case to Title Case
     return action
       .split('_')
@@ -322,7 +339,7 @@ export default function AuditLogPage() {
                   <TableCell className="font-medium">
                     {entry.user_email || (entry.user_id ? 'Unknown User' : 'System')}
                   </TableCell>
-                  <TableCell>{formatAction(entry.action)}</TableCell>
+                  <TableCell>{formatAction(entry.action, entry.details)}</TableCell>
                   <TableCell>{formatResourceType(entry.resource_type)}</TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {entry.resource_id ? entry.resource_id.slice(0, 8) + '...' : '-'}
@@ -408,7 +425,7 @@ export default function AuditLogPage() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Action:</span>
-                  <p className="font-medium">{formatAction(selectedEntry.action)}</p>
+                  <p className="font-medium">{formatAction(selectedEntry.action, selectedEntry.details)}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Resource Type:</span>

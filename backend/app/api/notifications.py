@@ -12,7 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import require_admin
+from app.api.deps import get_current_user, require_admin
 from app.db.session import get_db
 from app.models.notification_settings import (
     AlertNotificationSetting,
@@ -288,4 +288,38 @@ async def update_mandatory_comments_settings(
     )
     await db.commit()
     return {"message": "Settings updated successfully"}
+
+
+@router.get("/recent")
+async def get_recent_notifications(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Get recent notifications for the current user.
+
+    Returns current health issues.
+    Note: Security alerts are stored in OpenSearch and not included here.
+    """
+    from app.services.health import get_all_indices_health
+
+    # Get health status for all indices
+    index_health = await get_all_indices_health(db)
+
+    # Filter to only show warning/critical health issues
+    health_issues = [
+        {
+            "index_pattern_id": h["index_pattern_id"],
+            "index_pattern_name": h["index_pattern_name"],
+            "status": h["status"],
+            "issues": h["issues"],
+        }
+        for h in index_health
+        if h["status"] in ["warning", "critical"]
+    ]
+
+    return {
+        "security_alerts": [],
+        "health_issues": health_issues,
+    }
 
