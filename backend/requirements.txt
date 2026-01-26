@@ -20,7 +20,7 @@ pyotp>=2.9.0
 # Validation
 pydantic==2.7.0
 pydantic-settings==2.2.1
-email-validator==2.1.1
+email-validator==2.3.0
 
 # Sigma (for future tasks)
 pysigma>=0.11.0
