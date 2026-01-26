@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_version: ${{ steps.tag.outputs.version }}
+      frontend_version: ${{ steps.frontend.outputs.version }}
+      backend_version: ${{ steps.backend.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract tag version
+        id: tag
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Extract frontend version
+        id: frontend
+        run: echo "version=$(jq -r .version frontend/package.json)" >> $GITHUB_OUTPUT
+
+      - name: Extract backend version
+        id: backend
+        run: echo "version=$(grep '^version' backend/pyproject.toml | sed 's/version = "\(.*\)"/\1/')" >> $GITHUB_OUTPUT
+
+      - name: Validate versions match
+        run: |
+          if [ "${{ steps.tag.outputs.version }}" != "${{ steps.frontend.outputs.version }}" ] || \
+             [ "${{ steps.tag.outputs.version }}" != "${{ steps.backend.outputs.version }}" ]; then
+            echo "Version mismatch detected:"
+            echo "  Tag:          ${{ steps.tag.outputs.version }}"
+            echo "  Frontend:     ${{ steps.frontend.outputs.version }}"
+            echo "  Backend:      ${{ steps.backend.outputs.version }}"
+            echo ""
+            echo "All versions must match before creating release."
+            exit 1
+          fi
+          echo "Version validation successful: v${{ steps.tag.outputs.version }}"
+
+  create-release:
+    needs: validate-version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          # Generate changelog
+          if [ -z "$PREV_TAG" ]; then
+            echo "## What's Changed" > changelog.md
+            git log --pretty=format:"- %s (%h)" >> changelog.md
+          else
+            echo "## What's Changed" > changelog.md
+            git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" >> changelog.md
+          fi
+
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat changelog.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
