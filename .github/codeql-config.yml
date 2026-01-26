@@ -1,0 +1,20 @@
+# CodeQL configuration
+paths:
+  ignore:
+    - '**/test/**'
+    - '**/tests/**'
+    - '**/*.test.ts'
+    - '**/*.test.tsx'
+    - '**/*.test.py'
+    - '**/__tests__/**'
+    - '**/mocks/**'
+    - '**/fixtures/**'
+    - '**/node_modules/**'
+    - '**/.venv/**'
+    - '**/venv/**'
+
+query-filters:
+  - exclude:
+      id:
+        - js/unused-import
+        - py/unused-import
