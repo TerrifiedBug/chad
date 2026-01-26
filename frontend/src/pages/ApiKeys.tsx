@@ -28,6 +28,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Plus, Trash2, Copy, Check, AlertTriangle } from 'lucide-react'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
 export default function ApiKeysPage() {
   const [apiKeys, setApiKeys] = useState<APIKey[]>([])
@@ -210,10 +211,14 @@ export default function ApiKeysPage() {
                     </code>
                   </TableCell>
                   <TableCell className="text-sm">
-                    {formatDate(key.created_at)}
+                    <TimestampTooltip timestamp={key.created_at}>
+                      <span>{formatDate(key.created_at)}</span>
+                    </TimestampTooltip>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(key.last_used_at)}
+                    <TimestampTooltip timestamp={key.last_used_at}>
+                      <span>{formatDate(key.last_used_at)}</span>
+                    </TimestampTooltip>
                   </TableCell>
                   <TableCell>
                     <Switch
