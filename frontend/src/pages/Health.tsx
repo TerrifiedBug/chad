@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, Settings, ChevronDown, ChevronUp, Save, Loader2, RefreshCw, Server } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
 interface ServiceHealth {
   service_type: string
@@ -435,7 +436,11 @@ export default function HealthPage() {
                         <div>
                           <h4 className="font-medium">{service.service_name}</h4>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Last check: {service.last_check ? formatDateTime(service.last_check) : 'Never'}
+                            Last check: {service.last_check ? (
+                              <TimestampTooltip timestamp={service.last_check}>
+                                <span>{formatDateTime(service.last_check)}</span>
+                              </TimestampTooltip>
+                            ) : 'Never'}
                           </p>
                         </div>
                         <StatusIcon status={service.status} />
