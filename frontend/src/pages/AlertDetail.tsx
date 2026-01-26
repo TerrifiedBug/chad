@@ -17,6 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2 } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 
@@ -461,7 +462,8 @@ export default function AlertDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -668,5 +670,6 @@ export default function AlertDetailPage() {
         </Card>
       </div>
     </div>
+    </TooltipProvider>
   )
 }

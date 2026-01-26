@@ -3,6 +3,7 @@ import { X, GitCommit, Rocket, MessageSquare, RotateCcw, ShieldAlert, TrendingUp
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { rulesApi, ActivityItem } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
 import { RestoreDiffModal } from './RestoreDiffModal'
@@ -146,7 +147,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
   if (!isOpen) return null
 
   return (
-    <>
+    <TooltipProvider>
       {/* Overlay for click-to-close */}
       <div
         className="fixed inset-0 bg-black/20 z-40"
@@ -342,6 +343,6 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
           targetChangeReason={restoreTarget.changeReason}
         />
       )}
-    </>
+    </TooltipProvider>
   )
 }

@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
@@ -262,7 +263,8 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
@@ -634,5 +636,6 @@ export default function UsersPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   )
 }

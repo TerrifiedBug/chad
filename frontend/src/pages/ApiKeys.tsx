@@ -27,6 +27,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { Plus, Trash2, Copy, Check, AlertTriangle } from 'lucide-react'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
@@ -130,7 +131,8 @@ export default function ApiKeysPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">API Keys</h1>
@@ -361,5 +363,6 @@ export default function ApiKeysPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   )
 }

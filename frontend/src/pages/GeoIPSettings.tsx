@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { Check, Download, Globe, Loader2 } from 'lucide-react'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
@@ -121,7 +122,8 @@ export default function GeoIPSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -263,5 +265,6 @@ export default function GeoIPSettings() {
         </CardContent>
       </Card>
     </div>
+    </TooltipProvider>
   )
 }

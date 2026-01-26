@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, Settings, ChevronDown, ChevronUp, Save, Loader2, RefreshCw, Server } from 'lucide-react'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { api } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
@@ -179,7 +180,8 @@ export default function HealthPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">System Health</h1>
@@ -530,5 +532,6 @@ export default function HealthPage() {
         )}
       </div>
     </div>
+    </TooltipProvider>
   )
 }

@@ -35,6 +35,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
 const PAGE_SIZE = 50
@@ -185,7 +186,8 @@ export default function AuditLogPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
@@ -446,5 +448,6 @@ export default function AuditLogPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   )
 }
