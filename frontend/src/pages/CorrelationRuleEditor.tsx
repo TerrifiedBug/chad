@@ -4,6 +4,7 @@ import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo } from '@/lib/api
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { CorrelationActivityPanel } from '@/components/CorrelationActivityPanel'
 import {
   Select,
   SelectContent,
@@ -486,6 +487,18 @@ export default function CorrelationRuleEditorPage() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Activity Panel - only show when editing */}
+      {isEditing && correlationId && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Activity Log</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CorrelationActivityPanel correlationId={correlationId} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
