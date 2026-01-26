@@ -66,13 +66,10 @@ export default function SettingsPage() {
   // 2FA settings
   const [force2FAOnSignup, setForce2FAOnSignup] = useState(false)
 
-  // App URL setting
-  const [appUrl, setAppUrl] = useState('')
-
   // Active tab for programmatic navigation - read from URL param if present
   const [activeTab, setActiveTab] = useState(() => {
     const tabParam = searchParams.get('tab')
-    return tabParam || 'general'
+    return tabParam || 'notifications'
   })
 
   // SSO settings
@@ -137,7 +134,6 @@ export default function SettingsPage() {
   useEffect(() => {
     loadSettings()
     loadOpenSearchStatus()
-    loadAppUrl()
     loadPermissions()
     loadSecuritySettings()
   }, [])
@@ -157,15 +153,6 @@ export default function SettingsPage() {
       checkOpenSearchConnection()
     }
   }, [activeTab])
-
-  const loadAppUrl = async () => {
-    try {
-      const response = await settingsApi.getAppUrl()
-      setAppUrl(response.url || '')
-    } catch {
-      console.log('Failed to load APP_URL')
-    }
-  }
 
   const loadSettings = async () => {
     try {
@@ -464,17 +451,6 @@ export default function SettingsPage() {
     }
   }
 
-  const saveAppUrl = async () => {
-    setIsSaving(true)
-    try {
-      await settingsApi.setAppUrl(appUrl)
-      showToast('Application URL saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
-    } finally {
-      setIsSaving(false)
-    }
-  }
 
   if (isLoading) {
     return (
@@ -505,7 +481,6 @@ export default function SettingsPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
@@ -520,35 +495,6 @@ export default function SettingsPage() {
             {updateAvailable && <span className="h-2 w-2 rounded-full bg-red-500" />}
           </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="general" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Application URL</CardTitle>
-              <CardDescription>
-                Public URL of your CHAD installation. Required for SSO redirects and webhook alert links.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="app-url">Application URL</Label>
-                <Input
-                  id="app-url"
-                  value={appUrl}
-                  onChange={(e) => setAppUrl(e.target.value)}
-                  placeholder="https://chad.example.com"
-                />
-                <p className="text-sm text-muted-foreground">
-                  Example: https://chad.example.com (no trailing slash)
-                </p>
-              </div>
-              <Button onClick={saveAppUrl} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? 'Saving...' : 'Save'}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="notifications" className="mt-4">
           <Notifications />
@@ -773,14 +719,6 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!appUrl && (
-                <div className="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 p-3 rounded-md">
-                  <strong>Warning:</strong> APP URL must be configured for SSO redirects to work correctly.
-                  <Button variant="link" className="p-0 h-auto ml-1" onClick={() => setActiveTab('general')}>
-                    Configure APP URL
-                  </Button>
-                </div>
-              )}
               <div className="flex items-center justify-between">
                 <div>
                   <Label>Enable SSO</Label>
