@@ -51,7 +51,7 @@ jobs:
           pytest --cov=app --cov-report=xml || echo "Tests completed (some may have been skipped)"
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         if: success()
         continue-on-error: true
         with:
