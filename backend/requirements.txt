@@ -18,7 +18,7 @@ itsdangerous==2.1.2
 pyotp>=2.9.0
 
 # Validation
-pydantic==2.7.0
+pydantic==2.12.5
 pydantic-settings==2.2.1
 email-validator==2.1.1
 
