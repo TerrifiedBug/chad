@@ -35,6 +35,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
 const PAGE_SIZE = 50
 
@@ -312,7 +313,9 @@ export default function AuditLogPage() {
               auditData.items.map((entry) => (
                 <TableRow key={entry.id}>
                   <TableCell className="text-muted-foreground whitespace-nowrap">
-                    {formatTimestamp(entry.created_at)}
+                    <TimestampTooltip timestamp={entry.created_at}>
+                      <span>{formatTimestamp(entry.created_at)}</span>
+                    </TimestampTooltip>
                   </TableCell>
                   <TableCell className="font-medium">
                     {entry.user_email || (entry.user_id ? 'Unknown User' : 'System')}
@@ -389,7 +392,11 @@ export default function AuditLogPage() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">Timestamp:</span>
-                  <p className="font-medium">{formatTimestamp(selectedEntry.created_at)}</p>
+                  <div className="font-medium">
+                    <TimestampTooltip timestamp={selectedEntry.created_at}>
+                      <span>{formatTimestamp(selectedEntry.created_at)}</span>
+                    </TimestampTooltip>
+                  </div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">User:</span>
