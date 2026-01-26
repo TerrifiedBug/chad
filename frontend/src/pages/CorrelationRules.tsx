@@ -21,6 +21,7 @@ import {
 import { ChevronLeft, Plus, MoreVertical, Power, PowerOff, Trash2, Edit } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -28,6 +29,11 @@ const severityColors: Record<string, string> = {
   medium: 'bg-yellow-500 text-black',
   low: 'bg-blue-500 text-white',
   informational: 'bg-gray-500 text-white',
+}
+
+function formatDate(timestamp: string): string {
+  const date = new Date(timestamp)
+  return date.toLocaleString()
 }
 
 export default function CorrelationRulesPage() {
@@ -125,6 +131,8 @@ export default function CorrelationRulesPage() {
                   <TableHead>Time Window</TableHead>
                   <TableHead>Severity</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Last Updated</TableHead>
+                  <TableHead>Updated By</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -150,6 +158,14 @@ export default function CorrelationRulesPage() {
                       <Badge variant={rule.is_enabled ? 'default' : 'secondary'}>
                         {rule.is_enabled ? 'Active' : 'Disabled'}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground whitespace-nowrap">
+                      <TimestampTooltip timestamp={rule.updated_at}>
+                        <span>{formatDate(rule.updated_at)}</span>
+                      </TimestampTooltip>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      -
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
