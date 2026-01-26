@@ -24,9 +24,8 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
   const [isLoading, setIsLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [restoreTarget, setRestoreTarget] = useState<{ versionNumber: number; yaml: string; changeReason?: string } | null>(null)
+  const [restoreTarget, setRestoreTarget] = useState<{ versionNumber: number; yaml: string } | null>(null)
   const [isRestoring, setIsRestoring] = useState(false)
-  const [ruleVersionsMap, setRuleVersionsMap] = useState<Record<number, { change_reason: string }>>({})
 
   const activityItems = useMemo(
     () => activities.filter(a => a.type !== 'version'),
@@ -60,27 +59,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
       }
     }
 
-    const loadRuleVersions = async () => {
-      if (!isOpen || !ruleId) return
-      try {
-        const ruleDetail = await rulesApi.get(ruleId)
-        if (!abortController.signal.aborted && ruleDetail.versions) {
-          // Create map: version_number -> change_reason
-          const versionMap: Record<number, { change_reason: string }> = {}
-          ruleDetail.versions.forEach((v) => {
-            versionMap[v.version_number] = { change_reason: v.change_reason }
-          })
-          setRuleVersionsMap(versionMap)
-        }
-      } catch (err) {
-        if (!abortController.signal.aborted) {
-          console.error('Failed to load rule versions:', err)
-        }
-      }
-    }
-
     loadActivityData()
-    loadRuleVersions()
 
     return () => abortController.abort()
   }, [isOpen, ruleId])
@@ -122,17 +101,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
   }
 
   const handleRestoreClick = (versionNumber: number, yaml: string) => {
-    // Get change_reason from the rule versions map we fetched
-    const versionData = ruleVersionsMap[versionNumber]
-
-    // versionData is the full version object - extract change_reason
-    const actualChangeReason = versionData?.change_reason || ''
-
-    setRestoreTarget({
-      versionNumber,
-      yaml,
-      changeReason: String(actualChangeReason)
-    })
+    setRestoreTarget({ versionNumber, yaml })
   }
 
   const handleRestoreConfirm = async () => {
@@ -308,7 +277,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     {activity.user_email && <span> by {activity.user_email}</span>}
                   </div>
                 </div>
-                {Number(activity.data.version_number) === currentVersion ? (
+                {Number(activity.data.version_number) === Number(currentVersion) ? (
                   <span className="text-xs text-muted-foreground px-2">(Current)</span>
                 ) : (
                   <Button
@@ -342,7 +311,6 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
           targetVersion={restoreTarget.versionNumber}
           currentVersion={currentVersion}
           isRestoring={isRestoring}
-          targetChangeReason={restoreTarget.changeReason}
         />
       )}
     </TooltipProvider>
