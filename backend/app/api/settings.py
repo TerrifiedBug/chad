@@ -23,7 +23,7 @@ from app.services.audit import audit_log
 from app.services.geoip import geoip_service
 from app.services.opensearch import validate_opensearch_connection
 from app.services.settings import get_setting, set_setting
-from app.services.webhooks import get_app_url_for_webhooks, send_webhook
+from app.services.webhooks import send_webhook
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -272,7 +272,8 @@ async def test_webhook(
     }
 
     # Build alert URL if APP_URL is configured
-    app_url = await get_app_url_for_webhooks()
+    from app.core.config import settings
+    app_url = settings.APP_URL
     alert_url = f"{app_url}/alerts/{test_alert_id}" if app_url else None
 
     try:
