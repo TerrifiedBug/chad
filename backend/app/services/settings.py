@@ -1,9 +1,13 @@
 """Settings service for retrieving configuration from database."""
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.setting import Setting
+
+logger = logging.getLogger(__name__)
 
 # Default settings for rate limiting
 RATE_LIMIT_DEFAULTS = {
@@ -37,8 +41,17 @@ async def set_setting(db: AsyncSession, key: str, value: dict) -> Setting:
 
 
 async def get_app_url(db: AsyncSession) -> str | None:
-    """Get configured APP_URL or None."""
-    setting = await get_setting(db, "app_url")
-    if setting and setting.get("url"):
-        return setting["url"]
+    """
+    Get APP_URL from environment variable.
+
+    Returns:
+        APP_URL string or None if not configured
+    """
+    from app.core.config import settings
+
+    if settings.APP_URL:
+        logger.info(f"Using APP_URL from environment: {settings.APP_URL}")
+        return settings.APP_URL
+
+    logger.debug("APP_URL not configured, allowing localhost only")
     return None
