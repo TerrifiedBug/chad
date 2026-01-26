@@ -11,6 +11,7 @@ Uses Double Submit Cookie pattern with SameSite cookies and Origin/Referer valid
 import secrets
 import logging
 from typing import Callable
+from urllib.parse import urlparse
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -36,16 +37,17 @@ def generate_csrf_token() -> str:
     return secrets.token_hex(CSRF_TOKEN_LENGTH)
 
 
-def is_safe_origin(origin: str | None, referer: str | None) -> bool:
+def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None) -> bool:
     """
     Validate that the Origin or Referer header is allowed.
 
-    For development, allows localhost origins.
-    For production, should validate against whitelist.
+    In development mode, allows localhost origins.
+    In production, validates against configured APP_URL.
 
     Args:
         origin: Origin header value
         referer: Referer header value
+        app_url: Configured application URL from environment
 
     Returns:
         True if origin/referer is allowed, False otherwise
@@ -53,22 +55,41 @@ def is_safe_origin(origin: str | None, referer: str | None) -> bool:
     if not origin and not referer:
         return False
 
-    # Check origin first (more reliable)
-    if origin:
-        # Allow in development
-        if settings.DEBUG:
-            if origin in ["http://localhost:3000", "http://frontend:3000", "http://127.0.0.1:3000"]:
-                return True
-        # In production, validate against configured APP_URL
-        else:
-            # Get app URL from settings (this is configured via GUI)
-            # For now, allow same-origin
-            if origin.startswith(("http://localhost", "https://localhost")):
+    # Allow localhost in development mode
+    if settings.DEBUG:
+        allowed_origins = [
+            "http://localhost:3000",
+            "http://frontend:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:80",
+            "http://127.0.0.1:80"
+        ]
+        if origin and origin in allowed_origins:
+            return True
+        if referer:
+            if any(referer.startswith(o) for o in allowed_origins):
                 return True
 
-    # Check referer as fallback
-    if referer and referer.startswith(("http://localhost", "https://localhost")):
-        return True
+    # Production: validate against configured APP_URL
+    if app_url:
+        # Extract hostname from APP_URL (e.g., https://chad.terrifiedbug.com)
+        expected_host = urlparse(app_url).hostname
+
+        if not expected_host:
+            logger.warning(f"Invalid APP_URL format: {app_url}")
+            return False
+
+        # Check origin header
+        if origin:
+            origin_host = urlparse(origin).hostname
+            if origin_host == expected_host:
+                return True
+
+        # Check referer header as fallback
+        if referer:
+            referer_host = urlparse(referer).hostname
+            if referer_host == expected_host:
+                return True
 
     return False
 
@@ -145,10 +166,10 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             origin = request.headers.get("origin")
             referer = request.headers.get("referer")
 
-            if not is_safe_origin(origin, referer):
+            if not is_safe_origin(origin, referer, settings.APP_URL):
                 logger.warning(
                     f"CSRF: Unsafe origin/referer from authenticated request: "
-                    f"origin={origin}, referer={referer}, url={request.url}"
+                    f"origin={origin}, referer={referer}, expected={settings.APP_URL}"
                 )
                 # For API requests, we'll log but not block (can be configured to block)
                 # In production, you may want to reject these requests
@@ -192,9 +213,10 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         origin = request.headers.get("origin")
         referer = request.headers.get("referer")
 
-        if not is_safe_origin(origin, referer):
+        if not is_safe_origin(origin, referer, settings.APP_URL):
             logger.warning(
-                f"CSRF: Unsafe origin/referer: origin={origin}, referer={referer}, url={request.url}"
+                f"CSRF: Unsafe origin/referer: origin={origin}, referer={referer}, "
+                f"expected={settings.APP_URL}, url={request.url}"
             )
             response = JSONResponse(
                 {"detail": "Cross-site request not allowed."},
