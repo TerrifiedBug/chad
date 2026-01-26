@@ -49,6 +49,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
@@ -807,7 +808,8 @@ export default function RuleEditorPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -1802,6 +1804,7 @@ export default function RuleEditorPage() {
           validateRule()
         }}
       />
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }

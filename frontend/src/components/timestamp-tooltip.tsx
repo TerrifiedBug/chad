@@ -2,7 +2,6 @@ import { format } from 'date-fns'
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from './ui/tooltip'
 
@@ -19,16 +18,14 @@ export function TimestampTooltip({ timestamp, children }: TimestampTooltipProps)
     const fullDate = format(date, 'MMM d, yyyy HH:mm:ss UTC')
 
     return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-block cursor-help">{children}</span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{fullDate}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-block cursor-help">{children}</span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p className="font-mono text-xs">{fullDate}</p>
+        </TooltipContent>
+      </Tooltip>
     )
   } catch {
     return children
