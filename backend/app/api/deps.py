@@ -178,6 +178,7 @@ async def get_opensearch_client(
         username=config.get("username"),
         password=password,
         use_ssl=config.get("use_ssl", True),
+        verify_certs=config.get("verify_certs", True),  # Default to True for security
     )
 
 
@@ -213,6 +214,7 @@ async def get_opensearch_client_optional(
             username=config.get("username"),
             password=password,
             use_ssl=config.get("use_ssl", True),
+            verify_certs=config.get("verify_certs", True),  # Default to True for security
         )
     except Exception:
         return None

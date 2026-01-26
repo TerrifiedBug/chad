@@ -97,6 +97,7 @@ export type OpenSearchConfig = {
   username?: string
   password?: string
   use_ssl: boolean
+  verify_certs?: boolean  // Default: true - only disable for dev with self-signed certs
 }
 
 export type ValidationStep = {

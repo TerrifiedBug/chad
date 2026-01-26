@@ -45,42 +45,93 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # OAuth client instance
 oauth = OAuth()
 
-# Temporary storage for 2FA setup/login (in production, use Redis)
-_pending_2fa_setup: dict[str, str] = {}
-_pending_2fa_login: dict[str, str] = {}
-
 # Default session timeout in minutes (8 hours)
 DEFAULT_SESSION_TIMEOUT_MINUTES = 480
 
+# 2FA token types
+TOKEN_TYPE_SETUP = "setup"
+TOKEN_TYPE_LOGIN = "login"
 
-def validate_password_complexity(password: str) -> tuple[bool, str]:
+
+def validate_password_complexity(
+    password: str,
+    user_email: str | None = None,
+) -> tuple[bool, str]:
     """
-    Validate password meets complexity requirements.
+    Validate password meets strong complexity requirements.
 
-    Requirements:
-    - At least 8 characters
+    Requirements (following NIST guidelines):
+    - At least 12 characters (increased from 8 for better security)
+    - Maximum 128 characters (prevents DoS)
     - At least one uppercase letter
     - At least one lowercase letter
     - At least one number
     - At least one special character
+    - Cannot contain user's email (if provided)
 
-    Returns (is_valid, error_message)
+    Args:
+        password: The password to validate
+        user_email: User's email address (optional, for additional validation)
+
+    Returns:
+        Tuple of (is_valid, error_message)
     """
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters"
+    # Length requirements
+    if len(password) < 12:
+        return False, "Password must be at least 12 characters long"
 
+    if len(password) > 128:
+        return False, "Password must not exceed 128 characters"
+
+    # Check for user information in password
+    if user_email:
+        email_username = user_email.split('@')[0].lower()
+        if email_username and len(email_username) >= 3 and email_username in password.lower():
+            return False, "Password cannot contain your email username"
+
+    # Character complexity requirements
     if not any(c.isupper() for c in password):
-        return False, "Password must contain at least one uppercase letter"
+        return False, "Password must contain at least one uppercase letter (A-Z)"
 
     if not any(c.islower() for c in password):
-        return False, "Password must contain at least one lowercase letter"
+        return False, "Password must contain at least one lowercase letter (a-z)"
 
     if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least one number"
+        return False, "Password must contain at least one number (0-9)"
 
     special_chars = "!@#$%^&*()_+-=[]{}|;:',.<>?/`~"
     if not any(c in special_chars for c in password):
         return False, "Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:',.<>?/`~)"
+
+    # Check for common patterns (basic check)
+    password_lower = password.lower()
+
+    # Common sequential patterns
+    sequential_patterns = [
+        "123456", "234567", "345678", "456789", "567890",
+        "abcde", "bcdef", "cdefg", "defgh", "efghi",
+        "qwerty", "asdfgh", "zxcvbn",
+    ]
+    for pattern in sequential_patterns:
+        if pattern in password_lower:
+            return False, f"Password cannot contain common patterns like '{pattern}'"
+
+    # Common repeated characters
+    if any(char * 4 in password_lower for char in "0123456789abcdefghijklmnopqrstuvwxyz"):
+        return False, "Password cannot contain repeated characters (e.g., 'aaaa' or '1111')"
+
+    # Common passwords (basic list - in production, use zxcvbn or haveibeenpwned API)
+    common_passwords = {
+        "password", "password123", "password1",
+        "qwerty", "qwerty123", "qwerty1",
+        "letmein", "letmein123",
+        "admin", "admin123", "admin1",
+        "welcome", "welcome123", "welcome1",
+        "12345678", "123456789", "1234567890",
+        "abc123", "abc12345",
+    }
+    if password_lower in common_passwords:
+        return False, "Password is too common. Please choose a more secure password"
 
     return True, ""
 
@@ -163,6 +214,17 @@ async def initial_setup(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Setup already completed",
+        )
+
+    # Validate password complexity (pass email for additional validation)
+    is_valid, error_msg = validate_password_complexity(
+        request.admin_password,
+        user_email=request.admin_email,
+    )
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
         )
 
     # Create admin user
@@ -305,7 +367,15 @@ async def login(
         import secrets
 
         temp_token = secrets.token_urlsafe(32)
-        _pending_2fa_login[temp_token] = str(user.id)
+        # Store in database with 10-minute expiration
+        from app.models.two_factor_token import TwoFactorToken
+        await TwoFactorToken.create_token(
+            db,
+            user_id=temp_token,  # Use temp_token as key (maps to actual user_id)
+            token_type=TOKEN_TYPE_LOGIN,
+            token_data=str(user.id),
+            expires_minutes=10,
+        )
         await clear_failed_attempts(db, email)
         await db.commit()
         return {"requires_2fa": True, "2fa_token": temp_token}
@@ -349,7 +419,15 @@ async def change_password(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    """Change password for local authentication users."""
+    """Change password for local authentication users.
+
+    This endpoint performs the following in a single atomic transaction:
+    1. Verifies the current password
+    2. Validates the new password meets complexity requirements
+    3. Ensures new password is different from current password
+    4. Updates the password hash
+    5. Logs the change for audit purposes
+    """
     # SSO users cannot change password
     if current_user.password_hash is None:
         raise HTTPException(
@@ -374,22 +452,40 @@ async def change_password(
             detail="Current password is incorrect",
         )
 
-    # Validate password complexity
-    is_valid, error_msg = validate_password_complexity(new_password)
+    # Validate password complexity (pass email for additional validation)
+    is_valid, error_msg = validate_password_complexity(
+        new_password,
+        user_email=current_user.email,
+    )
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error_msg,
         )
 
+    # Prevent reusing the current password
+    if verify_password(new_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from your current password",
+        )
+
+    # Audit log BEFORE commit (ensures atomic transaction)
+    await audit_log(
+        db,
+        current_user.id,
+        "user.password_change",
+        "user",
+        str(current_user.id),
+        {},
+        ip_address=get_client_ip(request),
+    )
+
     # Update password and clear the must_change_password flag
     current_user.password_hash = get_password_hash(new_password)
     current_user.must_change_password = False
-    await db.commit()
-    await audit_log(
-        db, current_user.id, "user.password_change", "user",
-        str(current_user.id), {}, ip_address=get_client_ip(request),
-    )
+
+    # Single atomic commit for both password update and audit log
     await db.commit()
 
     return {"message": "Password changed successfully"}
@@ -616,7 +712,16 @@ async def setup_2fa(
 
     secret = generate_totp_secret()
     qr_uri = generate_qr_uri(secret, current_user.email)
-    _pending_2fa_setup[str(current_user.id)] = secret
+    # Store in database with 10-minute expiration
+    from app.models.two_factor_token import TwoFactorToken
+    await TwoFactorToken.create_token(
+        db,
+        user_id=str(current_user.id),
+        token_type=TOKEN_TYPE_SETUP,
+        token_data=secret,
+        expires_minutes=10,
+    )
+    await db.commit()
 
     return TwoFactorSetupResponse(qr_uri=qr_uri, secret=secret)
 
@@ -629,12 +734,19 @@ async def verify_2fa_setup(
 ):
     """Verify 2FA setup with code from authenticator app."""
     user_id = str(current_user.id)
-    pending_secret = _pending_2fa_setup.get(user_id)
-    if not pending_secret:
+    # Retrieve from database
+    from app.models.two_factor_token import TwoFactorToken
+    pending_token = await TwoFactorToken.get_valid_token(
+        db,
+        user_id=user_id,
+        token_type=TOKEN_TYPE_SETUP,
+    )
+    if not pending_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No pending 2FA setup. Call /2fa/setup first.",
         )
+    pending_secret = pending_token.token_data
 
     if not verify_totp_code(pending_secret, request.code):
         raise HTTPException(
@@ -648,10 +760,11 @@ async def verify_2fa_setup(
     current_user.totp_secret = pending_secret
     current_user.totp_enabled = True
     current_user.totp_backup_codes = hashed_codes
+
+    # Delete the pending token
+    await TwoFactorToken.delete_token(db, user_id=user_id, token_type=TOKEN_TYPE_SETUP)
+
     await db.commit()
-
-    del _pending_2fa_setup[user_id]
-
     await audit_log(db, current_user.id, "user.2fa_enabled", "user", str(current_user.id), {})
     await db.commit()
 
@@ -699,12 +812,19 @@ async def login_2fa(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Complete login with 2FA code."""
-    user_id = _pending_2fa_login.get(request.token)
-    if not user_id:
+    # Retrieve from database
+    from app.models.two_factor_token import TwoFactorToken
+    pending_token = await TwoFactorToken.get_valid_token(
+        db,
+        user_id=request.token,
+        token_type=TOKEN_TYPE_LOGIN,
+    )
+    if not pending_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired 2FA token. Please login again.",
         )
+    user_id = pending_token.token_data
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -724,7 +844,8 @@ async def login_2fa(
     if not code_valid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid 2FA code.")
 
-    del _pending_2fa_login[request.token]
+    # Delete the pending token after successful verification
+    await TwoFactorToken.delete_token(db, user_id=request.token, token_type=TOKEN_TYPE_LOGIN)
 
     access_token = await create_token_with_dynamic_timeout(str(user.id), db)
     await audit_log(

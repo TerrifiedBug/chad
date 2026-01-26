@@ -54,6 +54,7 @@ async def _get_opensearch_client_for_audit(db: AsyncSession):
             username=config.get("username"),
             password=password,
             use_ssl=config.get("use_ssl", True),
+            verify_certs=config.get("verify_certs", True),  # Default to True for security
         )
     except Exception as e:
         logger.warning(f"Failed to create OpenSearch client for audit: {e}")

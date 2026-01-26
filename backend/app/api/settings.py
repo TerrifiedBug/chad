@@ -98,6 +98,7 @@ class OpenSearchConfig(BaseModel):
     username: str | None = None
     password: str | None = None
     use_ssl: bool = True
+    verify_certs: bool = True  # Default to True for security - only disable for dev with self-signed certs
 
 
 class OpenSearchTestResponse(BaseModel):
@@ -141,6 +142,7 @@ async def test_opensearch_connection(
         username=config.username,
         password=config.password,
         use_ssl=config.use_ssl,
+        verify_certs=config.verify_certs,
     )
 
     return OpenSearchTestResponse(

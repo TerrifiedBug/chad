@@ -326,7 +326,7 @@ export default function HealthPage() {
                       value={settingsForm.no_data_minutes}
                       onChange={(e) =>
                         setSettingsForm({
-                          ...settingsForm,
+                          ...settingsForm!,
                           no_data_minutes: parseInt(e.target.value) || 0,
                         })
                       }
@@ -343,7 +343,7 @@ export default function HealthPage() {
                       value={settingsForm.error_rate_percent}
                       onChange={(e) =>
                         setSettingsForm({
-                          ...settingsForm,
+                          ...settingsForm!,
                           error_rate_percent: parseFloat(e.target.value) || 0,
                         })
                       }
@@ -359,7 +359,7 @@ export default function HealthPage() {
                       value={settingsForm.latency_ms}
                       onChange={(e) =>
                         setSettingsForm({
-                          ...settingsForm,
+                          ...settingsForm!,
                           latency_ms: parseInt(e.target.value) || 0,
                         })
                       }
@@ -375,7 +375,7 @@ export default function HealthPage() {
                       value={settingsForm.queue_warning}
                       onChange={(e) =>
                         setSettingsForm({
-                          ...settingsForm,
+                          ...settingsForm!,
                           queue_warning: parseInt(e.target.value) || 0,
                         })
                       }
@@ -391,7 +391,7 @@ export default function HealthPage() {
                       value={settingsForm.queue_critical}
                       onChange={(e) =>
                         setSettingsForm({
-                          ...settingsForm,
+                          ...settingsForm!,
                           queue_critical: parseInt(e.target.value) || 0,
                         })
                       }

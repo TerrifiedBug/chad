@@ -20,6 +20,7 @@ from app.models.rule_comment import RuleComment
 from app.models.rule_exception import ExceptionOperator, RuleException
 from app.models.setting import Setting
 from app.models.threshold_state import ThresholdMatch
+from app.models.two_factor_token import TwoFactorToken
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -50,6 +51,7 @@ __all__ = [
     "ThresholdMatch",
     "TISourceConfig",
     "TISourceType",
+    "TwoFactorToken",
     "User",
     "UserRole",
     "Webhook",

@@ -32,6 +32,7 @@ export default function OpenSearchWizard() {
     username: '',
     password: '',
     use_ssl: true,
+    verify_certs: true,
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -51,6 +52,12 @@ export default function OpenSearchWizard() {
     setValidationSteps([])
   }
 
+  const handleVerifyCertsChange = (checked: boolean) => {
+    setFormData((prev) => ({ ...prev, verify_certs: checked }))
+    setTestPassed(false)
+    setValidationSteps([])
+  }
+
   const handleTest = async () => {
     setError('')
     setIsTesting(true)
@@ -64,6 +71,7 @@ export default function OpenSearchWizard() {
         username: formData.username || undefined,
         password: formData.password || undefined,
         use_ssl: formData.use_ssl,
+        verify_certs: formData.verify_certs,
       }
 
       const result = await settingsApi.testOpenSearch(config)
@@ -94,6 +102,7 @@ export default function OpenSearchWizard() {
         username: formData.username || undefined,
         password: formData.password || undefined,
         use_ssl: formData.use_ssl,
+        verify_certs: formData.verify_certs,
       }
 
       await settingsApi.saveOpenSearch(config)
@@ -168,6 +177,19 @@ export default function OpenSearchWizard() {
                   id="use_ssl"
                   checked={formData.use_ssl}
                   onCheckedChange={handleSslChange}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="verify_certs">Verify SSL Certificates</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Disable only for development with self-signed certificates
+                  </p>
+                </div>
+                <Switch
+                  id="verify_certs"
+                  checked={formData.verify_certs ?? true}
+                  onCheckedChange={handleVerifyCertsChange}
                 />
               </div>
             </div>

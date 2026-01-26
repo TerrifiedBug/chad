@@ -24,16 +24,33 @@ def create_client(
     username: str | None,
     password: str | None,
     use_ssl: bool,
+    verify_certs: bool = True,
 ) -> OpenSearch:
-    """Create an OpenSearch client with the given configuration."""
+    """Create an OpenSearch client with the given configuration.
+
+    Args:
+        host: OpenSearch host
+        port: OpenSearch port
+        username: Username for authentication (optional)
+        password: Password for authentication (optional)
+        use_ssl: Whether to use SSL/TLS
+        verify_certs: Whether to verify SSL certificates (default: True for security)
+
+    Returns:
+        Configured OpenSearch client
+
+    Security Note:
+        In production, verify_certs should always be True to prevent Man-in-the-Middle attacks.
+        Only set to False for development/testing with self-signed certificates.
+    """
     auth = (username, password) if username and password else None
 
     return OpenSearch(
         hosts=[{"host": host, "port": port}],
         http_auth=auth,
         use_ssl=use_ssl,
-        verify_certs=False,  # For initial setup, may want to make configurable
-        ssl_show_warn=False,
+        verify_certs=verify_certs,
+        ssl_show_warn=not verify_certs,  # Only show warnings if not verifying
         timeout=10,
     )
 
@@ -44,9 +61,18 @@ def validate_opensearch_connection(
     username: str | None,
     password: str | None,
     use_ssl: bool,
+    verify_certs: bool = True,
 ) -> ValidationResult:
     """
     Validate OpenSearch connection with full CHAD capability test.
+
+    Args:
+        host: OpenSearch host
+        port: OpenSearch port
+        username: Username for authentication (optional)
+        password: Password for authentication (optional)
+        use_ssl: Whether to use SSL/TLS
+        verify_certs: Whether to verify SSL certificates (default: True for security)
 
     Steps:
     1. Connect to host (TCP connectivity)
@@ -55,6 +81,9 @@ def validate_opensearch_connection(
     4. Index a test query
     5. Run percolate query to verify matching works
     6. Clean up test artifacts
+
+    Returns:
+        ValidationResult with success status and detailed step results
     """
     steps: list[ValidationStep] = []
     client: OpenSearch | None = None
@@ -63,7 +92,7 @@ def validate_opensearch_connection(
     try:
         # Step 1: Connectivity
         try:
-            client = create_client(host, port, username, password, use_ssl)
+            client = create_client(host, port, username, password, use_ssl, verify_certs)
             info = client.info()
             if not info:
                 raise Exception("No response from OpenSearch")

@@ -17,7 +17,7 @@ import { ArrowLeft, Check, X, AlertTriangle } from 'lucide-react'
 // Password complexity validation
 function validatePasswordComplexity(password: string) {
   return {
-    minLength: password.length >= 8,
+    minLength: password.length >= 12,
     hasUppercase: /[A-Z]/.test(password),
     hasLowercase: /[a-z]/.test(password),
     hasNumber: /[0-9]/.test(password),
@@ -176,7 +176,7 @@ export default function ChangePasswordPage() {
                 required
               />
               <div className="space-y-1 pt-1">
-                <PasswordRequirement met={complexity.minLength} text="At least 8 characters" />
+                <PasswordRequirement met={complexity.minLength} text="At least 12 characters" />
                 <PasswordRequirement met={complexity.hasUppercase} text="At least one uppercase letter" />
                 <PasswordRequirement met={complexity.hasLowercase} text="At least one lowercase letter" />
                 <PasswordRequirement met={complexity.hasNumber} text="At least one number" />

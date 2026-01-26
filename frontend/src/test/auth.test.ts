@@ -1,6 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, act, cleanup } from '@testing-library/react';
 import { useAuth } from '@/hooks/useAuth';
+
+// Cleanup after each test
+afterEach(() => {
+  cleanup();
+});
 
 // Mock the API
 vi.mock('@/lib/api', () => ({

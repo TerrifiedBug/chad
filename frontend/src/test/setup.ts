@@ -1,5 +1,11 @@
-/// <reference types="vitest" />
-import { vi } from 'vitest';
+import { vi, afterEach } from 'vitest';
+import '@testing-library/jest-dom';
+import { cleanup } from '@testing-library/react';
+
+// Cleanup after each test
+afterEach(() => {
+  cleanup();
+});
 
 // Mock API calls
 vi.mock('@/lib/api', () => ({
@@ -36,3 +42,4 @@ global.IntersectionObserver = class IntersectionObserver {
   }
   unobserve() {}
 } as any;
+
