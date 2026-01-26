@@ -1699,7 +1699,7 @@ export default function RuleEditorPage() {
         <ActivityPanel
           ruleId={id!}
           currentYaml={yamlContent}
-          currentVersion={currentVersion}
+          currentVersion={currentVersion?.version_number ?? 1}
           isOpen={isActivityOpen}
           onClose={() => setIsActivityOpen(false)}
           onRestore={handleRestoreVersion}

@@ -235,11 +235,16 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={() => handleRestoreClick(
-                      Number(activity.data.version_number),
-                      String(activity.data.yaml_content),
-                      activity.data.change_reason && typeof activity.data.change_reason === 'string' ? activity.data.change_reason : undefined
-                    )}
+                    onClick={() => {
+                      console.log('[ActivityPanel] DEBUG activity.data:', activity.data)
+                      console.log('[ActivityPanel] DEBUG yaml_content type:', typeof activity.data.yaml_content)
+                      console.log('[ActivityPanel] DEBUG change_reason:', activity.data.change_reason)
+                      handleRestoreClick(
+                        Number(activity.data.version_number),
+                        String(activity.data.yaml_content),
+                        activity.data.change_reason && typeof activity.data.change_reason === 'string' ? activity.data.change_reason : undefined
+                      )
+                    }}
                   >
                     <RotateCcw className="h-3 w-3 mr-1" />
                     Restore
