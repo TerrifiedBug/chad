@@ -263,28 +263,6 @@ def _get_db_url() -> str:
     )
 
 
-async def get_app_url_for_webhooks() -> str | None:
-    """Get APP_URL from database settings for webhook URLs."""
-    engine = create_async_engine(_get_db_url())
-    async_session_factory = async_sessionmaker(engine, class_=AsyncSession)
-
-    try:
-        async with async_session_factory() as session:
-            result = await session.execute(
-                select(Setting).where(Setting.key == "app_url")
-            )
-            setting = result.scalar_one_or_none()
-
-            if setting and setting.value and setting.value.get("url"):
-                return setting.value["url"]
-            return None
-    except Exception as e:
-        logger.error(f"Failed to get APP_URL: {e}")
-        return None
-    finally:
-        await engine.dispose()
-
-
 async def get_webhook_config() -> dict[str, Any] | None:
     """Get webhook configuration from database settings."""
     engine = create_async_engine(_get_db_url())
@@ -338,7 +316,8 @@ async def send_alert_to_webhooks(alert: dict[str, Any]) -> dict[str, bool]:
         return {}
 
     # Build alert URL if APP_URL is configured
-    app_url = await get_app_url_for_webhooks()
+    from app.core.config import settings
+    app_url = settings.APP_URL
     alert_url = None
     if app_url and alert.get("alert_id"):
         alert_url = f"{app_url}/alerts/{alert['alert_id']}"
