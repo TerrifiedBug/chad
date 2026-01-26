@@ -2,8 +2,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-# Workaround for npm optional dependency bug on Alpine
-RUN npm ci --prefer-offline || npm install
+RUN npm ci
 COPY . .
 RUN npm run build
 
