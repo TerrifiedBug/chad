@@ -126,10 +126,12 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
     const versionData = ruleVersionsMap[versionNumber]
     const actualChangeReason = versionData?.change_reason
 
+    console.log('handleRestoreClick:', { versionNumber, versionData, actualChangeReason })
+
     setRestoreTarget({
       versionNumber,
       yaml,
-      changeReason: actualChangeReason
+      changeReason: typeof actualChangeReason === 'string' ? actualChangeReason : String(actualChangeReason || '')
     })
   }
 
