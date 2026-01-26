@@ -24,7 +24,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
   const [isLoading, setIsLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [restoreTarget, setRestoreTarget] = useState<{ versionNumber: number; yaml: string } | null>(null)
+  const [restoreTarget, setRestoreTarget] = useState<{ versionNumber: number; yaml: string; changeReason?: string } | null>(null)
   const [isRestoring, setIsRestoring] = useState(false)
 
   const activityItems = useMemo(
@@ -100,8 +100,8 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
     }
   }
 
-  const handleRestoreClick = (versionNumber: number, yaml: string) => {
-    setRestoreTarget({ versionNumber, yaml })
+  const handleRestoreClick = (versionNumber: number, yaml: string, changeReason?: string) => {
+    setRestoreTarget({ versionNumber, yaml, changeReason })
   }
 
   const handleRestoreConfirm = async () => {
@@ -287,7 +287,8 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
                     disabled={!canManageRules}
                     onClick={() => handleRestoreClick(
                       Number(activity.data.version_number),
-                      String(activity.data.yaml_content)
+                      String(activity.data.yaml_content),
+                      activity.data.change_reason && typeof activity.data.change_reason === 'string' ? activity.data.change_reason : undefined
                     )}
                   >
                     <RotateCcw className="h-3 w-3 mr-1" />
@@ -311,6 +312,7 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
           targetVersion={restoreTarget.versionNumber}
           currentVersion={currentVersion}
           isRestoring={isRestoring}
+          targetChangeReason={restoreTarget.changeReason}
         />
       )}
     </TooltipProvider>
