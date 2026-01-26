@@ -72,8 +72,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          rm -f package-lock.json
-          npm install
+          npm ci
 
       - name: Run lint
         run: |
