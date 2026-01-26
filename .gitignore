@@ -37,6 +37,7 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+test-results/
 
 # Docker
 *.log
