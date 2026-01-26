@@ -18,6 +18,7 @@ import {
   CorrelationRule,
 } from '@/lib/api'
 import { YamlEditor } from '@/components/YamlEditor'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -39,7 +40,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link, Beaker, TestTube, TrendingUp, ShieldAlert, GitCompare } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -187,6 +188,7 @@ export default function RuleEditorPage() {
   const [showThreshold, setShowThreshold] = useState(false)
   const [showExceptions, setShowExceptions] = useState(false)
   const [showCorrelation, setShowCorrelation] = useState(false)
+  const [showTest, setShowTest] = useState(false)
   const [showHistoricalTest, setShowHistoricalTest] = useState(false)
 
   // Unmapped fields dialog state
@@ -856,7 +858,7 @@ export default function RuleEditorPage() {
                     variant="outline"
                     size="sm"
                     onClick={handleUnsnooze}
-                    disabled={isSnoozing}
+                    disabled={isSnoozing || !canManageRules}
                   >
                     {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
                   </Button>
@@ -867,7 +869,7 @@ export default function RuleEditorPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled
+                    disabled={!canManageRules}
                     title="Deploy the rule first to enable snooze"
                   >
                     <Clock className="h-4 w-4 mr-1" />
@@ -879,18 +881,18 @@ export default function RuleEditorPage() {
                   <span className="text-sm text-green-600 font-medium">Deployed</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" disabled={isSnoozing}>
+                      <Button variant="outline" size="sm" disabled={isSnoozing || !canManageRules}>
                         <Clock className="h-4 w-4 mr-1" />
                         Snooze
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="z-50 bg-popover">
-                      <DropdownMenuItem onClick={() => handleSnooze(1)}>1 hour</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(4)}>4 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(8)}>8 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(24)}>24 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(168)}>1 week</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnoozeIndefinite()}>Indefinitely</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(1)} disabled={!canManageRules}>1 hour</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(4)} disabled={!canManageRules}>4 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(8)} disabled={!canManageRules}>8 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(24)} disabled={!canManageRules}>24 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnooze(168)} disabled={!canManageRules}>1 week</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSnoozeIndefinite()} disabled={!canManageRules}>Indefinitely</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -941,7 +943,7 @@ export default function RuleEditorPage() {
                   <Button
                     variant="outline"
                     onClick={handleDeploy}
-                    disabled={isDeploying || !isValid}
+                    disabled={isDeploying || !isValid || !canManageRules}
                   >
                     <Rocket className="h-4 w-4 mr-2" />
                     {isDeploying ? 'Deploying...' : 'Redeploy'}
@@ -950,7 +952,7 @@ export default function RuleEditorPage() {
                 <Button
                   variant="ghost"
                   onClick={handleUndeploy}
-                  disabled={isDeploying}
+                  disabled={isDeploying || !canManageRules}
                 >
                   <RotateCcw className="h-4 w-4 mr-2" />
                   {isDeploying ? 'Undeploying...' : 'Undeploy'}
@@ -960,14 +962,14 @@ export default function RuleEditorPage() {
               <Button
                 variant="outline"
                 onClick={handleDeploy}
-                disabled={isDeploying || !isValid}
+                disabled={isDeploying || !isValid || !canManageRules}
               >
                 <Rocket className="h-4 w-4 mr-2" />
                 {isDeploying ? 'Deploying...' : 'Deploy'}
               </Button>
             )
           )}
-          <Button onClick={handleSave} disabled={isSaving || !isValid || (!isNew && !hasChanges())}>
+          <Button onClick={handleSave} disabled={isSaving || !isValid || (!isNew && !hasChanges()) || !canManageRules}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </div>
@@ -996,7 +998,7 @@ export default function RuleEditorPage() {
           <Button
             size="sm"
             onClick={handleDeploy}
-            disabled={isDeploying}
+            disabled={isDeploying || !canManageRules}
           >
             {isDeploying ? 'Deploying...' : 'Redeploy Now'}
           </Button>
@@ -1013,14 +1015,15 @@ export default function RuleEditorPage() {
               value={title}
               onChange={(e) => handleTitleChange(e.target.value)}
               placeholder="Detection rule title"
+              disabled={!canManageRules}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Index Pattern</Label>
-              <Select value={indexPatternId} onValueChange={setIndexPatternId}>
-                <SelectTrigger>
+              <Select value={indexPatternId} onValueChange={canManageRules ? setIndexPatternId : undefined} disabled={!canManageRules}>
+                <SelectTrigger disabled={!canManageRules}>
                   <SelectValue placeholder="Select index pattern" />
                 </SelectTrigger>
                 <SelectContent className="z-50 bg-popover">
@@ -1034,8 +1037,8 @@ export default function RuleEditorPage() {
             </div>
             <div className="space-y-2">
               <Label>Severity</Label>
-              <Select value={severity} onValueChange={handleSeverityChange}>
-                <SelectTrigger>
+              <Select value={severity} onValueChange={canManageRules ? handleSeverityChange : undefined} disabled={!canManageRules}>
+                <SelectTrigger disabled={!canManageRules}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="z-50 bg-popover">
@@ -1057,6 +1060,7 @@ export default function RuleEditorPage() {
                 size="sm"
                 onClick={formatYaml}
                 className="h-6 text-xs"
+                disabled={!canManageRules}
               >
                 <AlignLeft className="h-3 w-3 mr-1" />
                 Format
@@ -1067,6 +1071,7 @@ export default function RuleEditorPage() {
               onChange={handleYamlChange}
               height="400px"
               errors={editorErrors}
+              readOnly={!canManageRules}
             />
           </div>
         </div>
@@ -1077,6 +1082,7 @@ export default function RuleEditorPage() {
           <Card>
             <CardHeader className="py-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <TestTube className="h-4 w-4 text-muted-foreground" />
                 Validation
                 {isValidating && (
                   <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -1226,7 +1232,9 @@ export default function RuleEditorPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Last updated:</span>
-                    <span className="text-muted-foreground">{formatDistanceToNow(new Date(currentVersion.created_at), { addSuffix: true })}</span>
+                    <TimestampTooltip timestamp={currentVersion.created_at}>
+                      <span className="text-muted-foreground">{formatDistanceToNow(new Date(currentVersion.created_at), { addSuffix: true })}</span>
+                    </TimestampTooltip>
                   </div>
                   {currentVersion.changed_by && (
                     <div className="flex items-center justify-between">
@@ -1249,50 +1257,61 @@ export default function RuleEditorPage() {
 
           {/* Test Card */}
           <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm font-medium">Test Rule</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-2">
-                <Label className="text-xs">Sample Log (JSON)</Label>
-                <textarea
-                  value={sampleLog}
-                  onChange={(e) => setSampleLog(e.target.value)}
-                  className="w-full h-32 p-2 text-xs font-mono border rounded-md bg-background resize-none"
-                  placeholder='{"field": "value"}'
-                />
-              </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={handleTest}
-                disabled={isTesting || !isValid}
-                className="w-full"
-              >
-                <Play className="h-3 w-3 mr-2" />
-                {isTesting ? 'Testing...' : 'Test'}
-              </Button>
-
-              {testResults && (
-                <div className="space-y-1">
-                  {testResults.map((result, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex items-center gap-2 text-sm ${
-                        result.matched ? 'text-green-600' : 'text-muted-foreground'
-                      }`}
-                    >
-                      {result.matched ? (
-                        <Check className="h-4 w-4" />
-                      ) : (
-                        <X className="h-4 w-4" />
-                      )}
-                      Log {result.log_index + 1}: {result.matched ? 'Matched' : 'No match'}
-                    </div>
-                  ))}
+            <CardHeader
+              className="py-3 cursor-pointer"
+              onClick={() => setShowTest(!showTest)}
+            >
+              <CardTitle className="text-sm font-medium flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Beaker className="h-4 w-4 text-muted-foreground" />
+                  <span>Test Rule</span>
                 </div>
-              )}
-            </CardContent>
+                {showTest ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </CardTitle>
+            </CardHeader>
+            {showTest && (
+              <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <Label className="text-xs">Sample Log (JSON)</Label>
+                  <textarea
+                    value={sampleLog}
+                    onChange={(e) => setSampleLog(e.target.value)}
+                    className="w-full h-32 p-2 text-xs font-mono border rounded-md bg-background resize-none"
+                    placeholder='{"field": "value"}'
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleTest}
+                  disabled={isTesting || !isValid}
+                  className="w-full"
+                >
+                  <Play className="h-3 w-3 mr-2" />
+                  {isTesting ? 'Testing...' : 'Test'}
+                </Button>
+
+                {testResults && (
+                  <div className="space-y-1">
+                    {testResults.map((result, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-2 text-sm ${
+                          result.matched ? 'text-green-600' : 'text-muted-foreground'
+                        }`}
+                      >
+                        {result.matched ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <X className="h-4 w-4" />
+                        )}
+                        Log {result.log_index + 1}: {result.matched ? 'Matched' : 'No match'}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            )}
           </Card>
 
           {/* Historical Dry-Run Test - Only show for existing rules with index pattern */}
@@ -1325,7 +1344,10 @@ export default function RuleEditorPage() {
               onClick={() => setShowThreshold(!showThreshold)}
             >
               <CardTitle className="text-sm font-medium flex items-center justify-between">
-                <span>Threshold Alerting</span>
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  <span>Threshold Alerting</span>
+                </div>
                 {showThreshold ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </CardTitle>
             </CardHeader>
@@ -1338,7 +1360,8 @@ export default function RuleEditorPage() {
                   <Switch
                     id="threshold-enabled"
                     checked={thresholdEnabled}
-                    onCheckedChange={handleThresholdToggle}
+                    onCheckedChange={canManageRules ? handleThresholdToggle : undefined}
+                    disabled={!canManageRules}
                   />
                 </div>
                 {thresholdEnabled && (
@@ -1356,6 +1379,7 @@ export default function RuleEditorPage() {
                           onChange={(e) => setThresholdCount(e.target.value ? parseInt(e.target.value) : null)}
                           placeholder="5"
                           className="h-8 text-sm"
+                          disabled={!canManageRules}
                         />
                       </div>
                       <div className="space-y-1">
@@ -1367,6 +1391,7 @@ export default function RuleEditorPage() {
                           onChange={(e) => setThresholdWindowMinutes(e.target.value ? parseInt(e.target.value) : null)}
                           placeholder="10"
                           className="h-8 text-sm"
+                          disabled={!canManageRules}
                         />
                       </div>
                     </div>
@@ -1377,6 +1402,7 @@ export default function RuleEditorPage() {
                         onChange={(e) => setThresholdGroupBy(e.target.value || null)}
                         placeholder="user.name"
                         className="h-8 text-sm"
+                        disabled={!canManageRules}
                       />
                       <div className="text-xs text-muted-foreground">
                         Count matches separately per unique value of this field
@@ -1396,8 +1422,9 @@ export default function RuleEditorPage() {
                 onClick={() => setShowExceptions(!showExceptions)}
               >
                 <CardTitle className="text-sm font-medium flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    Exceptions
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+                    <span>Exceptions</span>
                     {isLoadingExceptions && (
                       <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                     )}
@@ -1406,7 +1433,7 @@ export default function RuleEditorPage() {
                         ({exceptions.length})
                       </span>
                     )}
-                  </span>
+                  </div>
                   {showExceptions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </CardTitle>
               </CardHeader>
@@ -1443,14 +1470,16 @@ export default function RuleEditorPage() {
                             <div className="flex items-center gap-2 shrink-0">
                               <Switch
                                 checked={exception.is_active}
-                                onCheckedChange={(checked) =>
+                                onCheckedChange={canManageRules ? (checked) =>
                                   handleToggleException(exception.id, checked)
-                                }
+                                : undefined}
+                                disabled={!canManageRules}
                               />
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
+                                disabled={!canManageRules}
                                 onClick={() => openDeleteExceptionDialog(exception)}
                               >
                                 <Trash2 className="h-3 w-3 text-destructive" />
@@ -1469,9 +1498,10 @@ export default function RuleEditorPage() {
                       {detectedFields.length > 0 ? (
                         <Select
                           value={newExceptionField}
-                          onValueChange={setNewExceptionField}
+                          onValueChange={canManageRules ? setNewExceptionField : undefined}
+                          disabled={!canManageRules}
                         >
-                          <SelectTrigger className="h-8 text-sm">
+                          <SelectTrigger className="h-8 text-sm" disabled={!canManageRules}>
                             <SelectValue placeholder="Select field" />
                           </SelectTrigger>
                           <SelectContent className="z-50 bg-popover max-h-48">
@@ -1488,15 +1518,17 @@ export default function RuleEditorPage() {
                           value={newExceptionField}
                           onChange={(e) => setNewExceptionField(e.target.value)}
                           className="h-8 text-sm"
+                          disabled={!canManageRules}
                         />
                       )}
                       <Select
                         value={newExceptionOperator}
-                        onValueChange={(value) =>
+                        onValueChange={canManageRules ? (value) =>
                           setNewExceptionOperator(value as ExceptionOperator)
-                        }
+                        : undefined}
+                        disabled={!canManageRules}
                       >
-                        <SelectTrigger className="h-8 text-sm">
+                        <SelectTrigger className="h-8 text-sm" disabled={!canManageRules}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="z-50 bg-popover">
@@ -1515,12 +1547,14 @@ export default function RuleEditorPage() {
                         value={newExceptionValue}
                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewExceptionValue(e.target.value)}
                         className="w-full min-h-[60px] p-2 text-sm border rounded-md bg-background resize-none"
+                        disabled={!canManageRules}
                       />
                       <Input
                         placeholder="Reason (optional)"
                         value={newExceptionReason}
                         onChange={(e) => setNewExceptionReason(e.target.value)}
                         className="h-8 text-sm"
+                        disabled={!canManageRules}
                       />
                       <Button
                         size="sm"
@@ -1528,7 +1562,8 @@ export default function RuleEditorPage() {
                         disabled={
                           isAddingException ||
                           !newExceptionField.trim() ||
-                          !newExceptionValue.trim()
+                          !newExceptionValue.trim() ||
+                          !canManageRules
                         }
                         className="w-full"
                       >
@@ -1550,8 +1585,9 @@ export default function RuleEditorPage() {
                 onClick={() => setShowCorrelation(!showCorrelation)}
               >
                 <CardTitle className="text-sm font-medium flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    Correlation Rules
+                  <div className="flex items-center gap-2">
+                    <GitCompare className="h-4 w-4 text-muted-foreground" />
+                    <span>Correlation Rules</span>
                     {isLoadingCorrelations && (
                       <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                     )}
@@ -1560,7 +1596,7 @@ export default function RuleEditorPage() {
                         ({correlationRules.length})
                       </span>
                     )}
-                  </span>
+                  </div>
                   {showCorrelation ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </CardTitle>
               </CardHeader>
@@ -1665,6 +1701,7 @@ export default function RuleEditorPage() {
           isOpen={isActivityOpen}
           onClose={() => setIsActivityOpen(false)}
           onRestore={handleRestoreVersion}
+          canManageRules={canManageRules}
         />
       )}
 
