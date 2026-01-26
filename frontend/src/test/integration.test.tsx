@@ -129,8 +129,11 @@ describe('Integration Tests', () => {
       let csrfTokenReceived = false;
 
       vi.mocked(global.fetch).mockImplementation((url) => {
+        // Convert URL to string for matching
+        const urlStr = typeof url === 'string' ? url : String(url);
+
         // Match the actual URL that api.get('/test') uses
-        if (url.includes('/test') || url === '/test') {
+        if (urlStr.includes('/test')) {
           return Promise.resolve(
             createMockResponse({
               ok: true,
