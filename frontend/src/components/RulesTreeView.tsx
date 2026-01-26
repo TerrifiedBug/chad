@@ -5,6 +5,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
 import type { Rule, IndexPattern } from '@/lib/api'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 
 interface RulesTreeViewProps {
   rules: Rule[]
@@ -22,13 +23,16 @@ const severityConfig: Record<string, { label: string; className: string }> = {
   informational: { label: 'Info', className: 'bg-gray-500 text-white' },
 }
 
-function getSnoozeDisplay(rule: Rule): string | null {
-  if (rule.status !== 'snoozed') return null
-  if (rule.snooze_indefinite) return '(indefinite)'
+function getSnoozeDisplay(rule: Rule): { text: string | null; timestamp: string | null } {
+  if (rule.status !== 'snoozed') return { text: null, timestamp: null }
+  if (rule.snooze_indefinite) return { text: '(indefinite)', timestamp: null }
   if (rule.snooze_until) {
-    return formatDistanceToNow(new Date(rule.snooze_until), { addSuffix: false })
+    return {
+      text: formatDistanceToNow(new Date(rule.snooze_until), { addSuffix: false }),
+      timestamp: rule.snooze_until
+    }
   }
-  return null
+  return { text: null, timestamp: null }
 }
 
 function getLastEditedText(rule: Rule): string {
@@ -179,7 +183,13 @@ export function RulesTreeView({
                               )}
                               {rule.status === 'snoozed' && (
                                 <Badge className="text-xs bg-yellow-500 text-black">
-                                  Snoozed {snoozeDisplay}
+                                  {snoozeDisplay.timestamp ? (
+                                    <TimestampTooltip timestamp={snoozeDisplay.timestamp}>
+                                      <span>Snoozed {snoozeDisplay.text}</span>
+                                    </TimestampTooltip>
+                                  ) : (
+                                    <>Snoozed {snoozeDisplay.text}</>
+                                  )}
                                 </Badge>
                               )}
                               {rule.needs_redeploy && (
@@ -191,7 +201,9 @@ export function RulesTreeView({
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="top" align="start">
-                          <p>{getLastEditedText(rule)}</p>
+                          <TimestampTooltip timestamp={rule.updated_at}>
+                            <span>{getLastEditedText(rule)}</span>
+                          </TimestampTooltip>
                         </TooltipContent>
                       </Tooltip>
                     )
