@@ -280,7 +280,7 @@ class SchedulerService:
                 "sigmahq.sync.scheduled",
                 "system",
                 None,
-                {"success": result.success, "rule_count": result.rule_count},
+                {"success": result.success, "rule_counts": result.rule_counts},
             )
             await session.commit()
 
@@ -290,8 +290,7 @@ class SchedulerService:
                     session,
                     "sigmahq_sync_complete",
                     {
-                        "rule_count": result.rule_count,
-                        "new_rules": result.new_rules if hasattr(result, "new_rules") else 0,
+                        "rule_counts": result.rule_counts,
                         "message": result.message,
                     },
                 )
