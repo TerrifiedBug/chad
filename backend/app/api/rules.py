@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -1096,6 +1096,7 @@ async def rollback_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """
     Rollback a rule to a previous version.
@@ -1143,7 +1144,7 @@ async def rollback_rule(
         version_number=new_version_number,
         yaml_content=target_version.yaml_content,
         changed_by=current_user.id,
-        change_reason=f"Rollback to version {target_version.version_number}",
+        change_reason=change_reason,
         created_at=datetime.now(UTC),
     )
     db.add(new_version)
