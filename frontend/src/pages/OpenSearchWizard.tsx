@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { settingsApi, OpenSearchConfig, ValidationStep } from '@/lib/api'
@@ -15,6 +15,7 @@ const stepLabels: Record<string, string> = {
   index_query: 'Indexing test query...',
   percolate: 'Running percolate query...',
   cleanup: 'Cleaning up test artifacts...',
+  ssl_verification: 'SSL certificate verification...',
 }
 
 export default function OpenSearchWizard() {
@@ -22,6 +23,7 @@ export default function OpenSearchWizard() {
   const { setOpenSearchConfigured } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [testPassed, setTestPassed] = useState(false)
   const [error, setError] = useState('')
   const [validationSteps, setValidationSteps] = useState<ValidationStep[]>([])
@@ -34,6 +36,32 @@ export default function OpenSearchWizard() {
     use_ssl: true,
     verify_certs: true,
   })
+
+  // Load existing config on mount
+  useEffect(() => {
+    const loadExistingConfig = async () => {
+      try {
+        const status = await settingsApi.getOpenSearchStatus()
+        if (status.configured && status.config) {
+          setFormData({
+            host: status.config.host || '',
+            port: status.config.port || 9200,
+            username: status.config.username || '',
+            password: '', // Never load existing password for security
+            use_ssl: status.config.use_ssl ?? true,
+            verify_certs: status.config.verify_certs ?? true,
+          })
+        }
+      } catch (err) {
+        // If not configured or error, just use defaults
+        console.error('Failed to load existing config:', err)
+      } finally {
+        setIsInitialLoading(false)
+      }
+    }
+
+    loadExistingConfig()
+  }, [])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target
@@ -125,6 +153,12 @@ export default function OpenSearchWizard() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {isInitialLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : (
+              <>
             {error && (
               <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
                 {error}
@@ -140,6 +174,7 @@ export default function OpenSearchWizard() {
                   value={formData.host}
                   onChange={handleChange}
                   placeholder="opensearch.example.com"
+                  disabled={isTesting}
                 />
               </div>
               <div className="space-y-2">
@@ -150,6 +185,8 @@ export default function OpenSearchWizard() {
                   type="number"
                   value={formData.port}
                   onChange={handleChange}
+                  disabled={isTesting}
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
               <div className="space-y-2">
@@ -159,6 +196,7 @@ export default function OpenSearchWizard() {
                   name="username"
                   value={formData.username}
                   onChange={handleChange}
+                  disabled={isTesting}
                 />
               </div>
               <div className="space-y-2">
@@ -169,6 +207,7 @@ export default function OpenSearchWizard() {
                   type="password"
                   value={formData.password}
                   onChange={handleChange}
+                  disabled={isTesting}
                 />
               </div>
               <div className="flex items-center justify-between">
@@ -177,6 +216,7 @@ export default function OpenSearchWizard() {
                   id="use_ssl"
                   checked={formData.use_ssl}
                   onCheckedChange={handleSslChange}
+                  disabled={isTesting}
                 />
               </div>
               <div className="flex items-center justify-between">
@@ -190,6 +230,7 @@ export default function OpenSearchWizard() {
                   id="verify_certs"
                   checked={formData.verify_certs ?? true}
                   onCheckedChange={handleVerifyCertsChange}
+                  disabled={isTesting || !formData.use_ssl}
                 />
               </div>
             </div>
@@ -204,9 +245,16 @@ export default function OpenSearchWizard() {
                     ) : (
                       <span className="text-red-600">✗</span>
                     )}
-                    <span className={step.success ? 'text-muted-foreground' : 'text-destructive'}>
-                      {stepLabels[step.name] || step.name}
-                    </span>
+                    <div className="flex-1">
+                      <span className={step.success ? 'text-muted-foreground' : 'text-destructive'}>
+                        {stepLabels[step.name] || step.name}
+                      </span>
+                      {step.error && step.name === 'ssl_verification' && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({step.error})
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -225,7 +273,7 @@ export default function OpenSearchWizard() {
               <Button
                 type="button"
                 onClick={handleSave}
-                disabled={isLoading || !testPassed}
+                disabled={isLoading || !testPassed || isTesting}
                 className="flex-1"
               >
                 {isLoading ? 'Saving...' : 'Save & Continue'}
@@ -236,6 +284,8 @@ export default function OpenSearchWizard() {
               <p className="text-sm text-muted-foreground text-center">
                 Click "Test Connection" to validate your OpenSearch configuration
               </p>
+            )}
+            </>
             )}
           </CardContent>
         </Card>

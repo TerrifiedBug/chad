@@ -1,11 +1,13 @@
 """Background health check tasks for monitoring external services."""
 
+import ssl
 from datetime import UTC, datetime
 
 from opensearchpy.exceptions import ConnectionError, TransportError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.encryption import decrypt
 from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
 from app.models.ti_config import TISourceConfig
@@ -34,12 +36,33 @@ async def check_opensearch_health(db: AsyncSession):
             return
 
         config = setting.value
+
+        # Decrypt password if stored encrypted
+        password = config.get("password")
+        if password:
+            try:
+                password = decrypt(password)
+            except Exception:
+                # Password may be stored in plaintext (legacy) - use as-is
+                pass
+
+        use_ssl = config.get("use_ssl", True)
+        verify_certs = config.get("verify_certs", True)
+
+        # When verify_certs is False, we need to provide an ssl_context that explicitly
+        # disables certificate verification, same as in app.services.opensearch.create_client
+        ssl_context = None
+        if use_ssl and not verify_certs:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
         opensearch_client = OpenSearch(
-            hosts=[config.get("host", "localhost")],
-            port=config.get("port", 9200),
-            http_auth=(config.get("username", ""), config.get("password", "")),
-            use_ssl=config.get("use_ssl", True),
-            verify_certs=config.get("verify_certs", True),
+            hosts=[{"host": config.get("host", "localhost"), "port": config.get("port", 9200)}],
+            http_auth=(config.get("username", ""), password) if config.get("username") else None,
+            use_ssl=use_ssl,
+            ssl_context=ssl_context,
+            verify_certs=verify_certs,
             ssl_show_warn=False,
         )
 
