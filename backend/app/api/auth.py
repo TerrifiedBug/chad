@@ -327,7 +327,7 @@ async def login(
             "auth.login_failed",
             "user",
             None,
-            {"email": email, "reason": "invalid_credentials"},
+            {"email": email, "reason": "sso_only_user"},
             ip_address=ip_address,
         )
 
@@ -353,7 +353,7 @@ async def login(
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail="This account uses SSO only. Please login with your SSO provider.",
         )
 
     # Verify password
