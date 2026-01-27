@@ -380,7 +380,14 @@ export default function SigmaHQPage() {
         }, 1500)
       }
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Import failed')
+      const errorMessage = err instanceof Error ? err.message : 'Import failed'
+
+      // Check for duplicate rule error
+      if (errorMessage.includes('rule_already_imported')) {
+        setImportError('This rule has already been imported from SigmaHQ.')
+      } else {
+        setImportError(errorMessage)
+      }
     } finally {
       setIsImporting(false)
     }
