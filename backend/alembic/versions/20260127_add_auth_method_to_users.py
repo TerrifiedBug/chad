@@ -15,17 +15,17 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
-    # Create enum type
-    op.execute("CREATE TYPE authmethodenum AS ENUM ('local', 'sso', 'both')")
+    # Create enum type with UPPERCASE values to match Python enum
+    op.execute("CREATE TYPE authmethodenum AS ENUM ('LOCAL', 'SSO', 'BOTH')")
 
     # Add column with default value
     op.add_column(
         'users',
         sa.Column(
             'auth_method',
-            sa.Enum('local', 'sso', 'both', name='authmethodenum'),
+            sa.Enum('LOCAL', 'SSO', 'BOTH', name='authmethodenum'),
             nullable=False,
-            server_default='local'
+            server_default='LOCAL'
         )
     )
 

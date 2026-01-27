@@ -317,6 +317,45 @@ async def login(
             detail="Invalid credentials",
         )
 
+    # Check if user is SSO-only (cannot use local login)
+    if user.auth_method == AuthMethod.SSO:
+        # Record failed attempt
+        await record_failed_attempt(db, email, ip_address)
+        await audit_log(
+            db,
+            None,
+            "auth.login_failed",
+            "user",
+            None,
+            {"email": email, "reason": "invalid_credentials"},
+            ip_address=ip_address,
+        )
+
+        # Check if this attempt triggered a lockout
+        locked_now, _ = await is_account_locked(db, email)
+        if locked_now:
+            await audit_log(
+                db,
+                None,
+                "auth.lockout",
+                "user",
+                None,
+                {"email": email},
+                ip_address=ip_address,
+            )
+            # Send lockout notification
+            await send_system_notification(
+                db,
+                "user_locked",
+                {"email": email, "ip_address": ip_address},
+            )
+
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
     # Verify password
     if not verify_password(request.password, user.password_hash):
         # Record failed attempt
@@ -667,12 +706,32 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
         db.add(user)
         await db.commit()
         await db.refresh(user)
-    elif mapped_role and sso_config.get("role_mapping_enabled"):
-        # Existing user: sync role from IdP if role mapping is enabled
-        if user.role != mapped_role:
-            user.role = mapped_role
+    else:
+        # Existing user: check if this is a local user that needs to be converted
+        if user.auth_method == AuthMethod.LOCAL:
+            # Convert to BOTH to allow SSO login
+            user.auth_method = AuthMethod.BOTH
+            await audit_log(
+                db,
+                user.id,
+                "auth.sso_conversion",
+                "user",
+                str(user.id),
+                {"message": "Local user converted to support SSO"},
+                ip_address=get_client_ip(request),
+            )
             await db.commit()
             await db.refresh(user)
+        elif user.auth_method in (AuthMethod.SSO, AuthMethod.BOTH):
+            # Already supports SSO, continue
+            pass
+
+        # Sync role from IdP if role mapping is enabled
+        if mapped_role and sso_config.get("role_mapping_enabled"):
+            if user.role != mapped_role:
+                user.role = mapped_role
+                await db.commit()
+                await db.refresh(user)
 
     if not user.is_active:
         error_params = urlencode({"sso_error": "User account is inactive"})
