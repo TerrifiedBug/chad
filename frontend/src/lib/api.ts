@@ -732,6 +732,10 @@ export const alertsApi = {
     api.get<AlertCountsResponse>('/alerts/counts'),
   updateStatus: (id: string, status: AlertStatus) =>
     api.patch<{ success: boolean; status: AlertStatus }>(`/alerts/${id}/status`, { status }),
+  bulkUpdateStatus: (data: { alert_ids: string[]; status: AlertStatus }) =>
+    api.patch<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data),
+  bulkDelete: (data: { alert_ids: string[] }) =>
+    api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data),
 }
 
 // Dashboard stats types
