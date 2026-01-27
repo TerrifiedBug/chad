@@ -77,7 +77,7 @@ def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None,
 
     # Production: validate against configured APP_URL
     if app_url:
-        # Extract hostname from APP_URL (e.g., https://chad.terrifiedbug.com)
+        # Extract hostname from APP_URL (e.g., https://chad.example.com)
         expected_host = urlparse(app_url).hostname
 
         if not expected_host:

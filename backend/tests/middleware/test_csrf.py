@@ -19,10 +19,10 @@ def test_safe_origin_allows_localhost_in_debug():
 
 def test_safe_origin_validates_against_app_url():
     """Test origin validation against configured APP_URL."""
-    app_url = "https://chad.terrifiedbug.com"
+    app_url = "https://chad.example.com"
 
     # Valid origin matching APP_URL
-    assert is_safe_origin("https://chad.terrifiedbug.com", None, app_url, None) is True
+    assert is_safe_origin("https://chad.example.com", None, app_url, None) is True
 
     # Invalid origin not matching APP_URL
     assert is_safe_origin("https://evil.com", None, app_url, None) is False
@@ -30,10 +30,10 @@ def test_safe_origin_validates_against_app_url():
 
 def test_safe_origin_validates_referer_as_fallback():
     """Test referer validation when origin is missing."""
-    app_url = "https://chad.terrifiedbug.com"
+    app_url = "https://chad.example.com"
 
     # Valid referer matching APP_URL
-    assert is_safe_origin(None, "https://chad.terrifiedbug.com/alerts", app_url, None) is True
+    assert is_safe_origin(None, "https://chad.example.com/alerts", app_url, None) is True
 
     # Invalid referer not matching APP_URL
     assert is_safe_origin(None, "https://evil.com", app_url, None) is False
@@ -47,16 +47,16 @@ def test_safe_origin_rejects_invalid_app_url():
 
 def test_safe_origin_validates_host_header():
     """Test host header validation for reverse proxy scenarios."""
-    app_url = "https://chad.terrifiedbug.com"
+    app_url = "https://chad.example.com"
 
     # Valid host matching APP_URL hostname
-    assert is_safe_origin(None, None, app_url, "chad.terrifiedbug.com") is True
+    assert is_safe_origin(None, None, app_url, "chad.example.com") is True
 
     # Invalid host not matching APP_URL hostname
     assert is_safe_origin(None, None, app_url, "evil.com") is False
 
     # Host with port (common in reverse proxy scenarios)
-    assert is_safe_origin(None, None, app_url, "chad.terrifiedbug.com:80") is False
+    assert is_safe_origin(None, None, app_url, "chad.example.com:80") is False
 
 
 def test_safe_origin_allows_localhost_host_in_debug():
@@ -80,13 +80,13 @@ def test_safe_origin_allows_localhost_host_in_debug():
 
 def test_safe_origin_combines_origin_referer_host():
     """Test that origin, referer, and host are all checked."""
-    app_url = "https://chad.terrifiedbug.com"
+    app_url = "https://chad.example.com"
 
     # Valid origin, invalid host (origin should pass)
-    assert is_safe_origin("https://chad.terrifiedbug.com", None, app_url, "evil.com") is True
+    assert is_safe_origin("https://chad.example.com", None, app_url, "evil.com") is True
 
     # Invalid origin, valid host (host should pass)
-    assert is_safe_origin("https://evil.com", None, app_url, "chad.terrifiedbug.com") is True
+    assert is_safe_origin("https://evil.com", None, app_url, "chad.example.com") is True
 
     # All invalid (should fail)
     assert is_safe_origin("https://evil.com", None, app_url, "evil.com") is False
