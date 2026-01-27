@@ -695,3 +695,265 @@ async def test_get_index_pattern_fields(
     assert set(data["fields"]) == {"host", "user", "process.name", "process.exec"}
     assert data["fields"] == sorted(data["fields"])  # Verify sorted
 
+
+class TestBulkOperationsValidation:
+    """Tests for bulk operations state validation."""
+
+    @pytest.mark.asyncio
+    async def test_bulk_deploy_fails_when_any_rule_already_deployed(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test bulk deploy is disabled when any selected rule is already deployed."""
+        # Create index pattern
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Bulk Deploy Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        assert pattern_response.status_code == 201
+        pattern_id = pattern_response.json()["id"]
+
+        # Create two rules - one deployed, one undeployed
+        yaml_content = """
+title: Test Rule
+logsource:
+  product: windows
+detection:
+  selection:
+    EventID: 1
+  condition: selection
+"""
+
+        # First rule - deployed
+        response1 = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Deployed Rule",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+                "status": "deployed",
+            },
+        )
+        assert response1.status_code == 201
+        deployed_rule_id = response1.json()["id"]
+
+        # Second rule - undeployed
+        response2 = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Undeployed Rule",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+                "status": "undeployed",
+            },
+        )
+        assert response2.status_code == 201
+
+        # Try bulk deploy with both rules - should fail due to mixed states
+        response = await authenticated_client.post(
+            "/api/rules/bulk/deploy",
+            json={"rule_ids": [deployed_rule_id, response2.json()["id"]]},
+        )
+        # Should fail validation (422) or return error
+        assert response.status_code in [400, 422]
+        if response.status_code in [400, 422]:
+            detail = response.json().get("detail", "").lower()
+            assert "already deployed" in detail or "cannot bulk deploy" in detail
+
+    @pytest.mark.asyncio
+    async def test_bulk_undeploy_fails_when_not_all_rules_deployed(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test bulk undeploy requires all selected rules to be deployed."""
+        # Create index pattern
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Bulk Undeploy Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        assert pattern_response.status_code == 201
+        pattern_id = pattern_response.json()["id"]
+
+        # Create two rules - one deployed, one undeployed
+        yaml_content = """
+title: Test Rule
+logsource:
+  product: windows
+detection:
+  selection:
+    EventID: 1
+  condition: selection
+"""
+
+        # First rule - deployed
+        response1 = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Deployed Rule",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+                "status": "deployed",
+            },
+        )
+        assert response1.status_code == 201
+        deployed_rule_id = response1.json()["id"]
+
+        # Second rule - undeployed
+        response2 = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Undeployed Rule",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+                "status": "undeployed",
+            },
+        )
+        assert response2.status_code == 201
+
+        # Try bulk undeploy with both rules - should fail
+        response = await authenticated_client.post(
+            "/api/rules/bulk/undeploy",
+            json={"rule_ids": [deployed_rule_id, response2.json()["id"]]},
+        )
+        # Should fail validation
+        assert response.status_code in [400, 422]
+        if response.status_code in [400, 422]:
+            detail = response.json().get("detail", "").lower()
+            assert "must be deployed" in detail or "cannot bulk undeploy" in detail
+
+    @pytest.mark.asyncio
+    async def test_bulk_snooze_fails_when_any_rule_undeployed(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test bulk snooze fails when any selected rule is undeployed."""
+        # Create index pattern
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Bulk Snooze Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        assert pattern_response.status_code == 201
+        pattern_id = pattern_response.json()["id"]
+
+        # Create two rules - one deployed, one undeployed
+        yaml_content = """
+title: Test Rule
+logsource:
+  product: windows
+detection:
+  selection:
+    EventID: 1
+  condition: selection
+"""
+
+        # First rule - deployed
+        response1 = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Deployed Rule",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+                "status": "deployed",
+            },
+        )
+        assert response1.status_code == 201
+        deployed_rule_id = response1.json()["id"]
+
+        # Second rule - undeployed
+        response2 = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Undeployed Rule",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+                "status": "undeployed",
+            },
+        )
+        assert response2.status_code == 201
+
+        # Try bulk snooze with both rules - should fail
+        response = await authenticated_client.post(
+            "/api/rules/bulk/snooze",
+            json={
+                "rule_ids": [deployed_rule_id, response2.json()["id"]],
+                "hours": 24,
+            },
+        )
+        # Should fail validation
+        assert response.status_code in [400, 422]
+        if response.status_code in [400, 422]:
+            detail = response.json().get("detail", "").lower()
+            assert "not deployed" in detail or "cannot bulk snooze" in detail
+
+    @pytest.mark.asyncio
+    async def test_bulk_deploy_succeeds_when_all_undeployed(
+        self, authenticated_client: AsyncClient, test_session
+    ):
+        """Test bulk deploy succeeds when all rules are undeployed."""
+        # Create index pattern
+        pattern_response = await authenticated_client.post(
+            "/api/index-patterns",
+            json={
+                "name": "Test Bulk Deploy Success Pattern",
+                "pattern": "logs-*",
+                "percolator_index": "percolator-logs",
+            },
+        )
+        assert pattern_response.status_code == 201
+        pattern_id = pattern_response.json()["id"]
+
+        # Create two undeployed rules
+        yaml_content = """
+title: Test Rule
+logsource:
+  product: windows
+detection:
+  selection:
+    EventID: 1
+  condition: selection
+"""
+
+        response1 = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Rule 1",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+                "status": "undeployed",
+            },
+        )
+        assert response1.status_code == 201
+        rule1_id = response1.json()["id"]
+
+        response2 = await authenticated_client.post(
+            "/api/rules",
+            json={
+                "title": "Rule 2",
+                "yaml_content": yaml_content,
+                "index_pattern_id": pattern_id,
+                "status": "undeployed",
+            },
+        )
+        assert response2.status_code == 201
+        rule2_id = response2.json()["id"]
+
+        # Bulk deploy should succeed (even though actual deploy might fail without OpenSearch)
+        # The validation should pass
+        # Note: This might still fail if OpenSearch validation fails, but that's a different error
+        response = await authenticated_client.post(
+            "/api/rules/bulk/deploy",
+            json={"rule_ids": [rule1_id, rule2_id]},
+        )
+        # Should pass validation (might fail later due to OpenSearch, but that's ok)
+        # We're testing that the STATE validation passes, not the actual deployment
+        assert response.status_code not in [400, 422]
+
