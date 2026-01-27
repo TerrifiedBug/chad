@@ -35,19 +35,27 @@ def get_alert_count(
         # OpenSearch handles naive datetimes more consistently
         since_naive = since.replace(tzinfo=None)
 
-        result = os_client.count(
-            index=alerts_index_pattern,
-            body={
-                "query": {
-                    "range": {
-                        "created_at": {
-                            "gte": since_naive.isoformat()
-                        }
+        query = {
+            "query": {
+                "range": {
+                    "created_at": {
+                        "gte": since_naive.isoformat()
                     }
                 }
             }
+        }
+
+        logger.info(f"Counting alerts in {alerts_index_pattern} since {since_naive.isoformat()}")
+        logger.info(f"Query: {query}")
+
+        result = os_client.count(
+            index=alerts_index_pattern,
+            body=query
         )
-        return result.get("count", 0)
+
+        count = result.get("count", 0)
+        logger.info(f"Alert count result for {alerts_index_pattern}: {count}")
+        return count
     except Exception as e:
         logger.error(f"Failed to count alerts in {alerts_index_pattern}: {e}")
         return 0
@@ -126,6 +134,7 @@ async def get_index_health(
 
     if not latest:
         # No metrics at all - this is a warning state (index may not be configured or receiving logs)
+        # But we still have OpenSearch query results for alert counts
         return {
             "status": HealthStatus.WARNING,
             "message": "No data received",
@@ -134,12 +143,12 @@ async def get_index_health(
                 "queue_depth": 0,
                 "avg_latency_ms": 0,
                 "logs_per_minute": 0,
-                "alerts_per_hour": 0,
+                "alerts_per_hour": alerts_per_hour,  # From OpenSearch query
             },
             "totals_24h": {
                 "logs_received": 0,
                 "logs_errored": 0,
-                "alerts_generated": 0,
+                "alerts_generated": alerts_24h,  # From OpenSearch query
             },
         }
 
