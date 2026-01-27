@@ -17,8 +17,19 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2 } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2 } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 
 const severityColors: Record<string, string> = {
@@ -390,6 +401,22 @@ function extractFieldsFromLog(logDoc: Record<string, unknown>): string[] {
   return fields.sort()
 }
 
+// Helper to get field value from log document
+function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): string {
+  const parts = fieldPath.split('.')
+  let value: unknown = logDoc
+
+  for (const part of parts) {
+    if (value && typeof value === 'object' && part in (value as Record<string, unknown>)) {
+      value = (value as Record<string, unknown>)[part]
+    } else {
+      return ''
+    }
+  }
+
+  return String(value ?? '')
+}
+
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -404,6 +431,13 @@ export default function AlertDetailPage() {
   const [showExceptionDialog, setShowExceptionDialog] = useState(false)
   const [exceptionFields, setExceptionFields] = useState<string[]>([])
   const [isExtractingFields, setIsExtractingFields] = useState(false)
+
+  // Exception form state
+  const [exceptionField, setExceptionField] = useState('')
+  const [exceptionOperator, setExceptionOperator] = useState<'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'regex'>('equals')
+  const [exceptionValue, setExceptionValue] = useState('')
+  const [exceptionReason, setExceptionReason] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
 
   // Load alert function - must be declared before useEffect that uses it
   const loadAlert = useCallback(async () => {
@@ -466,13 +500,70 @@ export default function AlertDetailPage() {
     setShowExceptionDialog(true)
 
     try {
-      // Extract all scalar fields from log document
       const fields = extractFieldsFromLog(alert.log_document)
       setExceptionFields(fields)
+
+      // Auto-select preferred field
+      const preferredFields = ['process.executable', 'process.command_line', 'user.name', 'source.ip']
+      const selectedField = fields.find(f => preferredFields.includes(f)) || fields[0] || ''
+      setExceptionField(selectedField)
+
+      // Auto-fill value and detect operator
+      if (selectedField) {
+        const fieldValue = getFieldValue(alert.log_document, selectedField)
+        setExceptionValue(fieldValue)
+
+        // Auto-detect operator based on value characteristics
+        if (fieldValue.includes('\\') || fieldValue.includes('/')) {
+          setExceptionOperator('contains')
+        } else {
+          setExceptionOperator('equals')
+        }
+      }
+
+      setExceptionReason(`False positive from alert ${alert.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to extract fields from log')
     } finally {
       setIsExtractingFields(false)
+    }
+  }
+
+  const handleCreateException = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!exceptionField || !exceptionValue || !exceptionReason) {
+      setError('Please fill in all fields')
+      return
+    }
+
+    setIsCreating(true)
+    setError('')
+
+    try {
+      await rulesApi.createException(alert.rule_id, {
+        field: exceptionField,
+        operator: exceptionOperator,
+        value: exceptionValue,
+        reason: exceptionReason,
+        enabled: true
+      })
+
+      setShowExceptionDialog(false)
+
+      // Reset form
+      setExceptionField('')
+      setExceptionOperator('equals')
+      setExceptionValue('')
+      setExceptionReason('')
+
+      // Show success - use error state for success message temporarily
+      setError('Exception created successfully')
+      setTimeout(() => setError(''), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create exception')
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -727,6 +818,125 @@ export default function AlertDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Create Exception Dialog */}
+      <Dialog open={showExceptionDialog} onOpenChange={setShowExceptionDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create Rule Exception</DialogTitle>
+            <DialogDescription>
+              Create an exception for rule: <strong>{alert?.rule_title}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          {isExtractingFields ? (
+            <div className="py-8 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="ml-2">Extracting fields from alert...</span>
+            </div>
+          ) : (
+            <form onSubmit={handleCreateException} className="space-y-4">
+              {/* Field Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="exception-field">Field</Label>
+                <Select value={exceptionField} onValueChange={setExceptionField}>
+                  <SelectTrigger id="exception-field">
+                    <SelectValue placeholder="Select a field from the alert" />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover max-h-[300px]">
+                    {exceptionFields.map((field) => (
+                      <SelectItem key={field} value={field}>
+                        <div className="flex items-center gap-2">
+                          {field.includes('.') ? (
+                            <>
+                              <span className="text-muted-foreground">└</span>
+                              <span>{field.split('.').pop()}</span>
+                              <span className="text-xs text-muted-foreground ml-auto">
+                                {field}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="font-medium">{field}</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Operator Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="exception-operator">Operator</Label>
+                <Select value={exceptionOperator} onValueChange={(v: any) => setExceptionOperator(v)}>
+                  <SelectTrigger id="exception-operator">
+                    <SelectValue placeholder="Select operator" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="equals">Equals</SelectItem>
+                    <SelectItem value="not_equals">Not Equals</SelectItem>
+                    <SelectItem value="contains">Contains</SelectItem>
+                    <SelectItem value="not_contains">Does Not Contain</SelectItem>
+                    <SelectItem value="starts_with">Starts With</SelectItem>
+                    <SelectItem value="ends_with">Ends With</SelectItem>
+                    <SelectItem value="regex">Regex</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Value Input */}
+              <div className="space-y-2">
+                <Label htmlFor="exception-value">Value</Label>
+                <Input
+                  id="exception-value"
+                  value={exceptionValue}
+                  onChange={(e) => setExceptionValue(e.target.value)}
+                  placeholder={exceptionField ? `Value from alert (${exceptionField})` : 'Enter value to match'}
+                  required
+                />
+                {exceptionField && alert?.log_document && (
+                  <p className="text-xs text-muted-foreground">
+                    Sample value from alert: <strong>{getFieldValue(alert.log_document, exceptionField)}</strong>
+                  </p>
+                )}
+              </div>
+
+              {/* Reason */}
+              <div className="space-y-2">
+                <Label htmlFor="exception-reason">Reason</Label>
+                <Textarea
+                  id="exception-reason"
+                  value={exceptionReason}
+                  onChange={(e) => setExceptionReason(e.target.value)}
+                  placeholder="Explain why this exception is needed..."
+                  rows={3}
+                  required
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowExceptionDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isCreating}>
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Exception'
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
     </TooltipProvider>
   )
