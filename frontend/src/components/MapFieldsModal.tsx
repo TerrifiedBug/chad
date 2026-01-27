@@ -189,7 +189,23 @@ export function MapFieldsModal({
       onMappingsSaved()
       onOpenChange(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save mappings')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save mappings'
+
+      // Check if it's a field_not_found error
+      const errorObj = err as any & { detail?: { error?: string; suggestions?: string[] } }
+
+      if (errorObj.detail?.error === 'field_not_found') {
+        const suggestions = errorObj.detail.suggestions || []
+        const suggestionText = suggestions.length > 0
+          ? `\n\nDid you mean:\n${suggestions.map((s: string) => `• ${s}`).join('\n')}`
+          : ''
+
+        setError(
+          `Field "${errorObj.detail.field}" does not exist in this index pattern.${suggestionText}`
+        )
+      } else {
+        setError(errorMessage)
+      }
     } finally {
       setIsSaving(false)
     }
