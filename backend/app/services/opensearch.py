@@ -230,13 +230,19 @@ def validate_opensearch_connection(
                 logger.warning(f"Failed to cleanup test index in finally block: {cleanup_error}")
 
 
-def get_index_fields(client: OpenSearch, pattern: str) -> set[str]:
+def get_index_fields(
+    client: OpenSearch,
+    pattern: str,
+    include_multi_fields: bool = True,
+) -> set[str]:
     """
     Get all field names from indices matching the pattern.
 
     Args:
         client: OpenSearch client
         pattern: Index pattern (e.g., "logs-*")
+        include_multi_fields: If True, include multi-fields like .keyword sub-fields.
+                              If False, only return base fields (better for UI dropdowns).
 
     Returns:
         Set of field names across all matching indices
@@ -249,7 +255,7 @@ def get_index_fields(client: OpenSearch, pattern: str) -> set[str]:
 
         for index_name, index_data in mappings.items():
             props = index_data.get("mappings", {}).get("properties", {})
-            _extract_fields(props, "", fields)
+            _extract_fields(props, "", fields, include_multi_fields)
 
     except Exception:
         # Pattern may not match any indices
@@ -258,24 +264,46 @@ def get_index_fields(client: OpenSearch, pattern: str) -> set[str]:
     return fields
 
 
-def _extract_fields(properties: dict[str, Any], prefix: str, fields: set[str]) -> None:
+def _extract_fields(
+    properties: dict[str, Any],
+    prefix: str,
+    fields: set[str],
+    include_multi_fields: bool = True,
+) -> None:
     """Recursively extract field names from mapping properties.
 
     Only includes searchable fields (text, keyword, etc.), not object containers.
     Object containers have 'properties' but no 'type' - they can't be searched directly.
+
+    Args:
+        properties: Field mappings from OpenSearch
+        prefix: Current field path (for recursion)
+        fields: Set to populate with field names
+        include_multi_fields: If True, extract multi-fields like .keyword.
+                              If False, skip the 'fields' sub-object.
     """
     for field_name, field_config in properties.items():
         full_name = f"{prefix}{field_name}" if prefix else field_name
 
         # Handle nested objects - recurse into them
         if "properties" in field_config:
-            _extract_fields(field_config["properties"], f"{full_name}.", fields)
+            _extract_fields(field_config["properties"], f"{full_name}.", fields, include_multi_fields)
             # Only add the parent field if it also has a type (rare, but possible)
             if "type" in field_config:
                 fields.add(full_name)
         else:
             # Regular field with a type - add it
             fields.add(full_name)
+
+            # Extract multi-fields (e.g., .keyword sub-fields) if requested
+            # OpenSearch multi-fields structure: {"type": "text", "fields": {"keyword": {"type": "keyword"}}}
+            if include_multi_fields and "fields" in field_config:
+                for sub_field_name, sub_field_config in field_config["fields"].items():
+                    sub_full_name = f"{full_name}.{sub_field_name}"
+                    fields.add(sub_full_name)
+                    # Recurse if sub-field also has nested properties
+                    if "properties" in sub_field_config:
+                        _extract_fields(sub_field_config["properties"], f"{sub_full_name}.", fields, include_multi_fields)
 
 
 def validate_index_pattern(client: OpenSearch, pattern: str) -> dict[str, Any]:

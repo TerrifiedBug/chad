@@ -210,9 +210,10 @@ async def get_index_pattern_fields(
     if not index_pattern:
         raise HTTPException(status_code=404, detail="Index pattern not found")
 
-    # Get fields from OpenSearch (same pattern as field_mappings.py)
+    # Get fields from OpenSearch for the exceptions dropdown
+    # Exclude .keyword multi-fields since exceptions match against actual log data
     try:
-        fields = list(get_index_fields(os_client, index_pattern.pattern))
+        fields = list(get_index_fields(os_client, index_pattern.pattern, include_multi_fields=False))
         return {"fields": sorted(fields)}  # Sort alphabetically for UX
     except Exception as e:
         raise HTTPException(
@@ -537,12 +538,33 @@ async def validate_rule(
                 ],
             )
 
-        # Get fields from OpenSearch index
-        index_fields = get_index_fields(opensearch, index_pattern.pattern)
+        # Get fields from OpenSearch index (include .keyword for field mapping validation)
+        index_fields = get_index_fields(opensearch, index_pattern.pattern, include_multi_fields=True)
 
         # Get field mappings for this index pattern
         sigma_fields = list(result.fields or set())
         field_mappings = await resolve_mappings(db, sigma_fields, request.index_pattern_id)
+
+        # Auto-correct field mappings that point to text fields
+        from app.services.field_type_detector import auto_correct_field_mapping
+
+        corrected_mappings = {}
+        for sigma_field, target_field in field_mappings.items():
+            if target_field:  # Only auto-correct if there's a mapping
+                corrected_field, was_corrected = auto_correct_field_mapping(
+                    opensearch, index_pattern.pattern, target_field
+                )
+                corrected_mappings[sigma_field] = corrected_field
+
+                if was_corrected:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        f"Auto-corrected field mapping in validation: '{sigma_field}' -> '{target_field}' to '{corrected_field}'"
+                    )
+            else:
+                corrected_mappings[sigma_field] = None
+
+        field_mappings = corrected_mappings
 
         # Check if all rule fields exist in index OR have a valid mapping
         missing_fields = []
@@ -638,10 +660,10 @@ async def check_deployment_eligibility(
                 eligible.append(rule_id)
                 continue
 
-            # Get fields from the OpenSearch index
+            # Get fields from the OpenSearch index (include .keyword for field mapping validation)
             try:
                 if opensearch:
-                    index_fields = set(get_index_fields(opensearch, index_pattern.pattern))
+                    index_fields = set(get_index_fields(opensearch, index_pattern.pattern, include_multi_fields=True))
                 else:
                     index_fields = set()
             except Exception:
@@ -1047,9 +1069,28 @@ async def deploy_rule(
         # Build dict of only mapped fields (exclude None values)
         field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
 
-        # Get fields from the OpenSearch index
+        # Auto-correct field mappings that point to text fields
+        from app.services.field_type_detector import auto_correct_field_mapping
+
+        corrected_mappings = {}
+        for sigma_field, target_field in field_mappings_dict.items():
+            corrected_field, was_corrected = auto_correct_field_mapping(
+                os_client, rule.index_pattern.pattern, target_field
+            )
+            corrected_mappings[sigma_field] = corrected_field
+
+            if was_corrected:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Field mapping '{sigma_field} -> {target_field}' should use "
+                    f"'{corrected_field}' for proper matching. Auto-correcting for deployment."
+                )
+
+        field_mappings_dict = corrected_mappings
+
+        # Get fields from the OpenSearch index (include .keyword for field mapping validation)
         try:
-            index_fields = set(get_index_fields(os_client, rule.index_pattern.pattern))
+            index_fields = set(get_index_fields(os_client, rule.index_pattern.pattern, include_multi_fields=True))
         except Exception:
             index_fields = set()
 
@@ -1619,11 +1660,11 @@ async def get_rule_fields(
     if rule.index_pattern is None:
         raise HTTPException(status_code=400, detail="Rule has no index pattern")
 
-    # Get fields from OpenSearch index
+    # Get fields from OpenSearch index (exclude .keyword for correlation field dropdown)
     try:
         index_pattern = rule.index_pattern.pattern
-        # Get all fields from the index
-        all_fields = await get_index_fields(os_client, index_pattern)
+        # Get all fields from the index (no .keyword multi-fields for correlation)
+        all_fields = await get_index_fields(os_client, index_pattern, include_multi_fields=False)
 
         # Filter to correlation-relevant fields (entity fields)
         # These are fields that make sense to correlate events on

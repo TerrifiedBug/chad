@@ -17,6 +17,21 @@ AI_PROMPT_TEMPLATE = """You are a security data field mapping expert. Your task 
 - User logs may use different schemas: ECS (Elastic), OCSF, vendor-specific (auditd, sysmon), or custom
 - A correct mapping allows Sigma detection rules to query the user's actual log fields
 
+## IMPORTANT: OpenSearch Field Types and .keyword Suffix
+
+**Critical for accurate matching:**
+- OpenSearch text fields are analyzed/tokenized (bad for wildcard/regex/endswith/startswith queries)
+- Text fields have .keyword sub-fields for exact matching (GOOD for these queries)
+- When mapping to a text field, ALWAYS use the .keyword suffix
+
+**Examples:**
+- `process.executable` is type `text` (analyzed) → Use `process.executable.keyword`
+- `event.action` is type `text` (analyzed) → Use `event.action.keyword`
+- `source.ip` is type `ip` (not text) → Use `source.ip` directly
+- `process.pid` is type `long` (not text) → Use `process.pid` directly
+
+**Rule of thumb:** If the available field name exists WITHOUT .keyword, also check if a .keyword version exists. When mapping fields that will be used for wildcard/regex/partial matching (like Image, CommandLine, TargetFilename), prefer the .keyword variant.
+
 ## Your Task
 Map each unmapped Sigma field to the best matching field from the available log fields.
 
@@ -31,19 +46,21 @@ Map each unmapped Sigma field to the best matching field from the available log 
 
 ## Guidelines
 1. Match based on semantic meaning, not just name similarity
-2. Common Sigma fields and their typical equivalents:
-   - SourceIp → src_ip, source.ip, client.ip
+2. For fields used with wildcard/regex operators (Image, CommandLine, TargetFilename, etc.), ALWAYS prefer .keyword suffix if available
+3. Common Sigma fields and their typical equivalents:
+   - SourceIp → src_ip, source.ip, client.ip (ip fields - no .keyword needed)
    - DestinationIp → dst_ip, destination.ip, server.ip
-   - User → user.name, acct, username, user
-   - Image → process.executable, exe, process.name
-   - CommandLine → process.command_line, cmdline, command
-   - ParentImage → process.parent.executable, parent_exe
-   - TargetFilename → file.path, filepath, target_path
+   - User → user.name.keyword, user.name, acct, username (use .keyword for text fields)
+   - Image → process.executable.keyword, process.executable, exe, process.name.keyword
+   - CommandLine → process.command_line.keyword, process.args.keyword, cmdline, command
+   - ParentImage → process.parent.executable.keyword, parent_exe
+   - TargetFilename → file.path.keyword, filepath.keyword, target_path
    - SourcePort → src_port, source.port, client.port
    - DestinationPort → dst_port, destination.port, server.port
-3. If no good match exists, return null for that field
-4. When uncertain, prefer the more specific match
-5. Consider the logsource context when making decisions
+4. If no good match exists, return null for that field
+5. When uncertain, prefer the more specific match
+6. Consider the logsource context when making decisions
+7. CRITICAL: When you see both `field.name` and `field.name.keyword` in available fields, prefer the .keyword version for text-based fields
 
 ## Response Format
 Return valid JSON only:

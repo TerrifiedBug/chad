@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_opensearch_client_optional
@@ -47,24 +48,123 @@ async def create_field_mapping(
     data: FieldMappingCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    os_client=Depends(get_opensearch_client_optional),
 ):
-    """Create a new field mapping."""
-    mapping = await create_mapping(
-        db,
-        sigma_field=data.sigma_field,
-        target_field=data.target_field,
-        index_pattern_id=data.index_pattern_id,
-        created_by=current_user.id,
-        origin=data.origin,
-        confidence=data.confidence,
-    )
+    """Create a new field mapping with auto-correction for text fields.
+
+    Automatically appends .keyword suffix to text fields that should use exact matching.
+    """
+    # Get index pattern for field type detection
+    target_field = data.target_field
+    auto_corrected = False
+
+    if data.index_pattern_id and os_client:
+        from app.services.field_type_detector import auto_correct_field_mapping
+
+        try:
+            result = await db.execute(
+                select(IndexPattern).where(IndexPattern.id == data.index_pattern_id)
+            )
+            index_pattern = result.scalar_one_or_none()
+
+            if index_pattern:
+                # Auto-correct if target field is a text field
+                target_field, auto_corrected = auto_correct_field_mapping(
+                    os_client, index_pattern.pattern, data.target_field
+                )
+
+                if auto_corrected:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        f"Auto-corrected field mapping '{data.sigma_field}' -> '{data.target_field}' to '{target_field}'"
+                    )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Failed to auto-correct field mapping: {e}. Using user-provided value."
+            )
+
+    try:
+        mapping = await create_mapping(
+            db,
+            sigma_field=data.sigma_field,
+            target_field=target_field,
+            index_pattern_id=data.index_pattern_id,
+            created_by=current_user.id,
+            origin=data.origin,
+            confidence=data.confidence,
+        )
+    except IntegrityError as e:
+        # Check if it's a duplicate key error for the same sigma_field + index_pattern_id
+        if "uq_mapping_scope_field" in str(e):
+            # Fetch the existing mapping to provide helpful info
+            from app.models.field_mapping import FieldMapping
+
+            result = await db.execute(
+                select(FieldMapping).where(
+                    FieldMapping.sigma_field == data.sigma_field,
+                    FieldMapping.index_pattern_id == data.index_pattern_id,
+                )
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Check if the existing mapping already uses .keyword
+                if existing.target_field.endswith(".keyword"):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "error": "duplicate_mapping",
+                            "message": f"Field mapping '{data.sigma_field}' already exists for this index pattern.",
+                            "existing_mapping": {
+                                "id": str(existing.id),
+                                "sigma_field": existing.sigma_field,
+                                "target_field": existing.target_field,
+                                "note": "This mapping already uses .keyword suffix - no update needed",
+                            },
+                            "suggestion": "Update the existing mapping instead of creating a duplicate, or delete it first.",
+                        },
+                    )
+                else:
+                    # Existing mapping doesn't use .keyword - suggest update
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "error": "duplicate_mapping",
+                            "message": f"Field mapping '{data.sigma_field}' already exists for this index pattern.",
+                            "existing_mapping": {
+                                "id": str(existing.id),
+                                "sigma_field": existing.sigma_field,
+                                "target_field": existing.target_field,
+                            },
+                            "auto_correction": {
+                                "current": existing.target_field,
+                                "recommended": f"{existing.target_field}.keyword",
+                                "note": "The existing mapping should be updated to use .keyword for proper matching",
+                            },
+                            "suggestion": f"Update mapping ID {existing.id} to use '{existing.target_field}.keyword' instead.",
+                        },
+                    )
+        # Re-raise if it's a different integrity error
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Database integrity error: {str(e)}",
+        )
+
+    audit_data = {
+        "sigma_field": data.sigma_field,
+        "target_field": data.target_field,
+        "final_target_field": target_field,
+        "auto_corrected": auto_corrected,
+    }
+
     await audit_log(
         db,
         current_user.id,
         "field_mapping.create",
         "field_mapping",
         str(mapping.id),
-        {"sigma_field": data.sigma_field, "target_field": data.target_field},
+        audit_data,
         ip_address=get_client_ip(request),
     )
     await db.commit()
@@ -78,17 +178,69 @@ async def update_field_mapping(
     data: FieldMappingUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    os_client=Depends(get_opensearch_client_optional),
 ):
-    """Update an existing field mapping."""
-    mapping = await update_mapping(
+    """Update an existing field mapping with auto-correction for text fields.
+
+    Automatically appends .keyword suffix to text fields that should use exact matching.
+    """
+    # Get the mapping to find its index pattern
+    from sqlalchemy import select
+    from app.models.field_mapping import FieldMapping
+
+    result = await db.execute(select(FieldMapping).where(FieldMapping.id == mapping_id))
+    mapping = result.scalar_one_or_none()
+    if mapping is None:
+        raise HTTPException(status_code=404, detail="Mapping not found")
+
+    # Auto-correct if target_field is being updated
+    target_field = data.target_field
+    auto_corrected = False
+
+    if data.target_field and mapping.index_pattern_id and os_client:
+        from app.services.field_type_detector import auto_correct_field_mapping
+
+        try:
+            # Get index pattern
+            result = await db.execute(
+                select(IndexPattern).where(IndexPattern.id == mapping.index_pattern_id)
+            )
+            index_pattern = result.scalar_one_or_none()
+
+            if index_pattern:
+                # Auto-correct if target field is a text field
+                target_field, auto_corrected = auto_correct_field_mapping(
+                    os_client, index_pattern.pattern, data.target_field
+                )
+
+                if auto_corrected:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        f"Auto-corrected field mapping '{mapping.sigma_field}' -> '{data.target_field}' to '{target_field}'"
+                    )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Failed to auto-correct field mapping: {e}. Using user-provided value."
+            )
+
+    # Update the mapping with corrected field
+    updated_mapping = await update_mapping(
         db,
         mapping_id,
-        target_field=data.target_field,
+        target_field=target_field,
         origin=data.origin,
         confidence=data.confidence,
     )
-    if mapping is None:
+
+    if updated_mapping is None:
         raise HTTPException(status_code=404, detail="Mapping not found")
+
+    audit_data = {
+        "changes": data.model_dump(exclude_none=True),
+        "final_target_field": target_field,
+        "auto_corrected": auto_corrected,
+    }
 
     await audit_log(
         db,
@@ -96,11 +248,11 @@ async def update_field_mapping(
         "field_mapping.update",
         "field_mapping",
         str(mapping_id),
-        {"changes": data.model_dump(exclude_none=True)},
+        audit_data,
         ip_address=get_client_ip(request),
     )
     await db.commit()
-    return mapping
+    return updated_mapping
 
 
 @router.delete("/{mapping_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -152,19 +304,40 @@ async def suggest_field_mappings(
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Failed to get index fields: {e}")
 
-    # Get AI suggestions
+    # Get AI suggestions and auto-correct
+    from app.services.field_type_detector import auto_correct_field_mapping
+
     try:
         suggestions = await suggest_mappings(
             db, data.sigma_fields, log_fields, data.logsource
         )
-        return [
-            AISuggestionResponse(
-                sigma_field=s.sigma_field,
-                target_field=s.target_field,
-                confidence=s.confidence,
-                reason=s.reason,
+
+        # Auto-correct AI suggestions to use .keyword for text fields
+        corrected_suggestions = []
+        for s in suggestions:
+            corrected_field, was_corrected = auto_correct_field_mapping(
+                os_client, index_pattern.pattern, s.target_field
             )
-            for s in suggestions
-        ]
+
+            if was_corrected:
+                import logging
+                logging.getLogger(__name__).info(
+                    f"Auto-corrected AI suggestion '{s.sigma_field}' -> '{s.target_field}' to '{corrected_field}'"
+                )
+                # Update reason to explain the correction
+                reason = f"{s.reason} (Auto-corrected to use .keyword for exact matching)"
+            else:
+                reason = s.reason
+
+            corrected_suggestions.append(
+                AISuggestionResponse(
+                    sigma_field=s.sigma_field,
+                    target_field=corrected_field,
+                    confidence=s.confidence,
+                    reason=reason,
+                )
+            )
+
+        return corrected_suggestions
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

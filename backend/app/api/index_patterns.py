@@ -242,11 +242,17 @@ async def get_index_pattern_fields(
     db: Annotated[AsyncSession, Depends(get_db)],
     opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
     _: Annotated[User, Depends(get_current_user)],
+    include_multi_fields: bool = False,
 ):
     """
     Get available fields from an index pattern's OpenSearch index.
 
-    Returns a list of field names that can be used as mapping targets.
+    Returns a list of field names that can be used as mapping targets or exception fields.
+
+    Query Parameters:
+        include_multi_fields: If True, include .keyword and other multi-fields.
+                            Default False for cleaner UI dropdowns.
+                            Set True when validating field mappings.
     """
     result = await db.execute(
         select(IndexPattern).where(IndexPattern.id == pattern_id)
@@ -256,7 +262,7 @@ async def get_index_pattern_fields(
         raise HTTPException(status_code=404, detail="Index pattern not found")
 
     try:
-        fields = get_index_fields(opensearch, pattern.pattern)
+        fields = get_index_fields(opensearch, pattern.pattern, include_multi_fields=include_multi_fields)
         return sorted(fields)
     except Exception as e:
         raise HTTPException(
