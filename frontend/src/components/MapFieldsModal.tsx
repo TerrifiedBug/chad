@@ -43,7 +43,6 @@ export function MapFieldsModal({
   const [availableFields, setAvailableFields] = useState<string[]>([])
   const [indexPatternName, setIndexPatternName] = useState('')
   const [mappings, setMappings] = useState<MappingEntry[]>([])
-  const [scope, setScope] = useState<'index' | 'global'>('index')
   const [isLoading, setIsLoading] = useState(false)
   const [isSuggestingAI, setIsSuggestingAI] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -181,7 +180,7 @@ export function MapFieldsModal({
         await fieldMappingsApi.create({
           sigma_field: mapping.sigmaField,
           target_field: mapping.targetField,
-          index_pattern_id: scope === 'index' ? indexPatternId : null,
+          index_pattern_id: indexPatternId,
           origin: mapping.confidence !== undefined ? 'ai_suggested' : 'manual',
           confidence: mapping.confidence,
         })
@@ -238,29 +237,6 @@ export function MapFieldsModal({
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Scope Selection */}
-            <div className="space-y-2">
-              <Label>Mapping Scope</Label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant={scope === 'index' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setScope('index')}
-                >
-                  This index only
-                </Button>
-                <Button
-                  type="button"
-                  variant={scope === 'global' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setScope('global')}
-                >
-                  Global (all indices)
-                </Button>
-              </div>
-            </div>
-
             {/* Field Mappings Table */}
             <div className="border rounded-md">
               <table className="w-full">
