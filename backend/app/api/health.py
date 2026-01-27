@@ -264,53 +264,36 @@ async def get_health_status(
             db_available = geoip_service.is_database_available()
 
             if db_available:
-                # Get last update time - first try the setting, then check file directly
-                last_update_result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
-                geoip_last_update = last_update_result.scalar_one_or_none()
+                # Get database info and check modification time
+                try:
+                    db_info = geoip_service.get_database_info()
+                    if db_info:
+                        last_update = db_info["modified_at"]
 
-                # Extract value from JSONB - handle both string and dict formats
-                last_update = None
-                if geoip_last_update and geoip_last_update.value:
-                    val = geoip_last_update.value
-                    if isinstance(val, str):
-                        last_update = val
-                    elif isinstance(val, dict) and "isoformat" in val:
-                        last_update = val["isoformat"]
-                    elif isinstance(val, (int, float)):
-                        # Unix timestamp
-                        from datetime import datetime, UTC
-                        last_update = datetime.fromtimestamp(val, tz=UTC).isoformat()
+                        # Check if database is recent (within 30 days)
+                        from datetime import datetime, timedelta, UTC
+                        try:
+                            last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
+                            days_ago = (datetime.now(UTC) - last_update_dt).days
+                        except (ValueError, TypeError):
+                            days_ago = None
 
-                # Fallback: check database file modification time
-                if not last_update:
-                    try:
-                        db_info = geoip_service.get_database_info()
-                        if db_info:
-                            last_update = db_info["modified_at"]
-                    except Exception:
-                        pass  # Can't read file info
-
-                if last_update:
-                    # Consider it healthy if updated within last 7 days, otherwise warning
-                    from datetime import datetime, timedelta, UTC
-                    try:
-                        last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
-                        days_ago = (datetime.now(UTC) - last_update_dt).days
-                    except (ValueError, TypeError):
-                        # If we can't parse the date, treat as unknown
-                        days_ago = None
-                        status = "unknown"
-
-                    # Determine status based on days ago
-                    if days_ago is not None:
-                        if days_ago <= 7:
-                            status = "healthy"
-                        elif days_ago <= 30:
-                            status = "warning"
+                        # Determine status based on database age
+                        if days_ago is not None:
+                            if days_ago <= 7:
+                                status = "healthy"
+                            elif days_ago <= 30:
+                                status = "warning"
+                            else:
+                                status = "unhealthy"
                         else:
-                            status = "unhealthy"
-                else:
-                    status = "unknown"
+                            status = "unknown"
+                    else:
+                        last_update = None
+                        status = "unhealthy"  # Enabled but can't read DB info
+                except Exception:
+                    last_update = None
+                    status = "unhealthy"  # Error reading DB info
             else:
                 last_update = None
                 status = "unhealthy"  # Enabled but database not found

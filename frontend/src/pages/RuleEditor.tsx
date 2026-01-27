@@ -898,7 +898,6 @@ export default function RuleEditorPage() {
                   <span className="text-sm text-gray-500 font-medium">Undeployed</span>
                   <Button
                     variant="outline"
-                    size="sm"
                     disabled={!canManageRules}
                     title="Deploy the rule first to enable snooze"
                   >
@@ -911,7 +910,7 @@ export default function RuleEditorPage() {
                   <span className="text-sm text-green-600 font-medium">Deployed</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" disabled={isSnoozing || !canManageRules}>
+                      <Button variant="outline" disabled={isSnoozing || !canManageRules}>
                         <Clock className="h-4 w-4 mr-1" />
                         Snooze
                       </Button>
