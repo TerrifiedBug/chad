@@ -365,6 +365,17 @@ export default function RuleEditorPage() {
     }
   }, [id, isNew, loadIndexPatterns, loadRule, loadExceptions, loadCorrelationRules])
 
+  // Reset deployment state when rule ID changes (fixes clone showing as deployed)
+  useEffect(() => {
+    setDeployedAt(null)
+    setDeployedVersion(null)
+    setCurrentVersionNumber(1)
+    setNeedsRedeploy(false)
+    setStatus('undeployed')
+    setSnoozeIndefinite(false)
+    setSnoozeUntil(null)
+  }, [id])
+
   // Handle clone state from navigation
   useEffect(() => {
     if (isNew && cloneState) {
