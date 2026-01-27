@@ -8,11 +8,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from opensearchpy import OpenSearch
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, get_opensearch_client, require_admin
 from app.db.session import get_db
 from app.models.notification_settings import (
     AlertNotificationSetting,
@@ -293,6 +294,7 @@ async def update_mandatory_comments_settings(
 @router.get("/recent")
 async def get_recent_notifications(
     db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
@@ -304,7 +306,7 @@ async def get_recent_notifications(
     from app.services.health import get_all_indices_health
 
     # Get health status for all indices
-    index_health = await get_all_indices_health(db)
+    index_health = await get_all_indices_health(db, os_client)
 
     # Filter to only show warning/critical health issues
     health_issues = [
