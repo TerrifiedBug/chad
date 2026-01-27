@@ -78,10 +78,38 @@ async def create_field_mapping(
                     logging.getLogger(__name__).info(
                         f"Auto-corrected field mapping '{data.sigma_field}' -> '{data.target_field}' to '{target_field}'"
                     )
+
+                # NEW: Validate field exists
+                from app.services.opensearch import get_index_fields, find_similar_fields
+
+                available_fields = get_index_fields(
+                    os_client, index_pattern.pattern, include_multi_fields=True
+                )
+
+                if available_fields and target_field not in available_fields:
+                    similar_fields = find_similar_fields(target_field, available_fields)
+
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error": "field_not_found",
+                            "message": f"Field '{target_field}' does not exist in index pattern '{index_pattern.name}'",
+                            "field": target_field,
+                            "index_pattern": index_pattern.name,
+                            "suggestions": similar_fields[:5],
+                        }
+                    )
+
+                logging.getLogger(__name__).info(
+                    f"Validated field mapping '{data.sigma_field}' -> '{target_field}' "
+                    f"(exists in {len(available_fields)} available fields)"
+                )
+        except HTTPException:
+            raise  # Re-raise our validation error
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(
-                f"Failed to auto-correct field mapping: {e}. Using user-provided value."
+                f"Failed to auto-correct/validate field mapping: {e}. Using user-provided value."
             )
 
     try:
