@@ -42,6 +42,7 @@ class FieldMapping(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    version: Mapped[int] = mapped_column(nullable=False, default=1)
 
     # Relationships
     index_pattern = relationship("IndexPattern", back_populates="field_mappings")
