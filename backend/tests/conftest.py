@@ -120,9 +120,53 @@ async def test_user(test_session: AsyncSession) -> User:
 
 
 @pytest_asyncio.fixture(scope="function")
+async def admin_user(test_session: AsyncSession) -> User:
+    """Create an admin user."""
+    user = User(
+        id=uuid.uuid4(),
+        email="admin@example.com",
+        password_hash=get_password_hash("adminpassword"),
+        role=UserRole.ADMIN,
+        is_active=True,
+    )
+    test_session.add(user)
+    await test_session.commit()
+    await test_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture(scope="function")
+async def normal_user(test_session: AsyncSession) -> User:
+    """Create a normal (non-admin) user."""
+    user = User(
+        id=uuid.uuid4(),
+        email="user@example.com",
+        password_hash=get_password_hash("userpassword"),
+        role=UserRole.USER,
+        is_active=True,
+    )
+    test_session.add(user)
+    await test_session.commit()
+    await test_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture(scope="function")
 async def test_token(test_user: User) -> str:
     """Create a test JWT token."""
     return create_access_token(data={"sub": str(test_user.id)})
+
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_token(admin_user: User) -> str:
+    """Create an admin JWT token."""
+    return create_access_token(data={"sub": str(admin_user.id)})
+
+
+@pytest_asyncio.fixture(scope="function")
+async def normal_token(normal_user: User) -> str:
+    """Create a normal user JWT token."""
+    return create_access_token(data={"sub": str(normal_user.id)})
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -158,6 +202,24 @@ async def authenticated_client(
         transport=ASGITransport(app=app),
         base_url="http://test",
         headers={"Authorization": f"Bearer {test_token}"},
+    ) as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """Create an unauthenticated async test client (alias for client)."""
+
+    async def override():
+        yield test_session
+
+    app.dependency_overrides[get_db] = override
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as ac:
         yield ac
 
