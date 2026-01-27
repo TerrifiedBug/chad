@@ -180,44 +180,45 @@ async def receive_logs(
             continue
 
         for match in matches:
-            # Only process enabled rules
-            if not match.get("enabled", True):
-                continue
+            try:
+                # Only process enabled rules
+                if not match.get("enabled", True):
+                    continue
 
-            rule_id = match["rule_id"]
+                rule_id = match["rule_id"]
 
-            # Get exceptions for this rule (with caching)
-            if rule_id not in rule_exceptions_cache:
-                try:
-                    rule_uuid = UUID(rule_id)
-                    exc_result = await db.execute(
-                        select(RuleException).where(
-                            RuleException.rule_id == rule_uuid,
-                            RuleException.is_active == True,
+                # Get exceptions for this rule (with caching)
+                if rule_id not in rule_exceptions_cache:
+                    try:
+                        rule_uuid = UUID(rule_id)
+                        exc_result = await db.execute(
+                            select(RuleException).where(
+                                RuleException.rule_id == rule_uuid,
+                                RuleException.is_active == True,
+                            )
                         )
-                    )
-                    exceptions = exc_result.scalars().all()
-                    rule_exceptions_cache[rule_id] = [
-                        {
-                            "field": e.field,
-                            "operator": e.operator.value,
-                            "value": e.value,
-                            "is_active": e.is_active,
-                        }
-                        for e in exceptions
-                    ]
-                except (ValueError, Exception):
-                    rule_exceptions_cache[rule_id] = []
+                        exceptions = exc_result.scalars().all()
+                        rule_exceptions_cache[rule_id] = [
+                            {
+                                "field": e.field,
+                                "operator": e.operator.value,
+                                "value": e.value,
+                                "is_active": e.is_active,
+                            }
+                            for e in exceptions
+                        ]
+                    except (ValueError, Exception):
+                        rule_exceptions_cache[rule_id] = []
 
-            # Check if this match should be suppressed by an exception
-            if should_suppress_alert(log, rule_exceptions_cache[rule_id]):
-                continue
+                # Check if this match should be suppressed by an exception
+                if should_suppress_alert(log, rule_exceptions_cache[rule_id]):
+                    continue
 
-            # Enrich log with GeoIP data if configured
-            enriched_log = await enrich_alert(db, log, index_pattern)
+                # Enrich log with GeoIP data if configured
+                enriched_log = await enrich_alert(db, log, index_pattern)
 
-            # Create alert
-            alert = alert_service.create_alert(
+                # Create alert
+                alert = alert_service.create_alert(
                 alerts_index=alerts_index,
                 rule_id=rule_id,
                 rule_title=match["rule_title"],
@@ -303,6 +304,12 @@ async def receive_logs(
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.error(f"WebSocket broadcast failed: {e}")
+
+            except Exception as e:
+                processing_errors.append(f"Alert creation failed for match: {str(e)}")
+                logs_errored += 1
+                # Continue processing other matches
+                continue
 
     # Send notifications through the new notification system
     if alerts_created:
