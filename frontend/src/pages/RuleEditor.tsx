@@ -879,22 +879,21 @@ export default function RuleEditorPage() {
           {!isNew && (
             <div className="flex items-center gap-2">
               {status === 'snoozed' ? (
-                <div className="flex items-center gap-2 mr-4">
+                <>
                   <Clock className="h-4 w-4 text-yellow-500" />
                   <span className="text-sm text-yellow-600">
                     {snoozeIndefinite ? 'Snoozed indefinitely' : snoozeUntil ? `Snoozed until ${formatSnoozeExpiry(snoozeUntil)}` : 'Snoozed'}
                   </span>
                   <Button
                     variant="outline"
-                    size="sm"
                     onClick={handleUnsnooze}
                     disabled={isSnoozing || !canManageRules}
                   >
                     {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
                   </Button>
-                </div>
+                </>
               ) : status === 'undeployed' ? (
-                <div className="flex items-center gap-2 mr-4">
+                <>
                   <span className="text-sm text-gray-500 font-medium">Undeployed</span>
                   <Button
                     variant="outline"
@@ -904,27 +903,24 @@ export default function RuleEditorPage() {
                     <Clock className="h-4 w-4 mr-1" />
                     Snooze
                   </Button>
-                </div>
+                </>
               ) : (
-                <div className="flex items-center gap-2 mr-4">
-                  <span className="text-sm text-green-600 font-medium">Deployed</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" disabled={isSnoozing || !canManageRules}>
-                        <Clock className="h-4 w-4 mr-1" />
-                        Snooze
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="z-50 bg-popover">
-                      <DropdownMenuItem onClick={() => handleSnooze(1)} disabled={!canManageRules}>1 hour</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(4)} disabled={!canManageRules}>4 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(8)} disabled={!canManageRules}>8 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(24)} disabled={!canManageRules}>24 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(168)} disabled={!canManageRules}>1 week</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnoozeIndefinite()} disabled={!canManageRules}>Indefinitely</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" disabled={isSnoozing || !canManageRules}>
+                      <Clock className="h-4 w-4 mr-1" />
+                      Snooze
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="z-50 bg-popover">
+                    <DropdownMenuItem onClick={() => handleSnooze(1)} disabled={!canManageRules}>1 hour</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnooze(4)} disabled={!canManageRules}>4 hours</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnooze(8)} disabled={!canManageRules}>8 hours</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnooze(24)} disabled={!canManageRules}>24 hours</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnooze(168)} disabled={!canManageRules}>1 week</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnoozeIndefinite()} disabled={!canManageRules}>Indefinitely</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           )}
