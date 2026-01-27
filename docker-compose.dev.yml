@@ -34,6 +34,7 @@ services:
       - DEBUG=true
       # Frontend URL for SSO redirects (local dev needs explicit URL due to different ports)
       - FRONTEND_URL=http://localhost:3000
+      - APP_URL=http://localhost:3000
     ports:
       - "8000:8000"
     depends_on:

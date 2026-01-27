@@ -258,7 +258,19 @@ async def get_health_status(
             # Get last update time - first try the setting, then check file directly
             last_update_result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
             geoip_last_update = last_update_result.scalar_one_or_none()
-            last_update = geoip_last_update.value if geoip_last_update else None
+
+            # Extract value from JSONB - handle both string and dict formats
+            last_update = None
+            if geoip_last_update and geoip_last_update.value:
+                val = geoip_last_update.value
+                if isinstance(val, str):
+                    last_update = val
+                elif isinstance(val, dict) and "isoformat" in val:
+                    last_update = val["isoformat"]
+                elif isinstance(val, (int, float)):
+                    # Unix timestamp
+                    from datetime import datetime, UTC
+                    last_update = datetime.fromtimestamp(val, tz=UTC).isoformat()
 
             # Fallback: check database file modification time
             if not last_update:
@@ -275,14 +287,22 @@ async def get_health_status(
             if last_update:
                 # Consider it healthy if updated within last 7 days, otherwise warning
                 from datetime import datetime, timedelta, UTC
-                last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
-                days_ago = (datetime.now(UTC) - last_update_dt).days
-                if days_ago <= 7:
-                    status = "healthy"
-                elif days_ago <= 30:
-                    status = "warning"
-                else:
-                    status = "unhealthy"
+                try:
+                    last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
+                    days_ago = (datetime.now(UTC) - last_update_dt).days
+                except (ValueError, TypeError):
+                    # If we can't parse the date, treat as unknown
+                    days_ago = None
+                    status = "unknown"
+
+                # Determine status based on days ago
+                if days_ago is not None:
+                    if days_ago <= 7:
+                        status = "healthy"
+                    elif days_ago <= 30:
+                        status = "warning"
+                    else:
+                        status = "unhealthy"
             else:
                 status = "unknown"
 

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_opensearch_client_optional
 from app.db.session import get_db
+from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
 from app.models.rule_exception import RuleException
 from app.services.alerts import AlertService, should_suppress_alert
@@ -293,6 +294,25 @@ async def receive_logs(
                 # Log but don't fail the request if notification fails
                 import logging
                 logging.getLogger(__name__).error(f"Failed to send notification: {e}")
+
+    # Record health metrics for this batch of logs
+    try:
+        metric = IndexHealthMetrics(
+            index_pattern_id=index_pattern.id,
+            logs_received=len(logs),
+            logs_processed=len(logs),
+            logs_errored=0,  # TODO: Track actual errors if needed
+            alerts_generated=len(alerts_created),
+            rules_triggered=total_matches,
+            queue_depth=0,  # TODO: Track actual queue depth if needed
+            avg_latency_ms=0,  # TODO: Track actual latency if needed
+        )
+        db.add(metric)
+        await db.commit()
+    except Exception as e:
+        # Log but don't fail the request if metric recording fails
+        import logging
+        logging.getLogger(__name__).error(f"Failed to record health metrics: {e}")
 
     return LogMatchResponse(
         logs_received=len(logs),

@@ -113,10 +113,18 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     2. Origin/Referer/Host validation - ensures request comes from allowed source
     3. SameSite cookies - prevents CSRF from third-party sites (already configured in SessionMiddleware)
     4. Exempts safe methods (GET, HEAD, OPTIONS, TRACE)
+    5. Exempts specific public authentication endpoints
 
     For API-first applications with JWT authentication, CSRF protection is
     defense-in-depth. The primary protection is JWT tokens in Authorization header.
     """
+
+    # Public authentication endpoints that don't require CSRF protection
+    # These are safe because they use short-lived, single-use tokens or
+    # delegate authentication to external providers
+    EXEMPT_PATHS = {
+        "/api/auth/sso/exchange",  # SSO exchange uses short-lived code (30s, single-use)
+    }
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
@@ -129,6 +137,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             - Validate CSRF token from header matches cookie
             - Validate Origin/Referer/Host headers
         """
+        # Check if path is exempt from CSRF protection
+        if str(request.url.path) in self.EXEMPT_PATHS:
+            logger.info(f"CSRF: Exempted path {request.url.path} from validation")
+            return await call_next(request)
+
         # For API requests with JWT authentication, CSRF is less critical
         # but we still protect against cross-site attacks
 

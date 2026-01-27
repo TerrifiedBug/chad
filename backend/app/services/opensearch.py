@@ -1,5 +1,6 @@
 import logging
 import time
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -7,6 +8,9 @@ from opensearchpy import OpenSearch
 
 
 logger = logging.getLogger(__name__)
+
+# Suppress urllib3 InsecureRequestWarning when verify_certs=False
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
 
 @dataclass
