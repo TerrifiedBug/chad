@@ -156,6 +156,10 @@ export default function RuleEditorPage() {
   const [newExceptionReason, setNewExceptionReason] = useState('')
   const [isAddingException, setIsAddingException] = useState(false)
 
+  // Add state for available fields from OpenSearch
+  const [availableFields, setAvailableFields] = useState<string[]>([])
+  const [isLoadingFields, setIsLoadingFields] = useState(false)
+
   // Exception delete confirmation state
   const [exceptionToDelete, setExceptionToDelete] = useState<RuleException | null>(null)
   const [isDeleteExceptionDialogOpen, setIsDeleteExceptionDialogOpen] = useState(false)
@@ -337,6 +341,30 @@ export default function RuleEditorPage() {
     }
   }, [id, isNew])
 
+  const loadAvailableFields = async () => {
+    if (!indexPatternId) return
+
+    setIsLoadingFields(true)
+    try {
+      const response = await fetch(`/api/rules/index-fields/${indexPatternId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to load fields')
+      }
+
+      const data = await response.json()
+      setAvailableFields(data.fields)
+    } catch (err) {
+      console.error('Failed to load fields', err)
+    } finally {
+      setIsLoadingFields(false)
+    }
+  }
+
   // Effects - must come after all useCallback declarations
   useEffect(() => {
     loadIndexPatterns()
@@ -369,6 +397,11 @@ export default function RuleEditorPage() {
       }
     }
   }, [isNew, cloneState])
+
+  // Load available fields when index pattern changes
+  useEffect(() => {
+    loadAvailableFields()
+  }, [indexPatternId])
 
   // Load mandatory comments settings on mount
   useEffect(() => {
@@ -1502,32 +1535,22 @@ export default function RuleEditorPage() {
                   <div className="border-t pt-4 space-y-3">
                     <Label className="text-xs font-medium">Add Exception</Label>
                     <div className="space-y-2">
-                      {detectedFields.length > 0 ? (
-                        <Select
-                          value={newExceptionField}
-                          onValueChange={canManageRules ? setNewExceptionField : undefined}
-                          disabled={!canManageRules}
-                        >
-                          <SelectTrigger className="h-8 text-sm" disabled={!canManageRules}>
-                            <SelectValue placeholder="Select field" />
-                          </SelectTrigger>
-                          <SelectContent className="z-50 bg-popover max-h-48">
-                            {detectedFields.map((field) => (
-                              <SelectItem key={field} value={field}>
-                                {field}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Input
-                          placeholder="Field name"
-                          value={newExceptionField}
-                          onChange={(e) => setNewExceptionField(e.target.value)}
-                          className="h-8 text-sm"
-                          disabled={!canManageRules}
-                        />
-                      )}
+                      <Select
+                        value={newExceptionField}
+                        onValueChange={canManageRules ? setNewExceptionField : undefined}
+                        disabled={isLoadingFields || !canManageRules}
+                      >
+                        <SelectTrigger className="h-8 text-sm" disabled={isLoadingFields || !canManageRules}>
+                          <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select a field..."} />
+                        </SelectTrigger>
+                        <SelectContent className="z-50 bg-popover max-h-48">
+                          {availableFields.map((field) => (
+                            <SelectItem key={field} value={field}>
+                              {field}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <Select
                         value={newExceptionOperator}
                         onValueChange={canManageRules ? (value) =>
