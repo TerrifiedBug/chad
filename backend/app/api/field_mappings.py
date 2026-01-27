@@ -285,6 +285,11 @@ async def update_field_mapping(
 
     # Increment version if target_field changed
     if data.target_field and data.target_field != mapping.target_field:
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"Field mapping changed: {mapping.sigma_field} -> {mapping.target_field} to {target_field}")
+
         mapping.version += 1
         await db.flush()
 
@@ -292,6 +297,7 @@ async def update_field_mapping(
         from app.services.field_mapping import get_rules_using_mapping
 
         affected_rules = await get_rules_using_mapping(db, mapping.id)
+        logger.info(f"Found {len(affected_rules)} rules affected by field mapping change")
 
         from datetime import datetime, timezone
         from app.models.rule import RuleVersion

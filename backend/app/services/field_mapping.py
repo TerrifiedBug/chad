@@ -142,13 +142,19 @@ async def get_rules_using_mapping(
     """Get all rules that use a specific field mapping."""
     from sqlalchemy.orm import selectinload
     from app.models.rule import Rule
+    import logging
+
+    logger = logging.getLogger(__name__)
 
     # Get the mapping
     result = await db.execute(select(FieldMapping).where(FieldMapping.id == mapping_id))
     mapping = result.scalar_one_or_none()
 
     if not mapping:
+        logger.warning(f"Mapping {mapping_id} not found")
         return []
+
+    logger.info(f"Checking for rules using field mapping: {mapping.sigma_field} -> {mapping.target_field}")
 
     # Find all rules for this index pattern
     rules_result = await db.execute(
@@ -157,6 +163,8 @@ async def get_rules_using_mapping(
         .where(Rule.index_pattern_id == mapping.index_pattern_id)
     )
     rules = rules_result.scalars().all()
+
+    logger.info(f"Found {len(rules)} rules for index pattern {mapping.index_pattern_id}")
 
     # Check each rule's YAML for the sigma_field
     affected_rules = []
@@ -169,10 +177,15 @@ async def get_rules_using_mapping(
             # Get detection fields
             fields = sigma_service.get_detection_fields(parsed)
 
+            logger.info(f"Rule {rule.id} ({rule.title}) has fields: {fields[:10]}")  # Log first 10 fields
+
             if mapping.sigma_field in fields:
+                logger.info(f"  -> Rule {rule.id} USES this field mapping!")
                 affected_rules.append(rule)
-        except Exception:
+        except Exception as e:
             # If we can't parse the YAML, skip this rule
+            logger.warning(f"  -> Failed to parse rule {rule.id}: {e}")
             continue
 
+    logger.info(f"Total affected rules: {len(affected_rules)}")
     return affected_rules
