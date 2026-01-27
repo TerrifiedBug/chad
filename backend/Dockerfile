@@ -16,5 +16,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Set entrypoint to run migrations before starting server
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
 # Default command (overridden in docker-compose for dev)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

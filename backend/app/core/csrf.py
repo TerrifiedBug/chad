@@ -37,22 +37,23 @@ def generate_csrf_token() -> str:
     return secrets.token_hex(CSRF_TOKEN_LENGTH)
 
 
-def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None) -> bool:
+def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None, host: str | None = None) -> bool:
     """
-    Validate that the Origin or Referer header is allowed.
+    Validate that the Origin, Referer, or Host header is allowed.
 
     In development mode, allows localhost origins.
-    In production, validates against configured APP_URL.
+    In production, validates against configured APP_URL hostname.
 
     Args:
         origin: Origin header value
         referer: Referer header value
         app_url: Configured application URL from environment
+        host: Host header value (direct request, for proxy scenarios)
 
     Returns:
-        True if origin/referer is allowed, False otherwise
+        True if origin/referer/host is allowed, False otherwise
     """
-    if not origin and not referer:
+    if not origin and not referer and not host:
         return False
 
     # Allow localhost in development mode
@@ -69,10 +70,14 @@ def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None)
         if referer:
             if any(referer.startswith(o) for o in allowed_origins):
                 return True
+        if host:
+            # Allow localhost host in DEBUG mode
+            if host in ["localhost", "127.0.0.1", "frontend"]:
+                return True
 
     # Production: validate against configured APP_URL
     if app_url:
-        # Extract hostname from APP_URL (e.g., https://chad.terrifiedbug.com)
+        # Extract hostname from APP_URL (e.g., https://chad.example.com)
         expected_host = urlparse(app_url).hostname
 
         if not expected_host:
@@ -91,6 +96,11 @@ def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None)
             if referer_host == expected_host:
                 return True
 
+        # Check host header (for reverse proxy scenarios)
+        if host:
+            if host == expected_host:
+                return True
+
     return False
 
 
@@ -100,7 +110,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
     Implements:
     1. Double Submit Cookie pattern - token in cookie must match token in header
-    2. Origin/Referer validation - ensures request comes from allowed source
+    2. Origin/Referer/Host validation - ensures request comes from allowed source
     3. SameSite cookies - prevents CSRF from third-party sites (already configured in SessionMiddleware)
     4. Exempts safe methods (GET, HEAD, OPTIONS, TRACE)
 
@@ -117,7 +127,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         For state-changing methods (POST, PUT, PATCH, DELETE):
             - Validate CSRF token from header matches cookie
-            - Validate Origin/Referer headers
+            - Validate Origin/Referer/Host headers
         """
         # For API requests with JWT authentication, CSRF is less critical
         # but we still protect against cross-site attacks
@@ -165,11 +175,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             # but we still validate origin/referer for defense-in-depth
             origin = request.headers.get("origin")
             referer = request.headers.get("referer")
+            host = request.headers.get("host")
 
-            if not is_safe_origin(origin, referer, settings.APP_URL):
+            if not is_safe_origin(origin, referer, settings.APP_URL, host):
                 logger.warning(
-                    f"CSRF: Unsafe origin/referer from authenticated request: "
-                    f"origin={origin}, referer={referer}, expected={settings.APP_URL}"
+                    f"CSRF: Unsafe origin/referer/host from authenticated request: "
+                    f"origin={origin}, referer={referer}, host={host}, expected={settings.APP_URL}"
                 )
                 # For API requests, we'll log but not block (can be configured to block)
                 # In production, you may want to reject these requests
@@ -209,13 +220,14 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             )
             return response
 
-        # Validate origin/referer
+        # Validate origin/referer/host
         origin = request.headers.get("origin")
         referer = request.headers.get("referer")
+        host = request.headers.get("host")
 
-        if not is_safe_origin(origin, referer, settings.APP_URL):
+        if not is_safe_origin(origin, referer, settings.APP_URL, host):
             logger.warning(
-                f"CSRF: Unsafe origin/referer: origin={origin}, referer={referer}, "
+                f"CSRF: Unsafe origin/referer/host: origin={origin}, referer={referer}, host={host}, "
                 f"expected={settings.APP_URL}, url={request.url}"
             )
             response = JSONResponse(
