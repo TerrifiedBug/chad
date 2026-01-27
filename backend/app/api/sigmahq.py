@@ -228,6 +228,32 @@ async def import_rule(
             detail="SigmaHQ repository not cloned. Sync first.",
         )
 
+    # Check if rule already imported from this SigmaHQ path
+    from app.models.rule import Rule
+
+    existing_rule_result = await db.execute(
+        select(Rule).where(
+            Rule.sigmahq_path == request.rule_path,
+            Rule.index_pattern_id == request.index_pattern_id
+        )
+    )
+    existing_rule = existing_rule_result.scalar_one_or_none()
+
+    if existing_rule:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "rule_already_imported",
+                "message": f"This rule has already been imported from SigmaHQ",
+                "existing_rule": {
+                    "id": str(existing_rule.id),
+                    "title": existing_rule.title,
+                    "sigmahq_path": existing_rule.sigmahq_path,
+                },
+                "suggestion": "Use the existing rule or delete it first before re-importing",
+            }
+        )
+
     service_rule_type = _schema_to_service_rule_type(request.rule_type)
     content = sigmahq_service.get_rule_content(request.rule_path, service_rule_type)
 
