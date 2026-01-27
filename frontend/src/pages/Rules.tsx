@@ -129,6 +129,14 @@ export default function RulesPage() {
     return selectedRulesData.some(r => r.status === 'deployed')
   }, [selectedRulesData])
 
+  const hasUndeployedRules = useMemo(() => {
+    return selectedRulesData.some(r => r.status === 'undeployed')
+  }, [selectedRulesData])
+
+  const allDeployed = useMemo(() => {
+    return selectedRulesData.length > 0 && selectedRulesData.every(r => r.status === 'deployed')
+  }, [selectedRulesData])
+
   const hasSnoozedRules = useMemo(() => {
     return selectedRulesData.some(r => r.status === 'snoozed')
   }, [selectedRulesData])
@@ -827,38 +835,72 @@ export default function RulesPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleBulkAction('deploy')}
-                      disabled={isBulkOperating || isCheckingEligibility || !canDeployRules() || (deploymentEligibility?.ineligible?.length ?? 0) > 0}
+                      disabled={isBulkOperating || isCheckingEligibility || !canDeployRules() || hasDeployedRules || (deploymentEligibility?.ineligible?.length ?? 0) > 0}
                     >
                       <Rocket className="mr-2 h-4 w-4" /> Deploy
                     </Button>
                   </span>
                 </TooltipTrigger>
-                {(deploymentEligibility?.ineligible?.length ?? 0) > 0 && (
+                {hasDeployedRules && (
+                  <TooltipContent>
+                    Cannot bulk deploy: Some selected rules are already deployed
+                  </TooltipContent>
+                )}
+                {(deploymentEligibility?.ineligible?.length ?? 0) > 0 && !hasDeployedRules && (
                   <TooltipContent>
                     {deploymentEligibility!.ineligible.length} of {selectedRules.size} rules have unmapped fields
                   </TooltipContent>
                 )}
               </Tooltip>
-              <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating || !hasDeployedRules || !canDeployRules()}>
-                <X className="mr-2 h-4 w-4" /> Undeploy
-              </Button>
-              <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline" disabled={isBulkOperating || !canDeployRules()}>
-                    <Clock className="mr-2 h-4 w-4" /> Snooze
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="z-[60]">
-                  <DropdownMenuLabel>Snooze Duration</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(1)}>1 hour</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(4)}>4 hours</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(8)}>8 hours</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(24)}>24 hours</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(168)}>1 week</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleBulkAction('undeploy')}
+                      disabled={isBulkOperating || !allDeployed || !canDeployRules()}
+                    >
+                      <X className="mr-2 h-4 w-4" /> Undeploy
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!allDeployed && selectedRulesData.length > 0 && (
+                  <TooltipContent>
+                    Cannot bulk undeploy: All selected rules must be deployed
+                  </TooltipContent>
+                )}
+              </Tooltip>
+              <Tooltip open={hasUndeployedRules ? undefined : false}>
+                <TooltipTrigger asChild>
+                  <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isBulkOperating || hasUndeployedRules || !canDeployRules()}
+                      >
+                        <Clock className="mr-2 h-4 w-4" /> Snooze
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="z-[60]">
+                      <DropdownMenuLabel>Snooze Duration</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(1)}>1 hour</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(4)}>4 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(8)}>8 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(24)}>24 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(168)}>1 week</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TooltipTrigger>
+                {hasUndeployedRules && (
+                  <TooltipContent>
+                    Cannot bulk snooze: Some selected rules are not deployed
+                  </TooltipContent>
+                )}
+              </Tooltip>
               <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating || !hasSnoozedRules || !canDeployRules()}>
                 <RotateCcw className="mr-2 h-4 w-4" /> Unsnooze
               </Button>
