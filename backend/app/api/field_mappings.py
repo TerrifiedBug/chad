@@ -298,10 +298,13 @@ async def update_field_mapping(
         from app.models.rule import Rule
 
         for rule in affected_rules:
+            # Increment rule's current_version_number
+            rule.current_version_number += 1
+
             # Create new version
             new_version = RuleVersion(
                 rule_id=rule.id,
-                version_number=rule.current_version_number + 1,
+                version_number=rule.current_version_number,
                 yaml_content=rule.yaml_content,
                 changed_by=current_user.id,
                 change_reason=f"Field mapping updated: {mapping.sigma_field} now maps to {data.target_field}",
