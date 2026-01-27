@@ -346,17 +346,7 @@ export default function RuleEditorPage() {
 
     setIsLoadingFields(true)
     try {
-      const response = await fetch(`/api/rules/index-fields/${indexPatternId}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to load fields')
-      }
-
-      const data = await response.json()
+      const data = await rulesApi.getIndexFields(indexPatternId)
       setAvailableFields(data.fields)
     } catch (err) {
       console.error('Failed to load fields', err)

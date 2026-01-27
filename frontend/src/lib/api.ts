@@ -473,6 +473,8 @@ export const rulesApi = {
   // Exceptions
   listExceptions: (ruleId: string) =>
     api.get<RuleException[]>(`/rules/${ruleId}/exceptions`),
+  getIndexFields: (indexPatternId: string) =>
+    api.get<{ fields: string[] }>(`/rules/index-fields/${indexPatternId}`),
   createException: (ruleId: string, data: RuleExceptionCreate) =>
     api.post<RuleException>(`/rules/${ruleId}/exceptions`, data),
   updateException: (ruleId: string, exceptionId: string, data: RuleExceptionUpdate) =>
