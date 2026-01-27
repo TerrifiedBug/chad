@@ -127,12 +127,49 @@ class AttackCoverageService:
         total_counts = {row.technique_id: row.count for row in total_rows}
         deployed_counts = {row.technique_id: row.count for row in deployed_rows}
 
+        # Fetch all techniques to aggregate sub-technique counts into parents
+        tech_result = await db.execute(select(AttackTechnique))
+        all_techniques = tech_result.scalars().all()
+
+        # Build parent-child map
+        parent_map: dict[str, str | None] = {tech.id: tech.parent_id for tech in all_techniques}
+
+        # Aggregate sub-technique counts into parent techniques
+        aggregated_total: dict[str, int] = {}
+        aggregated_deployed: dict[str, int] = {}
+
+        for tech_id, count in total_counts.items():
+            # Add count to the technique itself
+            if tech_id not in aggregated_total:
+                aggregated_total[tech_id] = 0
+            aggregated_total[tech_id] += count
+
+            # If this is a sub-technique, add count to its parent
+            parent_id = parent_map.get(tech_id)
+            if parent_id:
+                if parent_id not in aggregated_total:
+                    aggregated_total[parent_id] = 0
+                aggregated_total[parent_id] += count
+
+        for tech_id, count in deployed_counts.items():
+            # Add count to the technique itself
+            if tech_id not in aggregated_deployed:
+                aggregated_deployed[tech_id] = 0
+            aggregated_deployed[tech_id] += count
+
+            # If this is a sub-technique, add count to its parent
+            parent_id = parent_map.get(tech_id)
+            if parent_id:
+                if parent_id not in aggregated_deployed:
+                    aggregated_deployed[parent_id] = 0
+                aggregated_deployed[parent_id] += count
+
         # Combine into coverage response
-        all_technique_ids = set(total_counts.keys()) | set(deployed_counts.keys())
+        all_technique_ids = set(aggregated_total.keys()) | set(aggregated_deployed.keys())
         coverage = {
             tech_id: TechniqueCoverageStats(
-                total=total_counts.get(tech_id, 0),
-                deployed=deployed_counts.get(tech_id, 0),
+                total=aggregated_total.get(tech_id, 0),
+                deployed=aggregated_deployed.get(tech_id, 0),
             )
             for tech_id in all_technique_ids
         }
