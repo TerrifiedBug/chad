@@ -58,7 +58,11 @@ async def create_field_mapping(
     target_field = data.target_field
     auto_corrected = False
 
-    if data.index_pattern_id and os_client:
+    if not data.index_pattern_id:
+        # Global mapping - skip validation
+        import logging
+        logging.getLogger(__name__).info("Global mapping - skipping field validation")
+    elif os_client:
         from app.services.field_type_detector import auto_correct_field_mapping
 
         try:
