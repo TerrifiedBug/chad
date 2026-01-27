@@ -360,6 +360,12 @@ export default function SigmaHQPage() {
   const handleImport = async () => {
     if (!selectedRule || !selectedIndexPatternId) return
 
+    // Prevent duplicate clicks - check if already importing
+    if (isImporting) {
+      console.warn('Import already in progress, ignoring duplicate click')
+      return
+    }
+
     setIsImporting(true)
     setImportError('')
     setImportSuccess('')
