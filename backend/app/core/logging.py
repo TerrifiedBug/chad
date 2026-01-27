@@ -34,6 +34,12 @@ def configure_development_logging() -> None:
         stream=sys.stdout,
     )
 
+    # Silence noisy SQLAlchemy engine logs
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+    logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
+    logging.getLogger('sqlalchemy.dialects').setLevel(logging.WARNING)
+    logging.getLogger('sqlalchemy.orm').setLevel(logging.WARNING)
+
 
 def configure_production_logging() -> None:
     """Configure logging for production (JSON format)."""
