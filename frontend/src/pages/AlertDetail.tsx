@@ -31,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2 } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
+import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -862,31 +863,21 @@ export default function AlertDetailPage() {
             <form onSubmit={handleCreateException} className="space-y-4">
               {/* Field Selection */}
               <div className="space-y-2">
-                <Label htmlFor="exception-field">Field</Label>
-                <Select value={exceptionField} onValueChange={setExceptionField}>
-                  <SelectTrigger id="exception-field">
-                    <SelectValue placeholder="Select a field from the alert" />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 bg-popover max-h-[300px]">
-                    {exceptionFields.map((field) => (
-                      <SelectItem key={field} value={field}>
-                        <div className="flex items-center gap-2">
-                          {field.includes('.') ? (
-                            <>
-                              <span className="text-muted-foreground">└</span>
-                              <span>{field.split('.').pop()}</span>
-                              <span className="text-xs text-muted-foreground ml-auto">
-                                {field}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="font-medium">{field}</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableFieldSelector
+                  fields={exceptionFields}
+                  value={exceptionField}
+                  onChange={setExceptionField}
+                  onSelect={(field) => {
+                    // Auto-fill the value with the field's value from the alert document
+                    if (alert?.log_document) {
+                      const fieldValue = getFieldValue(alert.log_document, field)
+                      setExceptionValue(fieldValue)
+                    }
+                  }}
+                  label="Field"
+                  placeholder="Select a field from the alert"
+                  emptyMessage="No fields available in this alert"
+                />
               </div>
 
               {/* Operator Selection */}
@@ -915,14 +906,9 @@ export default function AlertDetailPage() {
                   id="exception-value"
                   value={exceptionValue}
                   onChange={(e) => setExceptionValue(e.target.value)}
-                  placeholder={exceptionField ? `Value from alert (${exceptionField})` : 'Enter value to match'}
+                  placeholder="Auto-filled from alert or enter value to match"
                   required
                 />
-                {exceptionField && alert?.log_document && (
-                  <p className="text-xs text-muted-foreground">
-                    Sample value from alert: <strong>{getFieldValue(alert.log_document, exceptionField)}</strong>
-                  </p>
-                )}
               </div>
 
               {/* Reason */}
