@@ -168,16 +168,20 @@ async def get_rules_using_mapping(
 
     # Check each rule's YAML for the sigma_field
     affected_rules = []
-    import yaml
     from app.services.sigma import sigma_service
 
     for rule in rules:
         try:
-            parsed = yaml.safe_load(rule.yaml_content)
-            # Get detection fields
-            fields = sigma_service.get_detection_fields(parsed)
+            # Parse YAML into SigmaRule object
+            sigma_rule = sigma_service.parse_rule(rule.yaml_content)
+            if sigma_rule is None:
+                logger.warning(f"  -> Failed to parse rule {rule.id}: Could not parse Sigma rule")
+                continue
 
-            logger.info(f"Rule {rule.id} ({rule.title}) has fields: {fields[:10]}")  # Log first 10 fields
+            # Extract fields from the parsed rule
+            fields = sigma_service.extract_fields(sigma_rule)
+
+            logger.info(f"Rule {rule.id} ({rule.title}) has fields: {list(fields)[:10]}")  # Log first 10 fields
 
             if mapping.sigma_field in fields:
                 logger.info(f"  -> Rule {rule.id} USES this field mapping!")
