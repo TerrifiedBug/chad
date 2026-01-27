@@ -11,6 +11,7 @@ Flow:
 """
 
 import secrets
+from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -150,6 +151,25 @@ async def receive_logs(
     rule_exceptions_cache: dict[str, list[dict]] = {}
 
     for log in logs:
+        # Extract timestamp early for latency calculation
+        log_timestamp_str = log.get("@timestamp")
+        log_time = None
+
+        if log_timestamp_str:
+            try:
+                # Parse ISO 8601 timestamp (handle Z and +00:00)
+                log_time = datetime.fromisoformat(
+                    log_timestamp_str.replace("Z", "+00:00")
+                )
+            except (ValueError, AttributeError) as e:
+                processing_errors.append(f"Invalid timestamp format: {e}")
+                logs_errored += 1
+                log_time = None
+        else:
+            # Missing timestamp is an error
+            processing_errors.append("Log missing @timestamp field")
+            logs_errored += 1
+
         # Run percolate query
         try:
             matches = alert_service.match_log(percolator_index, log)
