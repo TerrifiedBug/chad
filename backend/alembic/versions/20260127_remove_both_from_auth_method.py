@@ -6,7 +6,6 @@ Create Date: 2026-01-27
 
 """
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers
 revision = '20260127_remove_both'

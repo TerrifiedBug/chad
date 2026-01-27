@@ -2,7 +2,6 @@
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
 
 from app.models.index_pattern import IndexPattern
 from app.models.notification_settings import NotificationSettings
