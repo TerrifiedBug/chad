@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from opensearchpy import OpenSearch
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
@@ -22,6 +23,41 @@ from app.schemas.alert import (
 from app.services.alerts import AlertService
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+
+# Bulk operation schemas
+MAX_BULK_OPERATIONS = 100
+
+
+class BulkAlertStatusUpdate(BaseModel):
+    alert_ids: list[str] = Field(..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to update")
+    status: AlertStatus
+
+    @field_validator('alert_ids')
+    @classmethod
+    def validate_alert_ids(cls, v):
+        """Validate all IDs are valid UUIDs."""
+        for alert_id in v:
+            try:
+                UUID(alert_id)
+            except (ValueError, AttributeError):
+                raise ValueError(f"Invalid UUID format: {alert_id}")
+        return v
+
+
+class BulkAlertDelete(BaseModel):
+    alert_ids: list[str] = Field(..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to delete")
+
+    @field_validator('alert_ids')
+    @classmethod
+    def validate_alert_ids(cls, v):
+        """Validate all IDs are valid UUIDs."""
+        for alert_id in v:
+            try:
+                UUID(alert_id)
+            except (ValueError, AttributeError):
+                raise ValueError(f"Invalid UUID format: {alert_id}")
+        return v
 
 
 @router.get("", response_model=AlertListResponse)
@@ -125,7 +161,7 @@ async def delete_alert(
     alert_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Delete an alert."""
@@ -143,68 +179,81 @@ async def delete_alert(
 
 @router.post("/bulk/status", response_model=dict)
 async def bulk_update_alert_status(
-    data: dict,
+    data: BulkAlertStatusUpdate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
 ):
     """Update status for multiple alerts."""
     from app.models.alert import Alert
-    
+    from sqlalchemy import select
+
     success = []
     failed = []
-    
-    for alert_id in data.get("alert_ids", []):
-        try:
-            result = await db.execute(select(Alert).where(Alert.id == alert_id))
-            alert = result.scalar_one_or_none()
-            
-            if alert:
+
+    # Convert string IDs to UUIDs
+    alert_ids = [UUID(aid) for aid in data.alert_ids]
+
+    # Single query with IN clause to avoid N+1
+    result = await db.execute(select(Alert).where(Alert.id.in_(alert_ids)))
+    alerts = {alert.id: alert for alert in result.scalars().all()}
+
+    for alert_id in alert_ids:
+        if alert_id in alerts:
+            try:
+                alert = alerts[alert_id]
                 old_status = alert.status
-                alert.status = data.get("status")
-                
-                await audit_log(db, current_user.id, "alert.bulk_status_update", "alert", str(alert_id), 
-                              {"old_status": old_status, "new_status": alert.status}, 
+                alert.status = data.status
+
+                await audit_log(db, current_user.id, "alert.bulk_status_update", "alert", str(alert_id),
+                              {"old_status": old_status, "new_status": alert.status},
                               ip_address=get_client_ip(request))
                 success.append(str(alert_id))
-            else:
-                failed.append({"id": str(alert_id), "error": "Not found"})
-        except Exception as e:
-            failed.append({"id": str(alert_id), "error": str(e)})
-    
+            except Exception as e:
+                failed.append({"id": str(alert_id), "error": str(e)})
+        else:
+            failed.append({"id": str(alert_id), "error": "Not found"})
+
     await db.commit()
-    
+
     return {"success": success, "failed": failed}
 
 
 @router.post("/bulk/delete", response_model=dict)
 async def bulk_delete_alerts(
-    data: dict,
+    data: BulkAlertDelete,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Delete multiple alerts."""
     from app.models.alert import Alert
-    from sqlalchemy import delete as sql_delete
+    from sqlalchemy import select, delete as sql_delete
 
     alert_service = AlertService(os_client)
     success = []
     failed = []
 
-    for alert_id in data.get("alert_ids", []):
-        try:
-            result = await db.execute(select(Alert).where(Alert.id == alert_id))
-            alert = result.scalar_one_or_none()
+    # Convert string IDs to UUIDs
+    alert_ids = [UUID(aid) for aid in data.alert_ids]
 
-            if alert:
-                # Delete from OpenSearch
+    # Single query with IN clause to avoid N+1
+    result = await db.execute(select(Alert).where(Alert.id.in_(alert_ids)))
+    alerts = {alert.id: alert for alert in result.scalars().all()}
+
+    for alert_id in alert_ids:
+        if alert_id in alerts:
+            try:
+                alert = alerts[alert_id]
+
+                # Delete from OpenSearch first (fail fast)
                 try:
                     os_client.delete(index=alert.alert_index, id=alert.alert_id)
                 except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).warning(f"Failed to delete alert {alert_id} from OpenSearch: {e}")
+                    # Don't proceed with DB deletion if OpenSearch fails
+                    failed.append({"id": str(alert_id), "error": f"Failed to delete from OpenSearch: {e}"})
+                    continue
 
                 # Delete from database
                 await db.execute(sql_delete(Alert).where(Alert.id == alert_id))
@@ -212,11 +261,11 @@ async def bulk_delete_alerts(
                 await audit_log(db, current_user.id, "alert.bulk_delete", "alert", str(alert_id),
                               {"title": alert.title}, ip_address=get_client_ip(request))
                 success.append(str(alert_id))
-            else:
-                failed.append({"id": str(alert_id), "error": "Not found"})
-        except Exception as e:
-            failed.append({"id": str(alert_id), "error": str(e)})
-    
+            except Exception as e:
+                failed.append({"id": str(alert_id), "error": str(e)})
+        else:
+            failed.append({"id": str(alert_id), "error": "Not found"})
+
     await db.commit()
-    
+
     return {"success": success, "failed": failed}
