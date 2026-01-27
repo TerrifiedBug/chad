@@ -27,21 +27,29 @@ def get_alert_count(
     Returns:
         Count of alerts in the time period
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     try:
+        # Strip timezone info to match Dashboard's datetime format
+        # OpenSearch handles naive datetimes more consistently
+        since_naive = since.replace(tzinfo=None)
+
         result = os_client.count(
             index=alerts_index_pattern,
             body={
                 "query": {
                     "range": {
                         "created_at": {
-                            "gte": since.isoformat()
+                            "gte": since_naive.isoformat()
                         }
                     }
                 }
             }
         )
         return result.get("count", 0)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to count alerts in {alerts_index_pattern}: {e}")
         return 0
 
 # Thresholds (could be moved to settings)
@@ -78,6 +86,9 @@ async def get_index_health(
     """Get health summary for an index pattern."""
     since = datetime.now(UTC) - timedelta(hours=hours)
 
+    # Convert to naive datetime for OpenSearch query consistency
+    since_naive = since.replace(tzinfo=None)
+
     # Get index pattern settings for thresholds
     pattern_result = await db.execute(
         select(IndexPattern).where(IndexPattern.id == index_pattern_id)
@@ -98,10 +109,11 @@ async def get_index_health(
 
     # Per-hour count (last hour)
     one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
-    alerts_per_hour = get_alert_count(os_client, alerts_index, one_hour_ago)
+    one_hour_ago_naive = one_hour_ago.replace(tzinfo=None)
+    alerts_per_hour = get_alert_count(os_client, alerts_index, one_hour_ago_naive)
 
     # 24-hour total
-    alerts_24h = get_alert_count(os_client, alerts_index, since)
+    alerts_24h = get_alert_count(os_client, alerts_index, since_naive)
 
     # Get latest metrics
     result = await db.execute(
