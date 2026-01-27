@@ -1253,11 +1253,28 @@ async def unsnooze_rule(
 
     # Re-deploy to percolator when unsnoozing
     if rule.deployed_at is not None and os_client is not None:
-        # Translate the rule to get the OpenSearch query
-        translation = sigma_service.translate_with_mappings(rule.yaml_content, None)
+        # Get field mappings for the rule
+        from app.services.field_mapping import resolve_mappings
+
+        validation = sigma_service.translate_and_validate(rule.yaml_content)
+        sigma_fields = list(validation.fields or set())
+        field_mappings_dict: dict[str, str] = {}
+
+        if sigma_fields and rule.index_pattern_id:
+            resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
+            field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
+
+        # Translate the rule with field mappings
+        translation = sigma_service.translate_with_mappings(
+            rule.yaml_content, field_mappings_dict if field_mappings_dict else None
+        )
+
         if translation.success:
             percolator = PercolatorService(os_client)
             percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+
+            # Ensure the percolator index exists
+            percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
 
             # Extract tags from YAML
             parsed_rule = yaml.safe_load(rule.yaml_content)
