@@ -39,6 +39,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link, Beaker, TestTube, TrendingUp, ShieldAlert, GitCompare } from 'lucide-react'
@@ -1462,13 +1467,77 @@ export default function RuleEditorPage() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Group by field (optional)</Label>
-                      <Input
-                        value={thresholdGroupBy ?? ''}
-                        onChange={(e) => setThresholdGroupBy(e.target.value || null)}
-                        placeholder="user.name"
-                        className="h-8 text-sm"
-                        disabled={!canManageRules}
-                      />
+                      <Popover open={isGroupByDropdownOpen} onOpenChange={setIsGroupByDropdownOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={isGroupByDropdownOpen}
+                            className="w-full justify-between h-8 text-sm"
+                            disabled={!canManageRules || isLoadingGroupByFields}
+                          >
+                            {thresholdGroupBy || 'Select field...'}
+                            {isLoadingGroupByFields ? (
+                              <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0">
+                          <div className="p-2">
+                            <Input
+                              placeholder="Search fields..."
+                              value={groupByFieldSearch}
+                              onChange={(e) => setGroupByFieldSearch(e.target.value)}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div className="max-h-[300px] overflow-y-auto">
+                            {availableGroupByFields.length === 0 ? (
+                              <div className="p-4 text-sm text-muted-foreground text-center">
+                                {isLoadingGroupByFields
+                                  ? 'Loading fields...'
+                                  : indexPatternId
+                                  ? 'No fields available for this index pattern'
+                                  : 'Select an index pattern first'}
+                              </div>
+                            ) : (
+                              <div className="p-1">
+                                {availableGroupByFields
+                                  .filter((field) =>
+                                    field.toLowerCase().includes(groupByFieldSearch.toLowerCase())
+                                  )
+                                  .map((field) => (
+                                    <button
+                                      key={field}
+                                      onClick={() => {
+                                        setThresholdGroupBy(field)
+                                        setIsGroupByDropdownOpen(false)
+                                        setGroupByFieldSearch('')
+                                      }}
+                                      className="flex items-center gap-2 w-full px-2 py-1.5 text-sm hover:bg-accent rounded-sm cursor-pointer"
+                                    >
+                                      {field.includes('.') ? (
+                                        <>
+                                          <span className="text-muted-foreground">└</span>
+                                          <span>{field.split('.').pop()}</span>
+                                          <span className="text-xs text-muted-foreground ml-auto">
+                                            {field}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span className="font-medium">{field}</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                       <div className="text-xs text-muted-foreground">
                         Count matches separately per unique value of this field
                       </div>
