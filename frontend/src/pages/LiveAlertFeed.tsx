@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { RelativeTime } from '@/components/RelativeTime'
 import { Activity, Wifi, WifiOff, Trash2, AlertCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 // Severity color mapping
 const severityColors: Record<string, string> = {
@@ -26,7 +27,8 @@ export default function LiveAlertFeedPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <TooltipProvider>
+      <div className="space-y-6 w-full">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -140,5 +142,6 @@ export default function LiveAlertFeedPage() {
         </div>
       )}
     </div>
+    </TooltipProvider>
   )
 }
