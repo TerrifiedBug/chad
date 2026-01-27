@@ -347,3 +347,57 @@ class AlertService:
                 "by_severity": {},
                 "last_24h": 0,
             }
+
+    def delete_alert(
+        self,
+        db: AsyncSession,
+        alert_id: UUID,
+        current_user_id: UUID,
+        ip_address: str
+    ) -> bool:
+        """Delete an alert.
+
+        Args:
+            db: Database session
+            alert_id: Alert ID to delete
+            current_user_id: User performing the deletion
+            ip_address: Client IP for audit
+
+        Returns:
+            True if deleted, False if not found
+        """
+        from sqlalchemy import delete as sql_delete
+
+        # Get alert for audit log
+        alert = db.get(Alert, alert_id)
+        if not alert:
+            return False
+
+        # Log before delete
+        from app.services.audit import audit_log
+        import asyncio
+        asyncio.create_task(audit_log(
+            db,
+            current_user_id,
+            "alert.delete",
+            "alert",
+            str(alert_id),
+            {"title": alert.title, "rule_id": str(alert.rule_id)},
+            ip_address=ip_address
+        ))
+
+        # Delete from OpenSearch
+        try:
+            self.client.delete(
+                index=alert.alert_index,
+                id=alert.alert_id
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to delete alert from OpenSearch: {e}")
+
+        # Delete from database
+        await db.execute(sql_delete(Alert).where(Alert.id == alert_id))
+        await db.commit()
+
+        return True

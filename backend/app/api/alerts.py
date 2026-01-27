@@ -117,3 +117,23 @@ async def update_alert_status(
     await db.commit()
 
     return {"success": True, "status": update.status}
+
+
+@router.delete("/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_alert(
+    alert_id: UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    alerts: Annotated[AlertService, Depends(get_alert_service)],
+):
+    """Delete an alert."""
+    success = await alerts.delete_alert(
+        db=db,
+        alert_id=alert_id,
+        current_user_id=current_user.id,
+        ip_address=get_client_ip(request)
+    )
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found")
