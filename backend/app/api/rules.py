@@ -1205,11 +1205,11 @@ async def snooze_rule(
         rule.snooze_indefinite = False
         rule.status = RuleStatus.SNOOZED
 
-    # Update percolator if deployed
+    # Remove from percolator when snoozing (prevents alert generation)
     if rule.deployed_at is not None and os_client is not None:
         percolator = PercolatorService(os_client)
         percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-        percolator.update_rule_status(percolator_index, str(rule.id), enabled=False)
+        percolator.undeploy_rule(percolator_index, str(rule.id))
 
     await db.commit()
     await audit_log(
@@ -1250,11 +1250,31 @@ async def unsnooze_rule(
     rule.snooze_until = None
     rule.snooze_indefinite = False
 
-    # Update percolator if deployed
+    # Re-deploy to percolator when unsnoozing
     if rule.deployed_at is not None and os_client is not None:
-        percolator = PercolatorService(os_client)
-        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-        percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
+        # Translate the rule to get the OpenSearch query
+        translation = sigma_service.translate_with_mappings(rule.yaml_content, None)
+        if translation.success:
+            percolator = PercolatorService(os_client)
+            percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+
+            # Extract tags from YAML
+            parsed_rule = yaml.safe_load(rule.yaml_content)
+            tags = parsed_rule.get("tags", [])
+
+            # Extract the percolator query
+            percolator_query = translation.query.get("query", translation.query)
+
+            # Re-deploy to percolator
+            percolator.deploy_rule(
+                percolator_index=percolator_index,
+                rule_id=str(rule.id),
+                query=percolator_query,
+                title=rule.title,
+                severity=rule.severity,
+                tags=tags,
+                enabled=True,
+            )
 
     await db.commit()
     await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
