@@ -244,8 +244,17 @@ export default function FieldMappingsPage() {
         loadMappings()
       }
     } catch (err: any) {
-      // Parse error response
-      const errorMessage = err?.message || 'Save failed'
+      // Parse error response - handle object or string messages
+      let errorMessage = 'Save failed'
+
+      if (typeof err?.message === 'string') {
+        errorMessage = err.message
+      } else if (typeof err?.message === 'object') {
+        // Extract from error object
+        errorMessage = err.message.detail || err.message.error || JSON.stringify(err.message)
+      } else if (err?.detail) {
+        errorMessage = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail)
+      }
 
       // Check if it's a field_not_found error
       const errorObj = err as any & { detail?: { error?: string; field?: string; suggestions?: string[] } }
@@ -260,7 +269,8 @@ export default function FieldMappingsPage() {
           `Field "${errorObj.detail.field}" does not exist in this index pattern.${suggestionText}`
         )
       } else {
-        setModalError(errorMessage)
+        // Ensure errorMessage is a string
+        setModalError(String(errorMessage))
       }
     } finally {
       setIsSaving(false)

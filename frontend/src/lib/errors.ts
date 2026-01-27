@@ -53,7 +53,19 @@ export function getErrorMessage(error: unknown): string {
     return error.error.message
   } else if (isLegacyError(error)) {
     // Legacy format (backward compatibility)
-    return error.detail || error.message || 'An error occurred'
+    const detail = error.detail
+    const message = error.message
+
+    // Handle detail as object or string
+    if (typeof detail === 'string') {
+      return detail
+    } else if (typeof detail === 'object' && detail !== null) {
+      // Extract message from detail object
+      return (detail as any).message || JSON.stringify(detail)
+    }
+
+    // Fallback to message or default
+    return message || 'An error occurred'
   } else if (error instanceof Error) {
     return error.message
   }
