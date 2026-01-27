@@ -2,6 +2,7 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from app.models.index_pattern import IndexPattern
 from app.models.notification_settings import NotificationSettings
@@ -641,4 +642,57 @@ class TestMandatoryComments:
             },
         )
         assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_index_pattern_fields(
+    authenticated_client: AsyncClient,
+    test_session,
+):
+    """Test getting index pattern fields for exceptions dropdown."""
+    from unittest.mock import patch, Mock
+    from app.models.index_pattern import IndexPattern
+
+    # Create index pattern directly (not using API to avoid permission issues)
+    index_pattern = IndexPattern(
+        name="logs-test",
+        pattern="logs-test-*",
+        percolator_index="percolator-logs-test",
+        auth_token="test-token",
+    )
+    test_session.add(index_pattern)
+    await test_session.commit()
+    await test_session.refresh(index_pattern)
+
+    # Mock OpenSearch response
+    mock_os = Mock()
+    mock_os.indices.get_mapping.return_value = {
+        "logs-test-2024-01-01": {
+            "mappings": {
+                "properties": {
+                    "host": {"type": "keyword"},
+                    "user": {"type": "keyword"},
+                    "process": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "keyword"},
+                            "exec": {"type": "text"},
+                        },
+                    },
+                },
+            }
+        }
+    }
+
+    # Patch get_opensearch_client
+    with patch("app.api.rules.get_opensearch_client", return_value=mock_os):
+        response = await authenticated_client.get(
+            f"/api/rules/index-fields/{index_pattern.id}",
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "fields" in data
+    assert set(data["fields"]) == {"host", "user", "process.name", "process.exec"}
+    assert data["fields"] == sorted(data["fields"])  # Verify sorted
 

@@ -187,6 +187,40 @@ async def list_rules(
     return responses
 
 
+@router.get("/index-fields/{index_pattern_id}")
+async def get_index_pattern_fields(
+    index_pattern_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+):
+    """Get all fields from an index pattern for the exceptions dropdown.
+
+    Uses the same pattern as field mappings - fetches actual fields
+    from OpenSearch index mappings.
+    """
+    from app.services.opensearch import get_index_fields
+
+    # Get index pattern
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == index_pattern_id)
+    )
+    index_pattern = result.scalar_one_or_none()
+
+    if not index_pattern:
+        raise HTTPException(status_code=404, detail="Index pattern not found")
+
+    # Get fields from OpenSearch (same pattern as field_mappings.py)
+    try:
+        fields = list(get_index_fields(os_client, index_pattern.pattern))
+        return {"fields": sorted(fields)}  # Sort alphabetically for UX
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to get index fields: {e}"
+        )
+
+
 @router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule(
     request: Request,
