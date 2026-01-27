@@ -20,6 +20,14 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Link2, Trash2 } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
@@ -65,6 +73,7 @@ export default function AlertsPage() {
   const [selectedAlerts, setSelectedAlerts] = useState<Set<string>>(new Set())
   const [selectAll, setSelectAll] = useState(false)
   const [isBulkUpdating, setIsBulkUpdating] = useState(false)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
 
   // Load data function - must be declared before useEffect that uses it
   const loadData = useCallback(async () => {
@@ -149,15 +158,16 @@ export default function AlertsPage() {
     }
   }
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedAlerts.size === 0) return
+    setShowBulkDeleteConfirm(true)
+  }
 
-    if (!confirm(`Are you sure you want to delete ${selectedAlerts.size} alert(s)?`)) {
-      return
-    }
-
+  const confirmBulkDelete = async () => {
+    if (selectedAlerts.size === 0) return
     setIsBulkUpdating(true)
     setError('')
+    setShowBulkDeleteConfirm(false)
     try {
       await alertsApi.bulkDelete({
         alert_ids: Array.from(selectedAlerts)
@@ -484,6 +494,40 @@ export default function AlertsPage() {
           </div>
         </div>
       )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog
+        open={showBulkDeleteConfirm}
+        onOpenChange={(open) => {
+          if (isBulkUpdating) return
+          setShowBulkDeleteConfirm(open)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Alerts</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedAlerts.size} alert{selectedAlerts.size !== 1 ? 's' : ''}? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowBulkDeleteConfirm(false)}
+              disabled={isBulkUpdating}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmBulkDelete}
+              disabled={isBulkUpdating}
+            >
+              {isBulkUpdating ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

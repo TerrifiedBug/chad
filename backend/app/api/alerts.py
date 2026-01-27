@@ -31,7 +31,7 @@ MAX_BULK_OPERATIONS = 100
 
 class BulkAlertStatusUpdate(BaseModel):
     alert_ids: list[str] = Field(..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to update")
-    status: AlertStatus
+    status: str  # new, acknowledged, resolved, false_positive
 
     @field_validator('alert_ids')
     @classmethod

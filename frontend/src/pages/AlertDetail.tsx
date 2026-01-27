@@ -404,7 +404,13 @@ function extractFieldsFromLog(logDoc: Record<string, unknown>): string[] {
 
 // Helper to get field value from log document
 function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): string {
+  const MAX_DEPTH = 10
   const parts = fieldPath.split('.')
+
+  if (parts.length > MAX_DEPTH) {
+    return ''
+  }
+
   let value: unknown = logDoc
 
   for (const part of parts) {
@@ -430,6 +436,7 @@ export default function AlertDetailPage() {
 
   // Exception dialog state
   const [showExceptionDialog, setShowExceptionDialog] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [exceptionFields, setExceptionFields] = useState<string[]>([])
   const [isExtractingFields, setIsExtractingFields] = useState(false)
 
@@ -491,12 +498,14 @@ export default function AlertDetailPage() {
     }
   }
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
+    setShowDeleteConfirm(true)
+  }
+
+  const confirmDelete = async () => {
     if (!id) return
-    if (!confirm('Are you sure you want to delete this alert? This action cannot be undone.')) {
-      return
-    }
     setIsUpdating(true)
+    setShowDeleteConfirm(false)
     try {
       await alertsApi.delete(id)
       navigate('/alerts')
@@ -548,8 +557,28 @@ export default function AlertDetailPage() {
   const handleCreateException = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Null check for alert
+    if (!alert?.rule_id) {
+      setError('Alert data not available')
+      return
+    }
+
     if (!exceptionField || !exceptionValue || !exceptionReason) {
       setError('Please fill in all fields')
+      return
+    }
+
+    // Validate input lengths to prevent abuse
+    const MAX_REASON_LENGTH = 1000
+    const MAX_VALUE_LENGTH = 500
+
+    if (exceptionReason.length > MAX_REASON_LENGTH) {
+      setError(`Reason must be less than ${MAX_REASON_LENGTH} characters`)
+      return
+    }
+
+    if (exceptionValue.length > MAX_VALUE_LENGTH) {
+      setError(`Value must be less than ${MAX_VALUE_LENGTH} characters`)
       return
     }
 
@@ -572,10 +601,6 @@ export default function AlertDetailPage() {
       setExceptionOperator('equals')
       setExceptionValue('')
       setExceptionReason('')
-
-      // Show success - use error state for success message temporarily
-      setError('Exception created successfully')
-      setTimeout(() => setError(''), 3000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create exception')
     } finally {
@@ -945,6 +970,41 @@ export default function AlertDetailPage() {
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Alert</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this alert? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={isUpdating}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={isUpdating}
+            >
+              {isUpdating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
