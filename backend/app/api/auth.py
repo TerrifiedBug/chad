@@ -319,77 +319,36 @@ async def login(
 
     # Check if user is SSO-only (no password hash)
     if user.password_hash is None:
-        # Record failed attempt
-        await record_failed_attempt(db, email, ip_address)
+        # Don't record failed attempts or check lockout for SSO users
+        # (they have no password to brute force, and we don't want to lock them out of SSO)
         await audit_log(
             db,
             None,
             "auth.login_failed",
             "user",
             None,
-            {"email": email, "reason": "sso_only_user"},
+            {"email": email, "reason": "sso_only_user_attempted_local_login"},
             ip_address=ip_address,
         )
 
-        # Check if this attempt triggered a lockout
-        locked_now, _ = await is_account_locked(db, email)
-        if locked_now:
-            await audit_log(
-                db,
-                None,
-                "auth.lockout",
-                "user",
-                None,
-                {"email": email},
-                ip_address=ip_address,
-            )
-            # Send lockout notification
-            await send_system_notification(
-                db,
-                "user_locked",
-                {"email": email, "ip_address": ip_address},
-            )
-
-        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="This account uses SSO only. Please login with your SSO provider.",
         )
 
-    # Check if user is SSO-only (cannot use local login)
+    # Check if user is SSO-only (redundant check, but kept for safety)
     if user.auth_method == AuthMethod.SSO:
-        # Record failed attempt
-        await record_failed_attempt(db, email, ip_address)
+        # Don't record failed attempts or check lockout for SSO users
         await audit_log(
             db,
-            None,
+            user.id,
             "auth.login_failed",
             "user",
-            None,
-            {"email": email, "reason": "sso_only_user"},
+            str(user.id),
+            {"email": email, "reason": "sso_only_user_attempted_local_login"},
             ip_address=ip_address,
         )
 
-        # Check if this attempt triggered a lockout
-        locked_now, _ = await is_account_locked(db, email)
-        if locked_now:
-            await audit_log(
-                db,
-                None,
-                "auth.lockout",
-                "user",
-                None,
-                {"email": email},
-                ip_address=ip_address,
-            )
-            # Send lockout notification
-            await send_system_notification(
-                db,
-                "user_locked",
-                {"email": email, "ip_address": ip_address},
-            )
-
-        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="This account uses SSO only. Please login with your SSO provider.",
