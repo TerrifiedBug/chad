@@ -286,6 +286,29 @@ export default function UsersPage() {
     }
   }
 
+  const handleUnlockUser = async (userId: string, email: string) => {
+    try {
+      await usersApi.unlockUser(userId)
+
+      // Refresh lock statuses
+      const updatedStatus = await usersApi.getLockStatus(email)
+      setLockStatuses(prev => ({
+        ...prev,
+        [email]: updatedStatus
+      }))
+
+      // Update editing user if open
+      if (editUser?.id === userId) {
+        setEditUser({
+          ...editUser,
+          _locked: false
+        })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to unlock user')
+    }
+  }
+
   const roleColors: Record<string, string> = {
     admin: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
     analyst: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -585,6 +608,36 @@ export default function UsersPage() {
                 onCheckedChange={setEditIsActive}
               />
             </div>
+
+            {/* Account Lock Status - Show if locked */}
+            {lockStatuses[editUser?.email || '']?.locked && (
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-900 dark:bg-orange-950">
+                <div className="flex items-start gap-2">
+                  <Lock className="h-5 w-5 text-orange-600 mt-0.5" />
+                  <div className="flex-1 space-y-1">
+                    <h4 className="text-sm font-medium text-orange-900 dark:text-orange-100">
+                      Account Locked
+                    </h4>
+                    <p className="text-xs text-orange-700 dark:text-orange-300">
+                      This account has been locked due to too many failed login attempts.
+                      {lockStatuses[editUser?.email || ''].remaining_minutes !== null && (
+                        <> Time remaining: {lockStatuses[editUser?.email || ''].remaining_minutes} minutes</>
+                      )}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleUnlockUser(editUser!.id, editUser!.email)}
+                      disabled={isSaving}
+                    >
+                      <Unlock className="h-4 w-4 mr-1" />
+                      Unlock Account
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Password Reset Section - Only for local users */}
             {editUser?.auth_method === 'local' && (
