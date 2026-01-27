@@ -800,6 +800,10 @@ export const usersApi = {
     ),
   delete: (userId: string) =>
     api.delete(`/users/${userId}`),
+  getLockStatus: (email: string) =>
+    api.get<{email: string; locked: boolean; remaining_minutes: number | null}>(`/users/lock-status/${email}`),
+  unlockUser: (userId: string) =>
+    api.post<{success: boolean; email: string; message: string}>(`/users/${userId}/unlock`),
 }
 
 // Extended Settings API

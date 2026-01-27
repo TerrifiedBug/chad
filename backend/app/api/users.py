@@ -78,6 +78,62 @@ async def list_users(
     )
 
 
+@router.get("/lock-status/{email}", response_model=dict)
+async def get_user_lock_status(
+    email: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_permission_dep("manage_users"))],
+):
+    """Get lock status for a specific user."""
+    from app.services.rate_limit import is_account_locked
+
+    locked, remaining_minutes = is_account_locked(db, email)
+
+    return {
+        "email": email,
+        "locked": locked,
+        "remaining_minutes": remaining_minutes
+    }
+
+
+@router.post("/{user_id}/unlock", response_model=dict)
+async def unlock_user_account(
+    user_id: UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_users"))],
+):
+    """Unlock a user account by clearing failed login attempts."""
+    # Get user
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Clear failed attempts
+    from app.services.rate_limit import clear_failed_attempts
+
+    cleared = clear_failed_attempts(db, user.email)
+
+    await audit_log(
+        db,
+        current_user.id,
+        "user.unlock",
+        "user",
+        str(user_id),
+        {"email": user.email},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "email": user.email,
+        "message": f"User account {user.email} unlocked successfully"
+    }
+
+
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     data: UserCreate,
