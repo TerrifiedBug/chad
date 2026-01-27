@@ -368,6 +368,28 @@ function extractGeoIPData(doc: Record<string, unknown>): GeoIPEntry[] {
   return entries
 }
 
+// Field extraction helper for exception creation
+function extractFieldsFromLog(logDoc: Record<string, unknown>): string[] {
+  const fields: string[] = []
+
+  function extract(obj: Record<string, unknown>, prefix = '') {
+    for (const [key, value] of Object.entries(obj)) {
+      const fieldPath = prefix ? `${prefix}.${key}` : key
+
+      if (value !== null && typeof value === 'object') {
+        // Nested object - recurse
+        extract(value as Record<string, unknown>, fieldPath)
+      } else {
+        // Scalar value - this is a field
+        fields.push(fieldPath)
+      }
+    }
+  }
+
+  extract(logDoc)
+  return fields.sort()
+}
+
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -377,6 +399,11 @@ export default function AlertDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [error, setError] = useState('')
   const [correlations, setCorrelations] = useState<CorrelationRule[]>([])
+
+  // Exception dialog state
+  const [showExceptionDialog, setShowExceptionDialog] = useState(false)
+  const [exceptionFields, setExceptionFields] = useState<string[]>([])
+  const [isExtractingFields, setIsExtractingFields] = useState(false)
 
   // Load alert function - must be declared before useEffect that uses it
   const loadAlert = useCallback(async () => {
@@ -426,6 +453,26 @@ export default function AlertDetailPage() {
       setError(err instanceof Error ? err.message : 'Failed to update status')
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const handleOpenExceptionDialog = async () => {
+    if (!alert || !alert.log_document) {
+      setError('Alert has no log document')
+      return
+    }
+
+    setIsExtractingFields(true)
+    setShowExceptionDialog(true)
+
+    try {
+      // Extract all scalar fields from log document
+      const fields = extractFieldsFromLog(alert.log_document)
+      setExceptionFields(fields)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to extract fields from log')
+    } finally {
+      setIsExtractingFields(false)
     }
   }
 
@@ -509,6 +556,16 @@ export default function AlertDetailPage() {
               <SelectItem value="false_positive">False Positive</SelectItem>
             </SelectContent>
           </Select>
+          {hasPermission('manage_rules') && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleOpenExceptionDialog()}
+            >
+              <ShieldAlert className="h-4 w-4 mr-1" />
+              Create Exception
+            </Button>
+          )}
         </div>
       </div>
 
