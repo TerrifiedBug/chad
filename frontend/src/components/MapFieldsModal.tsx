@@ -197,7 +197,7 @@ export function MapFieldsModal({
       if (errorObj.detail?.error === 'field_not_found') {
         const suggestions = errorObj.detail.suggestions || []
         const suggestionText = suggestions.length > 0
-          ? `\n\nDid you mean:\n${suggestions.map((s: string) => `• ${s}`).join('\n')}`
+          ? ` Did you mean: ${suggestions.slice(0, 3).join(', ')}?`
           : ''
 
         setError(
@@ -226,8 +226,9 @@ export function MapFieldsModal({
         </DialogHeader>
 
         {error && (
-          <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
-            {error}
+          <div className="bg-destructive/15 border border-destructive/50 text-destructive text-sm p-4 rounded-md mb-4">
+            <p className="font-medium">Validation Error</p>
+            <p className="whitespace-pre-wrap mt-1">{error}</p>
           </div>
         )}
 
