@@ -229,6 +229,22 @@ async def receive_logs(
             alerts_created.append(alert)
             total_matches += 1
 
+            # Calculate end-to-end latency if we have valid timestamps
+            if log_time and alert.get("created_at"):
+                try:
+                    alert_timestamp_str = alert.get("created_at")
+                    alert_time = datetime.fromisoformat(
+                        alert_timestamp_str.replace("Z", "+00:00")
+                    )
+
+                    # Calculate latency in milliseconds
+                    latency_ms = int((alert_time - log_time).total_seconds() * 1000)
+                    latencies.append(latency_ms)
+
+                except (ValueError, AttributeError) as e:
+                    # Don't count as error (alert was created successfully)
+                    processing_errors.append(f"Latency calculation warning: {e}")
+
             # Check for correlation triggers and create correlation alerts
             try:
                 triggered_correlations = await check_correlation(
@@ -300,16 +316,18 @@ async def receive_logs(
                 )
                 await manager.broadcast_alert(alert_broadcast)
             except Exception as e:
-                # Log but don't fail the alert creation
+                # Log but don't fail the alert creation - broadcast is best-effort
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"WebSocket broadcast failed: {e}")
+                logger.warning(f"WebSocket broadcast failed: {e}")
+                # Don't re-raise - alert was created successfully
 
-            except Exception as e:
-                processing_errors.append(f"Alert creation failed for match: {str(e)}")
-                logs_errored += 1
-                # Continue processing other matches
-                continue
+        except Exception as e:
+            # This catches errors from the main match processing try block
+            processing_errors.append(f"Alert creation failed for match: {str(e)}")
+            logs_errored += 1
+            # Continue processing other matches
+            continue
 
     # Send notifications through the new notification system
     if alerts_created:
