@@ -723,8 +723,8 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
             )
             await db.commit()
             await db.refresh(user)
-        elif user.auth_method in (AuthMethod.SSO, AuthMethod.BOTH):
-            # Already supports SSO, continue
+        elif user.auth_method == AuthMethod.SSO:
+            # Already an SSO user, continue
             pass
 
         # Sync role from IdP if role mapping is enabled
