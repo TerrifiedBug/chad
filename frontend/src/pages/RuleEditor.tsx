@@ -190,6 +190,12 @@ export default function RuleEditorPage() {
   const [thresholdWindowMinutes, setThresholdWindowMinutes] = useState<number | null>(null)
   const [thresholdGroupBy, setThresholdGroupBy] = useState<string | null>(null)
 
+  // Available fields for group_by dropdown
+  const [availableGroupByFields, setAvailableGroupByFields] = useState<string[]>([])
+  const [isLoadingGroupByFields, setIsLoadingGroupByFields] = useState(false)
+  const [groupByFieldSearch, setGroupByFieldSearch] = useState('')
+  const [isGroupByDropdownOpen, setIsGroupByDropdownOpen] = useState(false)
+
   // Collapsible section state
   const [showThreshold, setShowThreshold] = useState(false)
   const [showExceptions, setShowExceptions] = useState(false)
@@ -375,6 +381,29 @@ export default function RuleEditorPage() {
     setSnoozeIndefinite(false)
     setSnoozeUntil(null)
   }, [id])
+
+  // Load available fields for group_by dropdown when index pattern changes
+  useEffect(() => {
+    const loadGroupByFields = async () => {
+      if (!indexPatternId) {
+        setAvailableGroupByFields([])
+        return
+      }
+
+      setIsLoadingGroupByFields(true)
+      try {
+        const data = await rulesApi.getIndexFields(indexPatternId)
+        setAvailableGroupByFields(data.fields || [])
+      } catch (err) {
+        console.error('Failed to load index fields:', err)
+        setAvailableGroupByFields([])
+      } finally {
+        setIsLoadingGroupByFields(false)
+      }
+    }
+
+    loadGroupByFields()
+  }, [indexPatternId])
 
   // Handle clone state from navigation
   useEffect(() => {
