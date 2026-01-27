@@ -273,8 +273,21 @@ async def get_health_status(
                         # Check if database is recent (within 30 days)
                         from datetime import datetime, timedelta, UTC
                         try:
-                            last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
-                            days_ago = (datetime.now(UTC) - last_update_dt).days
+                            # Parse ISO format string - handle both with and without timezone
+                            if isinstance(last_update, str):
+                                # Add +00:00 if no timezone info to ensure it's treated as UTC
+                                if last_update.find('+') == -1 and last_update.find('Z') == -1:
+                                    last_update = last_update + '+00:00'
+                                last_update_dt = datetime.fromisoformat(last_update)
+                            else:
+                                last_update_dt = last_update
+
+                            # Ensure both datetimes are timezone-aware
+                            now = datetime.now(UTC)
+                            if last_update_dt.tzinfo is None:
+                                last_update_dt = last_update_dt.replace(tzinfo=UTC)
+
+                            days_ago = (now - last_update_dt).days
                         except (ValueError, TypeError):
                             days_ago = None
 
