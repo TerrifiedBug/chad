@@ -368,17 +368,17 @@ class AlertService:
         Returns:
             True if deleted, False if not found
         """
-        from sqlalchemy import delete as sql_delete
+        from sqlalchemy import select, delete as sql_delete
 
         # Get alert for audit log
-        alert = db.get(Alert, alert_id)
+        result = await db.execute(select(Alert).where(Alert.id == alert_id))
+        alert = result.scalar_one_or_none()
         if not alert:
             return False
 
-        # Log before delete
+        # Log before delete (await to ensure it completes)
         from app.services.audit import audit_log
-        import asyncio
-        asyncio.create_task(audit_log(
+        await audit_log(
             db,
             current_user_id,
             "alert.delete",
@@ -386,7 +386,7 @@ class AlertService:
             str(alert_id),
             {"title": alert.title, "rule_id": str(alert.rule_id)},
             ip_address=ip_address
-        ))
+        )
 
         # Delete from OpenSearch
         try:
