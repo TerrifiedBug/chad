@@ -222,8 +222,8 @@ export default function AttackMatrixPage() {
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-green-600">{stats.covered}</div>
-            <div className="text-sm text-muted-foreground">Covered</div>
+            <div className="text-2xl font-bold text-blue-600">{stats.covered}</div>
+            <div className="text-sm text-muted-foreground">Total Rules</div>
           </CardContent>
         </Card>
         <Card>
