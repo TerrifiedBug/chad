@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X, Lock, Unlock, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
@@ -92,6 +92,10 @@ export default function UsersPage() {
   // SSO role mapping state
   const [ssoRoleMappingEnabled, setSsoRoleMappingEnabled] = useState(true)
 
+  // Lock status state
+  const [lockStatuses, setLockStatuses] = useState<Record<string, {locked: boolean; remaining_minutes: number | null}>>({})
+  const [isLoadingLockStatus, setIsLoadingLockStatus] = useState(false)
+
   // Password complexity
   const passwordComplexity = validatePasswordComplexity(newPassword)
   const allRequirementsMet = Object.values(passwordComplexity).every(Boolean)
@@ -100,6 +104,32 @@ export default function UsersPage() {
     loadUsers()
     loadSsoSettings()
   }, [])
+
+  useEffect(() => {
+    const loadLockStatuses = async () => {
+      if (users.length === 0) return
+
+      setIsLoadingLockStatus(true)
+      const statuses: typeof lockStatuses = {}
+
+      for (const user of users) {
+        if (user.auth_method === 'local') {
+          try {
+            const status = await usersApi.getLockStatus(user.email)
+            statuses[user.email] = status
+          } catch (err) {
+            // User doesn't exist or other error, skip
+            statuses[user.email] = { locked: false, remaining_minutes: null }
+          }
+        }
+      }
+
+      setLockStatuses(statuses)
+      setIsLoadingLockStatus(false)
+    }
+
+    loadLockStatuses()
+  }, [users])
 
   const loadSsoSettings = async () => {
     try {
@@ -363,6 +393,7 @@ export default function UsersPage() {
               <TableHead>Auth</TableHead>
               <TableHead>2FA</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Lock</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="w-[100px]">Actions</TableHead>
             </TableRow>
@@ -370,14 +401,14 @@ export default function UsersPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">
+                <TableCell colSpan={8} className="text-center py-8">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No users found
@@ -429,6 +460,27 @@ export default function UsersPage() {
                     >
                       {user.is_active ? 'Active' : 'Inactive'}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {user.auth_method === 'local' ? (
+                      isLoadingLockStatus ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : lockStatuses[user.email]?.locked ? (
+                        <div className="flex items-center gap-1 text-orange-600">
+                          <Lock className="h-4 w-4" />
+                          <span className="text-xs">
+                            {lockStatuses[user.email].remaining_minutes}m
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 text-green-600">
+                          <Unlock className="h-4 w-4" />
+                          <span className="text-xs">Open</span>
+                        </div>
+                      )
+                    ) : (
+                      <span className="text-muted-foreground text-xs">N/A</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     <TimestampTooltip timestamp={user.created_at}>
