@@ -258,56 +258,62 @@ async def get_health_status(
         has_license = bool(geoip_config.get("license_key"))
 
         if enabled and has_license:
-            # Get last update time - first try the setting, then check file directly
-            last_update_result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
-            geoip_last_update = last_update_result.scalar_one_or_none()
+            # Verify database actually exists and is readable
+            from app.services.geoip import GeoIPService
+            geoip_service = GeoIPService()
+            db_available = geoip_service.is_database_available()
 
-            # Extract value from JSONB - handle both string and dict formats
-            last_update = None
-            if geoip_last_update and geoip_last_update.value:
-                val = geoip_last_update.value
-                if isinstance(val, str):
-                    last_update = val
-                elif isinstance(val, dict) and "isoformat" in val:
-                    last_update = val["isoformat"]
-                elif isinstance(val, (int, float)):
-                    # Unix timestamp
-                    from datetime import datetime, UTC
-                    last_update = datetime.fromtimestamp(val, tz=UTC).isoformat()
+            if db_available:
+                # Get last update time - first try the setting, then check file directly
+                last_update_result = await db.execute(select(Setting).where(Setting.key == "geoip_last_update"))
+                geoip_last_update = last_update_result.scalar_one_or_none()
 
-            # Fallback: check database file modification time
-            if not last_update:
-                try:
-                    from pathlib import Path
-                    from app.services.geoip import CITY_DB_PATH
-                    if CITY_DB_PATH.exists():
-                        stat = CITY_DB_PATH.stat()
+                # Extract value from JSONB - handle both string and dict formats
+                last_update = None
+                if geoip_last_update and geoip_last_update.value:
+                    val = geoip_last_update.value
+                    if isinstance(val, str):
+                        last_update = val
+                    elif isinstance(val, dict) and "isoformat" in val:
+                        last_update = val["isoformat"]
+                    elif isinstance(val, (int, float)):
+                        # Unix timestamp
                         from datetime import datetime, UTC
-                        last_update = datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
-                except Exception:
-                    pass  # File doesn't exist or can't be read
+                        last_update = datetime.fromtimestamp(val, tz=UTC).isoformat()
 
-            if last_update:
-                # Consider it healthy if updated within last 7 days, otherwise warning
-                from datetime import datetime, timedelta, UTC
-                try:
-                    last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
-                    days_ago = (datetime.now(UTC) - last_update_dt).days
-                except (ValueError, TypeError):
-                    # If we can't parse the date, treat as unknown
-                    days_ago = None
+                # Fallback: check database file modification time
+                if not last_update:
+                    try:
+                        db_info = geoip_service.get_database_info()
+                        if db_info:
+                            last_update = db_info["modified_at"]
+                    except Exception:
+                        pass  # Can't read file info
+
+                if last_update:
+                    # Consider it healthy if updated within last 7 days, otherwise warning
+                    from datetime import datetime, timedelta, UTC
+                    try:
+                        last_update_dt = datetime.fromisoformat(last_update) if isinstance(last_update, str) else last_update
+                        days_ago = (datetime.now(UTC) - last_update_dt).days
+                    except (ValueError, TypeError):
+                        # If we can't parse the date, treat as unknown
+                        days_ago = None
+                        status = "unknown"
+
+                    # Determine status based on days ago
+                    if days_ago is not None:
+                        if days_ago <= 7:
+                            status = "healthy"
+                        elif days_ago <= 30:
+                            status = "warning"
+                        else:
+                            status = "unhealthy"
+                else:
                     status = "unknown"
-
-                # Determine status based on days ago
-                if days_ago is not None:
-                    if days_ago <= 7:
-                        status = "healthy"
-                    elif days_ago <= 30:
-                        status = "warning"
-                    else:
-                        status = "unhealthy"
             else:
-                status = "unknown"
+                last_update = None
+                status = "unhealthy"  # Enabled but database not found
 
             services.append({
                 "service_type": "geoip",

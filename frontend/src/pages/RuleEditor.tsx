@@ -877,9 +877,9 @@ export default function RuleEditorPage() {
         </div>
         <div className="flex items-center gap-2">
           {!isNew && (
-            <div className="flex items-center gap-2 mr-4">
+            <div className="flex items-center gap-2">
               {status === 'snoozed' ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mr-4">
                   <Clock className="h-4 w-4 text-yellow-500" />
                   <span className="text-sm text-yellow-600">
                     {snoozeIndefinite ? 'Snoozed indefinitely' : snoozeUntil ? `Snoozed until ${formatSnoozeExpiry(snoozeUntil)}` : 'Snoozed'}
@@ -894,7 +894,7 @@ export default function RuleEditorPage() {
                   </Button>
                 </div>
               ) : status === 'undeployed' ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mr-4">
                   <span className="text-sm text-gray-500 font-medium">Undeployed</span>
                   <Button
                     variant="outline"
@@ -907,7 +907,7 @@ export default function RuleEditorPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mr-4">
                   <span className="text-sm text-green-600 font-medium">Deployed</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -936,7 +936,7 @@ export default function RuleEditorPage() {
             </span>
           )}
           {!isNew && (
-            <Button variant="outline" onClick={() => setIsActivityOpen(true)} className="mr-2">
+            <Button variant="outline" onClick={() => setIsActivityOpen(true)}>
               <History className="h-4 w-4 mr-2" />
               Activity
             </Button>
