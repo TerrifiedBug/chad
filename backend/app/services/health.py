@@ -33,7 +33,7 @@ def get_alert_count(
             body={
                 "query": {
                     "range": {
-                        "@timestamp": {
+                        "created_at": {
                             "gte": since.isoformat()
                         }
                     }
