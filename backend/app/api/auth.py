@@ -558,11 +558,18 @@ async def get_current_user_info(
 
 
 @router.get("/sso/status")
-async def get_sso_status(db: Annotated[AsyncSession, Depends(get_db)]):
-    """Check if SSO is configured and enabled."""
+async def get_sso_status(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    config: Settings = Depends(get_settings)
+):
+    """
+    Get SSO configuration status.
+
+    Returns whether SSO is enabled, configured, and if SSO-only mode is active.
+    """
     sso_config = await get_setting(db, "sso")
     if not sso_config:
-        return {"enabled": False, "configured": False}
+        return {"enabled": False, "configured": False, "sso_only": config.sso_only}
 
     return {
         "enabled": sso_config.get("enabled", False),
@@ -572,6 +579,7 @@ async def get_sso_status(db: Annotated[AsyncSession, Depends(get_db)]):
             and sso_config.get("client_secret")
         ),
         "provider_name": sso_config.get("provider_name", "SSO"),
+        "sso_only": config.sso_only
     }
 
 

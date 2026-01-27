@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # Authentication
     ALLOW_LOCAL_LOGIN_OVERRIDE: bool = False
 
+    # SSO-only mode
+    sso_only: bool = False
+
     # App
     APP_NAME: str = "CHAD"
     DEBUG: bool = False
