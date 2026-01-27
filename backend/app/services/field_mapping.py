@@ -18,8 +18,7 @@ async def resolve_mappings(
 
     Resolution order:
     1. Per-index mapping (index_pattern_id matches)
-    2. Global mapping (index_pattern_id is NULL)
-    3. None if no mapping found
+    2. None if no mapping found
 
     Returns:
         Dict mapping sigma_field -> target_field (or None if unmapped)
@@ -27,32 +26,22 @@ async def resolve_mappings(
     if not sigma_fields:
         return {}
 
-    # Fetch all relevant mappings (global + per-index)
+    # Fetch per-index mappings only (global mappings removed)
     result = await db.execute(
         select(FieldMapping).where(
             and_(
                 FieldMapping.sigma_field.in_(sigma_fields),
-                or_(
-                    FieldMapping.index_pattern_id == index_pattern_id,
-                    FieldMapping.index_pattern_id.is_(None),
-                ),
+                FieldMapping.index_pattern_id == index_pattern_id,
             )
         )
     )
     mappings = result.scalars().all()
 
-    # Build lookup: per-index wins over global
+    # Build lookup
     resolved: dict[str, str | None] = {field: None for field in sigma_fields}
 
-    # First pass: apply global mappings
     for mapping in mappings:
-        if mapping.index_pattern_id is None:
-            resolved[mapping.sigma_field] = mapping.target_field
-
-    # Second pass: override with per-index mappings
-    for mapping in mappings:
-        if mapping.index_pattern_id == index_pattern_id:
-            resolved[mapping.sigma_field] = mapping.target_field
+        resolved[mapping.sigma_field] = mapping.target_field
 
     return resolved
 
@@ -84,7 +73,7 @@ async def create_mapping(
     sigma_field: str,
     target_field: str,
     created_by: UUID,
-    index_pattern_id: UUID | None = None,
+    index_pattern_id: UUID,  # Now required
     origin: MappingOrigin = MappingOrigin.MANUAL,
     confidence: float | None = None,
 ) -> FieldMapping:

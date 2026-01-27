@@ -25,10 +25,10 @@ class FieldMapping(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    index_pattern_id: Mapped[uuid.UUID | None] = mapped_column(
+    index_pattern_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("index_patterns.id", ondelete="CASCADE"),
-        nullable=True,  # NULL = global mapping
+        nullable=False  # Required - all mappings must be per-index
     )
     sigma_field: Mapped[str] = mapped_column(String(255), nullable=False)
     target_field: Mapped[str] = mapped_column(String(255), nullable=False)
