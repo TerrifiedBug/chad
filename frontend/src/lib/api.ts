@@ -819,6 +819,7 @@ export type SsoStatus = {
   enabled: boolean
   configured: boolean
   provider_name: string
+  sso_only?: boolean
 }
 
 // Login response type (for login that might require 2FA)

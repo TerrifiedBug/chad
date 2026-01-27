@@ -178,6 +178,48 @@ export default function LoginPage() {
                 Back to Login
               </Button>
             </form>
+          ) : ssoStatus?.sso_only ? (
+            // SSO-Only Mode: Show only SSO login
+            <div className="space-y-4">
+              {/* Header message */}
+              <div className="text-center py-8">
+                <Shield className="h-12 w-12 mx-auto mb-4 text-primary" />
+                <h3 className="text-lg font-semibold mb-2">
+                  SSO Authentication Required
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Please sign in using {ssoStatus.provider_name || 'SSO'} to access CHAD.
+                </p>
+              </div>
+
+              {/* SSO Login Button */}
+              {ssoLoading ? (
+                <div className="flex items-center justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : ssoStatus?.enabled && ssoStatus?.configured ? (
+                <Button
+                  type="button"
+                  variant="default"
+                  className="w-full"
+                  onClick={handleSsoLogin}
+                >
+                  <Shield className="h-4 w-4 mr-2" />
+                  Sign in with {ssoStatus.provider_name}
+                </Button>
+              ) : (
+                /* Fallback: SSO not configured */
+                <div className="text-destructive text-sm text-center p-4 bg-destructive/10 rounded-md">
+                  <Shield className="h-8 w-8 mx-auto mb-2" />
+                  <p className="font-medium">Authentication Error</p>
+                  <p className="mt-1">
+                    SSO-only mode is enabled, but SSO is not configured.
+                    <br />
+                    Please contact your administrator.
+                  </p>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <form onSubmit={handleSubmit} className="space-y-4">
