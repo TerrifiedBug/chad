@@ -13,6 +13,12 @@ class UserRole(str, Enum):
     VIEWER = "viewer"
 
 
+class AuthMethod(str, Enum):
+    LOCAL = "local"
+    SSO = "sso"
+    BOTH = "both"
+
+
 class User(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "users"
 
@@ -20,6 +26,7 @@ class User(Base, UUIDMixin, TimestampMixin):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(default=UserRole.VIEWER)
     is_active: Mapped[bool] = mapped_column(default=True)
+    auth_method: Mapped[AuthMethod] = mapped_column(default=AuthMethod.LOCAL, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(default=False)
 
     # 2FA fields
