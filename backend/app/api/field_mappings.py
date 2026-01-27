@@ -283,6 +283,11 @@ async def update_field_mapping(
                 f"Failed to auto-correct/validate field mapping: {e}. Using user-provided value."
             )
 
+    # Increment version if target_field changed
+    if data.target_field and data.target_field != mapping.target_field:
+        mapping.version += 1
+        await db.flush()
+
     # Update the mapping with corrected field
     updated_mapping = await update_mapping(
         db,
