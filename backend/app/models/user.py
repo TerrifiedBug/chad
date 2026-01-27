@@ -17,7 +17,6 @@ class UserRole(str, Enum):
 class AuthMethod(str, Enum):
     LOCAL = "local"
     SSO = "sso"
-    BOTH = "both"
 
 
 class User(Base, UUIDMixin, TimestampMixin):
