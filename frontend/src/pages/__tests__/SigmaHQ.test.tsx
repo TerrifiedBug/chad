@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { SigmaHQPage } from '../SigmaHQ'
+import { describe, it, expect, vi } from 'vitest'
+import SigmaHQPage from '../SigmaHQ'
 import { sigmahqApi } from '@/lib/api'
 
 // Mock the API
@@ -13,13 +14,14 @@ vi.mock('@/lib/api', () => ({
 
 describe('SigmaHQ Import Duplicate Prevention', () => {
   it('prevents multiple rapid clicks', async () => {
-    const { user } = render(<SigmaHQPage />)
+    render(<SigmaHQPage />)
 
     // Mock successful import
-    sigmahqApi.importRule.mockResolvedValue({
+    vi.mocked(sigmahqApi.importRule).mockResolvedValue({
       success: true,
       rule_id: '123',
-      title: 'Test Rule'
+      title: 'Test Rule',
+      message: 'Import successful'
     })
 
     // Click import button 3 times rapidly

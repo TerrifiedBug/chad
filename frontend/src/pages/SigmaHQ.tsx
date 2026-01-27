@@ -378,6 +378,8 @@ export default function SigmaHQPage() {
           setShowImportDialog(false)
           navigate(`/rules/${result.rule_id}`)
         }, 1500)
+        // Don't reset isImporting on success - keep button disabled until navigation
+        return
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Import failed'
@@ -388,7 +390,7 @@ export default function SigmaHQPage() {
       } else {
         setImportError(errorMessage)
       }
-    } finally {
+      // Reset loading state on error so user can try again
       setIsImporting(false)
     }
   }
