@@ -54,6 +54,7 @@ export default function FieldMappingsPage() {
   const [formSigmaField, setFormSigmaField] = useState('')
   const [formTargetField, setFormTargetField] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [modalError, setModalError] = useState('')
 
   // Available fields for target field dropdown
   const [availableFields, setAvailableFields] = useState<string[]>([])
@@ -165,6 +166,7 @@ export default function FieldMappingsPage() {
     setFormTargetField('')
     setFieldSearch('')
     setShowFieldDropdown(false)
+    setModalError('')
     setShowModal(true)
     // Load available fields
     if (activeTab) {
@@ -180,6 +182,7 @@ export default function FieldMappingsPage() {
     setFormTargetField(mapping.target_field)
     setFieldSearch(mapping.target_field)
     setShowFieldDropdown(false)
+    setModalError('')
     setShowModal(true)
     // Load available fields
     const patternId = mapping.index_pattern_id || activeTab
@@ -216,15 +219,18 @@ export default function FieldMappingsPage() {
     }
 
     setIsSaving(true)
+    setModalError('')
     try {
       if (editingMapping) {
         await fieldMappingsApi.update(editingMapping.id, {
           target_field: formTargetField.trim(),
         })
         showToast('Mapping updated')
+        setShowModal(false)
+        loadMappings()
       } else {
         if (!activeTab) {
-          showToast('Please select an index pattern first', 'error')
+          setModalError('Please select an index pattern first')
           return
         }
         const data: FieldMappingCreate = {
@@ -234,11 +240,28 @@ export default function FieldMappingsPage() {
         }
         await fieldMappingsApi.create(data)
         showToast('Mapping created')
+        setShowModal(false)
+        loadMappings()
       }
-      setShowModal(false)
-      loadMappings()
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
+    } catch (err: any) {
+      // Parse error response
+      const errorMessage = err?.message || 'Save failed'
+
+      // Check if it's a field_not_found error
+      const errorObj = err as any & { detail?: { error?: string; field?: string; suggestions?: string[] } }
+
+      if (errorObj.detail?.error === 'field_not_found') {
+        const suggestions = errorObj.detail.suggestions || []
+        const suggestionText = suggestions.length > 0
+          ? ` Did you mean: ${suggestions.slice(0, 3).join(', ')}?`
+          : ''
+
+        setModalError(
+          `Field "${errorObj.detail.field}" does not exist in this index pattern.${suggestionText}`
+        )
+      } else {
+        setModalError(errorMessage)
+      }
     } finally {
       setIsSaving(false)
     }
@@ -481,6 +504,14 @@ export default function FieldMappingsPage() {
                 : 'Create a new field mapping from a Sigma field to a log field.'}
             </DialogDescription>
           </DialogHeader>
+
+          {modalError && (
+            <div className="bg-destructive/15 border border-destructive/50 text-destructive text-sm p-4 rounded-md mb-4">
+              <p className="font-medium">Validation Error</p>
+              <p className="whitespace-pre-wrap mt-1">{modalError}</p>
+            </div>
+          )}
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="sigma-field">Sigma Field</Label>
