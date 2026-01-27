@@ -141,6 +141,11 @@ async def receive_logs(
     total_matches = 0
     alerts_created = []
 
+    # Health metrics tracking
+    logs_errored = 0
+    latencies = []
+    processing_errors = []
+
     # Cache exceptions per rule to avoid repeated DB queries
     rule_exceptions_cache: dict[str, list[dict]] = {}
 
