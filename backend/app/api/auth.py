@@ -13,7 +13,7 @@ from app.core.config import settings as app_settings
 from app.core.encryption import decrypt
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.session import get_db
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, AuthMethod
 from app.schemas.auth import LoginRequest, SetupRequest, TokenResponse
 from app.schemas.totp import (
     TwoFactorDisableRequest,
@@ -508,7 +508,7 @@ async def get_current_user_info(
         "email": current_user.email,
         "role": current_user.role.value,
         "is_active": current_user.is_active,
-        "auth_method": "local" if current_user.password_hash else "sso",
+        "auth_method": current_user.auth_method.value,
         "must_change_password": current_user.must_change_password,
         "totp_enabled": current_user.totp_enabled,
         "permissions": permissions,
@@ -661,6 +661,7 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
             email=email,
             password_hash=None,  # SSO users have no local password
             role=role,
+            auth_method=AuthMethod.SSO,
             is_active=True,
         )
         db.add(user)
