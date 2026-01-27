@@ -137,3 +137,83 @@ async def delete_alert(
 
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found")
+
+
+@router.post("/bulk/status", response_model=dict)
+async def bulk_update_alert_status(
+    data: dict,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+):
+    """Update status for multiple alerts."""
+    from app.models.alert import Alert
+    
+    success = []
+    failed = []
+    
+    for alert_id in data.get("alert_ids", []):
+        try:
+            result = await db.execute(select(Alert).where(Alert.id == alert_id))
+            alert = result.scalar_one_or_none()
+            
+            if alert:
+                old_status = alert.status
+                alert.status = data.get("status")
+                
+                await audit_log(db, current_user.id, "alert.bulk_status_update", "alert", str(alert_id), 
+                              {"old_status": old_status, "new_status": alert.status}, 
+                              ip_address=get_client_ip(request))
+                success.append(str(alert_id))
+            else:
+                failed.append({"id": str(alert_id), "error": "Not found"})
+        except Exception as e:
+            failed.append({"id": str(alert_id), "error": str(e)})
+    
+    await db.commit()
+    
+    return {"success": success, "failed": failed}
+
+
+@router.post("/bulk/delete", response_model=dict)
+async def bulk_delete_alerts(
+    data: dict,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    alerts: Annotated[AlertService, Depends(get_alert_service)],
+):
+    """Delete multiple alerts."""
+    from app.models.alert import Alert
+    from sqlalchemy import delete as sql_delete
+    
+    success = []
+    failed = []
+    
+    for alert_id in data.get("alert_ids", []):
+        try:
+            result = await db.execute(select(Alert).where(Alert.id == alert_id))
+            alert = result.scalar_one_or_none()
+            
+            if alert:
+                # Delete from OpenSearch
+                try:
+                    alerts.client.delete(index=alert.alert_index, id=alert.alert_id)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(f"Failed to delete alert {alert_id} from OpenSearch: {e}")
+                
+                # Delete from database
+                await db.execute(sql_delete(Alert).where(Alert.id == alert_id))
+                
+                await audit_log(db, current_user.id, "alert.bulk_delete", "alert", str(alert_id),
+                              {"title": alert.title}, ip_address=get_client_ip(request))
+                success.append(str(alert_id))
+            else:
+                failed.append({"id": str(alert_id), "error": "Not found"})
+        except Exception as e:
+            failed.append({"id": str(alert_id), "error": str(e)})
+    
+    await db.commit()
+    
+    return {"success": success, "failed": failed}
