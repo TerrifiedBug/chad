@@ -2,13 +2,11 @@
 
 import uuid
 from datetime import datetime, timedelta, UTC
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import select
 
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
-from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleSource, RuleStatus
 from app.services.attack_coverage import attack_coverage_service
@@ -55,7 +53,7 @@ class TestAlertCountQueries:
         since_aware = datetime.now(UTC) - timedelta(hours=24)
 
         # Call get_alert_count
-        count = get_alert_count(mock_os, "chad-alerts-*", since_aware)
+        get_alert_count(mock_os, "chad-alerts-*", since_aware)
 
         # Verify the query uses naive datetime (no timezone suffix)
         call_args = mock_os.count.call_args
