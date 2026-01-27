@@ -24,6 +24,7 @@ from app.schemas.sigmahq import (
     SigmaHQSyncResponse,
 )
 from app.services.audit import audit_log
+from app.services.attack_sync import update_rule_attack_mappings
 from app.services.notification import send_system_notification
 from app.services.sigmahq import RuleType, sigmahq_service
 
@@ -272,6 +273,17 @@ async def import_rule(
         created_at=datetime.now(UTC),
     )
     db.add(version)
+
+    # Create MITRE ATT&CK mappings from rule tags
+    # This ensures the rule shows up in "Covered" count immediately
+    tags = metadata.get("tags", [])
+    try:
+        await update_rule_attack_mappings(db, str(rule.id), tags)
+        await db.commit()
+    except Exception as e:
+        # Log but don't fail import if attack mapping fails
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to create attack mappings for SigmaHQ rule {rule.id}: {e}")
 
     await db.commit()
     await db.refresh(rule)
