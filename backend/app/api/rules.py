@@ -881,6 +881,115 @@ async def test_rule_historical(
     )
 
 
+
+
+# Bulk Operations Endpoints (must be before single-rule endpoints to avoid route conflicts)
+
+
+@router.post("/bulk/deploy", response_model=BulkOperationResult)
+async def bulk_deploy_rules(
+    data: BulkOperationRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+):
+    """Deploy multiple rules to OpenSearch."""
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                # First validate the rule
+                validation = sigma_service.translate_and_validate(rule.yaml_content)
+                if not validation.success:
+                    errors_str = ", ".join(e.message for e in (validation.errors or []))
+                    failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
+                    continue
+
+                # Extract fields and resolve mappings
+                sigma_fields = list(validation.fields or set())
+                field_mappings_dict: dict[str, str] = {}
+
+                if sigma_fields and rule.index_pattern_id:
+                    resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
+                    field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
+
+                # Translate rule with field mappings applied
+                translation = sigma_service.translate_with_mappings(
+                    rule.yaml_content, field_mappings_dict if field_mappings_dict else None
+                )
+                if not translation.success:
+                    errors_str = ", ".join(e.message for e in (translation.errors or []))
+                    failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
+                    continue
+
+                # Deploy to percolator
+                percolator = PercolatorService(os_client)
+                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+
+                # Ensure the percolator index exists
+                percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
+
+                # Extract rule metadata from YAML
+                parsed_rule = yaml.safe_load(rule.yaml_content)
+                tags = parsed_rule.get("tags", [])
+
+                # Update ATT&CK mappings from rule tags
+                # This must happen before deployment so MITRE coverage is accurate
+                try:
+                    await update_rule_attack_mappings(db, str(rule.id), tags)
+                    await db.commit()
+                except Exception as e:
+                    # Log but don't fail deployment if attack mapping fails
+                    import logging
+                    logging.getLogger(__name__).warning(f"Failed to update attack mappings for rule {rule.id}: {e}")
+
+                # Deploy the rule - extract inner query for percolator
+                percolator_query = translation.query.get("query", translation.query)
+
+                percolator.deploy_rule(
+                    percolator_index=percolator_index,
+                    rule_id=str(rule.id),
+                    query=percolator_query,
+                    title=rule.title,
+                    severity=rule.severity,
+                    tags=tags,
+                    enabled=(rule.status == RuleStatus.DEPLOYED),
+                )
+
+                # Update rule deployment tracking
+                now = datetime.now(UTC)
+                current_version = rule.versions[0].version_number if rule.versions else 1
+                rule.deployed_at = now
+                rule.deployed_version = current_version
+                # Set status to DEPLOYED (unless snoozed)
+                if rule.status != RuleStatus.SNOOZED:
+                    rule.status = RuleStatus.DEPLOYED
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_deploy", "rule", None,
+        {"count": len(success), "rule_ids": success},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
 @router.post("/{rule_id}/deploy", response_model=RuleDeployResponse, responses={400: {"model": UnmappedFieldsError}})
 async def deploy_rule(
     rule_id: UUID,
@@ -1035,114 +1144,6 @@ async def deploy_rule(
         deployed_version=current_version,
         deployed_at=now,
     )
-
-
-# Bulk Operations Endpoints (must be before single-rule endpoints to avoid route conflicts)
-
-
-@router.post("/bulk/deploy", response_model=BulkOperationResult)
-async def bulk_deploy_rules(
-    data: BulkOperationRequest,
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
-):
-    """Deploy multiple rules to OpenSearch."""
-    success = []
-    failed = []
-
-    for rule_id in data.rule_ids:
-        try:
-            result = await db.execute(
-                select(Rule)
-                .where(Rule.id == rule_id)
-                .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
-            )
-            rule = result.scalar_one_or_none()
-            if rule:
-                # First validate the rule
-                validation = sigma_service.translate_and_validate(rule.yaml_content)
-                if not validation.success:
-                    errors_str = ", ".join(e.message for e in (validation.errors or []))
-                    failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
-                    continue
-
-                # Extract fields and resolve mappings
-                sigma_fields = list(validation.fields or set())
-                field_mappings_dict: dict[str, str] = {}
-
-                if sigma_fields and rule.index_pattern_id:
-                    resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
-                    field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
-
-                # Translate rule with field mappings applied
-                translation = sigma_service.translate_with_mappings(
-                    rule.yaml_content, field_mappings_dict if field_mappings_dict else None
-                )
-                if not translation.success:
-                    errors_str = ", ".join(e.message for e in (translation.errors or []))
-                    failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
-                    continue
-
-                # Deploy to percolator
-                percolator = PercolatorService(os_client)
-                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-
-                # Ensure the percolator index exists
-                percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
-
-                # Extract rule metadata from YAML
-                parsed_rule = yaml.safe_load(rule.yaml_content)
-                tags = parsed_rule.get("tags", [])
-
-                # Update ATT&CK mappings from rule tags
-                # This must happen before deployment so MITRE coverage is accurate
-                try:
-                    await update_rule_attack_mappings(db, str(rule.id), tags)
-                    await db.commit()
-                except Exception as e:
-                    # Log but don't fail deployment if attack mapping fails
-                    import logging
-                    logging.getLogger(__name__).warning(f"Failed to update attack mappings for rule {rule.id}: {e}")
-
-                # Deploy the rule - extract inner query for percolator
-                percolator_query = translation.query.get("query", translation.query)
-
-                percolator.deploy_rule(
-                    percolator_index=percolator_index,
-                    rule_id=str(rule.id),
-                    query=percolator_query,
-                    title=rule.title,
-                    severity=rule.severity,
-                    tags=tags,
-                    enabled=(rule.status == RuleStatus.DEPLOYED),
-                )
-
-                # Update rule deployment tracking
-                now = datetime.now(UTC)
-                current_version = rule.versions[0].version_number if rule.versions else 1
-                rule.deployed_at = now
-                rule.deployed_version = current_version
-                # Set status to DEPLOYED (unless snoozed)
-                if rule.status != RuleStatus.SNOOZED:
-                    rule.status = RuleStatus.DEPLOYED
-                success.append(rule_id)
-            else:
-                failed.append({"id": rule_id, "error": "Rule not found"})
-        except Exception as e:
-            failed.append({"id": rule_id, "error": str(e)})
-
-    await db.commit()
-    await audit_log(
-        db, current_user.id, "rule.bulk_deploy", "rule", None,
-        {"count": len(success), "rule_ids": success},
-        ip_address=get_client_ip(request)
-    )
-    await db.commit()
-
-    return BulkOperationResult(success=success, failed=failed)
-
 
 @router.post("/bulk/undeploy", response_model=BulkOperationResult)
 async def bulk_undeploy_rules(
