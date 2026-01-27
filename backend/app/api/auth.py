@@ -707,17 +707,18 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
         await db.commit()
         await db.refresh(user)
     else:
-        # Existing user: check if this is a local user that needs to be converted
+        # Existing user: if local user, convert to SSO-only
         if user.auth_method == AuthMethod.LOCAL:
-            # Convert to BOTH to allow SSO login
-            user.auth_method = AuthMethod.BOTH
+            # Convert to SSO-only (remove local password)
+            user.auth_method = AuthMethod.SSO
+            user.password_hash = None  # Remove local password
             await audit_log(
                 db,
                 user.id,
                 "auth.sso_conversion",
                 "user",
                 str(user.id),
-                {"message": "Local user converted to support SSO"},
+                {"message": "Local user converted to SSO-only authentication"},
                 ip_address=get_client_ip(request),
             )
             await db.commit()
