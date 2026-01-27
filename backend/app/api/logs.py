@@ -219,116 +219,101 @@ async def receive_logs(
 
                 # Create alert
                 alert = alert_service.create_alert(
-                alerts_index=alerts_index,
-                rule_id=rule_id,
-                rule_title=match["rule_title"],
-                severity=match["severity"],
-                tags=match.get("tags", []),
-                log_document=enriched_log,
-            )
-            alerts_created.append(alert)
-            total_matches += 1
-
-            # Calculate end-to-end latency if we have valid timestamps
-            if log_time and alert.get("created_at"):
-                try:
-                    alert_timestamp_str = alert.get("created_at")
-                    alert_time = datetime.fromisoformat(
-                        alert_timestamp_str.replace("Z", "+00:00")
-                    )
-
-                    # Calculate latency in milliseconds
-                    latency_ms = int((alert_time - log_time).total_seconds() * 1000)
-                    latencies.append(latency_ms)
-
-                except (ValueError, AttributeError) as e:
-                    # Don't count as error (alert was created successfully)
-                    processing_errors.append(f"Latency calculation warning: {e}")
-
-            # Check for correlation triggers and create correlation alerts
-            try:
-                triggered_correlations = await check_correlation(
-                    db,
-                    rule_id=UUID(rule_id),
+                    alerts_index=alerts_index,
+                    rule_id=rule_id,
+                    rule_title=match["rule_title"],
+                    severity=match["severity"],
+                    tags=match.get("tags", []),
                     log_document=enriched_log,
-                    alert_id=alert["alert_id"],
                 )
-                if triggered_correlations:
-                    import logging
-                    logger = logging.getLogger(__name__)
+                alerts_created.append(alert)
+                total_matches += 1
 
-                    # Create correlation alerts
-                    for corr in triggered_correlations:
-                        # Create a correlation alert with the combined information
-                        correlation_alert = alert_service.create_alert(
-                            alerts_index=alerts_index,
-                            rule_id=corr["correlation_rule_id"],
-                            rule_title=corr["correlation_name"],
-                            severity=corr.get("severity", "high"),
-                            tags=["correlation"],
-                            log_document={
-                                "correlation": {
-                                    "correlation_rule_id": corr["correlation_rule_id"],
-                                    "correlation_name": corr["correlation_name"],
-                                    "source_alerts": corr.get("source_alerts", []),
-                                    "entity_field": corr.get("entity_field"),
-                                    "entity_value": corr.get("entity_value"),
-                                },
-                                "@timestamp": enriched_log.get("@timestamp"),
-                            },
+                # Calculate end-to-end latency if we have valid timestamps
+                if log_time and alert.get("created_at"):
+                    try:
+                        alert_timestamp_str = alert.get("created_at")
+                        alert_time = datetime.fromisoformat(
+                            alert_timestamp_str.replace("Z", "+00:00")
                         )
-                        alerts_created.append(correlation_alert)
-                        total_matches += 1
+                        latency_ms = int((alert_time - log_time).total_seconds() * 1000)
+                        latencies.append(latency_ms)
+                    except (ValueError, AttributeError) as e:
+                        processing_errors.append(f"Latency calculation warning: {e}")
 
-                        # Broadcast correlation alert via WebSocket
-                        try:
-                            corr_broadcast = AlertBroadcast(
-                                alert_id=str(correlation_alert["alert_id"]),
+                # Check for correlation triggers and create correlation alerts
+                try:
+                    triggered_correlations = await check_correlation(
+                        db,
+                        rule_id=UUID(rule_id),
+                        log_document=enriched_log,
+                        alert_id=alert["alert_id"],
+                    )
+                    if triggered_correlations:
+                        import logging
+                        logger = logging.getLogger(__name__)
+
+                        for corr in triggered_correlations:
+                            correlation_alert = alert_service.create_alert(
+                                alerts_index=alerts_index,
                                 rule_id=corr["correlation_rule_id"],
                                 rule_title=corr["correlation_name"],
                                 severity=corr.get("severity", "high"),
-                                timestamp=correlation_alert.get("created_at", ""),
-                                matched_log={"correlation": True, **corr},
+                                tags=["correlation"],
+                                log_document={
+                                    "correlation": {
+                                        "correlation_rule_id": corr["correlation_rule_id"],
+                                        "correlation_name": corr["correlation_name"],
+                                        "source_alerts": corr.get("source_alerts", []),
+                                        "entity_field": corr.get("entity_field"),
+                                        "entity_value": corr.get("entity_value"),
+                                    },
+                                    "@timestamp": enriched_log.get("@timestamp"),
+                                },
                             )
-                            await manager.broadcast_alert(corr_broadcast)
-                        except Exception as e:
-                            logger.error(f"WebSocket broadcast failed for correlation alert: {e}")
+                            alerts_created.append(correlation_alert)
+                            total_matches += 1
 
-                        logger.info(
-                            f"Correlation alert created: {corr['correlation_name']} "
-                            f"(entity: {corr.get('entity_value')})"
-                        )
-            except Exception as e:
-                # Log but don't fail the alert creation
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Correlation check failed: {e}")
+                            try:
+                                corr_broadcast = AlertBroadcast(
+                                    alert_id=str(correlation_alert["alert_id"]),
+                                    rule_id=corr["correlation_rule_id"],
+                                    rule_title=corr["correlation_name"],
+                                    severity=corr.get("severity", "high"),
+                                    timestamp=correlation_alert.get("created_at", ""),
+                                    matched_log={"correlation": True, **corr},
+                                )
+                                await manager.broadcast_alert(corr_broadcast)
+                            except Exception as e:
+                                logger.error(f"WebSocket broadcast failed for correlation alert: {e}")
 
-            # Broadcast alert via WebSocket for real-time updates
-            try:
-                alert_broadcast = AlertBroadcast(
-                    alert_id=str(alert["alert_id"]),
-                    rule_id=rule_id,
-                    rule_title=alert.get("rule_title", "Unknown Rule"),
-                    severity=alert.get("severity", "medium"),
-                    timestamp=alert.get("created_at", ""),
-                    matched_log=enriched_log,
-                )
-                await manager.broadcast_alert(alert_broadcast)
-            except Exception as e:
-                # Log but don't fail the alert creation - broadcast is best-effort
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"WebSocket broadcast failed: {e}")
-                # Don't re-raise - alert was created successfully
+                            logger.info(
+                                f"Correlation alert created: {corr['correlation_name']} "
+                                f"(entity: {corr.get('entity_value')})"
+                            )
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Correlation check failed: {e}")
+
+                # Broadcast alert via WebSocket for real-time updates
+                try:
+                    alert_broadcast = AlertBroadcast(
+                        alert_id=str(alert["alert_id"]),
+                        rule_id=rule_id,
+                        rule_title=alert.get("rule_title", "Unknown Rule"),
+                        severity=alert.get("severity", "medium"),
+                        timestamp=alert.get("created_at", ""),
+                        matched_log=enriched_log,
+                    )
+                    await manager.broadcast_alert(alert_broadcast)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(f"WebSocket broadcast failed: {e}")
 
             except Exception as e:
-                # This catches errors from the main match processing try block
                 processing_errors.append(f"Alert creation failed for match: {str(e)}")
                 logs_errored += 1
-                # Continue processing other matches
                 continue
-
         # Send notifications through the new notification system
     if alerts_created:
         # Get app URL for alert links
@@ -353,18 +338,33 @@ async def receive_logs(
 
     # Record health metrics for this batch of logs
     try:
+        # Calculate average latency
+        avg_latency = (
+            int(sum(latencies) / len(latencies)) if latencies else 0
+        )
+
         metric = IndexHealthMetrics(
             index_pattern_id=index_pattern.id,
             logs_received=len(logs),
-            logs_processed=len(logs),
-            logs_errored=0,  # TODO: Track actual errors if needed
+            logs_processed=len(logs) - logs_errored,
+            logs_errored=logs_errored,
             alerts_generated=len(alerts_created),
             rules_triggered=total_matches,
-            queue_depth=0,  # TODO: Track actual queue depth if needed
-            avg_latency_ms=0,  # TODO: Track actual latency if needed
+            queue_depth=0,  # TODO: Track actual queue depth from BackgroundTasks
+            avg_latency_ms=avg_latency,
         )
         db.add(metric)
         await db.commit()
+
+        # Log processing errors for monitoring
+        if processing_errors:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Batch processing had {len(processing_errors)} errors: "
+                f"First 3 errors: {processing_errors[:3]}"
+            )
+
     except Exception as e:
         # Log but don't fail the request if metric recording fails
         import logging
