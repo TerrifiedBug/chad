@@ -468,8 +468,8 @@ export const rulesApi = {
   },
   undeploy: (id: string) =>
     api.post<{ success: boolean }>(`/rules/${id}/undeploy`),
-  rollback: (id: string, version: number) =>
-    api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`),
+  rollback: (id: string, version: number, reason: string) =>
+    api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`, { change_reason: reason }),
   // Exceptions
   listExceptions: (ruleId: string) =>
     api.get<RuleException[]>(`/rules/${ruleId}/exceptions`),

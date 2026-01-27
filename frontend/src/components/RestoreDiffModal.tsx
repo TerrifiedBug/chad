@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { diffLines, Change } from 'diff'
 import {
   Dialog,
@@ -9,11 +9,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 
 interface RestoreDiffModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: () => void
+  onConfirm: (reason: string) => void
   currentYaml: string
   targetYaml: string
   targetVersion: number
@@ -33,12 +35,27 @@ export function RestoreDiffModal({
   isRestoring,
   targetChangeReason,
 }: RestoreDiffModalProps) {
+  const [reason, setReason] = useState('')
+
   const diff = useMemo(() => {
     return diffLines(currentYaml, targetYaml)
   }, [currentYaml, targetYaml])
 
+  const handleConfirm = () => {
+    if (!reason.trim()) {
+      return
+    }
+    onConfirm(reason)
+    setReason('')
+  }
+
+  const handleClose = () => {
+    setReason('')
+    onClose()
+  }
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Restore to Version {targetVersion}</DialogTitle>
@@ -86,11 +103,23 @@ export function RestoreDiffModal({
           ) : null}
         </div>
 
+        <div className="space-y-2 py-2">
+          <Label htmlFor="restore-reason">Reason for Restore *</Label>
+          <Textarea
+            id="restore-reason"
+            placeholder="Please explain why you are restoring to this version..."
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            className="resize-none"
+          />
+        </div>
+
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isRestoring}>
+          <Button variant="outline" onClick={handleClose} disabled={isRestoring}>
             Cancel
           </Button>
-          <Button onClick={onConfirm} disabled={isRestoring}>
+          <Button onClick={handleConfirm} disabled={!reason.trim() || isRestoring}>
             {isRestoring ? 'Restoring...' : `Restore to v${targetVersion}`}
           </Button>
         </DialogFooter>

@@ -13,7 +13,7 @@ interface ActivityPanelProps {
   currentVersion: number
   isOpen: boolean
   onClose: () => void
-  onRestore: (versionNumber: number) => void
+  onRestore: (versionNumber: number, reason: string) => void
 }
 
 export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onClose, onRestore }: ActivityPanelProps) {
@@ -101,11 +101,11 @@ export function ActivityPanel({ ruleId, currentYaml, currentVersion, isOpen, onC
     setRestoreTarget({ versionNumber, yaml, changeReason })
   }
 
-  const handleRestoreConfirm = async () => {
+  const handleRestoreConfirm = async (reason: string) => {
     if (!restoreTarget) return
     setIsRestoring(true)
     try {
-      await onRestore(restoreTarget.versionNumber)
+      await onRestore(restoreTarget.versionNumber, reason)
       setRestoreTarget(null)
     } finally {
       setIsRestoring(false)

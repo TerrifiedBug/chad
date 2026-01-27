@@ -759,9 +759,9 @@ export default function RuleEditorPage() {
   }
 
   // Restore version handler for activity panel
-  const handleRestoreVersion = async (versionNumber: number) => {
+  const handleRestoreVersion = async (versionNumber: number, reason: string) => {
     try {
-      await rulesApi.rollback(id!, versionNumber)
+      await rulesApi.rollback(id!, versionNumber, reason)
       // Reload the rule to get the new version
       await loadRule()
       setIsActivityOpen(false)
