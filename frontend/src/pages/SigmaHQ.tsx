@@ -645,9 +645,18 @@ export default function SigmaHQPage() {
               {selectedRule ? selectedRule.title : 'Rule Preview'}
             </h3>
             {selectedRule && (
-              <Button size="sm" onClick={handleOpenImportDialog}>
-                <Download className="h-4 w-4 mr-1" />
-                Import
+              <Button size="sm" onClick={handleOpenImportDialog} disabled={isImporting}>
+                {isImporting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-1" />
+                    Import
+                  </>
+                )}
               </Button>
             )}
           </div>

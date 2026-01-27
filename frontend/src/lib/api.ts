@@ -468,11 +468,13 @@ export const rulesApi = {
   },
   undeploy: (id: string) =>
     api.post<{ success: boolean }>(`/rules/${id}/undeploy`),
-  rollback: (id: string, version: number) =>
-    api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`),
+  rollback: (id: string, version: number, reason: string) =>
+    api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`, { change_reason: reason }),
   // Exceptions
   listExceptions: (ruleId: string) =>
     api.get<RuleException[]>(`/rules/${ruleId}/exceptions`),
+  getIndexFields: (indexPatternId: string) =>
+    api.get<{ fields: string[] }>(`/rules/index-fields/${indexPatternId}`),
   createException: (ruleId: string, data: RuleExceptionCreate) =>
     api.post<RuleException>(`/rules/${ruleId}/exceptions`, data),
   updateException: (ruleId: string, exceptionId: string, data: RuleExceptionUpdate) =>

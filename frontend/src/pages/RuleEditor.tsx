@@ -156,6 +156,10 @@ export default function RuleEditorPage() {
   const [newExceptionReason, setNewExceptionReason] = useState('')
   const [isAddingException, setIsAddingException] = useState(false)
 
+  // Add state for available fields from OpenSearch
+  const [availableFields, setAvailableFields] = useState<string[]>([])
+  const [isLoadingFields, setIsLoadingFields] = useState(false)
+
   // Exception delete confirmation state
   const [exceptionToDelete, setExceptionToDelete] = useState<RuleException | null>(null)
   const [isDeleteExceptionDialogOpen, setIsDeleteExceptionDialogOpen] = useState(false)
@@ -337,6 +341,20 @@ export default function RuleEditorPage() {
     }
   }, [id, isNew])
 
+  const loadAvailableFields = async () => {
+    if (!indexPatternId) return
+
+    setIsLoadingFields(true)
+    try {
+      const data = await rulesApi.getIndexFields(indexPatternId)
+      setAvailableFields(data.fields)
+    } catch (err) {
+      console.error('Failed to load fields', err)
+    } finally {
+      setIsLoadingFields(false)
+    }
+  }
+
   // Effects - must come after all useCallback declarations
   useEffect(() => {
     loadIndexPatterns()
@@ -346,6 +364,17 @@ export default function RuleEditorPage() {
       loadCorrelationRules()
     }
   }, [id, isNew, loadIndexPatterns, loadRule, loadExceptions, loadCorrelationRules])
+
+  // Reset deployment state when rule ID changes (fixes clone showing as deployed)
+  useEffect(() => {
+    setDeployedAt(null)
+    setDeployedVersion(null)
+    setCurrentVersionNumber(1)
+    setNeedsRedeploy(false)
+    setStatus('undeployed')
+    setSnoozeIndefinite(false)
+    setSnoozeUntil(null)
+  }, [id])
 
   // Handle clone state from navigation
   useEffect(() => {
@@ -369,6 +398,11 @@ export default function RuleEditorPage() {
       }
     }
   }, [isNew, cloneState])
+
+  // Load available fields when index pattern changes
+  useEffect(() => {
+    loadAvailableFields()
+  }, [indexPatternId])
 
   // Load mandatory comments settings on mount
   useEffect(() => {
@@ -736,9 +770,9 @@ export default function RuleEditorPage() {
   }
 
   // Restore version handler for activity panel
-  const handleRestoreVersion = async (versionNumber: number) => {
+  const handleRestoreVersion = async (versionNumber: number, reason: string) => {
     try {
-      await rulesApi.rollback(id!, versionNumber)
+      await rulesApi.rollback(id!, versionNumber, reason)
       // Reload the rule to get the new version
       await loadRule()
       setIsActivityOpen(false)
@@ -854,60 +888,55 @@ export default function RuleEditorPage() {
         </div>
         <div className="flex items-center gap-2">
           {!isNew && (
-            <div className="flex items-center gap-2 mr-4">
+            <div className="flex items-center gap-2">
               {status === 'snoozed' ? (
-                <div className="flex items-center gap-2">
+                <>
                   <Clock className="h-4 w-4 text-yellow-500" />
                   <span className="text-sm text-yellow-600">
                     {snoozeIndefinite ? 'Snoozed indefinitely' : snoozeUntil ? `Snoozed until ${formatSnoozeExpiry(snoozeUntil)}` : 'Snoozed'}
                   </span>
                   <Button
                     variant="outline"
-                    size="sm"
                     onClick={handleUnsnooze}
                     disabled={isSnoozing || !canManageRules}
                   >
                     {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
                   </Button>
-                </div>
+                </>
               ) : status === 'undeployed' ? (
-                <div className="flex items-center gap-2">
+                <>
                   <span className="text-sm text-gray-500 font-medium">Undeployed</span>
                   <Button
                     variant="outline"
-                    size="sm"
                     disabled={!canManageRules}
                     title="Deploy the rule first to enable snooze"
                   >
                     <Clock className="h-4 w-4 mr-1" />
                     Snooze
                   </Button>
-                </div>
+                </>
               ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-green-600 font-medium">Deployed</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" disabled={isSnoozing || !canManageRules}>
-                        <Clock className="h-4 w-4 mr-1" />
-                        Snooze
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="z-50 bg-popover">
-                      <DropdownMenuItem onClick={() => handleSnooze(1)} disabled={!canManageRules}>1 hour</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(4)} disabled={!canManageRules}>4 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(8)} disabled={!canManageRules}>8 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(24)} disabled={!canManageRules}>24 hours</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnooze(168)} disabled={!canManageRules}>1 week</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSnoozeIndefinite()} disabled={!canManageRules}>Indefinitely</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" disabled={isSnoozing || !canManageRules}>
+                      <Clock className="h-4 w-4 mr-1" />
+                      Snooze
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="z-50 bg-popover">
+                    <DropdownMenuItem onClick={() => handleSnooze(1)} disabled={!canManageRules}>1 hour</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnooze(4)} disabled={!canManageRules}>4 hours</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnooze(8)} disabled={!canManageRules}>8 hours</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnooze(24)} disabled={!canManageRules}>24 hours</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnooze(168)} disabled={!canManageRules}>1 week</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSnoozeIndefinite()} disabled={!canManageRules}>Indefinitely</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           )}
           {saveSuccess && (
-            <span className="text-sm text-green-600 flex items-center gap-1">
+            <span className="text-sm text-green-600 flex items-center gap-1 mr-2">
               <Check className="h-4 w-4" />
               Saved
             </span>
@@ -1502,32 +1531,22 @@ export default function RuleEditorPage() {
                   <div className="border-t pt-4 space-y-3">
                     <Label className="text-xs font-medium">Add Exception</Label>
                     <div className="space-y-2">
-                      {detectedFields.length > 0 ? (
-                        <Select
-                          value={newExceptionField}
-                          onValueChange={canManageRules ? setNewExceptionField : undefined}
-                          disabled={!canManageRules}
-                        >
-                          <SelectTrigger className="h-8 text-sm" disabled={!canManageRules}>
-                            <SelectValue placeholder="Select field" />
-                          </SelectTrigger>
-                          <SelectContent className="z-50 bg-popover max-h-48">
-                            {detectedFields.map((field) => (
-                              <SelectItem key={field} value={field}>
-                                {field}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Input
-                          placeholder="Field name"
-                          value={newExceptionField}
-                          onChange={(e) => setNewExceptionField(e.target.value)}
-                          className="h-8 text-sm"
-                          disabled={!canManageRules}
-                        />
-                      )}
+                      <Select
+                        value={newExceptionField}
+                        onValueChange={canManageRules ? setNewExceptionField : undefined}
+                        disabled={isLoadingFields || !canManageRules}
+                      >
+                        <SelectTrigger className="h-8 text-sm" disabled={isLoadingFields || !canManageRules}>
+                          <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select a field..."} />
+                        </SelectTrigger>
+                        <SelectContent className="z-50 bg-popover max-h-48">
+                          {availableFields.map((field) => (
+                            <SelectItem key={field} value={field}>
+                              {field}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <Select
                         value={newExceptionOperator}
                         onValueChange={canManageRules ? (value) =>

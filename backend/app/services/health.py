@@ -3,11 +3,62 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
+
+
+def get_alert_count(
+    os_client: OpenSearch,
+    alerts_index_pattern: str,
+    since: datetime,
+) -> int:
+    """
+    Get actual alert count from OpenSearch for a time period.
+
+    Args:
+        os_client: OpenSearch client
+        alerts_index_pattern: Alert index pattern (e.g., "chad-alerts-*")
+        since: Start of time range
+
+    Returns:
+        Count of alerts in the time period
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Strip timezone info to match Dashboard's datetime format
+        # OpenSearch handles naive datetimes more consistently
+        since_naive = since.replace(tzinfo=None)
+
+        query = {
+            "query": {
+                "range": {
+                    "created_at": {
+                        "gte": since_naive.isoformat()
+                    }
+                }
+            }
+        }
+
+        logger.info(f"Counting alerts in {alerts_index_pattern} since {since_naive.isoformat()}")
+        logger.info(f"Query: {query}")
+
+        result = os_client.count(
+            index=alerts_index_pattern,
+            body=query
+        )
+
+        count = result.get("count", 0)
+        logger.info(f"Alert count result for {alerts_index_pattern}: {count}")
+        return count
+    except Exception as e:
+        logger.error(f"Failed to count alerts in {alerts_index_pattern}: {e}")
+        return 0
 
 # Thresholds (could be moved to settings)
 QUEUE_WARNING_THRESHOLD = 10000
@@ -36,11 +87,15 @@ def _max_status(current: str, new: str) -> str:
 
 async def get_index_health(
     db: AsyncSession,
+    os_client: OpenSearch,
     index_pattern_id: uuid.UUID,
     hours: int = 24,
 ) -> dict:
     """Get health summary for an index pattern."""
     since = datetime.now(UTC) - timedelta(hours=hours)
+
+    # Convert to naive datetime for OpenSearch query consistency
+    since_naive = since.replace(tzinfo=None)
 
     # Get index pattern settings for thresholds
     pattern_result = await db.execute(
@@ -56,6 +111,18 @@ async def get_index_health(
     )
     no_data_critical_minutes = no_data_warning_minutes * 2  # Critical is 2x the warning threshold
 
+    # Query actual alert counts from OpenSearch
+    # Use wildcard to catch all alerts indices (pattern-specific and date-based)
+    alerts_index = "chad-alerts-*"
+
+    # Per-hour count (last hour)
+    one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+    one_hour_ago_naive = one_hour_ago.replace(tzinfo=None)
+    alerts_per_hour = get_alert_count(os_client, alerts_index, one_hour_ago_naive)
+
+    # 24-hour total
+    alerts_24h = get_alert_count(os_client, alerts_index, since_naive)
+
     # Get latest metrics
     result = await db.execute(
         select(IndexHealthMetrics)
@@ -67,6 +134,7 @@ async def get_index_health(
 
     if not latest:
         # No metrics at all - this is a warning state (index may not be configured or receiving logs)
+        # But we still have OpenSearch query results for alert counts
         return {
             "status": HealthStatus.WARNING,
             "message": "No data received",
@@ -75,12 +143,12 @@ async def get_index_health(
                 "queue_depth": 0,
                 "avg_latency_ms": 0,
                 "logs_per_minute": 0,
-                "alerts_per_hour": 0,
+                "alerts_per_hour": alerts_per_hour,  # From OpenSearch query
             },
             "totals_24h": {
                 "logs_received": 0,
                 "logs_errored": 0,
-                "alerts_generated": 0,
+                "alerts_generated": alerts_24h,  # From OpenSearch query
             },
         }
 
@@ -145,24 +213,27 @@ async def get_index_health(
             "queue_depth": latest.queue_depth,
             "avg_latency_ms": latest.avg_latency_ms,
             "logs_per_minute": latest.logs_received,
-            "alerts_per_hour": latest.alerts_generated * 60,  # Extrapolate from per-minute
+            "alerts_per_hour": alerts_per_hour,  # From OpenSearch
         },
         "totals_24h": {
             "logs_received": logs_received,
             "logs_errored": logs_errored,
-            "alerts_generated": alerts_generated,
+            "alerts_generated": alerts_24h,  # From OpenSearch
         },
     }
 
 
-async def get_all_indices_health(db: AsyncSession) -> list[dict]:
+async def get_all_indices_health(
+    db: AsyncSession,
+    os_client: OpenSearch,
+) -> list[dict]:
     """Get health summary for all index patterns."""
     result = await db.execute(select(IndexPattern))
     patterns = result.scalars().all()
 
     health_data = []
     for pattern in patterns:
-        health = await get_index_health(db, pattern.id)
+        health = await get_index_health(db, os_client, pattern.id)
         health_data.append(
             {
                 "index_pattern_id": str(pattern.id),

@@ -70,7 +70,7 @@ async def list_users(
                 role=u.role.value,
                 is_active=u.is_active,
                 created_at=u.created_at.isoformat(),
-                auth_method="local" if u.password_hash else "sso",
+                auth_method=u.auth_method.value,
                 totp_enabled=u.totp_enabled,
             )
             for u in users

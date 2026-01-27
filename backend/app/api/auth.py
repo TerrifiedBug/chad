@@ -13,7 +13,7 @@ from app.core.config import settings as app_settings
 from app.core.encryption import decrypt
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.session import get_db
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, AuthMethod
 from app.schemas.auth import LoginRequest, SetupRequest, TokenResponse
 from app.schemas.totp import (
     TwoFactorDisableRequest,
@@ -278,8 +278,8 @@ async def login(
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
-    # Check credentials - user doesn't exist or no password hash (SSO user)
-    if user is None or user.password_hash is None:
+    # Check if user exists
+    if user is None:
         # Record failed attempt
         await record_failed_attempt(db, email, ip_address)
         await audit_log(
@@ -288,7 +288,7 @@ async def login(
             "auth.login_failed",
             "user",
             None,
-            {"email": email, "reason": "invalid_credentials"},
+            {"email": email, "reason": "user_not_found"},
             ip_address=ip_address,
         )
 
@@ -315,6 +315,43 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
+        )
+
+    # Check if user is SSO-only (no password hash)
+    if user.password_hash is None:
+        # Don't record failed attempts or check lockout for SSO users
+        # (they have no password to brute force, and we don't want to lock them out of SSO)
+        await audit_log(
+            db,
+            None,
+            "auth.login_failed",
+            "user",
+            None,
+            {"email": email, "reason": "sso_only_user_attempted_local_login"},
+            ip_address=ip_address,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account uses SSO only. Please login with your SSO provider.",
+        )
+
+    # Check if user is SSO-only (redundant check, but kept for safety)
+    if user.auth_method == AuthMethod.SSO:
+        # Don't record failed attempts or check lockout for SSO users
+        await audit_log(
+            db,
+            user.id,
+            "auth.login_failed",
+            "user",
+            str(user.id),
+            {"email": email, "reason": "sso_only_user_attempted_local_login"},
+            ip_address=ip_address,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account uses SSO only. Please login with your SSO provider.",
         )
 
     # Verify password
@@ -508,7 +545,7 @@ async def get_current_user_info(
         "email": current_user.email,
         "role": current_user.role.value,
         "is_active": current_user.is_active,
-        "auth_method": "local" if current_user.password_hash else "sso",
+        "auth_method": current_user.auth_method.value,
         "must_change_password": current_user.must_change_password,
         "totp_enabled": current_user.totp_enabled,
         "permissions": permissions,
@@ -661,17 +698,39 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
             email=email,
             password_hash=None,  # SSO users have no local password
             role=role,
+            auth_method=AuthMethod.SSO,
             is_active=True,
         )
         db.add(user)
         await db.commit()
         await db.refresh(user)
-    elif mapped_role and sso_config.get("role_mapping_enabled"):
-        # Existing user: sync role from IdP if role mapping is enabled
-        if user.role != mapped_role:
-            user.role = mapped_role
+    else:
+        # Existing user: if local user, convert to SSO-only
+        if user.auth_method == AuthMethod.LOCAL:
+            # Convert to SSO-only (remove local password)
+            user.auth_method = AuthMethod.SSO
+            user.password_hash = None  # Remove local password
+            await audit_log(
+                db,
+                user.id,
+                "auth.sso_conversion",
+                "user",
+                str(user.id),
+                {"message": "Local user converted to SSO-only authentication"},
+                ip_address=get_client_ip(request),
+            )
             await db.commit()
             await db.refresh(user)
+        elif user.auth_method == AuthMethod.SSO:
+            # Already an SSO user, continue
+            pass
+
+        # Sync role from IdP if role mapping is enabled
+        if mapped_role and sso_config.get("role_mapping_enabled"):
+            if user.role != mapped_role:
+                user.role = mapped_role
+                await db.commit()
+                await db.refresh(user)
 
     if not user.is_active:
         error_params = urlencode({"sso_error": "User account is inactive"})

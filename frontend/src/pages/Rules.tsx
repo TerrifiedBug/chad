@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
+import yaml from 'js-yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -128,6 +129,14 @@ export default function RulesPage() {
     return selectedRulesData.some(r => r.status === 'deployed')
   }, [selectedRulesData])
 
+  const hasUndeployedRules = useMemo(() => {
+    return selectedRulesData.some(r => r.status === 'undeployed')
+  }, [selectedRulesData])
+
+  const allDeployed = useMemo(() => {
+    return selectedRulesData.length > 0 && selectedRulesData.every(r => r.status === 'deployed')
+  }, [selectedRulesData])
+
   const hasSnoozedRules = useMemo(() => {
     return selectedRulesData.some(r => r.status === 'snoozed')
   }, [selectedRulesData])
@@ -174,9 +183,31 @@ export default function RulesPage() {
       if (filters.source !== 'all' && rule.source !== filters.source) {
         return false
       }
-      // Search filter
-      if (filters.search && !rule.title.toLowerCase().includes(filters.search.toLowerCase())) {
-        return false
+      // Search filter - searches title, ATT&CK IDs, and type
+      if (filters.search && filters.search.trim()) {
+        const searchLower = filters.search.trim().toLowerCase()
+        const matchesTitle = rule.title?.toLowerCase().includes(searchLower)
+        const matchesType = rule.source?.toLowerCase().includes(searchLower)
+
+        // Search in tags (which include ATT&CK IDs like "attack.t1566")
+        // Tags are stored in YAML content
+        let matchesAttackIds = false
+        try {
+          const parsed = yaml.load(rule.yaml_content) as Record<string, unknown> | null
+          if (parsed && typeof parsed === 'object' && 'tags' in parsed && Array.isArray(parsed.tags)) {
+            const tags = parsed.tags as string[]
+            matchesAttackIds = tags.some((tag: string) =>
+              tag.toLowerCase().includes(searchLower)
+            )
+          }
+        } catch (error) {
+          // If YAML parsing fails, just skip tag search
+          console.warn('Failed to parse YAML for rule search:', error)
+        }
+
+        if (!matchesTitle && !matchesType && !matchesAttackIds) {
+          return false
+        }
       }
       return true
     })
@@ -408,7 +439,7 @@ export default function RulesPage() {
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search rules..."
+            placeholder="Search title, type, or ATT&CK ID..."
             value={filters.search}
             onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
             className="pl-10"
@@ -804,38 +835,72 @@ export default function RulesPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleBulkAction('deploy')}
-                      disabled={isBulkOperating || isCheckingEligibility || !canDeployRules() || (deploymentEligibility?.ineligible?.length ?? 0) > 0}
+                      disabled={isBulkOperating || isCheckingEligibility || !canDeployRules() || hasDeployedRules || (deploymentEligibility?.ineligible?.length ?? 0) > 0}
                     >
                       <Rocket className="mr-2 h-4 w-4" /> Deploy
                     </Button>
                   </span>
                 </TooltipTrigger>
-                {(deploymentEligibility?.ineligible?.length ?? 0) > 0 && (
+                {hasDeployedRules && (
+                  <TooltipContent>
+                    Cannot bulk deploy: Some selected rules are already deployed
+                  </TooltipContent>
+                )}
+                {(deploymentEligibility?.ineligible?.length ?? 0) > 0 && !hasDeployedRules && (
                   <TooltipContent>
                     {deploymentEligibility!.ineligible.length} of {selectedRules.size} rules have unmapped fields
                   </TooltipContent>
                 )}
               </Tooltip>
-              <Button size="sm" variant="outline" onClick={() => handleBulkAction('undeploy')} disabled={isBulkOperating || !hasDeployedRules || !canDeployRules()}>
-                <X className="mr-2 h-4 w-4" /> Undeploy
-              </Button>
-              <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline" disabled={isBulkOperating || !canDeployRules()}>
-                    <Clock className="mr-2 h-4 w-4" /> Snooze
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="z-[60]">
-                  <DropdownMenuLabel>Snooze Duration</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(1)}>1 hour</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(4)}>4 hours</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(8)}>8 hours</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(24)}>24 hours</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(168)}>1 week</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleBulkAction('undeploy')}
+                      disabled={isBulkOperating || !allDeployed || !canDeployRules()}
+                    >
+                      <X className="mr-2 h-4 w-4" /> Undeploy
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!allDeployed && selectedRulesData.length > 0 && (
+                  <TooltipContent>
+                    Cannot bulk undeploy: All selected rules must be deployed
+                  </TooltipContent>
+                )}
+              </Tooltip>
+              <Tooltip open={hasUndeployedRules ? undefined : false}>
+                <TooltipTrigger asChild>
+                  <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isBulkOperating || hasUndeployedRules || !canDeployRules()}
+                      >
+                        <Clock className="mr-2 h-4 w-4" /> Snooze
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="z-[60]">
+                      <DropdownMenuLabel>Snooze Duration</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(1)}>1 hour</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(4)}>4 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(8)}>8 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(24)}>24 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(168)}>1 week</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TooltipTrigger>
+                {hasUndeployedRules && (
+                  <TooltipContent>
+                    Cannot bulk snooze: Some selected rules are not deployed
+                  </TooltipContent>
+                )}
+              </Tooltip>
               <Button size="sm" variant="outline" onClick={() => handleBulkAction('unsnooze')} disabled={isBulkOperating || !hasSnoozedRules || !canDeployRules()}>
                 <RotateCcw className="mr-2 h-4 w-4" /> Unsnooze
               </Button>

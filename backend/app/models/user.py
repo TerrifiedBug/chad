@@ -3,6 +3,7 @@ from enum import Enum
 from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import ENUM as SAEnum
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
 
@@ -13,13 +14,19 @@ class UserRole(str, Enum):
     VIEWER = "viewer"
 
 
+class AuthMethod(str, Enum):
+    LOCAL = "local"
+    SSO = "sso"
+
+
 class User(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    role: Mapped[UserRole] = mapped_column(default=UserRole.VIEWER)
+    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole, name="userrole", create_type=False), default=UserRole.VIEWER)
     is_active: Mapped[bool] = mapped_column(default=True)
+    auth_method: Mapped[AuthMethod] = mapped_column(SAEnum(AuthMethod, name="authmethodenum", create_type=False), default=AuthMethod.LOCAL, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(default=False)
 
     # 2FA fields
