@@ -956,6 +956,16 @@ async def deploy_rule(
     parsed_rule = yaml.safe_load(rule.yaml_content)
     tags = parsed_rule.get("tags", [])
 
+    # Update ATT&CK mappings from rule tags
+    # This must happen before deployment so MITRE coverage is accurate
+    try:
+        await update_rule_attack_mappings(db, str(rule.id), tags)
+        await db.commit()
+    except Exception as e:
+        # Log but don't fail deployment if attack mapping fails
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to update attack mappings for rule {rule.id}: {e}")
+
     # Deploy the rule - extract inner query for percolator
     # Sigma returns {"query": {"query_string": ...}}, percolator needs {"query_string": ...}
     percolator_query = translation.query.get("query", translation.query)
@@ -1573,6 +1583,16 @@ async def bulk_deploy_rules(
                 # Extract rule metadata from YAML
                 parsed_rule = yaml.safe_load(rule.yaml_content)
                 tags = parsed_rule.get("tags", [])
+
+                # Update ATT&CK mappings from rule tags
+                # This must happen before deployment so MITRE coverage is accurate
+                try:
+                    await update_rule_attack_mappings(db, str(rule.id), tags)
+                    await db.commit()
+                except Exception as e:
+                    # Log but don't fail deployment if attack mapping fails
+                    import logging
+                    logging.getLogger(__name__).warning(f"Failed to update attack mappings for rule {rule.id}: {e}")
 
                 # Deploy the rule - extract inner query for percolator
                 percolator_query = translation.query.get("query", translation.query)
