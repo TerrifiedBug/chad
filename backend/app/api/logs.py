@@ -322,14 +322,14 @@ async def receive_logs(
                 logger.warning(f"WebSocket broadcast failed: {e}")
                 # Don't re-raise - alert was created successfully
 
-        except Exception as e:
-            # This catches errors from the main match processing try block
-            processing_errors.append(f"Alert creation failed for match: {str(e)}")
-            logs_errored += 1
-            # Continue processing other matches
-            continue
+            except Exception as e:
+                # This catches errors from the main match processing try block
+                processing_errors.append(f"Alert creation failed for match: {str(e)}")
+                logs_errored += 1
+                # Continue processing other matches
+                continue
 
-    # Send notifications through the new notification system
+        # Send notifications through the new notification system
     if alerts_created:
         # Get app URL for alert links
         app_url = await get_app_url(db)
