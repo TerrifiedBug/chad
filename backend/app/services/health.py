@@ -3,11 +3,46 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
+
+
+def get_alert_count(
+    os_client: OpenSearch,
+    alerts_index_pattern: str,
+    since: datetime,
+) -> int:
+    """
+    Get actual alert count from OpenSearch for a time period.
+
+    Args:
+        os_client: OpenSearch client
+        alerts_index_pattern: Alert index pattern (e.g., "chad-alerts-*")
+        since: Start of time range
+
+    Returns:
+        Count of alerts in the time period
+    """
+    try:
+        result = os_client.count(
+            index=alerts_index_pattern,
+            body={
+                "query": {
+                    "range": {
+                        "@timestamp": {
+                            "gte": since.isoformat()
+                        }
+                    }
+                }
+            }
+        )
+        return result.get("count", 0)
+    except Exception:
+        return 0
 
 # Thresholds (could be moved to settings)
 QUEUE_WARNING_THRESHOLD = 10000
@@ -36,6 +71,7 @@ def _max_status(current: str, new: str) -> str:
 
 async def get_index_health(
     db: AsyncSession,
+    os_client: OpenSearch,
     index_pattern_id: uuid.UUID,
     hours: int = 24,
 ) -> dict:
@@ -55,6 +91,16 @@ async def get_index_health(
         else DEFAULT_NO_DATA_WARNING_MINUTES
     )
     no_data_critical_minutes = no_data_warning_minutes * 2  # Critical is 2x the warning threshold
+
+    # NEW: Query actual alert counts from OpenSearch
+    alerts_index = f"chad-alerts-{index_pattern.pattern.replace('*', '')}"
+
+    # Per-hour count (last hour)
+    one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+    alerts_per_hour = get_alert_count(os_client, alerts_index, one_hour_ago)
+
+    # 24-hour total
+    alerts_24h = get_alert_count(os_client, alerts_index, since)
 
     # Get latest metrics
     result = await db.execute(
@@ -145,24 +191,27 @@ async def get_index_health(
             "queue_depth": latest.queue_depth,
             "avg_latency_ms": latest.avg_latency_ms,
             "logs_per_minute": latest.logs_received,
-            "alerts_per_hour": latest.alerts_generated * 60,  # Extrapolate from per-minute
+            "alerts_per_hour": alerts_per_hour,  # From OpenSearch
         },
         "totals_24h": {
             "logs_received": logs_received,
             "logs_errored": logs_errored,
-            "alerts_generated": alerts_generated,
+            "alerts_generated": alerts_24h,  # From OpenSearch
         },
     }
 
 
-async def get_all_indices_health(db: AsyncSession) -> list[dict]:
+async def get_all_indices_health(
+    db: AsyncSession,
+    os_client: OpenSearch,
+) -> list[dict]:
     """Get health summary for all index patterns."""
     result = await db.execute(select(IndexPattern))
     patterns = result.scalars().all()
 
     health_data = []
     for pattern in patterns:
-        health = await get_index_health(db, pattern.id)
+        health = await get_index_health(db, os_client, pattern.id)
         health_data.append(
             {
                 "index_pattern_id": str(pattern.id),

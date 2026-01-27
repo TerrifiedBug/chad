@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_admin
+from app.api.deps import get_current_user, get_db, get_opensearch_client, require_admin
 from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
 from app.models.setting import Setting
@@ -16,6 +16,7 @@ from app.models.ti_config import TISourceConfig
 from app.models.user import User
 from app.services.health import get_all_indices_health, get_health_history, get_index_health
 from app.services.settings import get_setting, set_setting
+from opensearchpy import OpenSearch
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -50,21 +51,23 @@ class HealthSettingsUpdate(BaseModel):
 @router.get("/indices")
 async def list_index_health(
     db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     _: Annotated[User, Depends(get_current_user)],
 ):
     """Get health status for all index patterns."""
-    return await get_all_indices_health(db)
+    return await get_all_indices_health(db, os_client)
 
 
 @router.get("/indices/{index_pattern_id}")
 async def get_index_pattern_health(
     index_pattern_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     _: Annotated[User, Depends(get_current_user)],
     hours: int = Query(24, ge=1, le=168),
 ):
     """Get detailed health for a specific index pattern."""
-    return await get_index_health(db, index_pattern_id, hours)
+    return await get_index_health(db, os_client, index_pattern_id, hours)
 
 
 @router.get("/indices/{index_pattern_id}/history")
