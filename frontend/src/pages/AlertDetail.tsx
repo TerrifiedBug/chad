@@ -29,7 +29,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2 } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2 } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 
 const severityColors: Record<string, string> = {
@@ -490,6 +490,21 @@ export default function AlertDetailPage() {
     }
   }
 
+  const handleDelete = async () => {
+    if (!id) return
+    if (!confirm('Are you sure you want to delete this alert? This action cannot be undone.')) {
+      return
+    }
+    setIsUpdating(true)
+    try {
+      await alertsApi.delete(id)
+      navigate('/alerts')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete alert')
+      setIsUpdating(false)
+    }
+  }
+
   const handleOpenExceptionDialog = async () => {
     if (!alert || !alert.log_document) {
       setError('Alert has no log document')
@@ -657,6 +672,15 @@ export default function AlertDetailPage() {
               Create Exception
             </Button>
           )}
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleDelete}
+            disabled={isUpdating || !hasPermission('manage_rules')}
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Delete
+          </Button>
         </div>
       </div>
 

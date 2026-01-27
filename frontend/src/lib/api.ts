@@ -732,6 +732,8 @@ export const alertsApi = {
     api.get<AlertCountsResponse>('/alerts/counts'),
   updateStatus: (id: string, status: AlertStatus) =>
     api.patch<{ success: boolean; status: AlertStatus }>(`/alerts/${id}/status`, { status }),
+  delete: (id: string) =>
+    api.delete<{ success: boolean }>(`/alerts/${id}`),
   bulkUpdateStatus: (data: { alert_ids: string[]; status: AlertStatus }) =>
     api.patch<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data),
   bulkDelete: (data: { alert_ids: string[] }) =>
