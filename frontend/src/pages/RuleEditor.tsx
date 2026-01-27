@@ -975,7 +975,7 @@ export default function RuleEditorPage() {
           {!isNew && (
             deployedAt ? (
               <>
-                {deployedVersion !== currentVersion && (
+                {deployedVersion !== currentVersionNumber && (
                   <Button
                     variant="outline"
                     onClick={handleDeploy}
