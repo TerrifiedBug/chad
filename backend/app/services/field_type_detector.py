@@ -85,7 +85,7 @@ def detect_field_type(
         }
 
     except Exception as e:
-        logger.warning(f"Failed to detect field type for '{field_path}': {e}")
+        logger.warning("Failed to detect field type for %r: %s", field_path, e)
         # On error, don't auto-correct - let user proceed
         return {
             "field_type": None,
@@ -116,7 +116,8 @@ def auto_correct_field_mapping(
 
     if detection.get("should_auto_correct", False):
         logger.info(
-            f"Auto-correcting field mapping: '{target_field}' -> '{detection['recommended_field']}'"
+            "Auto-correcting field mapping: %r -> %r",
+            target_field, detection['recommended_field']
         )
         return detection["recommended_field"], True
 

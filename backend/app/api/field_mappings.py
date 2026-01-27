@@ -80,7 +80,8 @@ async def create_field_mapping(
                 if auto_corrected:
                     import logging
                     logging.getLogger(__name__).info(
-                        f"Auto-corrected field mapping '{data.sigma_field}' -> '{data.target_field}' to '{target_field}'"
+                        "Auto-corrected field mapping %r -> %r to %r",
+                        data.sigma_field, data.target_field, target_field
                     )
 
                 # NEW: Validate field exists
@@ -272,8 +273,8 @@ async def update_field_mapping(
                     )
 
                 logging.getLogger(__name__).info(
-                    f"Validated field mapping update '{mapping.sigma_field}' -> '{target_field}' "
-                    f"(exists in {len(available_fields)} available fields)"
+                    "Validated field mapping update %r -> %r (exists in %d available fields)",
+                    mapping.sigma_field, target_field, len(available_fields)
                 )
         except HTTPException:
             raise  # Re-raise our validation error
@@ -288,7 +289,7 @@ async def update_field_mapping(
         import logging
         logger = logging.getLogger(__name__)
 
-        logger.info(f"Field mapping changed: {mapping.sigma_field} -> {mapping.target_field} to {target_field}")
+        logger.info("Field mapping changed: %r -> %r to %r", mapping.sigma_field, mapping.target_field, target_field)
 
         mapping.version += 1
         await db.flush()
@@ -297,7 +298,7 @@ async def update_field_mapping(
         from app.services.field_mapping import get_rules_using_mapping
 
         affected_rules = await get_rules_using_mapping(db, mapping.id)
-        logger.info(f"Found {len(affected_rules)} rules affected by field mapping change")
+        logger.info("Found %d rules affected by field mapping change", len(affected_rules))
 
         from datetime import datetime, timezone
         from app.models.rule import RuleVersion
