@@ -610,6 +610,7 @@ async def save_opensearch_config(
         "username": config.username,
         "password": encrypted_password,
         "use_ssl": config.use_ssl,
+        "verify_certs": config.verify_certs,  # Save SSL verification preference
     }
 
     if setting:

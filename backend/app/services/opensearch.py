@@ -1,4 +1,5 @@
 import logging
+import ssl
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -49,10 +50,21 @@ def create_client(
     """
     auth = (username, password) if username and password else None
 
+    # When verify_certs is False, we need to provide an ssl_context that explicitly
+    # disables certificate verification. This is required for opensearch-py to properly
+    # disable SSL verification in all cases (e.g., self-signed certificates).
+    ssl_context = None
+    if use_ssl and not verify_certs:
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        logger.warning("[SECURITY] SSL certificate verification is DISABLED. This should only be used in development environments!")
+
     return OpenSearch(
         hosts=[{"host": host, "port": port}],
         http_auth=auth,
         use_ssl=use_ssl,
+        ssl_context=ssl_context,
         verify_certs=verify_certs,
         ssl_show_warn=not verify_certs,  # Only show warnings if not verifying
         timeout=10,
@@ -114,6 +126,21 @@ def validate_opensearch_connection(
         except Exception as e:
             steps.append(ValidationStep(name="authentication", success=False, error=str(e)))
             return ValidationResult(success=False, steps=steps)
+
+        # Step 2.5: SSL Verification Status (informational step)
+        if use_ssl:
+            ssl_status = "enabled" if verify_certs else "disabled (development mode)"
+            steps.append(ValidationStep(
+                name="ssl_verification",
+                success=True,
+                error=f"SSL verification: {ssl_status}"
+            ))
+        else:
+            steps.append(ValidationStep(
+                name="ssl_verification",
+                success=True,
+                error="SSL not enabled (plain text connection)"
+            ))
 
         # Step 3: Create test index with percolator mapping
         try:

@@ -169,6 +169,7 @@ export type OpenSearchStatusResponse = {
     username?: string
     password?: string
     use_ssl: boolean
+    verify_certs?: boolean
   }
 }
 
