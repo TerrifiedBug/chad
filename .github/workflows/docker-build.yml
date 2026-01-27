@@ -7,6 +7,7 @@ on:
     paths:
       - 'backend/app/**'
       - 'backend/Dockerfile'
+      - 'backend/docker-entrypoint.sh'
       - 'backend/pyproject.toml'
       - 'backend/requirements.txt'
       - 'frontend/src/**'
@@ -18,6 +19,7 @@ on:
     paths:
       - 'backend/app/**'
       - 'backend/Dockerfile'
+      - 'backend/docker-entrypoint.sh'
       - 'backend/pyproject.toml'
       - 'backend/requirements.txt'
       - 'frontend/src/**'
