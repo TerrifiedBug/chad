@@ -288,6 +288,30 @@ async def update_field_mapping(
         mapping.version += 1
         await db.flush()
 
+        # Find affected rules and bump their versions
+        from app.services.field_mapping import get_rules_using_mapping
+
+        affected_rules = await get_rules_using_mapping(db, mapping.id)
+
+        from datetime import datetime, timezone
+        from app.models.rule import RuleVersion
+        from app.models.rule import Rule
+
+        for rule in affected_rules:
+            # Create new version
+            new_version = RuleVersion(
+                rule_id=rule.id,
+                version_number=rule.current_version_number + 1,
+                yaml_content=rule.yaml_content,
+                changed_by=current_user.id,
+                change_reason=f"Field mapping updated: {mapping.sigma_field} now maps to {data.target_field}",
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(new_version)
+
+        # Commit immediately
+        await db.commit()
+
     # Update the mapping with corrected field
     updated_mapping = await update_mapping(
         db,

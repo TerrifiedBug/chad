@@ -144,3 +144,46 @@ async def delete_mapping(db: AsyncSession, mapping_id: UUID) -> bool:
     await db.delete(mapping)
     await db.commit()
     return True
+
+
+async def get_rules_using_mapping(
+    db: AsyncSession,
+    mapping_id: UUID,
+) -> list:
+    """Get all rules that use a specific field mapping."""
+    from sqlalchemy.orm import selectinload
+    from app.models.rule import Rule
+
+    # Get the mapping
+    result = await db.execute(select(FieldMapping).where(FieldMapping.id == mapping_id))
+    mapping = result.scalar_one_or_none()
+
+    if not mapping:
+        return []
+
+    # Find all rules for this index pattern
+    rules_result = await db.execute(
+        select(Rule)
+        .options(selectinload(Rule.versions))
+        .where(Rule.index_pattern_id == mapping.index_pattern_id)
+    )
+    rules = rules_result.scalars().all()
+
+    # Check each rule's YAML for the sigma_field
+    affected_rules = []
+    import yaml
+    from app.services.sigma import sigma_service
+
+    for rule in rules:
+        try:
+            parsed = yaml.safe_load(rule.yaml_content)
+            # Get detection fields
+            fields = sigma_service.get_detection_fields(parsed)
+
+            if mapping.sigma_field in fields:
+                affected_rules.append(rule)
+        except Exception:
+            # If we can't parse the YAML, skip this rule
+            continue
+
+    return affected_rules
