@@ -248,11 +248,16 @@ async def update_rule_attack_mappings(
 
     Called on rule save/update. Deletes existing mappings and creates new ones.
     """
+    from uuid import UUID
+
+    # Convert string to UUID if needed for database operations
+    rule_uuid = UUID(rule_id) if isinstance(rule_id, str) else rule_id
+
     # Extract technique IDs from tags
     technique_ids = extract_attack_tags(tags)
 
     # Delete existing mappings for this rule
-    await db.execute(delete(RuleAttackMapping).where(RuleAttackMapping.rule_id == rule_id))
+    await db.execute(delete(RuleAttackMapping).where(RuleAttackMapping.rule_id == rule_uuid))
 
     if not technique_ids:
         return
@@ -267,7 +272,7 @@ async def update_rule_attack_mappings(
     for technique_id in technique_ids:
         if technique_id in existing_ids:
             mapping = RuleAttackMapping(
-                rule_id=rule_id,
+                rule_id=rule_uuid,
                 technique_id=technique_id,
             )
             db.add(mapping)
