@@ -984,7 +984,6 @@ async def bulk_deploy_rules(
                     title=rule.title,
                     severity=rule.severity,
                     tags=tags,
-                    enabled=(rule.status == RuleStatus.DEPLOYED),
                 )
 
                 # Update rule deployment tracking
@@ -1161,7 +1160,6 @@ async def deploy_rule(
         title=rule.title,
         severity=rule.severity,
         tags=tags,
-        enabled=(rule.status == RuleStatus.DEPLOYED),
     )
 
     # Update rule deployment tracking
