@@ -930,13 +930,13 @@ export default function RuleEditorPage() {
             </div>
           )}
           {saveSuccess && (
-            <span className="text-sm text-green-600 flex items-center gap-1">
+            <span className="text-sm text-green-600 flex items-center gap-1 mr-2">
               <Check className="h-4 w-4" />
               Saved
             </span>
           )}
           {!isNew && (
-            <Button variant="outline" onClick={() => setIsActivityOpen(true)}>
+            <Button variant="outline" onClick={() => setIsActivityOpen(true)} className="mr-2">
               <History className="h-4 w-4 mr-2" />
               Activity
             </Button>
