@@ -151,7 +151,13 @@ async def receive_logs(
 
     for log in logs:
         # Run percolate query
-        matches = alert_service.match_log(percolator_index, log)
+        try:
+            matches = alert_service.match_log(percolator_index, log)
+        except Exception as e:
+            processing_errors.append(f"Percolate failed for log: {str(e)}")
+            logs_errored += 1
+            # Continue to next log instead of failing entire batch
+            continue
 
         for match in matches:
             # Only process enabled rules
