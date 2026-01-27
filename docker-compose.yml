@@ -28,6 +28,7 @@ services:
       - CHAD_ENCRYPTION_KEY=${CHAD_ENCRYPTION_KEY}
       # Application URL
       - APP_URL=${APP_URL:-http://localhost}
+      # - CHAD_SSO_ONLY=true  # Enable SSO-only authentication (optional)
     depends_on:
       postgres:
         condition: service_healthy
