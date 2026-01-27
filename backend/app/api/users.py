@@ -87,7 +87,7 @@ async def get_user_lock_status(
     """Get lock status for a specific user."""
     from app.services.rate_limit import is_account_locked
 
-    locked, remaining_minutes = is_account_locked(db, email)
+    locked, remaining_minutes = await is_account_locked(db, email)
 
     return {
         "email": email,
@@ -114,7 +114,7 @@ async def unlock_user_account(
     # Clear failed attempts
     from app.services.rate_limit import clear_failed_attempts
 
-    cleared = clear_failed_attempts(db, user.email)
+    cleared = await clear_failed_attempts(db, user.email)
 
     await audit_log(
         db,
