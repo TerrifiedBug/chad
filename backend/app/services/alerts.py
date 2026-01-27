@@ -11,8 +11,10 @@ import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from opensearchpy import OpenSearch
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rule_exception import ExceptionOperator
 
@@ -348,7 +350,7 @@ class AlertService:
                 "last_24h": 0,
             }
 
-    def delete_alert(
+    async def delete_alert(
         self,
         db: AsyncSession,
         alert_id: UUID,

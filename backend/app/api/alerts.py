@@ -1,8 +1,9 @@
 """Alerts API - view and manage alerts."""
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, status
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -125,10 +126,11 @@ async def delete_alert(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
-    alerts: Annotated[AlertService, Depends(get_alert_service)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Delete an alert."""
-    success = await alerts.delete_alert(
+    alert_service = AlertService(os_client)
+    success = await alert_service.delete_alert(
         db=db,
         alert_id=alert_id,
         current_user_id=current_user.id,
@@ -181,31 +183,32 @@ async def bulk_delete_alerts(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
-    alerts: Annotated[AlertService, Depends(get_alert_service)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Delete multiple alerts."""
     from app.models.alert import Alert
     from sqlalchemy import delete as sql_delete
-    
+
+    alert_service = AlertService(os_client)
     success = []
     failed = []
-    
+
     for alert_id in data.get("alert_ids", []):
         try:
             result = await db.execute(select(Alert).where(Alert.id == alert_id))
             alert = result.scalar_one_or_none()
-            
+
             if alert:
                 # Delete from OpenSearch
                 try:
-                    alerts.client.delete(index=alert.alert_index, id=alert.alert_id)
+                    os_client.delete(index=alert.alert_index, id=alert.alert_id)
                 except Exception as e:
                     import logging
                     logging.getLogger(__name__).warning(f"Failed to delete alert {alert_id} from OpenSearch: {e}")
-                
+
                 # Delete from database
                 await db.execute(sql_delete(Alert).where(Alert.id == alert_id))
-                
+
                 await audit_log(db, current_user.id, "alert.bulk_delete", "alert", str(alert_id),
                               {"title": alert.title}, ip_address=get_client_ip(request))
                 success.append(str(alert_id))
