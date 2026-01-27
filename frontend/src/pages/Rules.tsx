@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
+import yaml from 'js-yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -174,9 +175,31 @@ export default function RulesPage() {
       if (filters.source !== 'all' && rule.source !== filters.source) {
         return false
       }
-      // Search filter
-      if (filters.search && !rule.title.toLowerCase().includes(filters.search.toLowerCase())) {
-        return false
+      // Search filter - searches title, ATT&CK IDs, and type
+      if (filters.search && filters.search.trim()) {
+        const searchLower = filters.search.trim().toLowerCase()
+        const matchesTitle = rule.title?.toLowerCase().includes(searchLower)
+        const matchesType = rule.source?.toLowerCase().includes(searchLower)
+
+        // Search in tags (which include ATT&CK IDs like "attack.t1566")
+        // Tags are stored in YAML content
+        let matchesAttackIds = false
+        try {
+          const parsed = yaml.load(rule.yaml_content) as Record<string, unknown> | null
+          if (parsed && typeof parsed === 'object' && 'tags' in parsed && Array.isArray(parsed.tags)) {
+            const tags = parsed.tags as string[]
+            matchesAttackIds = tags.some((tag: string) =>
+              tag.toLowerCase().includes(searchLower)
+            )
+          }
+        } catch (error) {
+          // If YAML parsing fails, just skip tag search
+          console.warn('Failed to parse YAML for rule search:', error)
+        }
+
+        if (!matchesTitle && !matchesType && !matchesAttackIds) {
+          return false
+        }
       }
       return true
     })
@@ -408,7 +431,7 @@ export default function RulesPage() {
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search rules..."
+            placeholder="Search title, type, or ATT&CK ID..."
             value={filters.search}
             onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
             className="pl-10"
