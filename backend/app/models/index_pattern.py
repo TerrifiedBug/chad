@@ -32,7 +32,19 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     )  # Error rate percentage threshold (default: 5.0)
     health_latency_ms: Mapped[int | None] = mapped_column(
         Integer, nullable=True
-    )  # Latency threshold in ms (default: 1000)
+    )  # DEPRECATED: Latency threshold in ms (default: 1000)
+    health_detection_latency_warning: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=2000
+    )  # Detection latency warning threshold in ms
+    health_detection_latency_critical: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=10000
+    )  # Detection latency critical threshold in ms
+    health_opensearch_latency_warning: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=1000
+    )  # OpenSearch query latency warning threshold in ms
+    health_opensearch_latency_critical: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=5000
+    )  # OpenSearch query latency critical threshold in ms
     health_alerting_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # GeoIP enrichment fields (e.g., ["source.ip", "destination.ip"])
