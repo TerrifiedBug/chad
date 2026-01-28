@@ -1492,7 +1492,6 @@ async def unsnooze_rule(
                 title=rule.title,
                 severity=rule.severity,
                 tags=tags,
-                enabled=True,
             )
 
     await db.commit()

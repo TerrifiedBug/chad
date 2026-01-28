@@ -823,6 +823,7 @@ async def sso_exchange_token(
 @router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
 async def setup_2fa(
     current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Initiate 2FA setup. Returns QR code URI for authenticator app."""
     if current_user.password_hash is None:
