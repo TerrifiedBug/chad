@@ -13,7 +13,6 @@ class CorrelationRuleBase(BaseModel):
     entity_field: str = Field(..., max_length=100)
     time_window_minutes: int = Field(..., ge=1, le=1440)
     severity: str = Field(..., pattern="^(critical|high|medium|low|informational)$")
-    is_enabled: bool = True
 
 
 class CorrelationRuleCreate(CorrelationRuleBase):
@@ -29,7 +28,6 @@ class CorrelationRuleUpdate(BaseModel):
     entity_field: str | None = Field(None, max_length=100)
     time_window_minutes: int | None = Field(None, ge=1, le=1440)
     severity: str | None = Field(None, pattern="^(critical|high|medium|low|informational)$")
-    is_enabled: bool | None = None
     change_reason: str = Field(..., min_length=1, max_length=10000)
 
 

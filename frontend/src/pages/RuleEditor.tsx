@@ -1854,8 +1854,8 @@ export default function RuleEditorPage() {
                                 <div className="text-sm font-medium truncate">
                                   {correlation.name}
                                 </div>
-                                {!correlation.is_enabled && (
-                                  <span className="text-xs text-muted-foreground">(Disabled)</span>
+                                {!correlation.deployed_at && (
+                                  <span className="text-xs text-muted-foreground">(Not Deployed)</span>
                                 )}
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">

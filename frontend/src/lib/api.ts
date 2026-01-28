@@ -1672,7 +1672,6 @@ export type CorrelationRule = {
   entity_field: string
   time_window_minutes: number
   severity: 'critical' | 'high' | 'medium' | 'low' | 'informational'
-  is_enabled: boolean
   created_at: string
   updated_at: string
   created_by?: string
@@ -1691,7 +1690,6 @@ export type CorrelationRuleCreate = {
   entity_field: string
   time_window_minutes: number
   severity: string
-  is_enabled?: boolean
   change_reason: string
 }
 
@@ -1700,7 +1698,6 @@ export type CorrelationRuleUpdate = {
   entity_field?: string
   time_window_minutes?: number
   severity?: string
-  is_enabled?: boolean
   change_reason: string
 }
 
@@ -1726,9 +1723,9 @@ export type CorrelationRuleListResponse = {
 
 // Correlation Rules API
 export const correlationRulesApi = {
-  list: (includeDisabled = false) => {
+  list: (includeUndeployed = true) => {
     const params = new URLSearchParams()
-    if (includeDisabled) params.append('include_disabled', 'true')
+    if (includeUndeployed) params.append('include_undeployed', 'true')
     return api.get<CorrelationRuleListResponse>(`/correlation-rules?${params}`)
   },
   get: (id: string) => api.get<CorrelationRule>(`/correlation-rules/${id}`),

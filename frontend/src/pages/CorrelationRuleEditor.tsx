@@ -149,7 +149,6 @@ export default function CorrelationRuleEditorPage() {
     entity_field: string
     time_window_minutes: number
     severity: Severity
-    is_enabled: boolean
     change_reason: string
   }>({
     name: '',
@@ -158,7 +157,6 @@ export default function CorrelationRuleEditorPage() {
     entity_field: '',
     time_window_minutes: 5,
     severity: 'high',
-    is_enabled: true,
     change_reason: '',
   })
 
@@ -247,7 +245,6 @@ export default function CorrelationRuleEditorPage() {
         entity_field: rule.entity_field,
         time_window_minutes: rule.time_window_minutes,
         severity: rule.severity,
-        is_enabled: rule.is_enabled,
         change_reason: '',
       })
       // Load common fields with the current entity_field to ensure it's in the list
@@ -455,19 +452,6 @@ export default function CorrelationRuleEditorPage() {
             ))}
           </SelectContent>
         </Select>
-      </div>
-
-      <div className="flex items-center space-x-2">
-        <input
-          type="checkbox"
-          id="is_enabled"
-          checked={formData.is_enabled}
-          onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked })}
-          className="rounded"
-        />
-        <Label htmlFor="is_enabled" className="cursor-pointer">
-          Enabled
-        </Label>
       </div>
 
       <div className="space-y-2">

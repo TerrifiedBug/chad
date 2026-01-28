@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID as PyUUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,7 +27,6 @@ class CorrelationRule(Base, UUIDMixin, TimestampMixin):
     entity_field: Mapped[str] = mapped_column(String(100), nullable=False)
     time_window_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
-    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[PyUUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     # Deployment tracking

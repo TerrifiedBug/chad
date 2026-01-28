@@ -42,7 +42,6 @@ def build_correlation_response(
         entity_field=rule.entity_field,
         time_window_minutes=rule.time_window_minutes,
         severity=rule.severity,
-        is_enabled=rule.is_enabled,
         created_at=rule.created_at,
         updated_at=rule.updated_at,
         created_by=str(rule.created_by) if rule.created_by else None,
@@ -90,13 +89,13 @@ async def get_last_edited_by(db: AsyncSession, rule_id: str) -> str | None:
 async def list_correlation_rules(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
-    include_disabled: bool = Query(False),
+    include_undeployed: bool = Query(True),
 ):
     """List all correlation rules."""
     query = select(CorrelationRule)
 
-    if not include_disabled:
-        query = query.where(CorrelationRule.is_enabled == True)
+    if not include_undeployed:
+        query = query.where(CorrelationRule.deployed_at.isnot(None))
 
     query = query.order_by(CorrelationRule.created_at.desc())
 
@@ -224,7 +223,6 @@ async def create_correlation_rule(
         entity_field=data.entity_field,
         time_window_minutes=data.time_window_minutes,
         severity=data.severity,
-        is_enabled=data.is_enabled,
         created_by=current_user.id,
         current_version=1,
     )
@@ -263,7 +261,6 @@ async def create_correlation_rule(
             "entity_field": rule.entity_field,
             "time_window_minutes": rule.time_window_minutes,
             "severity": rule.severity,
-            "is_enabled": rule.is_enabled,
             "change_reason": data.change_reason,
         },
         ip_address=get_client_ip(request),
@@ -306,8 +303,6 @@ async def update_correlation_rule(
     if data.severity is not None and data.severity != rule.severity:
         changes["severity"] = {"old": rule.severity, "new": data.severity}
         has_versioned_changes = True
-    if data.is_enabled is not None and data.is_enabled != rule.is_enabled:
-        changes["is_enabled"] = {"old": rule.is_enabled, "new": data.is_enabled}
 
     # Update fields
     if data.name is not None:
@@ -318,8 +313,6 @@ async def update_correlation_rule(
         rule.time_window_minutes = data.time_window_minutes
     if data.severity is not None:
         rule.severity = data.severity
-    if data.is_enabled is not None:
-        rule.is_enabled = data.is_enabled
 
     # Create new version if versioned fields changed
     if has_versioned_changes:
@@ -479,7 +472,6 @@ async def delete_correlation_rule(
         "entity_field": rule.entity_field,
         "time_window_minutes": rule.time_window_minutes,
         "severity": rule.severity,
-        "is_enabled": rule.is_enabled,
     }
 
     await db.delete(rule)
@@ -498,44 +490,3 @@ async def delete_correlation_rule(
     await db.commit()
 
     return {"message": "Correlation rule deleted"}
-
-
-@router.patch("/{rule_id}/toggle", response_model=CorrelationRuleResponse)
-async def toggle_correlation_rule(
-    rule_id: str,
-    enabled: bool,
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
-):
-    """Toggle a correlation rule enabled/disabled."""
-    result = await db.execute(
-        select(CorrelationRule).where(CorrelationRule.id == UUID(rule_id))
-    )
-    rule = result.scalar_one_or_none()
-
-    if not rule:
-        raise HTTPException(404, "Correlation rule not found")
-
-    # Update enabled status
-    rule.is_enabled = enabled
-    await db.commit()
-    await db.refresh(rule)
-
-    # Log audit event
-    await audit_log(
-        db,
-        current_user.id,
-        "correlation_rule_enabled" if enabled else "correlation_rule_disabled",
-        "correlation_rule",
-        rule_id,
-        {
-            "name": rule.name,
-            "enabled": enabled,
-        },
-        ip_address=get_client_ip(request),
-    )
-    await db.commit()
-
-    rule_a_title, rule_b_title = await get_rule_titles(db, rule.rule_a_id, rule.rule_b_id)
-    return build_correlation_response(rule, rule_a_title, rule_b_title, current_user.email)

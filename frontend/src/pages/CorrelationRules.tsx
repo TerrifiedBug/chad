@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { ChevronLeft, Plus, MoreVertical, Power, PowerOff, Trash2, Edit, Rocket, CircleOff } from 'lucide-react'
+import { ChevronLeft, Plus, MoreVertical, Trash2, Edit, Rocket, CircleOff } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
@@ -75,19 +75,6 @@ export default function CorrelationRulesPage() {
       setError(err instanceof Error ? err.message : 'Failed to load correlation rules')
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const handleToggleEnabled = async (rule: CorrelationRule) => {
-    try {
-      const action = rule.is_enabled ? 'Disabled' : 'Enabled'
-      await correlationRulesApi.update(rule.id, {
-        is_enabled: !rule.is_enabled,
-        change_reason: `${action} correlation rule from list view`
-      })
-      await loadRules()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update rule')
     }
   }
 
@@ -181,7 +168,6 @@ export default function CorrelationRulesPage() {
                   <TableHead>Entity Field</TableHead>
                   <TableHead>Time Window</TableHead>
                   <TableHead>Severity</TableHead>
-                  <TableHead>Deploy Status</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Updated</TableHead>
                   <TableHead>Updated By</TableHead>
@@ -221,11 +207,6 @@ export default function CorrelationRulesPage() {
                         <Badge variant="secondary">Not Deployed</Badge>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <Badge variant={rule.is_enabled ? 'default' : 'secondary'}>
-                        {rule.is_enabled ? 'Active' : 'Disabled'}
-                      </Badge>
-                    </TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">
                       <TimestampTooltip timestamp={rule.updated_at}>
                         <span>{formatDate(rule.updated_at)}</span>
@@ -245,19 +226,6 @@ export default function CorrelationRulesPage() {
                           <DropdownMenuItem onClick={() => navigate(`/correlation/${rule.id}`)}>
                             <Edit className="h-4 w-4 mr-2" />
                             Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleToggleEnabled(rule)}>
-                            {rule.is_enabled ? (
-                              <>
-                                <PowerOff className="h-4 w-4 mr-2" />
-                                Disable
-                              </>
-                            ) : (
-                              <>
-                                <Power className="h-4 w-4 mr-2" />
-                                Enable
-                              </>
-                            )}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {rule.deployed_at ? (
