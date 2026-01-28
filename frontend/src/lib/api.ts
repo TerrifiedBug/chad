@@ -234,6 +234,11 @@ export const settingsApi = {
   // Notification settings
   getMandatoryCommentsSettings: () =>
     api.get<{ mandatory_rule_comments: boolean }>('/notifications/settings/public'),
+  // Health settings
+  getHealthSettings: () =>
+    api.get<HealthSettings>('/settings/health'),
+  updateHealthSettings: (data: Partial<HealthSettings>) =>
+    api.put<HealthSettings>('/settings/health', data),
 }
 
 // Exception types
