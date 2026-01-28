@@ -84,7 +84,7 @@ export default function IndexPatternsPage() {
   })
 
   // Health monitoring overrides state
-  const [enableHealthAlerting, setEnableHealthAlerting] = useState(false)
+  const [enableHealthAlerting, setEnableHealthAlerting] = useState(true)
   const [healthOverrides, setHealthOverrides] = useState({
     detection_latency_warning_seconds: '',
     detection_latency_critical_seconds: '',
@@ -219,7 +219,7 @@ export default function IndexPatternsPage() {
       errorRatePercent: null,
       latencyMs: null,
     })
-    setEnableHealthAlerting(false)
+    setEnableHealthAlerting(true)
     setHealthOverrides({
       detection_latency_warning_seconds: '',
       detection_latency_critical_seconds: '',
@@ -330,7 +330,7 @@ export default function IndexPatternsPage() {
     setSaveError('')
     try {
       const healthData = {
-        health_alerting_enabled: healthAlerting.enabled,
+        health_alerting_enabled: enableHealthAlerting,
         health_no_data_minutes: healthAlerting.noDataMinutes,
         health_error_rate_percent: healthAlerting.errorRatePercent,
         health_latency_ms: healthAlerting.latencyMs,
