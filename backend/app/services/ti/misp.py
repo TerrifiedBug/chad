@@ -323,13 +323,25 @@ class MISPClient(TIClient):
                 "/events/index",
                 params={"limit": 1},
             )
-            response.raise_for_status()
-            logger.info("MISP connection test successful")
-            return True
-
+            if response.status_code == 200:
+                logger.info("MISP connection test successful")
+                return True
+            elif response.status_code == 401:
+                raise Exception("Invalid API key - authentication failed")
+            elif response.status_code == 403:
+                raise Exception("API key lacks required permissions")
+            elif response.status_code == 404:
+                raise Exception("MISP server not found - check URL")
+            else:
+                raise Exception(f"API returned status {response.status_code}")
+        except httpx.ConnectError:
+            raise Exception("Could not connect to MISP server - check URL and network")
+        except httpx.TimeoutException:
+            raise Exception("Connection timed out - MISP server may be slow or unreachable")
         except Exception as e:
-            logger.error(f"MISP connection test failed: {e}")
-            return False
+            if "Invalid API key" in str(e) or "API returned" in str(e) or "Could not connect" in str(e):
+                raise
+            raise Exception(f"Connection failed: {e}")
 
     async def close(self) -> None:
         """Close the HTTP client."""
