@@ -6,6 +6,8 @@ services:
       POSTGRES_USER: chad
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
       POSTGRES_DB: chad
+    # Log level: warning (quiet) or log (verbose, shows checkpoints). Dev defaults to verbose.
+    command: ["postgres", "-c", "log_min_messages=${POSTGRES_LOG_LEVEL:-log}"]
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
