@@ -568,7 +568,7 @@ async def get_sso_status(
     """
     sso_config = await get_setting(db, "sso")
     if not sso_config:
-        return {"enabled": False, "configured": False, "sso_only": app_settings.SSO_ONLY}
+        return {"enabled": False, "configured": False, "sso_only": app_settings.sso_only}
 
     return {
         "enabled": sso_config.get("enabled", False),
@@ -578,7 +578,7 @@ async def get_sso_status(
             and sso_config.get("client_secret")
         ),
         "provider_name": sso_config.get("provider_name", "SSO"),
-        "sso_only": app_settings.SSO_ONLY
+        "sso_only": app_settings.sso_only
     }
 
 
