@@ -141,7 +141,8 @@ async def get_index_health(
             "issues": ["No data received - index may not be configured or receiving logs"],
             "latest": {
                 "queue_depth": 0,
-                "avg_latency_ms": 0,
+                "avg_detection_latency_ms": 0,
+                "avg_opensearch_query_latency_ms": 0,
                 "logs_per_minute": 0,
                 "alerts_per_hour": alerts_per_hour,  # From OpenSearch query
             },
@@ -175,12 +176,12 @@ async def get_index_health(
         status = _max_status(status, HealthStatus.WARNING)
         issues.append(f"Queue depth elevated: {latest.queue_depth}")
 
-    if latest.avg_latency_ms >= LATENCY_CRITICAL_MS:
+    if latest.avg_detection_latency_ms >= LATENCY_CRITICAL_MS:
         status = HealthStatus.CRITICAL
-        issues.append(f"Latency critical: {latest.avg_latency_ms}ms")
-    elif latest.avg_latency_ms >= LATENCY_WARNING_MS:
+        issues.append(f"Detection latency critical: {latest.avg_detection_latency_ms}ms")
+    elif latest.avg_detection_latency_ms >= LATENCY_WARNING_MS:
         status = _max_status(status, HealthStatus.WARNING)
-        issues.append(f"Latency elevated: {latest.avg_latency_ms}ms")
+        issues.append(f"Detection latency elevated: {latest.avg_detection_latency_ms}ms")
 
     # Get aggregated metrics for time range
     agg_result = await db.execute(
@@ -211,7 +212,8 @@ async def get_index_health(
         "issues": issues,
         "latest": {
             "queue_depth": latest.queue_depth,
-            "avg_latency_ms": latest.avg_latency_ms,
+            "avg_detection_latency_ms": latest.avg_detection_latency_ms,
+            "avg_opensearch_query_latency_ms": latest.avg_opensearch_query_latency_ms,
             "logs_per_minute": latest.logs_received,
             "alerts_per_hour": alerts_per_hour,  # From OpenSearch
         },
@@ -267,7 +269,8 @@ async def get_health_history(
             "timestamp": m.timestamp.isoformat(),
             "logs_received": m.logs_received,
             "queue_depth": m.queue_depth,
-            "avg_latency_ms": m.avg_latency_ms,
+            "avg_detection_latency_ms": m.avg_detection_latency_ms,
+            "avg_opensearch_query_latency_ms": m.avg_opensearch_query_latency_ms,
             "alerts_generated": m.alerts_generated,
         }
         for m in metrics
