@@ -70,6 +70,15 @@ class BulkSnoozeRequest(BaseModel):
     change_reason: str = Field(..., min_length=1, max_length=10000)
 
 
+class ThresholdUpdateRequest(BaseModel):
+    """Request body for updating threshold settings."""
+    enabled: bool
+    count: int | None = Field(default=None, ge=1)
+    window_minutes: int | None = Field(default=None, ge=1)
+    group_by: str | None = None
+    change_reason: str = Field(..., min_length=1, max_length=10000)
+
+
 class DeploymentEligibilityRequest(BaseModel):
     rule_ids: list[UUID]
 
@@ -1515,6 +1524,59 @@ async def unsnooze_rule(
     await db.commit()
 
     return {"success": True, "status": "enabled"}
+
+
+@router.patch("/{rule_id}/threshold")
+async def update_rule_threshold(
+    rule_id: UUID,
+    data: ThresholdUpdateRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+):
+    """Update threshold settings for a rule with change reason."""
+    result = await db.execute(select(Rule).where(Rule.id == rule_id))
+    rule = result.scalar_one_or_none()
+
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    # Track old values for audit
+    old_values = {
+        "threshold_enabled": rule.threshold_enabled,
+        "threshold_count": rule.threshold_count,
+        "threshold_window_minutes": rule.threshold_window_minutes,
+        "threshold_group_by": rule.threshold_group_by,
+    }
+
+    # Update threshold settings
+    rule.threshold_enabled = data.enabled
+    rule.threshold_count = data.count if data.enabled else None
+    rule.threshold_window_minutes = data.window_minutes if data.enabled else None
+    rule.threshold_group_by = data.group_by if data.enabled else None
+
+    new_values = {
+        "threshold_enabled": rule.threshold_enabled,
+        "threshold_count": rule.threshold_count,
+        "threshold_window_minutes": rule.threshold_window_minutes,
+        "threshold_group_by": rule.threshold_group_by,
+    }
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.threshold_update", "rule", str(rule.id),
+        {"title": rule.title, "old_values": old_values, "new_values": new_values, "change_reason": data.change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "threshold_enabled": rule.threshold_enabled,
+        "threshold_count": rule.threshold_count,
+        "threshold_window_minutes": rule.threshold_window_minutes,
+        "threshold_group_by": rule.threshold_group_by,
+    }
 
 
 # Rule Exception Endpoints

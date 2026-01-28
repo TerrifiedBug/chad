@@ -145,7 +145,6 @@ export default function RuleEditorPage() {
 
   // Track original YAML for dirty state
   const [originalYaml, setOriginalYaml] = useState('')
-  const [originalThresholdEnabled, setOriginalThresholdEnabled] = useState(false)
 
   // Exception state
   const [exceptions, setExceptions] = useState<RuleException[]>([])
@@ -235,8 +234,15 @@ export default function RuleEditorPage() {
   const [pendingExceptionToggle, setPendingExceptionToggle] = useState<{ id: string; isActive: boolean } | null>(null)
   const [showExceptionDeleteReason, setShowExceptionDeleteReason] = useState(false)
 
-  // TODO: Threshold change reason state - will be implemented when threshold changes apply immediately
-  // For now, threshold changes still require clicking Save button
+  // Threshold change reason state
+  const [showThresholdReason, setShowThresholdReason] = useState(false)
+  const [thresholdChangeReason, setThresholdChangeReason] = useState('')
+  const [pendingThresholdEnabled, setPendingThresholdEnabled] = useState<boolean | null>(null)
+  const [isUpdatingThreshold, setIsUpdatingThreshold] = useState(false)
+  // Track original threshold field values to detect changes
+  const [originalThresholdCount, setOriginalThresholdCount] = useState<number | null>(null)
+  const [originalThresholdWindowMinutes, setOriginalThresholdWindowMinutes] = useState<number | null>(null)
+  const [originalThresholdGroupBy, setOriginalThresholdGroupBy] = useState<string | null>(null)
 
   // Load functions - must be declared before useEffect that uses them
   const loadExceptions = useCallback(async () => {
@@ -329,10 +335,12 @@ export default function RuleEditorPage() {
       setSigmahqPath(rule.sigmahq_path || null)
       // Load threshold settings
       setThresholdEnabled(rule.threshold_enabled)
-      setOriginalThresholdEnabled(rule.threshold_enabled)
       setThresholdCount(rule.threshold_count)
+      setOriginalThresholdCount(rule.threshold_count)
       setThresholdWindowMinutes(rule.threshold_window_minutes)
+      setOriginalThresholdWindowMinutes(rule.threshold_window_minutes)
       setThresholdGroupBy(rule.threshold_group_by)
+      setOriginalThresholdGroupBy(rule.threshold_group_by)
       // Store rule versions for current version display
       setRuleVersions(rule.versions || null)
 
@@ -579,9 +587,8 @@ export default function RuleEditorPage() {
 
   // Check if YAML has changes from original
   const hasChanges = () => {
-    // Consider it changed if YAML is different OR threshold enabled/disabled
-    return yamlContent !== originalYaml ||
-           thresholdEnabled !== originalThresholdEnabled
+    // Only consider YAML changes - threshold changes now apply immediately with change reason
+    return yamlContent !== originalYaml
   }
 
   const handleSave = async () => {
@@ -627,6 +634,7 @@ export default function RuleEditorPage() {
         // Navigate to the edit page for the new rule
         navigate(`/rules/${newRule.id}`, { replace: true })
       } else {
+        // Threshold settings apply immediately via dedicated endpoint - don't include in general update
         await rulesApi.update(id!, {
           title,
           description: description || undefined,
@@ -634,10 +642,6 @@ export default function RuleEditorPage() {
           severity,
           status,
           index_pattern_id: indexPatternId,
-          threshold_enabled: thresholdEnabled,
-          threshold_count: thresholdEnabled ? thresholdCount : null,
-          threshold_window_minutes: thresholdEnabled ? thresholdWindowMinutes : null,
-          threshold_group_by: thresholdEnabled ? thresholdGroupBy : null,
           change_reason: changeReason || 'Updated',
         })
         // Reload rule to get updated version
@@ -786,9 +790,93 @@ export default function RuleEditorPage() {
     }
   }
 
-  // Simple threshold toggle handler (no auto-save)
+  // Threshold toggle handler - shows change reason dialog
   const handleThresholdToggle = (enabled: boolean) => {
-    setThresholdEnabled(enabled)
+    if (!id || isNew) {
+      // For new rules, just update state (will be saved with the rule)
+      setThresholdEnabled(enabled)
+      return
+    }
+    // For existing rules, show change reason dialog
+    setPendingThresholdEnabled(enabled)
+    setThresholdChangeReason('')
+    setShowThresholdReason(true)
+  }
+
+  // Confirm threshold toggle with change reason
+  const handleThresholdToggleConfirm = async () => {
+    if (!id || pendingThresholdEnabled === null || !thresholdChangeReason.trim()) return
+    setIsUpdatingThreshold(true)
+    try {
+      const result = await rulesApi.updateThreshold(
+        id,
+        pendingThresholdEnabled,
+        thresholdChangeReason.trim(),
+        pendingThresholdEnabled ? thresholdCount : null,
+        pendingThresholdEnabled ? thresholdWindowMinutes : null,
+        pendingThresholdEnabled ? thresholdGroupBy : null
+      )
+      // Update state with response
+      setThresholdEnabled(result.threshold_enabled)
+      setThresholdCount(result.threshold_count)
+      setOriginalThresholdCount(result.threshold_count)
+      setThresholdWindowMinutes(result.threshold_window_minutes)
+      setOriginalThresholdWindowMinutes(result.threshold_window_minutes)
+      setThresholdGroupBy(result.threshold_group_by)
+      setOriginalThresholdGroupBy(result.threshold_group_by)
+      // Close dialog
+      setShowThresholdReason(false)
+      setPendingThresholdEnabled(null)
+      setThresholdChangeReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update threshold settings')
+    } finally {
+      setIsUpdatingThreshold(false)
+    }
+  }
+
+  // Check if threshold fields have changed from saved values
+  const hasThresholdFieldChanges = useMemo(() => {
+    if (!thresholdEnabled) return false // No changes if threshold is disabled
+    return (
+      thresholdCount !== originalThresholdCount ||
+      thresholdWindowMinutes !== originalThresholdWindowMinutes ||
+      thresholdGroupBy !== originalThresholdGroupBy
+    )
+  }, [thresholdEnabled, thresholdCount, originalThresholdCount, thresholdWindowMinutes, originalThresholdWindowMinutes, thresholdGroupBy, originalThresholdGroupBy])
+
+  // Apply threshold field changes (count, window, group_by)
+  const handleApplyThresholdFields = async () => {
+    if (!id || isNew || !thresholdChangeReason.trim()) return
+    setIsUpdatingThreshold(true)
+    try {
+      const result = await rulesApi.updateThreshold(
+        id,
+        thresholdEnabled,
+        thresholdChangeReason.trim(),
+        thresholdCount,
+        thresholdWindowMinutes,
+        thresholdGroupBy
+      )
+      // Update original values to match
+      setOriginalThresholdCount(result.threshold_count)
+      setOriginalThresholdWindowMinutes(result.threshold_window_minutes)
+      setOriginalThresholdGroupBy(result.threshold_group_by)
+      // Close dialog
+      setShowThresholdReason(false)
+      setThresholdChangeReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update threshold settings')
+    } finally {
+      setIsUpdatingThreshold(false)
+    }
+  }
+
+  // Show dialog for applying threshold field changes
+  const handleApplyThresholdClick = () => {
+    setThresholdChangeReason('')
+    setPendingThresholdEnabled(null) // null indicates field changes, not toggle
+    setShowThresholdReason(true)
   }
 
   const openDeleteExceptionDialog = (exception: RuleException) => {
@@ -1553,6 +1641,25 @@ export default function RuleEditorPage() {
                         emptyMessage={indexPatternId ? 'No fields available for this index pattern' : 'Select an index pattern first'}
                       />
                     </div>
+                    {/* Apply button - only show for existing rules with pending changes */}
+                    {!isNew && hasThresholdFieldChanges && canManageRules && (
+                      <div className="pt-2 border-t">
+                        <Button
+                          size="sm"
+                          onClick={handleApplyThresholdClick}
+                          disabled={isUpdatingThreshold}
+                        >
+                          {isUpdatingThreshold ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Applying...
+                            </>
+                          ) : (
+                            'Apply Changes'
+                          )}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -1967,6 +2074,88 @@ export default function RuleEditorPage() {
               disabled={!exceptionChangeReason.trim() || isDeletingException}
             >
               {isDeletingException ? 'Deleting...' : 'Delete Exception'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Threshold Change Reason Dialog */}
+      <Dialog open={showThresholdReason} onOpenChange={setShowThresholdReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingThresholdEnabled !== null
+                ? (pendingThresholdEnabled ? 'Enable Threshold Alerting' : 'Disable Threshold Alerting')
+                : 'Update Threshold Settings'
+              }
+            </DialogTitle>
+            <DialogDescription>
+              {pendingThresholdEnabled !== null
+                ? `Please provide a reason for ${pendingThresholdEnabled ? 'enabling' : 'disabling'} threshold alerting.`
+                : 'Please provide a reason for changing threshold settings.'
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {pendingThresholdEnabled === null && (
+              <div className="text-sm p-3 bg-muted rounded-md space-y-1">
+                <div className="font-medium">Changes:</div>
+                {thresholdCount !== originalThresholdCount && (
+                  <div className="text-muted-foreground">
+                    Count: {originalThresholdCount ?? 'not set'} → {thresholdCount ?? 'not set'}
+                  </div>
+                )}
+                {thresholdWindowMinutes !== originalThresholdWindowMinutes && (
+                  <div className="text-muted-foreground">
+                    Window: {originalThresholdWindowMinutes ?? 'not set'} → {thresholdWindowMinutes ?? 'not set'} minutes
+                  </div>
+                )}
+                {thresholdGroupBy !== originalThresholdGroupBy && (
+                  <div className="text-muted-foreground">
+                    Group by: {originalThresholdGroupBy || 'none'} → {thresholdGroupBy || 'none'}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="threshold-reason">Change Reason *</Label>
+              <Textarea
+                id="threshold-reason"
+                placeholder="e.g., Adjusting threshold to reduce noise..."
+                value={thresholdChangeReason}
+                onChange={(e) => setThresholdChangeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowThresholdReason(false)
+                setPendingThresholdEnabled(null)
+                setThresholdChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={pendingThresholdEnabled !== null ? handleThresholdToggleConfirm : handleApplyThresholdFields}
+              disabled={!thresholdChangeReason.trim() || isUpdatingThreshold}
+            >
+              {isUpdatingThreshold ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Applying...
+                </>
+              ) : (
+                pendingThresholdEnabled !== null
+                  ? (pendingThresholdEnabled ? 'Enable' : 'Disable')
+                  : 'Apply Changes'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

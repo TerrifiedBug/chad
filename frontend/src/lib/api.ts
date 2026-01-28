@@ -517,6 +517,28 @@ export const rulesApi = {
     ),
   unsnooze: (id: string, changeReason: string) =>
     api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`, { change_reason: changeReason }),
+  // Threshold settings
+  updateThreshold: (
+    id: string,
+    enabled: boolean,
+    changeReason: string,
+    count?: number | null,
+    windowMinutes?: number | null,
+    groupBy?: string | null
+  ) =>
+    api.patch<{
+      success: boolean;
+      threshold_enabled: boolean;
+      threshold_count: number | null;
+      threshold_window_minutes: number | null;
+      threshold_group_by: string | null;
+    }>(`/rules/${id}/threshold`, {
+      enabled,
+      count: count ?? null,
+      window_minutes: windowMinutes ?? null,
+      group_by: groupBy ?? null,
+      change_reason: changeReason,
+    }),
   // Bulk operations
   bulkSnooze: (ruleIds: string[], changeReason: string, hours?: number, indefinite?: boolean) =>
     api.post<BulkOperationResult>('/rules/bulk/snooze', { rule_ids: ruleIds, change_reason: changeReason, hours, indefinite: indefinite ?? false }),
