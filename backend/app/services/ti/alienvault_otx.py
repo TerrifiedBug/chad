@@ -283,13 +283,25 @@ class AlienVaultOTXClient(TIClient):
         try:
             # Get user info to test authentication
             response = await self._client.get("/users/me")
-            response.raise_for_status()
-            logger.info("AlienVault OTX connection test successful")
-            return True
-
+            if response.status_code == 200:
+                logger.info("AlienVault OTX connection test successful")
+                return True
+            elif response.status_code == 401:
+                raise Exception("Invalid API key - authentication failed")
+            elif response.status_code == 403:
+                raise Exception("API key lacks required permissions")
+            elif response.status_code == 429:
+                raise Exception("Rate limit exceeded - try again later")
+            else:
+                raise Exception(f"API returned status {response.status_code}")
+        except httpx.ConnectError:
+            raise Exception("Could not connect to AlienVault OTX API - check network")
+        except httpx.TimeoutException:
+            raise Exception("Connection timed out")
         except Exception as e:
-            logger.error(f"AlienVault OTX connection test failed: {e}")
-            return False
+            if "Invalid API key" in str(e) or "API returned" in str(e) or "Could not connect" in str(e):
+                raise
+            raise Exception(f"Connection failed: {e}")
 
     async def close(self) -> None:
         """Close the HTTP client."""

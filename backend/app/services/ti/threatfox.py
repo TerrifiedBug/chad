@@ -276,9 +276,20 @@ class ThreatFoxClient(TIClient):
                 "/",
                 json={"query": "get_ioc_types"},
             )
-            return response.status_code == 200
-        except Exception:
-            return False
+            if response.status_code == 200:
+                return True
+            elif response.status_code == 429:
+                raise Exception("Rate limit exceeded - try again later")
+            else:
+                raise Exception(f"API returned status {response.status_code}")
+        except httpx.ConnectError:
+            raise Exception("Could not connect to ThreatFox API - check network")
+        except httpx.TimeoutException:
+            raise Exception("Connection timed out")
+        except Exception as e:
+            if "API returned" in str(e) or "Could not connect" in str(e) or "Rate limit" in str(e):
+                raise
+            raise Exception(f"Connection failed: {e}")
 
     async def close(self) -> None:
         """Close the HTTP client."""
