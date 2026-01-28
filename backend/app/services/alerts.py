@@ -16,6 +16,7 @@ from uuid import UUID
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.alert import Alert
 from app.models.rule_exception import ExceptionOperator
 
 
@@ -361,7 +362,7 @@ class AlertService:
 
         Args:
             db: Database session
-            alert_id: Alert ID to delete
+            alert_id: OpenSearch alert document ID (UUID)
             current_user_id: User performing the deletion
             ip_address: Client IP for audit
 
@@ -370,13 +371,56 @@ class AlertService:
         """
         from sqlalchemy import select, delete as sql_delete
 
-        # Get alert for audit log
-        result = await db.execute(select(Alert).where(Alert.id == alert_id))
+        # Get alert from database by alert_id (OpenSearch document ID)
+        result = await db.execute(select(Alert).where(Alert.alert_id == str(alert_id)))
         alert = result.scalar_one_or_none()
-        if not alert:
-            return False
 
-        # Log before delete (await to ensure it completes)
+        # If not in database, try to delete from OpenSearch only
+        if not alert:
+            # Check if alert exists in OpenSearch
+            try:
+                # Search for the alert across all alert indices
+                search_result = self.client.search(
+                    index="chad-alerts-*",
+                    body={"query": {"term": {"alert_id": str(alert_id)}}}
+                )
+                hits = search_result.get("hits", {}).get("hits", [])
+
+                if not hits:
+                    return False
+
+                # Alert exists in OpenSearch but not in database
+                # Delete from OpenSearch and create minimal audit log
+                hit = hits[0]
+                alert_index = hit["_index"]
+                alert_source = hit["_source"]
+
+                self.client.delete(index=alert_index, id=str(alert_id))
+
+                # Create audit log entry (alert has been deleted)
+                from app.services.audit import audit_log
+                await audit_log(
+                    db,
+                    current_user_id,
+                    "alert.delete",
+                    "alert",
+                    str(alert_id),
+                    {
+                        "title": alert_source.get("title", alert_source.get("rule_title", "Unknown")),
+                        "note": "Alert deleted from OpenSearch only (no DB record)"
+                    },
+                    ip_address=ip_address
+                )
+                await db.commit()
+
+                return True
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Failed to delete alert from OpenSearch: {e}")
+                return False
+
+        # Alert exists in database, delete from both places
+        # Log before delete
         from app.services.audit import audit_log
         await audit_log(
             db,
@@ -399,7 +443,7 @@ class AlertService:
             logging.getLogger(__name__).warning(f"Failed to delete alert from OpenSearch: {e}")
 
         # Delete from database
-        await db.execute(sql_delete(Alert).where(Alert.id == alert_id))
+        await db.execute(sql_delete(Alert).where(Alert.alert_id == str(alert_id)))
         await db.commit()
 
         return True

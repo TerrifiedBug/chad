@@ -234,36 +234,60 @@ async def bulk_delete_alerts(
     success = []
     failed = []
 
-    # Convert string IDs to UUIDs
+    # Convert string IDs to UUIDs and strings for comparison
     alert_ids = [UUID(aid) for aid in data.alert_ids]
+    alert_id_strs = [str(aid) for aid in data.alert_ids]
 
-    # Single query with IN clause to avoid N+1
-    result = await db.execute(select(Alert).where(Alert.id.in_(alert_ids)))
-    alerts = {alert.id: alert for alert in result.scalars().all()}
+    # Query database by alert_id (OpenSearch document ID), not database id
+    result = await db.execute(select(Alert).where(Alert.alert_id.in_(alert_id_strs)))
+    alerts = {alert.alert_id: alert for alert in result.scalars().all()}
 
-    for alert_id in alert_ids:
-        if alert_id in alerts:
-            try:
-                alert = alerts[alert_id]
+    for alert_id_uuid, alert_id_str in zip(alert_ids, alert_id_strs):
+        try:
+            # Check if alert exists in database
+            if alert_id_str in alerts:
+                alert = alerts[alert_id_str]
 
                 # Delete from OpenSearch first (fail fast)
                 try:
                     os_client.delete(index=alert.alert_index, id=alert.alert_id)
                 except Exception as e:
                     # Don't proceed with DB deletion if OpenSearch fails
-                    failed.append({"id": str(alert_id), "error": f"Failed to delete from OpenSearch: {e}"})
+                    failed.append({"id": alert_id_str, "error": f"Failed to delete from OpenSearch: {e}"})
                     continue
 
                 # Delete from database
-                await db.execute(sql_delete(Alert).where(Alert.id == alert_id))
+                await db.execute(sql_delete(Alert).where(Alert.alert_id == alert_id_str))
 
-                await audit_log(db, current_user.id, "alert.bulk_delete", "alert", str(alert_id),
+                await audit_log(db, current_user.id, "alert.bulk_delete", "alert", alert_id_str,
                               {"title": alert.title}, ip_address=get_client_ip(request))
-                success.append(str(alert_id))
-            except Exception as e:
-                failed.append({"id": str(alert_id), "error": str(e)})
-        else:
-            failed.append({"id": str(alert_id), "error": "Not found"})
+                success.append(alert_id_str)
+            else:
+                # Alert not in database, try to delete from OpenSearch only
+                try:
+                    # Search for the alert in OpenSearch
+                    search_result = os_client.search(
+                        index="chad-alerts-*",
+                        body={"query": {"term": {"alert_id": alert_id_str}}}
+                    )
+                    hits = search_result.get("hits", {}).get("hits", [])
+
+                    if not hits:
+                        failed.append({"id": alert_id_str, "error": "Not found"})
+                        continue
+
+                    # Delete from OpenSearch
+                    hit = hits[0]
+                    os_client.delete(index=hit["_index"], id=alert_id_str)
+
+                    await audit_log(db, current_user.id, "alert.bulk_delete", "alert", alert_id_str,
+                                  {"note": "Alert deleted from OpenSearch only (no DB record)"},
+                                  ip_address=get_client_ip(request))
+                    success.append(alert_id_str)
+                except Exception as e:
+                    failed.append({"id": alert_id_str, "error": str(e)})
+        except Exception as e:
+            failed.append({"id": alert_id_str, "error": str(e)})
 
     await db.commit()
 
