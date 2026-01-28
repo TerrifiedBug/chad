@@ -85,13 +85,12 @@ def detect_field_type(
         }
 
     except Exception as e:
-        logger.warning("Failed to detect field type for %r: %s", field_path, e)
         # On error, don't auto-correct - let user proceed
         return {
             "field_type": None,
             "has_keyword_subfield": False,
             "recommended_field": field_path,
-            "reason": f"Could not determine field type: {str(e)}",
+            "reason": "Could not determine field type",
             "should_auto_correct": False,
         }
 

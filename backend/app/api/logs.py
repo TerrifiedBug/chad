@@ -285,7 +285,7 @@ async def receive_logs(
                                 )
                                 await manager.broadcast_alert(corr_broadcast)
                             except Exception as e:
-                                logger.error(f"WebSocket broadcast failed for correlation alert: {e}")
+                                logger.error("WebSocket broadcast failed for correlation alert: %s", e)
 
                             logger.info(
                                 "Correlation alert created: %s (entity: %s)",
@@ -294,7 +294,7 @@ async def receive_logs(
                             )
                 except Exception as e:
                     import logging
-                    logging.getLogger(__name__).error(f"Correlation check failed: {e}")
+                    logging.getLogger(__name__).error("Correlation check failed: %s", e)
 
                 # Broadcast alert via WebSocket for real-time updates
                 try:
@@ -309,7 +309,7 @@ async def receive_logs(
                     await manager.broadcast_alert(alert_broadcast)
                 except Exception as e:
                     import logging
-                    logging.getLogger(__name__).warning(f"WebSocket broadcast failed: {e}")
+                    logging.getLogger(__name__).warning("WebSocket broadcast failed: %s", e)
 
             except Exception as e:
                 processing_errors.append(f"Alert creation failed for match: {str(e)}")
@@ -335,7 +335,7 @@ async def receive_logs(
             except Exception as e:
                 # Log but don't fail the request if notification fails
                 import logging
-                logging.getLogger(__name__).error(f"Failed to send notification: {e}")
+                logging.getLogger(__name__).error("Failed to send notification: %s", e)
 
     # Record health metrics for this batch of logs
     try:
@@ -362,14 +362,15 @@ async def receive_logs(
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(
-                f"Batch processing had {len(processing_errors)} errors: "
-                f"First 3 errors: {processing_errors[:3]}"
+                "Batch processing had %d errors: First 3 errors: %s",
+                len(processing_errors),
+                processing_errors[:3]
             )
 
     except Exception as e:
         # Log but don't fail the request if metric recording fails
         import logging
-        logging.getLogger(__name__).error(f"Failed to record health metrics: {e}")
+        logging.getLogger(__name__).error("Failed to record health metrics: %s", e)
 
     return LogMatchResponse(
         logs_received=len(logs),
