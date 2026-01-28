@@ -231,7 +231,6 @@ async def bulk_delete_alerts(
     from app.models.alert import Alert
     from sqlalchemy import select, delete as sql_delete
 
-    alert_service = AlertService(os_client)
     success = []
     failed = []
 

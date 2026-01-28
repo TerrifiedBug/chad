@@ -1,12 +1,10 @@
 import uuid
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from unittest.mock import patch, MagicMock
 
-from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.index_pattern import IndexPattern
 from app.models.user import User

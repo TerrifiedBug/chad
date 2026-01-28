@@ -297,13 +297,8 @@ export default function UsersPage() {
         [email]: updatedStatus
       }))
 
-      // Update editing user if open
-      if (editUser?.id === userId) {
-        setEditUser({
-          ...editUser,
-          _locked: false
-        })
-      }
+      // Refresh the user list to get updated data
+      loadUsers()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unlock user')
     }

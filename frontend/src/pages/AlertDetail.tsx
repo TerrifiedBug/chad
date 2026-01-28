@@ -546,7 +546,7 @@ export default function AlertDetailPage() {
         }
       }
 
-      setExceptionReason(`False positive from alert ${alert.id}`)
+      setExceptionReason(`False positive from alert ${alert.alert_id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to extract fields from log')
     } finally {
@@ -590,8 +590,7 @@ export default function AlertDetailPage() {
         field: exceptionField,
         operator: exceptionOperator,
         value: exceptionValue,
-        reason: exceptionReason,
-        enabled: true
+        reason: exceptionReason
       })
 
       setShowExceptionDialog(false)

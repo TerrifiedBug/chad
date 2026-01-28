@@ -106,8 +106,8 @@ async def create_field_mapping(
                     )
 
                 logging.getLogger(__name__).info(
-                    f"Validated field mapping '{data.sigma_field}' -> '{target_field}' "
-                    f"(exists in {len(available_fields)} available fields)"
+                    "Validated field mapping %r -> %r (exists in %d available fields)",
+                    data.sigma_field, target_field, len(available_fields)
                 )
         except HTTPException:
             raise  # Re-raise our validation error

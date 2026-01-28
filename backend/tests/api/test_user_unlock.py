@@ -1,7 +1,6 @@
 import pytest
-from httpx import AsyncClient
-from app.models.user import User
 from app.services.rate_limit import record_failed_attempt, is_account_locked
+
 
 
 @pytest.mark.asyncio
@@ -27,7 +26,7 @@ async def test_get_lock_status_locked(
     """Test getting lock status for locked user."""
     # Lock the account
     for _ in range(5):
-        record_failed_attempt(db_session, test_user.email)
+        record_failed_attempt(db_session, test_user.email, "127.0.0.1")
 
     response = await client.get(
         f"/api/users/lock-status/{test_user.email}",
@@ -47,7 +46,7 @@ async def test_unlock_user(
     """Test unlocking a locked user."""
     # Lock the account
     for _ in range(5):
-        record_failed_attempt(db_session, test_user.email)
+        record_failed_attempt(db_session, test_user.email, "127.0.0.1")
 
     # Verify locked
     assert is_account_locked(db_session, test_user.email)[0] is True

@@ -288,8 +288,9 @@ async def receive_logs(
                                 logger.error(f"WebSocket broadcast failed for correlation alert: {e}")
 
                             logger.info(
-                                f"Correlation alert created: {corr['correlation_name']} "
-                                f"(entity: {corr.get('entity_value')})"
+                                "Correlation alert created: %s (entity: %s)",
+                                corr['correlation_name'],
+                                corr.get('entity_value')
                             )
                 except Exception as e:
                     import logging

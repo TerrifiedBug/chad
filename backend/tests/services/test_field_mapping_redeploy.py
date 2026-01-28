@@ -1,7 +1,6 @@
 import pytest
 from app.services.field_mapping import get_rules_using_mapping
-from app.models.rule import Rule, RuleVersion
-from sqlalchemy import select
+
 
 
 @pytest.mark.asyncio

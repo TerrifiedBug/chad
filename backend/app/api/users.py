@@ -114,7 +114,7 @@ async def unlock_user_account(
     # Clear failed attempts
     from app.services.rate_limit import clear_failed_attempts
 
-    cleared = await clear_failed_attempts(db, user.email)
+    await clear_failed_attempts(db, user.email)
 
     await audit_log(
         db,
