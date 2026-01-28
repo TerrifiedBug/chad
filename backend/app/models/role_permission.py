@@ -29,6 +29,7 @@ DEFAULT_ROLE_PERMISSIONS = {
     "admin": {
         "manage_users": True,
         "manage_rules": True,
+        "manage_alerts": True,
         "deploy_rules": True,
         "manage_settings": True,
         "manage_api_keys": True,
@@ -39,6 +40,7 @@ DEFAULT_ROLE_PERMISSIONS = {
     "analyst": {
         "manage_users": False,
         "manage_rules": True,
+        "manage_alerts": True,
         "deploy_rules": True,
         "manage_settings": False,
         "manage_api_keys": True,
@@ -49,6 +51,7 @@ DEFAULT_ROLE_PERMISSIONS = {
     "viewer": {
         "manage_users": False,
         "manage_rules": False,
+        "manage_alerts": False,
         "deploy_rules": False,
         "manage_settings": False,
         "manage_api_keys": False,
@@ -61,6 +64,7 @@ DEFAULT_ROLE_PERMISSIONS = {
 PERMISSION_DESCRIPTIONS = {
     "manage_users": "Create, edit, and delete users",
     "manage_rules": "Create, edit, and delete detection rules",
+    "manage_alerts": "Delete alerts and update alert status",
     "deploy_rules": "Deploy and undeploy rules to OpenSearch",
     "manage_settings": "Modify system settings and webhooks",
     "manage_api_keys": "Create and revoke API keys",
