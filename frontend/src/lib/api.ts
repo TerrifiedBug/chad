@@ -496,6 +496,8 @@ export const rulesApi = {
   },
   undeploy: (id: string, changeReason: string) =>
     api.post<{ success: boolean }>(`/rules/${id}/undeploy`, { change_reason: changeReason }),
+  getLinkedCorrelations: (id: string, deployedOnly: boolean = false) =>
+    api.get<{ correlations: { id: string; name: string; deployed: boolean }[] }>(`/rules/${id}/linked-correlations?deployed_only=${deployedOnly}`),
   rollback: (id: string, version: number, reason: string) =>
     api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`, { change_reason: reason }),
   // Exceptions
@@ -1681,6 +1683,9 @@ export type CorrelationRule = {
   deployed_version?: number | null
   current_version: number
   needs_redeploy: boolean
+  // Linked rule deployment status
+  rule_a_deployed: boolean
+  rule_b_deployed: boolean
 }
 
 export type CorrelationRuleCreate = {
@@ -1753,5 +1758,18 @@ export const correlationRulesApi = {
   getVersions: (id: string) => api.get<CorrelationRuleVersion[]>(`/correlation-rules/${id}/versions`),
   getActivity: (id: string) => api.get<CorrelationActivityItem[]>(`/correlation-rules/${id}/activity`),
   addComment: (id: string, content: string) => api.post<CorrelationRuleComment>(`/correlation-rules/${id}/comments`, { content }),
+  rollback: async (id: string, versionNumber: number, changeReason: string): Promise<{
+    success: boolean
+    new_version_number: number
+    rolled_back_from: number
+  }> => {
+    const response = await fetch(`${API_BASE}/correlation-rules/${id}/rollback/${versionNumber}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ change_reason: changeReason }),
+    })
+    if (!response.ok) throw new Error('Rollback failed')
+    return response.json()
+  },
 }
 
