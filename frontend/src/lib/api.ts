@@ -1,4 +1,18 @@
 import { getErrorMessage, logError, isApiError, isLegacyError } from './errors'
+import { QueryClient } from '@tanstack/react-query'
+
+// Create React Query client for cache management
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    mutations: {
+      retry: 1,
+    },
+    queries: {
+      retry: 1,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    },
+  },
+})
 
 const API_BASE = '/api'
 
@@ -220,6 +234,11 @@ export const settingsApi = {
   // Notification settings
   getMandatoryCommentsSettings: () =>
     api.get<{ mandatory_rule_comments: boolean }>('/notifications/settings/public'),
+  // Health settings
+  getHealthSettings: () =>
+    api.get<HealthSettings>('/settings/health'),
+  updateHealthSettings: (data: Partial<HealthSettings>) =>
+    api.put<HealthSettings>('/settings/health', data),
 }
 
 // Exception types
@@ -708,6 +727,9 @@ export type AlertCountsResponse = {
   last_24h: number
 }
 
+// Query keys for React Query cache invalidation
+export const ALERTS_QUERY_KEY = 'alerts'
+
 // Alerts API
 export const alertsApi = {
   list: (params?: {
@@ -733,11 +755,17 @@ export const alertsApi = {
   updateStatus: (id: string, status: AlertStatus) =>
     api.patch<{ success: boolean; status: AlertStatus }>(`/alerts/${id}/status`, { status }),
   delete: (id: string) =>
-    api.delete(`/alerts/${id}`),
+    api.delete(`/alerts/${id}`).then(() => {
+      queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
+    }),
   bulkUpdateStatus: (data: { alert_ids: string[]; status: AlertStatus }) =>
-    api.patch<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data),
+    api.patch<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data).then(() => {
+      queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
+    }),
   bulkDelete: (data: { alert_ids: string[] }) =>
-    api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data),
+    api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data).then(() => {
+      queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
+    }),
 }
 
 // Dashboard stats types
@@ -1187,7 +1215,9 @@ export type IndexHealth = {
   issues: string[]
   latest: {
     queue_depth: number
-    avg_latency_ms: number
+    avg_detection_latency_ms: number
+    avg_opensearch_query_latency_ms?: number
+    max_opensearch_query_latency_ms?: number
     logs_per_minute: number
     alerts_per_hour: number
   }
@@ -1202,14 +1232,17 @@ export type HealthHistoryPoint = {
   timestamp: string
   logs_received: number
   queue_depth: number
-  avg_latency_ms: number
+  avg_detection_latency_ms: number
   alerts_generated: number
 }
 
 export type HealthSettings = {
   no_data_minutes: number
   error_rate_percent: number
-  latency_ms: number
+  detection_latency_warning_ms: number
+  detection_latency_critical_ms: number
+  opensearch_latency_warning_ms: number
+  opensearch_latency_critical_ms: number
   queue_warning: number
   queue_critical: number
 }

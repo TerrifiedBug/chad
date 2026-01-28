@@ -76,6 +76,7 @@ async def test_engine():
         await conn.execute(text("DROP TYPE IF EXISTS rulestatus CASCADE"))
         await conn.execute(text("DROP TYPE IF EXISTS rulesource CASCADE"))
         await conn.execute(text("DROP TYPE IF EXISTS mappingorigin CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS authmethodenum CASCADE"))
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
@@ -88,6 +89,7 @@ async def test_engine():
         await conn.execute(text("DROP TYPE IF EXISTS rulestatus CASCADE"))
         await conn.execute(text("DROP TYPE IF EXISTS rulesource CASCADE"))
         await conn.execute(text("DROP TYPE IF EXISTS mappingorigin CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS authmethodenum CASCADE"))
         await conn.run_sync(Base.metadata.create_all)
 
     await engine.dispose()

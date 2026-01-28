@@ -118,7 +118,7 @@ async def update_alert_status(
     request: Request,
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
     index_pattern: str = Query("chad-alerts-*"),
 ):
     """Update alert status (acknowledge, resolve, mark as false positive)."""
@@ -161,7 +161,7 @@ async def delete_alert(
     alert_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Delete an alert."""
@@ -182,7 +182,7 @@ async def bulk_update_alert_status(
     data: BulkAlertStatusUpdate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
     """Update status for multiple alerts."""
     from app.models.alert import Alert
@@ -224,7 +224,7 @@ async def bulk_delete_alerts(
     data: BulkAlertDelete,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Delete multiple alerts."""

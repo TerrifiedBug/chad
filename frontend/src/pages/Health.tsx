@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react'
-import { healthApi, IndexHealth, HealthStatus, HealthSettings } from '@/lib/api'
+import { healthApi, IndexHealth, HealthStatus } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, Settings, ChevronDown, ChevronUp, Save, Loader2, RefreshCw, Server, ChevronRight } from 'lucide-react'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   Popover,
@@ -14,7 +12,6 @@ import {
 import { api } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
-import { HealthCheckSettings } from '@/components/HealthCheckSettings'
 
 interface ServiceHealth {
   service_type: string
@@ -86,17 +83,9 @@ export default function HealthPage() {
   // Status popover state
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false)
 
-  // Settings state
-  const [showSettings, setShowSettings] = useState(false)
-  const [settings, setSettings] = useState<HealthSettings | null>(null)
-  const [settingsForm, setSettingsForm] = useState<HealthSettings | null>(null)
-  const [isSavingSettings, setIsSavingSettings] = useState(false)
-  const [settingsError, setSettingsError] = useState('')
-
   useEffect(() => {
     loadHealth()
     loadServiceHealth()
-    loadSettings()
     // Refresh every 30 seconds
     const interval = setInterval(() => {
       loadHealth()
@@ -128,40 +117,6 @@ export default function HealthPage() {
       setServiceHealthLoading(false)
     }
   }
-
-  const loadSettings = async () => {
-    try {
-      const data = await healthApi.getSettings()
-      setSettings(data)
-      setSettingsForm(data)
-    } catch {
-      // Settings may require admin - silently ignore
-    }
-  }
-
-  const handleSaveSettings = async () => {
-    if (!settingsForm) return
-
-    setIsSavingSettings(true)
-    setSettingsError('')
-    try {
-      const updated = await healthApi.updateSettings(settingsForm)
-      setSettings(updated)
-      setSettingsForm(updated)
-    } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : 'Failed to save settings')
-    } finally {
-      setIsSavingSettings(false)
-    }
-  }
-
-  const hasSettingsChanged = settings && settingsForm && (
-    settings.no_data_minutes !== settingsForm.no_data_minutes ||
-    settings.error_rate_percent !== settingsForm.error_rate_percent ||
-    settings.latency_ms !== settingsForm.latency_ms ||
-    settings.queue_warning !== settingsForm.queue_warning ||
-    settings.queue_critical !== settingsForm.queue_critical
-  )
 
   // Calculate overall status
   const overallStatus: HealthStatus = health.reduce((worst, h) => {
@@ -286,154 +241,6 @@ export default function HealthPage() {
           <AlertCircle className="h-4 w-4" />
           {error}
         </div>
-      )}
-
-      {/* Global Settings Panel - Merged */}
-      {hasPermission('manage_settings') && (
-        <Card>
-          <button
-            type="button"
-            className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
-            onClick={() => setShowSettings(!showSettings)}
-          >
-            <div className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              <span className="font-medium">Global Settings</span>
-            </div>
-            {showSettings ? (
-              <ChevronUp className="h-4 w-4" />
-            ) : (
-              <ChevronDown className="h-4 w-4" />
-            )}
-          </button>
-
-          {showSettings && (
-            <CardContent className="pt-0 border-t space-y-6">
-              {/* Alerting Thresholds Section */}
-              <div>
-                <h4 className="text-sm font-medium mb-2">Alerting Thresholds</h4>
-                <p className="text-xs text-muted-foreground mb-4">
-                  These thresholds are used by default for all index patterns unless overridden.
-                </p>
-
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="no-data-minutes" className="text-xs">No Data (min)</Label>
-                    <Input
-                      id="no-data-minutes"
-                      type="number"
-                      min="1"
-                      value={settingsForm!.no_data_minutes}
-                      onChange={(e) =>
-                        setSettingsForm({
-                          ...settingsForm!,
-                          no_data_minutes: parseInt(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="error-rate" className="text-xs">Error Rate (%)</Label>
-                    <Input
-                      id="error-rate"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={settingsForm!.error_rate_percent}
-                      onChange={(e) =>
-                        setSettingsForm({
-                          ...settingsForm!,
-                          error_rate_percent: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="latency-ms" className="text-xs">Latency (ms)</Label>
-                    <Input
-                      id="latency-ms"
-                      type="number"
-                      min="1"
-                      value={settingsForm!.latency_ms}
-                      onChange={(e) =>
-                        setSettingsForm({
-                          ...settingsForm!,
-                          latency_ms: parseInt(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="queue-warning" className="text-xs">Queue Warning</Label>
-                    <Input
-                      id="queue-warning"
-                      type="number"
-                      min="1"
-                      value={settingsForm!.queue_warning}
-                      onChange={(e) =>
-                        setSettingsForm({
-                          ...settingsForm!,
-                          queue_warning: parseInt(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="queue-critical" className="text-xs">Queue Critical</Label>
-                    <Input
-                      id="queue-critical"
-                      type="number"
-                      min="1"
-                      value={settingsForm!.queue_critical}
-                      onChange={(e) =>
-                        setSettingsForm({
-                          ...settingsForm!,
-                          queue_critical: parseInt(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Health Check Intervals Section */}
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-medium mb-2">Health Check Intervals</h4>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Configure how frequently the system checks health status of external services.
-                </p>
-                <HealthCheckSettings />
-              </div>
-
-              {settingsError && (
-                <div className="text-sm text-destructive">{settingsError}</div>
-              )}
-
-              <div className="flex justify-end pt-2 border-t">
-                <Button
-                  onClick={handleSaveSettings}
-                  disabled={!hasSettingsChanged || isSavingSettings}
-                >
-                  {isSavingSettings ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Settings
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          )}
-        </Card>
       )}
 
       {/* Summary Cards */}
@@ -585,7 +392,7 @@ export default function HealthPage() {
                 )}
 
                 {/* Metrics Grid */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                   <div className="flex items-center gap-2">
                     <Activity className="h-4 w-4 text-muted-foreground" />
                     <div>
@@ -596,8 +403,15 @@ export default function HealthPage() {
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-muted-foreground">Latency</p>
-                      <p className="font-medium">{h.latest.avg_latency_ms}ms</p>
+                      <p className="text-muted-foreground">Detection Latency</p>
+                      <p className="font-medium">{(h.latest.avg_detection_latency_ms || 0)}ms</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-muted-foreground">OpenSearch Query</p>
+                      <p className="font-medium">{(h.latest.avg_opensearch_query_latency_ms || 0)}ms</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

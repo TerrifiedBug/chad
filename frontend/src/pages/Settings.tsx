@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -106,6 +106,31 @@ export default function SettingsPage() {
   } | null>(null)
   const [osConnectionLoading, setOsConnectionLoading] = useState(false)
 
+  // Health monitoring settings
+  const [healthSettings, setHealthSettings] = useState<HealthSettings>({
+    no_data_minutes: 15,
+    error_rate_percent: 5.0,
+    detection_latency_warning_ms: 2,
+    detection_latency_critical_ms: 10,
+    opensearch_latency_warning_ms: 1,
+    opensearch_latency_critical_ms: 5,
+    queue_warning: 10000,
+    queue_critical: 100000,
+  })
+  const [healthSettingsForm, setHealthSettingsForm] = useState<HealthSettings>(healthSettings)
+  const [isSavingHealthSettings, setIsSavingHealthSettings] = useState(false)
+
+  // Health check intervals
+  const [healthCheckIntervals, setHealthCheckIntervals] = useState({
+    jira_interval_seconds: 900,
+    sigmahq_interval_seconds: 3600,
+    mitre_attack_interval_seconds: 3600,
+    opensearch_interval_seconds: 300,
+    ti_interval_seconds: 1800,
+  })
+  const [healthCheckIntervalsForm, setHealthCheckIntervalsForm] = useState(healthCheckIntervals)
+  const [isSavingHealthCheckIntervals, setIsSavingHealthCheckIntervals] = useState(false)
+
   // Audit to OpenSearch
   const [auditOpenSearchEnabled, setAuditOpenSearchEnabled] = useState(false)
 
@@ -136,6 +161,7 @@ export default function SettingsPage() {
     loadOpenSearchStatus()
     loadPermissions()
     loadSecuritySettings()
+    loadHealthSettings()
   }, [])
 
   const loadSecuritySettings = async () => {
@@ -144,6 +170,29 @@ export default function SettingsPage() {
       setForce2FAOnSignup(security.force_2fa_on_signup)
     } catch (error) {
       console.error('Failed to load security settings:', error)
+    }
+  }
+
+  const loadHealthSettings = async () => {
+    try {
+      const [thresholds, intervals] = await Promise.all([
+        settingsApi.getHealthSettings(),
+        api.get('/health/check-intervals')
+      ] as const)
+      // Convert ms to seconds for display
+      const displayThresholds = {
+        ...thresholds,
+        detection_latency_warning_ms: thresholds.detection_latency_warning_ms / 1000,
+        detection_latency_critical_ms: thresholds.detection_latency_critical_ms / 1000,
+        opensearch_latency_warning_ms: thresholds.opensearch_latency_warning_ms / 1000,
+        opensearch_latency_critical_ms: thresholds.opensearch_latency_critical_ms / 1000,
+      }
+      setHealthSettings(displayThresholds)
+      setHealthSettingsForm(displayThresholds)
+      setHealthCheckIntervals(intervals as typeof healthCheckIntervals)
+      setHealthCheckIntervalsForm(intervals as typeof healthCheckIntervals)
+    } catch (err) {
+      console.error('Failed to load health settings:', err)
     }
   }
 
@@ -451,6 +500,27 @@ export default function SettingsPage() {
     }
   }
 
+  const saveHealthSettings = async () => {
+    setIsSavingHealthSettings(true)
+    try {
+      // Convert seconds to ms for API
+      const apiData = {
+        ...healthSettingsForm,
+        detection_latency_warning_ms: healthSettingsForm.detection_latency_warning_ms * 1000,
+        detection_latency_critical_ms: healthSettingsForm.detection_latency_critical_ms * 1000,
+        opensearch_latency_warning_ms: healthSettingsForm.opensearch_latency_warning_ms * 1000,
+        opensearch_latency_critical_ms: healthSettingsForm.opensearch_latency_critical_ms * 1000,
+      }
+      await settingsApi.updateHealthSettings(apiData)
+      setHealthSettings(healthSettingsForm)
+      showToast('Health settings saved successfully')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save health settings', 'error')
+    } finally {
+      setIsSavingHealthSettings(false)
+    }
+  }
+
 
   if (isLoading) {
     return (
@@ -488,6 +558,7 @@ export default function SettingsPage() {
           <TabsTrigger value="ai">AI</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
+          <TabsTrigger value="health">Health Monitoring</TabsTrigger>
           <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
           <TabsTrigger value="export">Export</TabsTrigger>
           <TabsTrigger value="about" className="flex items-center gap-1">
@@ -1277,6 +1348,230 @@ export default function SettingsPage() {
                 <Save className="mr-2 h-4 w-4" />
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="health" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Health Monitoring Thresholds</CardTitle>
+              <CardDescription>
+                Configure global health monitoring thresholds. These apply to all index patterns unless overridden.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Alerting Thresholds */}
+              <div>
+                <h4 className="text-sm font-medium mb-4">Alerting Thresholds</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="no-data-minutes">No Data (minutes)</Label>
+                    <Input
+                      id="no-data-minutes"
+                      type="number"
+                      min="1"
+                      value={healthSettingsForm.no_data_minutes}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, no_data_minutes: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="error-rate">Error Rate (%)</Label>
+                    <Input
+                      id="error-rate"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={healthSettingsForm.error_rate_percent}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, error_rate_percent: parseFloat(e.target.value) || 0})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="detection-latency-warning">Detection Latency Warning (seconds)</Label>
+                    <Input
+                      id="detection-latency-warning"
+                      type="number"
+                      min="1"
+                      step="0.1"
+                      value={healthSettingsForm.detection_latency_warning_ms}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, detection_latency_warning_ms: parseFloat(e.target.value) || 0})}
+                    />
+                    <p className="text-xs text-muted-foreground">Default: 2 seconds</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="detection-latency-critical">Detection Latency Critical (seconds)</Label>
+                    <Input
+                      id="detection-latency-critical"
+                      type="number"
+                      min="1"
+                      step="0.1"
+                      value={healthSettingsForm.detection_latency_critical_ms}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, detection_latency_critical_ms: parseFloat(e.target.value) || 0})}
+                    />
+                    <p className="text-xs text-muted-foreground">Default: 10 seconds</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="opensearch-latency-warning">OpenSearch Query Warning (seconds)</Label>
+                    <Input
+                      id="opensearch-latency-warning"
+                      type="number"
+                      min="1"
+                      step="0.1"
+                      value={healthSettingsForm.opensearch_latency_warning_ms}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, opensearch_latency_warning_ms: parseFloat(e.target.value) || 0})}
+                    />
+                    <p className="text-xs text-muted-foreground">Default: 1 second</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="opensearch-latency-critical">OpenSearch Query Critical (seconds)</Label>
+                    <Input
+                      id="opensearch-latency-critical"
+                      type="number"
+                      min="1"
+                      step="0.1"
+                      value={healthSettingsForm.opensearch_latency_critical_ms}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, opensearch_latency_critical_ms: parseFloat(e.target.value) || 0})}
+                    />
+                    <p className="text-xs text-muted-foreground">Default: 5 seconds</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="queue-warning">Queue Warning</Label>
+                    <Input
+                      id="queue-warning"
+                      type="number"
+                      min="1"
+                      value={healthSettingsForm.queue_warning}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, queue_warning: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="queue-critical">Queue Critical</Label>
+                    <Input
+                      id="queue-critical"
+                      type="number"
+                      min="1"
+                      value={healthSettingsForm.queue_critical}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, queue_critical: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  onClick={saveHealthSettings}
+                  disabled={isSavingHealthSettings}
+                >
+                  {isSavingHealthSettings ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Health Check Intervals</CardTitle>
+              <CardDescription>
+                Configure how frequently the system checks health status of external services.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="jira-interval">Jira Cloud (seconds)</Label>
+                  <Input
+                    id="jira-interval"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={healthCheckIntervalsForm.jira_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, jira_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 900 (15 minutes)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sigmahq-interval">SigmaHQ (seconds)</Label>
+                  <Input
+                    id="sigmahq-interval"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={healthCheckIntervalsForm.sigmahq_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, sigmahq_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 3600 (1 hour)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="attack-interval">MITRE ATT&CK (seconds)</Label>
+                  <Input
+                    id="attack-interval"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={healthCheckIntervalsForm.mitre_attack_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, mitre_attack_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 3600 (1 hour)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="opensearch-interval">OpenSearch (seconds)</Label>
+                  <Input
+                    id="opensearch-interval"
+                    type="number"
+                    min="30"
+                    max="600"
+                    value={healthCheckIntervalsForm.opensearch_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, opensearch_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 300 (5 minutes)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="ti-interval">Threat Intelligence (seconds)</Label>
+                  <Input
+                    id="ti-interval"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={healthCheckIntervalsForm.ti_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, ti_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 1800 (30 minutes)</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  onClick={async () => {
+                    setIsSavingHealthCheckIntervals(true)
+                    try {
+                      await api.put('/health/check-intervals', healthCheckIntervalsForm)
+                      setHealthCheckIntervals(healthCheckIntervalsForm)
+                      showToast('Health check intervals saved successfully')
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Failed to save health check intervals', 'error')
+                    } finally {
+                      setIsSavingHealthCheckIntervals(false)
+                    }
+                  }}
+                  disabled={isSavingHealthCheckIntervals}
+                >
+                  {isSavingHealthCheckIntervals ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

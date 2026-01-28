@@ -29,7 +29,9 @@ class IndexHealthMetrics(Base, UUIDMixin):
     logs_processed: Mapped[int] = mapped_column(Integer, default=0)
     logs_errored: Mapped[int] = mapped_column(Integer, default=0)
     queue_depth: Mapped[int] = mapped_column(Integer, default=0)
-    avg_latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    avg_detection_latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    avg_opensearch_query_latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    max_opensearch_query_latency_ms: Mapped[int] = mapped_column(Integer, default=0)
 
     # Detection metrics
     alerts_generated: Mapped[int] = mapped_column(Integer, default=0)
