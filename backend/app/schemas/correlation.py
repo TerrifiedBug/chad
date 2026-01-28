@@ -19,7 +19,7 @@ class CorrelationRuleBase(BaseModel):
 class CorrelationRuleCreate(CorrelationRuleBase):
     """Schema for creating a correlation rule."""
 
-    pass
+    change_reason: str = Field(..., min_length=1, max_length=10000)
 
 
 class CorrelationRuleUpdate(BaseModel):
@@ -30,6 +30,7 @@ class CorrelationRuleUpdate(BaseModel):
     time_window_minutes: int | None = Field(None, ge=1, le=1440)
     severity: str | None = Field(None, pattern="^(critical|high|medium|low|informational)$")
     is_enabled: bool | None = None
+    change_reason: str = Field(..., min_length=1, max_length=10000)
 
 
 class CorrelationRuleResponse(CorrelationRuleBase):
@@ -40,6 +41,12 @@ class CorrelationRuleResponse(CorrelationRuleBase):
     updated_at: datetime
     created_by: str | None
     last_edited_by: str | None = None
+
+    # Deployment tracking
+    deployed_at: datetime | None = None
+    deployed_version: int | None = None
+    current_version: int = 1
+    needs_redeploy: bool = False
 
     # Include related rule info
     rule_a_title: str | None = None
@@ -54,3 +61,29 @@ class CorrelationRuleListResponse(BaseModel):
 
     correlation_rules: list[CorrelationRuleResponse]
     total: int
+
+
+class CorrelationRuleDeployRequest(BaseModel):
+    """Schema for deploying a correlation rule."""
+
+    change_reason: str = Field(..., min_length=1, max_length=10000)
+
+
+class CorrelationRuleVersionResponse(BaseModel):
+    """Schema for correlation rule version history."""
+
+    id: str
+    version_number: int
+    name: str
+    rule_a_id: str
+    rule_b_id: str
+    entity_field: str
+    time_window_minutes: int
+    severity: str
+    changed_by: str
+    changed_by_email: str | None = None
+    change_reason: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
