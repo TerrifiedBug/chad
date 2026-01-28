@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { alertsApi, ALERTS_QUERY_KEY } from '@/lib/api'
+import { alertsApi, ALERTS_QUERY_KEY, AlertStatus } from '@/lib/api'
 import { queryClient } from '@/lib/api'
 
 // Mock fetch
@@ -139,7 +139,7 @@ describe('Alerts API - Cache Invalidation', () => {
     })
 
     it('should support all status values', async () => {
-      const statuses = ['new', 'acknowledged', 'resolved', 'false_positive']
+      const statuses: AlertStatus[] = ['new', 'acknowledged', 'resolved', 'false_positive']
 
       for (const status of statuses) {
         await alertsApi.bulkUpdateStatus({ alert_ids: ['test-id'], status })

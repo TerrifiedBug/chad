@@ -158,7 +158,10 @@ export default function HealthPage() {
   const hasSettingsChanged = settings && settingsForm && (
     settings.no_data_minutes !== settingsForm.no_data_minutes ||
     settings.error_rate_percent !== settingsForm.error_rate_percent ||
-    settings.latency_ms !== settingsForm.latency_ms ||
+    settings.detection_latency_warning_ms !== settingsForm.detection_latency_warning_ms ||
+    settings.detection_latency_critical_ms !== settingsForm.detection_latency_critical_ms ||
+    settings.opensearch_latency_warning_ms !== settingsForm.opensearch_latency_warning_ms ||
+    settings.opensearch_latency_critical_ms !== settingsForm.opensearch_latency_critical_ms ||
     settings.queue_warning !== settingsForm.queue_warning ||
     settings.queue_critical !== settingsForm.queue_critical
   )
@@ -316,7 +319,7 @@ export default function HealthPage() {
                   These thresholds are used by default for all index patterns unless overridden.
                 </p>
 
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="no-data-minutes" className="text-xs">No Data (min)</Label>
                     <Input
@@ -351,16 +354,64 @@ export default function HealthPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="latency-ms" className="text-xs">Latency (ms)</Label>
+                    <Label htmlFor="detection-latency-warning" className="text-xs">Detection Latency Warning (ms)</Label>
                     <Input
-                      id="latency-ms"
+                      id="detection-latency-warning"
                       type="number"
-                      min="1"
-                      value={settingsForm!.latency_ms}
+                      min="100"
+                      value={settingsForm!.detection_latency_warning_ms}
                       onChange={(e) =>
                         setSettingsForm({
                           ...settingsForm!,
-                          latency_ms: parseInt(e.target.value) || 0,
+                          detection_latency_warning_ms: parseInt(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="detection-latency-critical" className="text-xs">Detection Latency Critical (ms)</Label>
+                    <Input
+                      id="detection-latency-critical"
+                      type="number"
+                      min="100"
+                      value={settingsForm!.detection_latency_critical_ms}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm!,
+                          detection_latency_critical_ms: parseInt(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="opensearch-latency-warning" className="text-xs">OpenSearch Query Warning (ms)</Label>
+                    <Input
+                      id="opensearch-latency-warning"
+                      type="number"
+                      min="100"
+                      value={settingsForm!.opensearch_latency_warning_ms}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm!,
+                          opensearch_latency_warning_ms: parseInt(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="opensearch-latency-critical" className="text-xs">OpenSearch Query Critical (ms)</Label>
+                    <Input
+                      id="opensearch-latency-critical"
+                      type="number"
+                      min="100"
+                      value={settingsForm!.opensearch_latency_critical_ms}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm!,
+                          opensearch_latency_critical_ms: parseInt(e.target.value) || 0,
                         })
                       }
                     />
@@ -585,7 +636,7 @@ export default function HealthPage() {
                 )}
 
                 {/* Metrics Grid */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                   <div className="flex items-center gap-2">
                     <Activity className="h-4 w-4 text-muted-foreground" />
                     <div>
@@ -596,8 +647,15 @@ export default function HealthPage() {
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-muted-foreground">Latency</p>
-                      <p className="font-medium">{h.latest.avg_latency_ms}ms</p>
+                      <p className="text-muted-foreground">Detection Latency</p>
+                      <p className="font-medium">{h.latest.avg_detection_latency_ms}ms</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-muted-foreground">OpenSearch Query</p>
+                      <p className="font-medium">{h.latest.avg_opensearch_query_latency_ms || 'N/A'}ms</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

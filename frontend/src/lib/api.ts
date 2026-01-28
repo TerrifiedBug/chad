@@ -1210,7 +1210,9 @@ export type IndexHealth = {
   issues: string[]
   latest: {
     queue_depth: number
-    avg_latency_ms: number
+    avg_detection_latency_ms: number
+    avg_opensearch_query_latency_ms?: number
+    max_opensearch_query_latency_ms?: number
     logs_per_minute: number
     alerts_per_hour: number
   }
@@ -1225,14 +1227,17 @@ export type HealthHistoryPoint = {
   timestamp: string
   logs_received: number
   queue_depth: number
-  avg_latency_ms: number
+  avg_detection_latency_ms: number
   alerts_generated: number
 }
 
 export type HealthSettings = {
   no_data_minutes: number
   error_rate_percent: number
-  latency_ms: number
+  detection_latency_warning_ms: number
+  detection_latency_critical_ms: number
+  opensearch_latency_warning_ms: number
+  opensearch_latency_critical_ms: number
   queue_warning: number
   queue_critical: number
 }
