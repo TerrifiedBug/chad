@@ -812,7 +812,13 @@ export default function Notifications() {
               <Label htmlFor="webhook-provider">Provider</Label>
               <Select
                 value={formData.provider}
-                onValueChange={(value: WebhookProvider) => setFormData({ ...formData, provider: value })}
+                onValueChange={(value: WebhookProvider) => setFormData({
+                  ...formData,
+                  provider: value,
+                  // Clear header fields when switching away from generic
+                  header_name: value === 'generic' ? formData.header_name : '',
+                  header_value: value === 'generic' ? formData.header_value : '',
+                })}
               >
                 <SelectTrigger id="webhook-provider">
                   <SelectValue />

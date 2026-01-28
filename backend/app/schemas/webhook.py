@@ -1,10 +1,16 @@
 """Webhook schemas for API request/response validation."""
 
+import re
 from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, field_validator
+
+
+# Valid HTTP header name pattern (RFC 7230)
+# Must be a token: 1*tchar where tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+HTTP_HEADER_NAME_PATTERN = re.compile(r'^[A-Za-z0-9!#$%&\'*+\-.^_`|~]+$')
 
 
 class WebhookProvider(str, Enum):
@@ -25,6 +31,18 @@ class WebhookCreate(BaseModel):
     provider: WebhookProvider = WebhookProvider.GENERIC
     enabled: bool = True
 
+    @field_validator('header_name')
+    @classmethod
+    def validate_header_name(cls, v: str | None) -> str | None:
+        """Validate header name follows HTTP header naming rules."""
+        if v is None or v == '':
+            return None
+        if not HTTP_HEADER_NAME_PATTERN.match(v):
+            raise ValueError('Invalid HTTP header name. Must contain only alphanumeric characters and !#$%&\'*+-.^_`|~')
+        if len(v) > 100:
+            raise ValueError('Header name must be 100 characters or less')
+        return v
+
 
 class WebhookUpdate(BaseModel):
     """Schema for updating an existing webhook."""
@@ -35,6 +53,18 @@ class WebhookUpdate(BaseModel):
     header_value: str | None = None
     provider: WebhookProvider | None = None
     enabled: bool | None = None
+
+    @field_validator('header_name')
+    @classmethod
+    def validate_header_name(cls, v: str | None) -> str | None:
+        """Validate header name follows HTTP header naming rules."""
+        if v is None or v == '':
+            return None
+        if not HTTP_HEADER_NAME_PATTERN.match(v):
+            raise ValueError('Invalid HTTP header name. Must contain only alphanumeric characters and !#$%&\'*+-.^_`|~')
+        if len(v) > 100:
+            raise ValueError('Header name must be 100 characters or less')
+        return v
 
 
 class WebhookResponse(BaseModel):

@@ -19,14 +19,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add header_name column
-    op.add_column('webhooks', sa.Column('header_name', sa.String(100), nullable=True))
-    # Rename auth_header to header_value
-    op.alter_column('webhooks', 'auth_header', new_column_name='header_value')
+    # Use batch operations for SQLite compatibility
+    with op.batch_alter_table('webhooks') as batch_op:
+        # Add header_name column
+        batch_op.add_column(sa.Column('header_name', sa.String(100), nullable=True))
+        # Rename auth_header to header_value
+        batch_op.alter_column('auth_header', new_column_name='header_value')
 
 
 def downgrade() -> None:
-    # Rename header_value back to auth_header
-    op.alter_column('webhooks', 'header_value', new_column_name='auth_header')
-    # Drop header_name column
-    op.drop_column('webhooks', 'header_name')
+    # Use batch operations for SQLite compatibility
+    with op.batch_alter_table('webhooks') as batch_op:
+        # Rename header_value back to auth_header
+        batch_op.alter_column('header_value', new_column_name='auth_header')
+        # Drop header_name column
+        batch_op.drop_column('header_name')
