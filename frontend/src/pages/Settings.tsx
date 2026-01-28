@@ -110,10 +110,10 @@ export default function SettingsPage() {
   const [healthSettings, setHealthSettings] = useState<HealthSettings>({
     no_data_minutes: 15,
     error_rate_percent: 5.0,
-    detection_latency_warning_ms: 2000,
-    detection_latency_critical_ms: 10000,
-    opensearch_latency_warning_ms: 1000,
-    opensearch_latency_critical_ms: 5000,
+    detection_latency_warning_ms: 2,
+    detection_latency_critical_ms: 10,
+    opensearch_latency_warning_ms: 1,
+    opensearch_latency_critical_ms: 5,
     queue_warning: 10000,
     queue_critical: 100000,
   })
@@ -179,8 +179,16 @@ export default function SettingsPage() {
         settingsApi.getHealthSettings(),
         api.get('/health/check-intervals')
       ] as const)
-      setHealthSettings(thresholds)
-      setHealthSettingsForm(thresholds)
+      // Convert ms to seconds for display
+      const displayThresholds = {
+        ...thresholds,
+        detection_latency_warning_ms: thresholds.detection_latency_warning_ms / 1000,
+        detection_latency_critical_ms: thresholds.detection_latency_critical_ms / 1000,
+        opensearch_latency_warning_ms: thresholds.opensearch_latency_warning_ms / 1000,
+        opensearch_latency_critical_ms: thresholds.opensearch_latency_critical_ms / 1000,
+      }
+      setHealthSettings(displayThresholds)
+      setHealthSettingsForm(displayThresholds)
       setHealthCheckIntervals(intervals as typeof healthCheckIntervals)
       setHealthCheckIntervalsForm(intervals as typeof healthCheckIntervals)
     } catch (err) {
@@ -495,9 +503,17 @@ export default function SettingsPage() {
   const saveHealthSettings = async () => {
     setIsSavingHealthSettings(true)
     try {
-      await settingsApi.updateHealthSettings(healthSettingsForm)
+      // Convert seconds to ms for API
+      const apiData = {
+        ...healthSettingsForm,
+        detection_latency_warning_ms: healthSettingsForm.detection_latency_warning_ms * 1000,
+        detection_latency_critical_ms: healthSettingsForm.detection_latency_critical_ms * 1000,
+        opensearch_latency_warning_ms: healthSettingsForm.opensearch_latency_warning_ms * 1000,
+        opensearch_latency_critical_ms: healthSettingsForm.opensearch_latency_critical_ms * 1000,
+      }
+      await settingsApi.updateHealthSettings(apiData)
       setHealthSettings(healthSettingsForm)
-      showToast('Health settings saved')
+      showToast('Health settings saved successfully')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to save health settings', 'error')
     } finally {
@@ -1371,44 +1387,52 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="detection-latency-warning">Detection Latency Warning (ms)</Label>
+                    <Label htmlFor="detection-latency-warning">Detection Latency Warning (seconds)</Label>
                     <Input
                       id="detection-latency-warning"
                       type="number"
-                      min="100"
+                      min="1"
+                      step="0.1"
                       value={healthSettingsForm.detection_latency_warning_ms}
-                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, detection_latency_warning_ms: parseInt(e.target.value) || 0})}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, detection_latency_warning_ms: parseFloat(e.target.value) || 0})}
                     />
+                    <p className="text-xs text-muted-foreground">Default: 2 seconds</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="detection-latency-critical">Detection Latency Critical (ms)</Label>
+                    <Label htmlFor="detection-latency-critical">Detection Latency Critical (seconds)</Label>
                     <Input
                       id="detection-latency-critical"
                       type="number"
-                      min="100"
+                      min="1"
+                      step="0.1"
                       value={healthSettingsForm.detection_latency_critical_ms}
-                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, detection_latency_critical_ms: parseInt(e.target.value) || 0})}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, detection_latency_critical_ms: parseFloat(e.target.value) || 0})}
                     />
+                    <p className="text-xs text-muted-foreground">Default: 10 seconds</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="opensearch-latency-warning">OpenSearch Query Warning (ms)</Label>
+                    <Label htmlFor="opensearch-latency-warning">OpenSearch Query Warning (seconds)</Label>
                     <Input
                       id="opensearch-latency-warning"
                       type="number"
-                      min="100"
+                      min="1"
+                      step="0.1"
                       value={healthSettingsForm.opensearch_latency_warning_ms}
-                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, opensearch_latency_warning_ms: parseInt(e.target.value) || 0})}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, opensearch_latency_warning_ms: parseFloat(e.target.value) || 0})}
                     />
+                    <p className="text-xs text-muted-foreground">Default: 1 second</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="opensearch-latency-critical">OpenSearch Query Critical (ms)</Label>
+                    <Label htmlFor="opensearch-latency-critical">OpenSearch Query Critical (seconds)</Label>
                     <Input
                       id="opensearch-latency-critical"
                       type="number"
-                      min="100"
+                      min="1"
+                      step="0.1"
                       value={healthSettingsForm.opensearch_latency_critical_ms}
-                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, opensearch_latency_critical_ms: parseInt(e.target.value) || 0})}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, opensearch_latency_critical_ms: parseFloat(e.target.value) || 0})}
                     />
+                    <p className="text-xs text-muted-foreground">Default: 5 seconds</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="queue-warning">Queue Warning</Label>
