@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, GitCommit, Rocket, MessageSquare, RotateCcw } from 'lucide-react'
+import { X, GitCommit, Rocket, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -11,7 +11,6 @@ interface CorrelationActivityPanelProps {
   currentVersion: number
   isOpen: boolean
   onClose: () => void
-  onRestore?: (versionNumber: number) => void
 }
 
 export function CorrelationActivityPanel({
@@ -19,7 +18,6 @@ export function CorrelationActivityPanel({
   currentVersion,
   isOpen,
   onClose,
-  onRestore,
 }: CorrelationActivityPanelProps) {
   const [activities, setActivities] = useState<CorrelationActivityItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -217,18 +215,8 @@ export function CorrelationActivityPanel({
                       {activity.user_email && <span> by {activity.user_email}</span>}
                     </div>
                   </div>
-                  {Number(activity.data.version_number) === currentVersion ? (
+                  {Number(activity.data.version_number) === currentVersion && (
                     <span className="text-xs text-muted-foreground px-2">(Current)</span>
-                  ) : onRestore && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => onRestore(Number(activity.data.version_number))}
-                    >
-                      <RotateCcw className="h-3 w-3 mr-1" />
-                      Restore
-                    </Button>
                   )}
                 </div>
               ))
