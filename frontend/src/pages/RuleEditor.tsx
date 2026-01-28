@@ -1648,7 +1648,6 @@ export default function RuleEditorPage() {
                           size="sm"
                           onClick={handleApplyThresholdClick}
                           disabled={isUpdatingThreshold || !hasThresholdFieldChanges}
-                          variant={hasThresholdFieldChanges ? 'default' : 'outline'}
                         >
                           {isUpdatingThreshold ? (
                             <>
