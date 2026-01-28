@@ -17,18 +17,20 @@ def setup_logging() -> None:
     In production: JSON format with timestamps and request IDs
     In development: Readable text format with colors
     """
+    log_level = getattr(logging, settings.LOG_LEVEL)
+
     if settings.DEBUG:
         # Development: Human-readable logging
-        configure_development_logging()
+        configure_development_logging(log_level)
     else:
         # Production: JSON logging
-        configure_production_logging()
+        configure_production_logging(log_level)
 
 
-def configure_development_logging() -> None:
+def configure_development_logging(level: int) -> None:
     """Configure logging for development (readable format)."""
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         stream=sys.stdout,
@@ -41,7 +43,7 @@ def configure_development_logging() -> None:
     logging.getLogger('sqlalchemy.orm').setLevel(logging.WARNING)
 
 
-def configure_production_logging() -> None:
+def configure_production_logging(level: int) -> None:
     """Configure logging for production (JSON format)."""
     try:
         import structlog
@@ -72,7 +74,7 @@ def configure_production_logging() -> None:
         logging.basicConfig(
             format="%(message)s",
             stream=sys.stdout,
-            level=logging.INFO,
+            level=level,
         )
 
     except ImportError:
@@ -89,7 +91,7 @@ def configure_production_logging() -> None:
 
         root_logger = logging.getLogger()
         root_logger.handlers = [handler]
-        root_logger.setLevel(logging.INFO)
+        root_logger.setLevel(level)
 
 
 def redact_sensitive_data(

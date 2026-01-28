@@ -35,6 +35,8 @@ services:
       # Frontend URL for SSO redirects (local dev needs explicit URL due to different ports)
       - FRONTEND_URL=http://localhost:3000
       - APP_URL=http://localhost:3000
+      # Logging (development uses INFO for verbose logs)
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     ports:
       - "8000:8000"
     depends_on:
@@ -43,7 +45,7 @@ services:
     volumes:
       - ./backend:/app
       - chad_data:/data
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
 
   frontend:
     build:

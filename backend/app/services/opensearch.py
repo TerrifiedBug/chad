@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 # Suppress urllib3 InsecureRequestWarning when verify_certs=False
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
+# Track whether SSL warning has been logged to avoid repeated warnings
+_ssl_warning_logged = False
+
 
 @dataclass
 class ValidationStep:
@@ -52,6 +55,7 @@ def create_client(
         In production, verify_certs should always be True to prevent Man-in-the-Middle attacks.
         Only set to False for development/testing with self-signed certificates.
     """
+    global _ssl_warning_logged
     auth = (username, password) if username and password else None
 
     # When verify_certs is False, we need to provide an ssl_context that explicitly
@@ -62,7 +66,11 @@ def create_client(
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
-        logger.warning("[SECURITY] SSL certificate verification is DISABLED. This should only be used in development environments!")
+
+        # Only log once per process lifetime
+        if not _ssl_warning_logged:
+            logger.warning("[SECURITY] SSL certificate verification is DISABLED. This should only be used in development environments!")
+            _ssl_warning_logged = True
 
     return OpenSearch(
         hosts=[{"host": host, "port": port}],
