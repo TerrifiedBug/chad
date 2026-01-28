@@ -2,6 +2,7 @@ from app.models.alert import Alert
 from app.models.api_key import APIKey
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.audit_log import AuditLog
+from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.field_mapping import FieldMapping, MappingOrigin
 from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.health_check import HealthCheckLog
@@ -31,6 +32,8 @@ __all__ = [
     "APIKey",
     "AttackTechnique",
     "AuditLog",
+    "CorrelationRule",
+    "CorrelationRuleVersion",
     "FieldMapping",
     "HealthAlertSuppression",
     "HealthCheckLog",
