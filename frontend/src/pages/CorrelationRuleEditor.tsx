@@ -149,7 +149,6 @@ export default function CorrelationRuleEditorPage() {
   const [error, setError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [isActivityOpen, setIsActivityOpen] = useState(false)
-  const [currentVersion, setCurrentVersion] = useState(1)
   const [deployedAt, setDeployedAt] = useState<string | null>(null)
   const [deployedVersion, setDeployedVersion] = useState<number | null>(null)
   const [ruleAFieldMappings, setRuleAFieldMappings] = useState<FieldMappingInfo[]>([])
@@ -274,7 +273,6 @@ export default function CorrelationRuleEditorPage() {
       }
       setFormData(data)
       setOriginalData(data)
-      setCurrentVersion(rule.current_version)
       setDeployedAt(rule.deployed_at || null)
       setDeployedVersion(rule.deployed_version || null)
       await loadCommonFields(rule.entity_field, rule.rule_a_id, rule.rule_b_id)
@@ -634,7 +632,6 @@ export default function CorrelationRuleEditorPage() {
       {isEditing && id && (
         <CorrelationActivityPanel
           correlationId={id}
-          currentVersion={currentVersion}
           isOpen={isActivityOpen}
           onClose={() => setIsActivityOpen(false)}
         />

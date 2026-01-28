@@ -1,21 +1,18 @@
-import { useState, useEffect, useMemo } from 'react'
-import { X, GitCommit, Rocket, MessageSquare } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Rocket, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { correlationRulesApi, CorrelationActivityItem } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
 
 interface CorrelationActivityPanelProps {
   correlationId: string
-  currentVersion: number
   isOpen: boolean
   onClose: () => void
 }
 
 export function CorrelationActivityPanel({
   correlationId,
-  currentVersion,
   isOpen,
   onClose,
 }: CorrelationActivityPanelProps) {
@@ -24,15 +21,8 @@ export function CorrelationActivityPanel({
   const [newComment, setNewComment] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const activityItems = useMemo(
-    () => activities.filter(a => a.type !== 'version'),
-    [activities]
-  )
-
-  const versionItems = useMemo(
-    () => activities.filter(a => a.type === 'version'),
-    [activities]
-  )
+  // Filter out version events - only show deploys, undeploys, and comments
+  const activityItems = activities.filter(a => a.type !== 'version')
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -114,115 +104,74 @@ export function CorrelationActivityPanel({
         aria-label="Correlation rule activity panel"
       >
         <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="font-semibold">Activity & History</h2>
+          <h2 className="font-semibold">Activity</h2>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close activity panel">
             <X className="h-4 w-4" />
           </Button>
         </div>
 
-        <Tabs defaultValue="activity" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="mx-4 mt-2 shrink-0">
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-            <TabsTrigger value="versions">Versions</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="activity" className="flex-1 flex flex-col min-h-0 mt-2 data-[state=inactive]:hidden">
-            <div className="flex-1 overflow-auto p-4 space-y-4">
-              {isLoading ? (
-                <div className="text-center text-muted-foreground">Loading...</div>
-              ) : activityItems.length === 0 ? (
-                <div className="text-center text-muted-foreground">No activity yet</div>
-              ) : (
-                activityItems.map((activity, index) => (
-                  <div key={`${activity.type}-${activity.timestamp}-${index}`} className="flex gap-3">
-                    <div className="flex-shrink-0 mt-1">
-                      {activity.type === 'deploy' && <Rocket className="h-4 w-4 text-green-500" />}
-                      {activity.type === 'undeploy' && <Rocket className="h-4 w-4 text-orange-500" />}
-                      {activity.type === 'comment' && <MessageSquare className="h-4 w-4 text-purple-500" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 text-sm">
-                        {activity.type === 'deploy' && (
-                          <span className="text-green-600">Deployed</span>
-                        )}
-                        {activity.type === 'undeploy' && (
-                          <span className="text-orange-600">Undeployed</span>
-                        )}
-                        {activity.type === 'comment' && (
-                          <span className="font-medium">{activity.user_email}</span>
-                        )}
-                      </div>
-
-                      {activity.type === 'comment' && (
-                        <p className="text-sm mt-1">{String(activity.data.content)}</p>
-                      )}
-
-                      {(activity.type === 'deploy' || activity.type === 'undeploy') && activity.data.change_reason ? (
-                        <p className="text-sm text-muted-foreground mt-1">{String(activity.data.change_reason)}</p>
-                      ) : null}
-
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
-                        {activity.user_email && activity.type !== 'comment' && (
-                          <span> by {activity.user_email}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="p-4 border-t">
-              <Textarea
-                placeholder="Add a comment..."
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                className="mb-2"
-                rows={2}
-              />
-              <Button
-                onClick={handleAddComment}
-                disabled={isSubmitting || !newComment.trim()}
-                className="w-full"
-              >
-                {isSubmitting ? 'Adding...' : 'Add Comment'}
-              </Button>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="versions" className="flex-1 overflow-auto p-4 space-y-3 mt-2 data-[state=inactive]:hidden">
-            {isLoading ? (
-              <div className="text-center text-muted-foreground">Loading...</div>
-            ) : versionItems.length === 0 ? (
-              <div className="text-center text-muted-foreground">No versions yet</div>
-            ) : (
-              versionItems.map((activity) => (
-                <div key={`version-${activity.data.version_number}`} className="flex gap-3 items-start">
-                  <div className="flex-shrink-0 mt-1">
-                    <GitCommit className="h-4 w-4 text-blue-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">v{String(activity.data.version_number)}</span>
-                      <span className="text-muted-foreground">created</span>
-                    </div>
-                    {activity.data.change_reason ? (
-                      <p className="text-xs text-muted-foreground mt-1">{String(activity.data.change_reason)}</p>
-                    ) : null}
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
-                      {activity.user_email && <span> by {activity.user_email}</span>}
-                    </div>
-                  </div>
-                  {Number(activity.data.version_number) === currentVersion && (
-                    <span className="text-xs text-muted-foreground px-2">(Current)</span>
-                  )}
+        <div className="flex-1 overflow-auto p-4 space-y-4">
+          {isLoading ? (
+            <div className="text-center text-muted-foreground">Loading...</div>
+          ) : activityItems.length === 0 ? (
+            <div className="text-center text-muted-foreground">No activity yet</div>
+          ) : (
+            activityItems.map((activity, index) => (
+              <div key={`${activity.type}-${activity.timestamp}-${index}`} className="flex gap-3">
+                <div className="flex-shrink-0 mt-1">
+                  {activity.type === 'deploy' && <Rocket className="h-4 w-4 text-green-500" />}
+                  {activity.type === 'undeploy' && <Rocket className="h-4 w-4 text-orange-500" />}
+                  {activity.type === 'comment' && <MessageSquare className="h-4 w-4 text-purple-500" />}
                 </div>
-              ))
-            )}
-          </TabsContent>
-        </Tabs>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 text-sm">
+                    {activity.type === 'deploy' && (
+                      <span className="text-green-600">Deployed</span>
+                    )}
+                    {activity.type === 'undeploy' && (
+                      <span className="text-orange-600">Undeployed</span>
+                    )}
+                    {activity.type === 'comment' && (
+                      <span className="font-medium">{activity.user_email}</span>
+                    )}
+                  </div>
+
+                  {activity.type === 'comment' && (
+                    <p className="text-sm mt-1">{String(activity.data.content)}</p>
+                  )}
+
+                  {(activity.type === 'deploy' || activity.type === 'undeploy') && activity.data.change_reason ? (
+                    <p className="text-sm text-muted-foreground mt-1">{String(activity.data.change_reason)}</p>
+                  ) : null}
+
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
+                    {activity.user_email && activity.type !== 'comment' && (
+                      <span> by {activity.user_email}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="p-4 border-t">
+          <Textarea
+            placeholder="Add a comment..."
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            className="mb-2"
+            rows={2}
+          />
+          <Button
+            onClick={handleAddComment}
+            disabled={isSubmitting || !newComment.trim()}
+            className="w-full"
+          >
+            {isSubmitting ? 'Adding...' : 'Add Comment'}
+          </Button>
+        </div>
       </div>
     </>
   )
