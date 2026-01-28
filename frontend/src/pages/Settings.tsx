@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -120,6 +120,17 @@ export default function SettingsPage() {
   const [healthSettingsForm, setHealthSettingsForm] = useState<HealthSettings>(healthSettings)
   const [isSavingHealthSettings, setIsSavingHealthSettings] = useState(false)
 
+  // Health check intervals
+  const [healthCheckIntervals, setHealthCheckIntervals] = useState({
+    jira_interval_seconds: 900,
+    sigmahq_interval_seconds: 3600,
+    mitre_attack_interval_seconds: 3600,
+    opensearch_interval_seconds: 300,
+    ti_interval_seconds: 1800,
+  })
+  const [healthCheckIntervalsForm, setHealthCheckIntervalsForm] = useState(healthCheckIntervals)
+  const [isSavingHealthCheckIntervals, setIsSavingHealthCheckIntervals] = useState(false)
+
   // Audit to OpenSearch
   const [auditOpenSearchEnabled, setAuditOpenSearchEnabled] = useState(false)
 
@@ -164,9 +175,14 @@ export default function SettingsPage() {
 
   const loadHealthSettings = async () => {
     try {
-      const data = await settingsApi.getHealthSettings()
-      setHealthSettings(data)
-      setHealthSettingsForm(data)
+      const [thresholds, intervals] = await Promise.all([
+        settingsApi.getHealthSettings(),
+        api.get('/health/check-intervals')
+      ] as const)
+      setHealthSettings(thresholds)
+      setHealthSettingsForm(thresholds)
+      setHealthCheckIntervals(intervals as typeof healthCheckIntervals)
+      setHealthCheckIntervalsForm(intervals as typeof healthCheckIntervals)
     } catch (err) {
       console.error('Failed to load health settings:', err)
     }
@@ -1433,6 +1449,103 @@ export default function SettingsPage() {
                       Save Settings
                     </>
                   )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Health Check Intervals</CardTitle>
+              <CardDescription>
+                Configure how frequently the system checks health status of external services.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="jira-interval">Jira Cloud (seconds)</Label>
+                  <Input
+                    id="jira-interval"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={healthCheckIntervalsForm.jira_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, jira_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 900 (15 minutes)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sigmahq-interval">SigmaHQ (seconds)</Label>
+                  <Input
+                    id="sigmahq-interval"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={healthCheckIntervalsForm.sigmahq_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, sigmahq_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 3600 (1 hour)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="attack-interval">MITRE ATT&CK (seconds)</Label>
+                  <Input
+                    id="attack-interval"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={healthCheckIntervalsForm.mitre_attack_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, mitre_attack_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 3600 (1 hour)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="opensearch-interval">OpenSearch (seconds)</Label>
+                  <Input
+                    id="opensearch-interval"
+                    type="number"
+                    min="30"
+                    max="600"
+                    value={healthCheckIntervalsForm.opensearch_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, opensearch_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 300 (5 minutes)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="ti-interval">Threat Intelligence (seconds)</Label>
+                  <Input
+                    id="ti-interval"
+                    type="number"
+                    min="60"
+                    max="3600"
+                    value={healthCheckIntervalsForm.ti_interval_seconds}
+                    onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, ti_interval_seconds: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: 1800 (30 minutes)</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  onClick={async () => {
+                    setIsSavingHealthCheckIntervals(true)
+                    try {
+                      await api.put('/health/check-intervals', healthCheckIntervalsForm)
+                      setHealthCheckIntervals(healthCheckIntervalsForm)
+                      showToast('Health check intervals saved successfully')
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Failed to save health check intervals', 'error')
+                    } finally {
+                      setIsSavingHealthCheckIntervals(false)
+                    }
+                  }}
+                  disabled={isSavingHealthCheckIntervals}
+                >
+                  {isSavingHealthCheckIntervals ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
                 </Button>
               </div>
             </CardContent>
