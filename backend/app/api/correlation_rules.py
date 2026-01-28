@@ -37,6 +37,8 @@ def build_correlation_response(
     rule_a_title: str | None,
     rule_b_title: str | None,
     last_edited_by: str | None = None,
+    rule_a_deployed: bool = True,
+    rule_b_deployed: bool = True,
 ) -> CorrelationRuleResponse:
     """Build a CorrelationRuleResponse from a rule."""
     return CorrelationRuleResponse(
@@ -57,18 +59,27 @@ def build_correlation_response(
         needs_redeploy=rule.needs_redeploy,
         rule_a_title=rule_a_title,
         rule_b_title=rule_b_title,
+        rule_a_deployed=rule_a_deployed,
+        rule_b_deployed=rule_b_deployed,
     )
 
 
-async def get_rule_titles(db: AsyncSession, rule_a_id: UUID, rule_b_id: UUID) -> tuple[str | None, str | None]:
-    """Get the titles for rule A and rule B."""
-    rule_a_result = await db.execute(select(Rule.title).where(Rule.id == rule_a_id))
-    rule_a_title = rule_a_result.scalar_one_or_none()
+async def get_rule_info(db: AsyncSession, rule_a_id: UUID, rule_b_id: UUID) -> dict:
+    """Get the titles and deployment status for rule A and rule B."""
+    from app.models.rule import RuleStatus
 
-    rule_b_result = await db.execute(select(Rule.title).where(Rule.id == rule_b_id))
-    rule_b_title = rule_b_result.scalar_one_or_none()
+    rule_a_result = await db.execute(select(Rule.title, Rule.status).where(Rule.id == rule_a_id))
+    rule_a_row = rule_a_result.one_or_none()
 
-    return rule_a_title, rule_b_title
+    rule_b_result = await db.execute(select(Rule.title, Rule.status).where(Rule.id == rule_b_id))
+    rule_b_row = rule_b_result.one_or_none()
+
+    return {
+        "rule_a_title": rule_a_row[0] if rule_a_row else None,
+        "rule_b_title": rule_b_row[0] if rule_b_row else None,
+        "rule_a_deployed": rule_a_row[1] == RuleStatus.DEPLOYED if rule_a_row else False,
+        "rule_b_deployed": rule_b_row[1] == RuleStatus.DEPLOYED if rule_b_row else False,
+    }
 
 
 async def get_last_edited_by(db: AsyncSession, rule_id: str) -> str | None:
@@ -109,10 +120,17 @@ async def list_correlation_rules(
 
     rule_responses = []
     for rule in rules:
-        rule_a_title, rule_b_title = await get_rule_titles(db, rule.rule_a_id, rule.rule_b_id)
+        rule_info = await get_rule_info(db, rule.rule_a_id, rule.rule_b_id)
         last_edited_by = await get_last_edited_by(db, str(rule.id))
         rule_responses.append(
-            build_correlation_response(rule, rule_a_title, rule_b_title, last_edited_by)
+            build_correlation_response(
+                rule,
+                rule_info["rule_a_title"],
+                rule_info["rule_b_title"],
+                last_edited_by,
+                rule_info["rule_a_deployed"],
+                rule_info["rule_b_deployed"],
+            )
         )
 
     return CorrelationRuleListResponse(
@@ -136,10 +154,17 @@ async def get_correlation_rule(
     if not rule:
         raise HTTPException(404, "Correlation rule not found")
 
-    rule_a_title, rule_b_title = await get_rule_titles(db, rule.rule_a_id, rule.rule_b_id)
+    rule_info = await get_rule_info(db, rule.rule_a_id, rule.rule_b_id)
     last_edited_by = await get_last_edited_by(db, rule_id)
 
-    return build_correlation_response(rule, rule_a_title, rule_b_title, last_edited_by)
+    return build_correlation_response(
+        rule,
+        rule_info["rule_a_title"],
+        rule_info["rule_b_title"],
+        last_edited_by,
+        rule_info["rule_a_deployed"],
+        rule_info["rule_b_deployed"],
+    )
 
 
 @router.get("/{rule_id}/versions", response_model=list[CorrelationRuleVersionResponse])
@@ -356,8 +381,15 @@ async def update_correlation_rule(
     )
     await db.commit()
 
-    rule_a_title, rule_b_title = await get_rule_titles(db, rule.rule_a_id, rule.rule_b_id)
-    return build_correlation_response(rule, rule_a_title, rule_b_title, current_user.email)
+    rule_info = await get_rule_info(db, rule.rule_a_id, rule.rule_b_id)
+    return build_correlation_response(
+        rule,
+        rule_info["rule_a_title"],
+        rule_info["rule_b_title"],
+        current_user.email,
+        rule_info["rule_a_deployed"],
+        rule_info["rule_b_deployed"],
+    )
 
 
 @router.post("/{rule_id}/deploy", response_model=CorrelationRuleResponse)
@@ -376,6 +408,46 @@ async def deploy_correlation_rule(
 
     if not rule:
         raise HTTPException(404, "Correlation rule not found")
+
+    # Check if linked rules are deployed
+    from app.models.rule import Rule, RuleStatus
+    linked_rules_result = await db.execute(
+        select(Rule).where(Rule.id.in_([rule.rule_a_id, rule.rule_b_id]))
+    )
+    linked_rules = linked_rules_result.scalars().all()
+
+    undeployed_rules = [r for r in linked_rules if r.status != RuleStatus.DEPLOYED]
+    if undeployed_rules:
+        undeployed_names = [r.title for r in undeployed_rules]
+        raise HTTPException(
+            400,
+            f"Cannot deploy correlation rule: linked rules are not deployed: {', '.join(undeployed_names)}"
+        )
+
+    # Ensure a version snapshot exists for current state
+    versions_result = await db.execute(
+        select(CorrelationRuleVersion)
+        .where(CorrelationRuleVersion.correlation_rule_id == rule.id)
+        .order_by(CorrelationRuleVersion.version_number.desc())
+        .limit(1)
+    )
+    latest_version = versions_result.scalar_one_or_none()
+
+    if latest_version is None or latest_version.version_number != rule.current_version:
+        # Create version snapshot
+        new_version = CorrelationRuleVersion(
+            correlation_rule_id=rule.id,
+            version_number=rule.current_version,
+            name=rule.name,
+            rule_a_id=rule.rule_a_id,
+            rule_b_id=rule.rule_b_id,
+            entity_field=rule.entity_field,
+            time_window_minutes=rule.time_window_minutes,
+            severity=rule.severity,
+            changed_by=current_user.id,
+            change_reason=data.change_reason or "Deployed",
+        )
+        db.add(new_version)
 
     # Set deployment tracking
     rule.deployed_at = datetime.now(UTC)
@@ -400,8 +472,15 @@ async def deploy_correlation_rule(
     )
     await db.commit()
 
-    rule_a_title, rule_b_title = await get_rule_titles(db, rule.rule_a_id, rule.rule_b_id)
-    return build_correlation_response(rule, rule_a_title, rule_b_title, current_user.email)
+    rule_info = await get_rule_info(db, rule.rule_a_id, rule.rule_b_id)
+    return build_correlation_response(
+        rule,
+        rule_info["rule_a_title"],
+        rule_info["rule_b_title"],
+        current_user.email,
+        rule_info["rule_a_deployed"],
+        rule_info["rule_b_deployed"],
+    )
 
 
 @router.post("/{rule_id}/undeploy", response_model=CorrelationRuleResponse)
@@ -449,8 +528,15 @@ async def undeploy_correlation_rule(
     )
     await db.commit()
 
-    rule_a_title, rule_b_title = await get_rule_titles(db, rule.rule_a_id, rule.rule_b_id)
-    return build_correlation_response(rule, rule_a_title, rule_b_title, current_user.email)
+    rule_info = await get_rule_info(db, rule.rule_a_id, rule.rule_b_id)
+    return build_correlation_response(
+        rule,
+        rule_info["rule_a_title"],
+        rule_info["rule_b_title"],
+        current_user.email,
+        rule_info["rule_a_deployed"],
+        rule_info["rule_b_deployed"],
+    )
 
 
 @router.delete("/{rule_id}")
