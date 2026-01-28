@@ -118,3 +118,11 @@ class CorrelationActivityItem(BaseModel):
     timestamp: datetime
     user_email: str | None
     data: dict
+
+
+class CorrelationRuleRollbackResponse(BaseModel):
+    """Response schema for correlation rule rollback."""
+
+    success: bool
+    new_version_number: int
+    rolled_back_from: int

@@ -3,7 +3,7 @@
 from datetime import datetime, UTC
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,6 +25,7 @@ from app.schemas.correlation import (
     CorrelationRuleDeployRequest,
     CorrelationRuleListResponse,
     CorrelationRuleResponse,
+    CorrelationRuleRollbackResponse,
     CorrelationRuleUpdate,
     CorrelationRuleVersionResponse,
 )
@@ -536,6 +537,83 @@ async def undeploy_correlation_rule(
         current_user.email,
         rule_info["rule_a_deployed"],
         rule_info["rule_b_deployed"],
+    )
+
+
+@router.post("/{correlation_id}/rollback/{version_number}", response_model=CorrelationRuleRollbackResponse)
+async def rollback_correlation_rule(
+    correlation_id: UUID,
+    version_number: int,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
+):
+    """Rollback a correlation rule to a previous version."""
+    # Fetch rule with versions
+    result = await db.execute(
+        select(CorrelationRule)
+        .where(CorrelationRule.id == correlation_id)
+        .options(selectinload(CorrelationRule.versions))
+    )
+    rule = result.scalar_one_or_none()
+
+    if rule is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Correlation rule not found",
+        )
+
+    # Find target version
+    target_version = next(
+        (v for v in rule.versions if v.version_number == version_number),
+        None
+    )
+    if target_version is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Version {version_number} not found",
+        )
+
+    # Increment current version
+    new_version_number = rule.current_version + 1
+
+    # Create new version with old content
+    new_version = CorrelationRuleVersion(
+        correlation_rule_id=correlation_id,
+        version_number=new_version_number,
+        name=target_version.name,
+        rule_a_id=target_version.rule_a_id,
+        rule_b_id=target_version.rule_b_id,
+        entity_field=target_version.entity_field,
+        time_window_minutes=target_version.time_window_minutes,
+        severity=target_version.severity,
+        changed_by=current_user.id,
+        change_reason=change_reason,
+    )
+    db.add(new_version)
+
+    # Update rule fields to match restored version
+    rule.name = target_version.name
+    rule.rule_a_id = target_version.rule_a_id
+    rule.rule_b_id = target_version.rule_b_id
+    rule.entity_field = target_version.entity_field
+    rule.time_window_minutes = target_version.time_window_minutes
+    rule.severity = target_version.severity
+    rule.current_version = new_version_number
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "correlation_rule.rollback", "correlation_rule",
+        str(rule.id), {"name": rule.name, "from_version": version_number, "to_version": new_version_number},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return CorrelationRuleRollbackResponse(
+        success=True,
+        new_version_number=new_version_number,
+        rolled_back_from=version_number,
     )
 
 
