@@ -1352,7 +1352,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="health" className="mt-4">
+        <TabsContent value="health" className="mt-4 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Health Monitoring Thresholds</CardTitle>

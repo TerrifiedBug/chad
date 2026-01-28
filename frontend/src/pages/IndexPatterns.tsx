@@ -88,8 +88,6 @@ export default function IndexPatternsPage() {
   const [healthOverrides, setHealthOverrides] = useState({
     detection_latency_warning_seconds: '',
     detection_latency_critical_seconds: '',
-    opensearch_latency_warning_seconds: '',
-    opensearch_latency_critical_seconds: '',
     error_rate_percent: '',
     no_data_minutes: '',
     queue_warning: '',
@@ -98,8 +96,6 @@ export default function IndexPatternsPage() {
   const [globalDefaults, setGlobalDefaults] = useState({
     detection_latency_warning: 2,
     detection_latency_critical: 10,
-    opensearch_latency_warning: 1,
-    opensearch_latency_critical: 5,
     error_rate_percent: 5,
     no_data_minutes: 15,
     queue_warning: 10000,
@@ -185,8 +181,6 @@ export default function IndexPatternsPage() {
       setGlobalDefaults({
         detection_latency_warning: settings.detection_latency_warning_ms / 1000, // Convert ms to seconds
         detection_latency_critical: settings.detection_latency_critical_ms / 1000,
-        opensearch_latency_warning: settings.opensearch_latency_warning_ms / 1000,
-        opensearch_latency_critical: settings.opensearch_latency_critical_ms / 1000,
         error_rate_percent: settings.error_rate_percent,
         no_data_minutes: settings.no_data_minutes,
         queue_warning: settings.queue_warning,
@@ -229,8 +223,6 @@ export default function IndexPatternsPage() {
     setHealthOverrides({
       detection_latency_warning_seconds: '',
       detection_latency_critical_seconds: '',
-      opensearch_latency_warning_seconds: '',
-      opensearch_latency_critical_seconds: '',
       error_rate_percent: '',
       no_data_minutes: '',
       queue_warning: '',
@@ -267,8 +259,6 @@ export default function IndexPatternsPage() {
     setHealthOverrides({
       detection_latency_warning_seconds: '',
       detection_latency_critical_seconds: '',
-      opensearch_latency_warning_seconds: '',
-      opensearch_latency_critical_seconds: '',
       error_rate_percent: '',
       no_data_minutes: '',
       queue_warning: '',
@@ -880,43 +870,10 @@ export default function IndexPatternsPage() {
                         </div>
                       </div>
 
-                      {/* OpenSearch Query Latency */}
-                      <div>
-                        <h4 className="text-sm font-medium mb-3">OpenSearch Query Latency</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="opensearch-warning">Warning (seconds)</Label>
-                            <Input
-                              id="opensearch-warning"
-                              type="number"
-                              min="1"
-                              step="0.1"
-                              placeholder={`Global: ${globalDefaults.opensearch_latency_warning}`}
-                              value={healthOverrides.opensearch_latency_warning_seconds}
-                              onChange={(e) => setHealthOverrides({...healthOverrides, opensearch_latency_warning_seconds: e.target.value})}
-                            />
-                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.opensearch_latency_warning} seconds</p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="opensearch-critical">Critical (seconds)</Label>
-                            <Input
-                              id="opensearch-critical"
-                              type="number"
-                              min="1"
-                              step="0.1"
-                              placeholder={`Global: ${globalDefaults.opensearch_latency_critical}`}
-                              value={healthOverrides.opensearch_latency_critical_seconds}
-                              onChange={(e) => setHealthOverrides({...healthOverrides, opensearch_latency_critical_seconds: e.target.value})}
-                            />
-                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.opensearch_latency_critical} seconds</p>
-                          </div>
-                        </div>
-                      </div>
-
                       {/* Other Thresholds */}
                       <div>
                         <h4 className="text-sm font-medium mb-3">Other Thresholds</h4>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <Label htmlFor="error-rate">Error Rate (%)</Label>
                             <Input
