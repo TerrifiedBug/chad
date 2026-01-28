@@ -20,7 +20,8 @@ class WebhookCreate(BaseModel):
 
     name: str
     url: HttpUrl
-    auth_header: str | None = None
+    header_name: str | None = None
+    header_value: str | None = None
     provider: WebhookProvider = WebhookProvider.GENERIC
     enabled: bool = True
 
@@ -30,7 +31,8 @@ class WebhookUpdate(BaseModel):
 
     name: str | None = None
     url: HttpUrl | None = None
-    auth_header: str | None = None
+    header_name: str | None = None
+    header_value: str | None = None
     provider: WebhookProvider | None = None
     enabled: bool | None = None
 
@@ -41,7 +43,8 @@ class WebhookResponse(BaseModel):
     id: UUID
     name: str
     url: str
-    has_auth: bool  # Don't expose actual auth header
+    has_auth: bool  # Don't expose actual header value
+    header_name: str | None = None  # Expose header name for UI display
     provider: str
     enabled: bool
     created_at: datetime

@@ -405,12 +405,14 @@ def _format_payload_for_provider(provider: str, payload: dict) -> dict:
 async def _send_to_webhook(webhook: Webhook, payload: dict) -> tuple[bool, str | None]:
     """Send payload to a webhook. Returns (success, error)."""
     headers = {"Content-Type": "application/json"}
-    if webhook.auth_header:
+    if webhook.header_value:
         try:
-            headers["Authorization"] = decrypt(webhook.auth_header)
+            # Use custom header name or default to Authorization
+            header_name = webhook.header_name or "Authorization"
+            headers[header_name] = decrypt(webhook.header_value)
         except Exception as e:
-            logger.error(f"Failed to decrypt auth header for webhook {webhook.id}: {e}")
-            return False, "Failed to decrypt auth header"
+            logger.error(f"Failed to decrypt header value for webhook {webhook.id}: {e}")
+            return False, "Failed to decrypt header value"
 
     # Format payload based on provider
     formatted_payload = _format_payload_for_provider(webhook.provider, payload)

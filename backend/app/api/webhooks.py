@@ -93,7 +93,8 @@ async def list_webhooks(
             id=w.id,
             name=w.name,
             url=w.url,
-            has_auth=bool(w.auth_header),
+            has_auth=bool(w.header_value),
+            header_name=w.header_name,
             provider=w.provider,
             enabled=w.enabled,
             created_at=w.created_at,
@@ -127,7 +128,8 @@ async def create_webhook(
     webhook = Webhook(
         name=data.name,
         url=str(data.url),
-        auth_header=encrypt(data.auth_header) if data.auth_header else None,
+        header_name=data.header_name,
+        header_value=encrypt(data.header_value) if data.header_value else None,
         provider=data.provider.value,
         enabled=data.enabled,
     )
@@ -150,7 +152,8 @@ async def create_webhook(
         id=webhook.id,
         name=webhook.name,
         url=webhook.url,
-        has_auth=bool(webhook.auth_header),
+        has_auth=bool(webhook.header_value),
+        header_name=webhook.header_name,
         provider=webhook.provider,
         enabled=webhook.enabled,
         created_at=webhook.created_at,
@@ -173,7 +176,8 @@ async def get_webhook(
         id=webhook.id,
         name=webhook.name,
         url=webhook.url,
-        has_auth=bool(webhook.auth_header),
+        has_auth=bool(webhook.header_value),
+        header_name=webhook.header_name,
         provider=webhook.provider,
         enabled=webhook.enabled,
         created_at=webhook.created_at,
@@ -204,8 +208,10 @@ async def update_webhook(
         webhook.name = data.name
     if data.url is not None:
         webhook.url = str(data.url)
-    if data.auth_header is not None:
-        webhook.auth_header = encrypt(data.auth_header) if data.auth_header else None
+    if data.header_name is not None:
+        webhook.header_name = data.header_name if data.header_name else None
+    if data.header_value is not None:
+        webhook.header_value = encrypt(data.header_value) if data.header_value else None
     if data.provider is not None:
         webhook.provider = data.provider.value
     if data.enabled is not None:
@@ -227,7 +233,8 @@ async def update_webhook(
         id=webhook.id,
         name=webhook.name,
         url=webhook.url,
-        has_auth=bool(webhook.auth_header),
+        has_auth=bool(webhook.header_value),
+        header_name=webhook.header_name,
         provider=webhook.provider,
         enabled=webhook.enabled,
         created_at=webhook.created_at,
@@ -318,8 +325,10 @@ async def test_webhook(
         raise HTTPException(status_code=404, detail="Webhook not found")
 
     headers = {"Content-Type": "application/json"}
-    if webhook.auth_header:
-        headers["Authorization"] = decrypt(webhook.auth_header)
+    if webhook.header_value:
+        # Use custom header name or default to Authorization
+        header_name = webhook.header_name or "Authorization"
+        headers[header_name] = decrypt(webhook.header_value)
 
     payload = _format_test_payload(webhook.provider, webhook.name)
 

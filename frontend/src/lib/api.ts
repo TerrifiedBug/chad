@@ -1187,6 +1187,7 @@ export type Webhook = {
   name: string
   url: string
   has_auth: boolean
+  header_name: string | null
   provider: WebhookProvider
   enabled: boolean
   created_at: string
@@ -1196,9 +1197,9 @@ export type Webhook = {
 // Webhooks API
 export const webhooksApi = {
   list: () => api.get<Webhook[]>('/webhooks'),
-  create: (data: { name: string; url: string; auth_header?: string; provider?: WebhookProvider; enabled?: boolean }) =>
+  create: (data: { name: string; url: string; header_name?: string; header_value?: string; provider?: WebhookProvider; enabled?: boolean }) =>
     api.post<Webhook>('/webhooks', data),
-  update: (id: string, data: Partial<{ name: string; url: string; auth_header: string; provider: WebhookProvider; enabled: boolean }>) =>
+  update: (id: string, data: Partial<{ name: string; url: string; header_name: string; header_value: string; provider: WebhookProvider; enabled: boolean }>) =>
     api.patch<Webhook>(`/webhooks/${id}`, data),
   delete: (id: string) => api.delete(`/webhooks/${id}`),
   test: (id: string) => api.post<{ success: boolean; status_code?: number; error?: string }>(`/webhooks/${id}/test`),

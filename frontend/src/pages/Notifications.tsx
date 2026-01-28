@@ -108,7 +108,8 @@ const providerLabels: Record<WebhookProvider, string> = {
 type WebhookFormData = {
   name: string
   url: string
-  auth_header: string
+  header_name: string
+  header_value: string
   provider: WebhookProvider
   enabled: boolean
 }
@@ -116,7 +117,8 @@ type WebhookFormData = {
 const emptyFormData: WebhookFormData = {
   name: '',
   url: '',
-  auth_header: '',
+  header_name: '',
+  header_value: '',
   provider: 'generic',
   enabled: true,
 }
@@ -231,7 +233,8 @@ export default function Notifications() {
     setFormData({
       name: webhook.name,
       url: webhook.url,
-      auth_header: '',
+      header_name: webhook.header_name || '',
+      header_value: '',
       provider: webhook.provider,
       enabled: webhook.enabled,
     })
@@ -537,14 +540,20 @@ export default function Notifications() {
     setIsSaving(true)
     try {
       if (editingWebhook) {
-        const updateData: Partial<{ name: string; url: string; auth_header: string; provider: WebhookProvider; enabled: boolean }> = {
+        const updateData: Partial<{ name: string; url: string; header_name: string; header_value: string; provider: WebhookProvider; enabled: boolean }> = {
           name: formData.name,
           url: formData.url,
           provider: formData.provider,
           enabled: formData.enabled,
         }
-        if (formData.auth_header) {
-          updateData.auth_header = formData.auth_header
+        // Only include header fields for generic provider
+        if (formData.provider === 'generic') {
+          if (formData.header_name) {
+            updateData.header_name = formData.header_name
+          }
+          if (formData.header_value) {
+            updateData.header_value = formData.header_value
+          }
         }
         const updated = await webhooksApi.update(editingWebhook.id, updateData)
         setWebhooks(webhooks.map(w => w.id === updated.id ? updated : w))
@@ -553,7 +562,9 @@ export default function Notifications() {
         const created = await webhooksApi.create({
           name: formData.name,
           url: formData.url,
-          auth_header: formData.auth_header || undefined,
+          // Only include header fields for generic provider
+          header_name: formData.provider === 'generic' && formData.header_name ? formData.header_name : undefined,
+          header_value: formData.provider === 'generic' && formData.header_value ? formData.header_value : undefined,
           provider: formData.provider,
           enabled: formData.enabled,
         })
@@ -825,19 +836,35 @@ export default function Notifications() {
                 placeholder={providerPlaceholders[formData.provider]?.url || 'https://your-endpoint.com/webhook'}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="webhook-auth">Authorization Header (optional)</Label>
-              <Input
-                id="webhook-auth"
-                type="password"
-                value={formData.auth_header}
-                onChange={e => setFormData({ ...formData, auth_header: e.target.value })}
-                placeholder={editingWebhook?.has_auth ? 'Enter new value to change' : 'Bearer token or API key'}
-              />
-              <p className="text-xs text-muted-foreground">
-                {editingWebhook?.has_auth ? 'Leave blank to keep existing' : 'Sent as Authorization header'}
-              </p>
-            </div>
+            {formData.provider === 'generic' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="webhook-header-name">Header Name (optional)</Label>
+                  <Input
+                    id="webhook-header-name"
+                    value={formData.header_name}
+                    onChange={e => setFormData({ ...formData, header_name: e.target.value })}
+                    placeholder="Authorization"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Custom header name (e.g., X-API-Key, Authorization)
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="webhook-header-value">Header Value (optional)</Label>
+                  <Input
+                    id="webhook-header-value"
+                    type="password"
+                    value={formData.header_value}
+                    onChange={e => setFormData({ ...formData, header_value: e.target.value })}
+                    placeholder={editingWebhook?.has_auth ? 'Enter new value to change' : 'Bearer token or API key'}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {editingWebhook?.has_auth ? 'Leave blank to keep existing' : 'Value for the custom header'}
+                  </p>
+                </div>
+              </>
+            )}
             <div className="flex items-center justify-between">
               <div>
                 <Label>Enabled</Label>
