@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.rule_exception import ExceptionOperator
 
@@ -13,6 +13,7 @@ class RuleExceptionCreate(BaseModel):
     operator: ExceptionOperator = ExceptionOperator.EQUALS
     value: str
     reason: str | None = None
+    change_reason: str = Field(..., min_length=1, max_length=10000)
 
 
 class RuleExceptionUpdate(BaseModel):
@@ -21,6 +22,7 @@ class RuleExceptionUpdate(BaseModel):
     value: str | None = None
     reason: str | None = None
     is_active: bool | None = None
+    change_reason: str = Field(..., min_length=1, max_length=10000)
 
 
 class RuleExceptionResponse(BaseModel):

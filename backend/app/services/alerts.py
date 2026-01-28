@@ -395,7 +395,7 @@ class AlertService:
                 alert_index = hit["_index"]
                 alert_source = hit["_source"]
 
-                self.client.delete(index=alert_index, id=str(alert_id))
+                self.client.delete(index=alert_index, id=str(alert_id), refresh=True)
 
                 # Create audit log entry (alert has been deleted)
                 from app.services.audit import audit_log
@@ -436,7 +436,8 @@ class AlertService:
         try:
             self.client.delete(
                 index=alert.alert_index,
-                id=alert.alert_id
+                id=alert.alert_id,
+                refresh=True
             )
         except Exception as e:
             import logging

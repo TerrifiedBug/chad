@@ -148,6 +148,7 @@ class TestCreateRuleException:
                 "field": "user.name",
                 "operator": "equals",
                 "value": "admin",
+                "change_reason": "Adding exception for testing",
             },
         )
         assert response.status_code == 403
@@ -164,6 +165,7 @@ class TestCreateRuleException:
                 "operator": "equals",
                 "value": "admin",
                 "reason": "Admin user is allowed",
+                "change_reason": "Adding exception for admin user",
             },
         )
         assert response.status_code == 201
@@ -190,6 +192,7 @@ class TestCreateRuleException:
                     "field": f"field_{operator}",
                     "operator": operator,
                     "value": "test_value",
+                    "change_reason": f"Testing {operator} operator",
                 },
             )
             assert response.status_code == 201
@@ -207,6 +210,7 @@ class TestCreateRuleException:
                 "field": "user.name",
                 "operator": "equals",
                 "value": "admin",
+                "change_reason": "Testing non-existent rule",
             },
         )
         assert response.status_code == 404
@@ -222,6 +226,7 @@ class TestCreateRuleException:
             json={
                 "field": "user.name",
                 "value": "admin",
+                "change_reason": "Testing default operator",
             },
         )
         assert response.status_code == 201
@@ -238,7 +243,7 @@ class TestUpdateRuleException:
         """Update exception endpoint requires authentication."""
         response = await client.patch(
             f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
-            json={"is_active": False},
+            json={"is_active": False, "change_reason": "Disabling for testing"},
         )
         assert response.status_code == 403
 
@@ -249,7 +254,7 @@ class TestUpdateRuleException:
         """Update exception can toggle active state."""
         response = await authenticated_client.patch(
             f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
-            json={"is_active": False},
+            json={"is_active": False, "change_reason": "Disabling exception"},
         )
         assert response.status_code == 200
         assert response.json()["is_active"] is False
@@ -257,7 +262,7 @@ class TestUpdateRuleException:
         # Toggle back
         response = await authenticated_client.patch(
             f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
-            json={"is_active": True},
+            json={"is_active": True, "change_reason": "Re-enabling exception"},
         )
         assert response.status_code == 200
         assert response.json()["is_active"] is True
@@ -269,7 +274,7 @@ class TestUpdateRuleException:
         """Update exception can change field name."""
         response = await authenticated_client.patch(
             f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
-            json={"field": "destination.ip"},
+            json={"field": "destination.ip", "change_reason": "Changing field name"},
         )
         assert response.status_code == 200
         assert response.json()["field"] == "destination.ip"
@@ -281,7 +286,7 @@ class TestUpdateRuleException:
         """Update exception can change operator."""
         response = await authenticated_client.patch(
             f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
-            json={"operator": "contains"},
+            json={"operator": "contains", "change_reason": "Changing operator"},
         )
         assert response.status_code == 200
         assert response.json()["operator"] == "contains"
@@ -293,7 +298,7 @@ class TestUpdateRuleException:
         """Update exception can change value."""
         response = await authenticated_client.patch(
             f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
-            json={"value": "10.0.0.1"},
+            json={"value": "10.0.0.1", "change_reason": "Changing value"},
         )
         assert response.status_code == 200
         assert response.json()["value"] == "10.0.0.1"
@@ -305,7 +310,7 @@ class TestUpdateRuleException:
         """Update exception can change reason."""
         response = await authenticated_client.patch(
             f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
-            json={"reason": "Updated reason"},
+            json={"reason": "Updated reason", "change_reason": "Updating exception reason"},
         )
         assert response.status_code == 200
         assert response.json()["reason"] == "Updated reason"
@@ -323,6 +328,7 @@ class TestUpdateRuleException:
                 "value": ".*test.*",
                 "reason": "New reason",
                 "is_active": False,
+                "change_reason": "Updating multiple fields",
             },
         )
         assert response.status_code == 200
@@ -341,7 +347,7 @@ class TestUpdateRuleException:
         fake_uuid = uuid.uuid4()
         response = await authenticated_client.patch(
             f"/api/rules/{test_rule.id}/exceptions/{fake_uuid}",
-            json={"is_active": False},
+            json={"is_active": False, "change_reason": "Testing non-existent"},
         )
         assert response.status_code == 404
         assert "Exception not found" in response.json()["detail"]
@@ -373,7 +379,7 @@ class TestUpdateRuleException:
         # Try to update exception using wrong rule ID
         response = await authenticated_client.patch(
             f"/api/rules/{other_rule.id}/exceptions/{test_exception.id}",
-            json={"is_active": False},
+            json={"is_active": False, "change_reason": "Testing wrong rule"},
         )
         assert response.status_code == 404
         assert "Exception not found" in response.json()["detail"]
@@ -387,8 +393,10 @@ class TestDeleteRuleException:
         self, client: AsyncClient, test_rule: Rule, test_exception: RuleException
     ):
         """Delete exception endpoint requires authentication."""
-        response = await client.delete(
-            f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}"
+        response = await client.request(
+            "DELETE",
+            f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
+            json={"change_reason": "Deleting for testing"},
         )
         assert response.status_code == 403
 
@@ -397,8 +405,10 @@ class TestDeleteRuleException:
         self, authenticated_client: AsyncClient, test_rule: Rule, test_exception: RuleException
     ):
         """Delete exception successfully removes the exception."""
-        response = await authenticated_client.delete(
-            f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}"
+        response = await authenticated_client.request(
+            "DELETE",
+            f"/api/rules/{test_rule.id}/exceptions/{test_exception.id}",
+            json={"change_reason": "Exception no longer needed"},
         )
         assert response.status_code == 204
 
@@ -415,8 +425,10 @@ class TestDeleteRuleException:
     ):
         """Delete exception returns 404 for non-existent exception."""
         fake_uuid = uuid.uuid4()
-        response = await authenticated_client.delete(
-            f"/api/rules/{test_rule.id}/exceptions/{fake_uuid}"
+        response = await authenticated_client.request(
+            "DELETE",
+            f"/api/rules/{test_rule.id}/exceptions/{fake_uuid}",
+            json={"change_reason": "Testing deletion"},
         )
         assert response.status_code == 404
         assert "Exception not found" in response.json()["detail"]
@@ -446,8 +458,10 @@ class TestDeleteRuleException:
         await test_session.commit()
 
         # Try to delete exception using wrong rule ID
-        response = await authenticated_client.delete(
-            f"/api/rules/{other_rule.id}/exceptions/{test_exception.id}"
+        response = await authenticated_client.request(
+            "DELETE",
+            f"/api/rules/{other_rule.id}/exceptions/{test_exception.id}",
+            json={"change_reason": "Testing wrong rule deletion"},
         )
         assert response.status_code == 404
         assert "Exception not found" in response.json()["detail"]

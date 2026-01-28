@@ -51,7 +51,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
@@ -146,7 +145,6 @@ export default function RuleEditorPage() {
 
   // Track original YAML for dirty state
   const [originalYaml, setOriginalYaml] = useState('')
-  const [originalThresholdEnabled, setOriginalThresholdEnabled] = useState(false)
 
   // Exception state
   const [exceptions, setExceptions] = useState<RuleException[]>([])
@@ -163,7 +161,6 @@ export default function RuleEditorPage() {
 
   // Exception delete confirmation state
   const [exceptionToDelete, setExceptionToDelete] = useState<RuleException | null>(null)
-  const [isDeleteExceptionDialogOpen, setIsDeleteExceptionDialogOpen] = useState(false)
   const [isDeletingException, setIsDeletingException] = useState(false)
 
   // Correlation rules state
@@ -178,7 +175,8 @@ export default function RuleEditorPage() {
   const [isActivityOpen, setIsActivityOpen] = useState(false)
 
   // Delete rule confirmation state
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showDeleteReason, setShowDeleteReason] = useState(false)
+  const [deleteReason, setDeleteReason] = useState('')
   const [isDeletingRule, setIsDeletingRule] = useState(false)
 
   // Rule source state (for existing rules)
@@ -216,6 +214,38 @@ export default function RuleEditorPage() {
   const [mandatoryComments, setMandatoryComments] = useState(true)
   const [showChangeReason, setShowChangeReason] = useState(false)
   const [changeReason, setChangeReason] = useState('')
+
+  // Deploy/Undeploy change reason dialog state
+  const [showDeployReason, setShowDeployReason] = useState(false)
+  const [showUndeployReason, setShowUndeployReason] = useState(false)
+  const [deployReason, setDeployReason] = useState('')
+
+  // Linked correlations state (shown in undeploy dialog)
+  const [linkedCorrelations, setLinkedCorrelations] = useState<{ id: string; name: string; deployed: boolean }[]>([])
+
+  // Snooze/Unsnooze change reason dialog state
+  const [showSnoozeReason, setShowSnoozeReason] = useState(false)
+  const [showUnsnoozeReason, setShowUnsnoozeReason] = useState(false)
+  const [snoozeReason, setSnoozeReason] = useState('')
+  const [pendingSnoozeHours, setPendingSnoozeHours] = useState<number | undefined>(undefined)
+  const [pendingSnoozeIndefinite, setPendingSnoozeIndefinite] = useState(false)
+
+  // Exception change reason dialog state
+  const [showExceptionCreateReason, setShowExceptionCreateReason] = useState(false)
+  const [exceptionChangeReason, setExceptionChangeReason] = useState('')
+  const [showExceptionToggleReason, setShowExceptionToggleReason] = useState(false)
+  const [pendingExceptionToggle, setPendingExceptionToggle] = useState<{ id: string; isActive: boolean } | null>(null)
+  const [showExceptionDeleteReason, setShowExceptionDeleteReason] = useState(false)
+
+  // Threshold change reason state
+  const [showThresholdReason, setShowThresholdReason] = useState(false)
+  const [thresholdChangeReason, setThresholdChangeReason] = useState('')
+  const [pendingThresholdEnabled, setPendingThresholdEnabled] = useState<boolean | null>(null)
+  const [isUpdatingThreshold, setIsUpdatingThreshold] = useState(false)
+  // Track original threshold field values to detect changes
+  const [originalThresholdCount, setOriginalThresholdCount] = useState<number | null>(null)
+  const [originalThresholdWindowMinutes, setOriginalThresholdWindowMinutes] = useState<number | null>(null)
+  const [originalThresholdGroupBy, setOriginalThresholdGroupBy] = useState<string | null>(null)
 
   // Load functions - must be declared before useEffect that uses them
   const loadExceptions = useCallback(async () => {
@@ -308,10 +338,12 @@ export default function RuleEditorPage() {
       setSigmahqPath(rule.sigmahq_path || null)
       // Load threshold settings
       setThresholdEnabled(rule.threshold_enabled)
-      setOriginalThresholdEnabled(rule.threshold_enabled)
       setThresholdCount(rule.threshold_count)
+      setOriginalThresholdCount(rule.threshold_count)
       setThresholdWindowMinutes(rule.threshold_window_minutes)
+      setOriginalThresholdWindowMinutes(rule.threshold_window_minutes)
       setThresholdGroupBy(rule.threshold_group_by)
+      setOriginalThresholdGroupBy(rule.threshold_group_by)
       // Store rule versions for current version display
       setRuleVersions(rule.versions || null)
 
@@ -558,9 +590,8 @@ export default function RuleEditorPage() {
 
   // Check if YAML has changes from original
   const hasChanges = () => {
-    // Consider it changed if YAML is different OR threshold enabled/disabled
-    return yamlContent !== originalYaml ||
-           thresholdEnabled !== originalThresholdEnabled
+    // Only consider YAML changes - threshold changes now apply immediately with change reason
+    return yamlContent !== originalYaml
   }
 
   const handleSave = async () => {
@@ -606,6 +637,7 @@ export default function RuleEditorPage() {
         // Navigate to the edit page for the new rule
         navigate(`/rules/${newRule.id}`, { replace: true })
       } else {
+        // Threshold settings apply immediately via dedicated endpoint - don't include in general update
         await rulesApi.update(id!, {
           title,
           description: description || undefined,
@@ -613,10 +645,6 @@ export default function RuleEditorPage() {
           severity,
           status,
           index_pattern_id: indexPatternId,
-          threshold_enabled: thresholdEnabled,
-          threshold_count: thresholdEnabled ? thresholdCount : null,
-          threshold_window_minutes: thresholdEnabled ? thresholdWindowMinutes : null,
-          threshold_group_by: thresholdEnabled ? thresholdGroupBy : null,
           change_reason: changeReason || 'Updated',
         })
         // Reload rule to get updated version
@@ -637,12 +665,19 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleDeploy = async () => {
+  const handleDeploy = () => {
     if (!id) return
+    setDeployReason('')
+    setShowDeployReason(true)
+  }
+
+  const handleDeployConfirm = async () => {
+    if (!id || !deployReason.trim()) return
+    setShowDeployReason(false)
     setIsDeploying(true)
     setDeployError('')
     try {
-      const result = await rulesApi.deploy(id)
+      const result = await rulesApi.deploy(id, deployReason)
       setDeployedAt(result.deployed_at)
       setDeployedVersion(result.deployed_version)
       setNeedsRedeploy(false)
@@ -650,6 +685,7 @@ export default function RuleEditorPage() {
       if (status !== 'snoozed') {
         setStatus('deployed')
       }
+      setDeployReason('')
     } catch (err) {
       if (err instanceof DeploymentUnmappedFieldsError) {
         // Show unmapped fields dialog
@@ -668,16 +704,35 @@ export default function RuleEditorPage() {
 
   const handleUndeploy = async () => {
     if (!id) return
+
+    // Check for linked correlation rules (get all to display in dialog)
+    try {
+      const response = await rulesApi.getLinkedCorrelations(id, false)
+      setLinkedCorrelations(response.correlations)
+    } catch {
+      // If check fails, proceed anyway (fail open for UX)
+      setLinkedCorrelations([])
+    }
+
+    setDeployReason('')
+    setShowUndeployReason(true)
+  }
+
+  const handleUndeployConfirm = async () => {
+    if (!id || !deployReason.trim()) return
+    setShowUndeployReason(false)
     setIsDeploying(true)
     setDeployError('')
     try {
-      await rulesApi.undeploy(id)
+      await rulesApi.undeploy(id, deployReason)
       setDeployedAt(null)
       setDeployedVersion(null)
       setStatus('undeployed')
       // Clear snooze state as well (backend does this too)
       setSnoozeUntil(null)
       setSnoozeIndefinite(false)
+      setDeployReason('')
+      setLinkedCorrelations([])
     } catch (err) {
       setDeployError(err instanceof Error ? err.message : 'Undeploy failed')
     } finally {
@@ -686,12 +741,19 @@ export default function RuleEditorPage() {
   }
 
   // Exception handlers
-  const handleAddException = async () => {
+  const handleAddException = () => {
     if (!id || !newExceptionField.trim() || !newExceptionValue.trim()) {
       setError('Field and value are required for exceptions')
       return
     }
+    // Show change reason dialog
+    setExceptionChangeReason('')
+    setShowExceptionCreateReason(true)
+  }
 
+  const handleAddExceptionConfirm = async () => {
+    if (!id || !exceptionChangeReason.trim()) return
+    setShowExceptionCreateReason(false)
     setIsAddingException(true)
     try {
       const data: RuleExceptionCreate = {
@@ -699,6 +761,7 @@ export default function RuleEditorPage() {
         operator: newExceptionOperator,
         value: newExceptionValue.trim(),
         reason: newExceptionReason.trim() || undefined,
+        change_reason: exceptionChangeReason.trim(),
       }
       const newException = await rulesApi.createException(id, data)
       setExceptions((prev) => [...prev, newException])
@@ -707,6 +770,7 @@ export default function RuleEditorPage() {
       setNewExceptionOperator('equals')
       setNewExceptionValue('')
       setNewExceptionReason('')
+      setExceptionChangeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add exception')
     } finally {
@@ -714,36 +778,136 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleToggleException = async (exceptionId: string, isActive: boolean) => {
+  const handleToggleException = (exceptionId: string, isActive: boolean) => {
     if (!id) return
+    // Show change reason dialog
+    setPendingExceptionToggle({ id: exceptionId, isActive })
+    setExceptionChangeReason('')
+    setShowExceptionToggleReason(true)
+  }
+
+  const handleToggleExceptionConfirm = async () => {
+    if (!id || !pendingExceptionToggle || !exceptionChangeReason.trim()) return
+    setShowExceptionToggleReason(false)
     try {
-      const updated = await rulesApi.updateException(id, exceptionId, { is_active: isActive })
+      const updated = await rulesApi.updateException(id, pendingExceptionToggle.id, {
+        is_active: pendingExceptionToggle.isActive,
+        change_reason: exceptionChangeReason.trim(),
+      })
       setExceptions((prev) =>
-        prev.map((e) => (e.id === exceptionId ? updated : e))
+        prev.map((e) => (e.id === pendingExceptionToggle.id ? updated : e))
       )
+      setPendingExceptionToggle(null)
+      setExceptionChangeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update exception')
     }
   }
 
-  // Simple threshold toggle handler (no auto-save)
+  // Threshold toggle handler - shows change reason dialog
   const handleThresholdToggle = (enabled: boolean) => {
-    setThresholdEnabled(enabled)
+    if (!id || isNew) {
+      // For new rules, just update state (will be saved with the rule)
+      setThresholdEnabled(enabled)
+      return
+    }
+    // For existing rules, show change reason dialog
+    setPendingThresholdEnabled(enabled)
+    setThresholdChangeReason('')
+    setShowThresholdReason(true)
+  }
+
+  // Confirm threshold toggle with change reason
+  const handleThresholdToggleConfirm = async () => {
+    if (!id || pendingThresholdEnabled === null || !thresholdChangeReason.trim()) return
+    setIsUpdatingThreshold(true)
+    try {
+      const result = await rulesApi.updateThreshold(
+        id,
+        pendingThresholdEnabled,
+        thresholdChangeReason.trim(),
+        pendingThresholdEnabled ? thresholdCount : null,
+        pendingThresholdEnabled ? thresholdWindowMinutes : null,
+        pendingThresholdEnabled ? thresholdGroupBy : null
+      )
+      // Update state with response
+      setThresholdEnabled(result.threshold_enabled)
+      setThresholdCount(result.threshold_count)
+      setOriginalThresholdCount(result.threshold_count)
+      setThresholdWindowMinutes(result.threshold_window_minutes)
+      setOriginalThresholdWindowMinutes(result.threshold_window_minutes)
+      setThresholdGroupBy(result.threshold_group_by)
+      setOriginalThresholdGroupBy(result.threshold_group_by)
+      // Close dialog
+      setShowThresholdReason(false)
+      setPendingThresholdEnabled(null)
+      setThresholdChangeReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update threshold settings')
+    } finally {
+      setIsUpdatingThreshold(false)
+    }
+  }
+
+  // Check if threshold fields have changed from saved values
+  const hasThresholdFieldChanges = useMemo(() => {
+    if (!thresholdEnabled) return false // No changes if threshold is disabled
+    return (
+      thresholdCount !== originalThresholdCount ||
+      thresholdWindowMinutes !== originalThresholdWindowMinutes ||
+      thresholdGroupBy !== originalThresholdGroupBy
+    )
+  }, [thresholdEnabled, thresholdCount, originalThresholdCount, thresholdWindowMinutes, originalThresholdWindowMinutes, thresholdGroupBy, originalThresholdGroupBy])
+
+  // Apply threshold field changes (count, window, group_by)
+  const handleApplyThresholdFields = async () => {
+    if (!id || isNew || !thresholdChangeReason.trim()) return
+    setIsUpdatingThreshold(true)
+    try {
+      const result = await rulesApi.updateThreshold(
+        id,
+        thresholdEnabled,
+        thresholdChangeReason.trim(),
+        thresholdCount,
+        thresholdWindowMinutes,
+        thresholdGroupBy
+      )
+      // Update original values to match
+      setOriginalThresholdCount(result.threshold_count)
+      setOriginalThresholdWindowMinutes(result.threshold_window_minutes)
+      setOriginalThresholdGroupBy(result.threshold_group_by)
+      // Close dialog
+      setShowThresholdReason(false)
+      setThresholdChangeReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update threshold settings')
+    } finally {
+      setIsUpdatingThreshold(false)
+    }
+  }
+
+  // Show dialog for applying threshold field changes
+  const handleApplyThresholdClick = () => {
+    setThresholdChangeReason('')
+    setPendingThresholdEnabled(null) // null indicates field changes, not toggle
+    setShowThresholdReason(true)
   }
 
   const openDeleteExceptionDialog = (exception: RuleException) => {
     setExceptionToDelete(exception)
-    setIsDeleteExceptionDialogOpen(true)
+    setExceptionChangeReason('')
+    setShowExceptionDeleteReason(true)
   }
 
   const confirmDeleteException = async () => {
-    if (!id || !exceptionToDelete) return
+    if (!id || !exceptionToDelete || !exceptionChangeReason.trim()) return
     setIsDeletingException(true)
     try {
-      await rulesApi.deleteException(id, exceptionToDelete.id)
+      await rulesApi.deleteException(id, exceptionToDelete.id, exceptionChangeReason.trim())
       setExceptions((prev) => prev.filter((e) => e.id !== exceptionToDelete.id))
-      setIsDeleteExceptionDialogOpen(false)
+      setShowExceptionDeleteReason(false)
       setExceptionToDelete(null)
+      setExceptionChangeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete exception')
     } finally {
@@ -752,29 +916,32 @@ export default function RuleEditorPage() {
   }
 
   // Snooze handlers
-  const handleSnooze = async (hours: number) => {
+  const handleSnooze = (hours: number) => {
     if (!id || !canManageRules) return
+    setPendingSnoozeHours(hours)
+    setPendingSnoozeIndefinite(false)
+    setSnoozeReason('')
+    setShowSnoozeReason(true)
+  }
+
+  const handleSnoozeIndefinite = () => {
+    if (!id || !canManageRules) return
+    setPendingSnoozeHours(undefined)
+    setPendingSnoozeIndefinite(true)
+    setSnoozeReason('')
+    setShowSnoozeReason(true)
+  }
+
+  const handleSnoozeConfirm = async () => {
+    if (!id || !snoozeReason.trim()) return
+    setShowSnoozeReason(false)
     setIsSnoozing(true)
     try {
-      const result = await rulesApi.snooze(id, hours, false)
+      const result = await rulesApi.snooze(id, snoozeReason, pendingSnoozeHours, pendingSnoozeIndefinite)
       setStatus('snoozed')
       setSnoozeUntil(result.snooze_until)
-      setSnoozeIndefinite(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to snooze rule')
-    } finally {
-      setIsSnoozing(false)
-    }
-  }
-
-  const handleSnoozeIndefinite = async () => {
-    if (!id || !canManageRules) return
-    setIsSnoozing(true)
-    try {
-      const result = await rulesApi.snooze(id, undefined, true)
-      setStatus('snoozed')
-      setSnoozeUntil(null)
       setSnoozeIndefinite(result.snooze_indefinite)
+      setSnoozeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to snooze rule')
     } finally {
@@ -782,14 +949,22 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleUnsnooze = async () => {
+  const handleUnsnooze = () => {
     if (!id) return
+    setSnoozeReason('')
+    setShowUnsnoozeReason(true)
+  }
+
+  const handleUnsnoozeConfirm = async () => {
+    if (!id || !snoozeReason.trim()) return
+    setShowUnsnoozeReason(false)
     setIsSnoozing(true)
     try {
-      await rulesApi.unsnooze(id)
+      await rulesApi.unsnooze(id, snoozeReason)
       setStatus('deployed')  // Unsnooze returns to deployed state
       setSnoozeUntil(null)
       setSnoozeIndefinite(false)
+      setSnoozeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unsnooze rule')
     } finally {
@@ -833,12 +1008,20 @@ export default function RuleEditorPage() {
     URL.revokeObjectURL(url)
   }
 
-  // Delete rule handler
-  const handleDeleteRule = async () => {
+  // Delete rule handler - show reason dialog
+  const handleDeleteRule = () => {
     if (!id || !canManageRules) return
+    setDeleteReason('')
+    setShowDeleteReason(true)
+  }
+
+  // Confirm delete rule with reason
+  const handleDeleteRuleConfirm = async () => {
+    if (!id || !deleteReason.trim()) return
+    setShowDeleteReason(false)
     setIsDeletingRule(true)
     try {
-      await rulesApi.delete(id)
+      await rulesApi.delete(id, deleteReason.trim())
       navigate('/rules')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete rule')
@@ -932,17 +1115,14 @@ export default function RuleEditorPage() {
                   </Button>
                 </>
               ) : status === 'undeployed' ? (
-                <>
-                  <span className="text-sm text-gray-500 font-medium">Undeployed</span>
-                  <Button
-                    variant="outline"
-                    disabled={!canManageRules}
-                    title="Deploy the rule first to enable snooze"
-                  >
-                    <Clock className="h-4 w-4 mr-1" />
-                    Snooze
-                  </Button>
-                </>
+                <Button
+                  variant="outline"
+                  disabled
+                  title="Deploy the rule first to enable snooze"
+                >
+                  <Clock className="h-4 w-4 mr-1" />
+                  Snooze
+                </Button>
               ) : (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -991,7 +1171,7 @@ export default function RuleEditorPage() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => setShowDeleteConfirm(true)}
+                  onClick={handleDeleteRule}
                   className="text-destructive focus:text-destructive"
                   disabled={!canManageRules}
                 >
@@ -1472,6 +1652,25 @@ export default function RuleEditorPage() {
                         emptyMessage={indexPatternId ? 'No fields available for this index pattern' : 'Select an index pattern first'}
                       />
                     </div>
+                    {/* Apply button - always show for existing rules, disabled when no changes */}
+                    {!isNew && canManageRules && (
+                      <div className="pt-2 border-t">
+                        <Button
+                          size="sm"
+                          onClick={handleApplyThresholdClick}
+                          disabled={isUpdatingThreshold || !hasThresholdFieldChanges}
+                        >
+                          {isUpdatingThreshold ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Applying...
+                            </>
+                          ) : (
+                            'Apply Changes'
+                          )}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -1666,9 +1865,13 @@ export default function RuleEditorPage() {
                                 <div className="text-sm font-medium truncate">
                                   {correlation.name}
                                 </div>
-                                {!correlation.is_enabled && (
-                                  <span className="text-xs text-muted-foreground">(Disabled)</span>
-                                )}
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                  correlation.deployed_at
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-gray-500 text-white'
+                                }`}>
+                                  {correlation.deployed_at ? 'Deployed' : 'Undeployed'}
+                                </span>
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 <div>Correlates with:</div>
@@ -1717,27 +1920,306 @@ export default function RuleEditorPage() {
         </div>
       </div>
 
-      {/* Exception Delete Confirmation Modal */}
-      <DeleteConfirmModal
-        open={isDeleteExceptionDialogOpen}
-        onOpenChange={setIsDeleteExceptionDialogOpen}
-        title="Delete Exception"
-        description="Are you sure you want to delete this exception? This action cannot be undone."
-        itemName={exceptionToDelete ? `${exceptionToDelete.field} ${operatorLabels[exceptionToDelete.operator]} ${exceptionToDelete.value}` : undefined}
-        onConfirm={confirmDeleteException}
-        isDeleting={isDeletingException}
-      />
+      {/* Exception Create Reason Dialog */}
+      <Dialog open={showExceptionCreateReason} onOpenChange={setShowExceptionCreateReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Exception</DialogTitle>
+            <DialogDescription>
+              Please explain why you're adding this exception. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
 
-      {/* Rule Delete Confirmation Modal */}
-      <DeleteConfirmModal
-        open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
-        title="Delete Rule"
-        description="Are you sure you want to delete this rule? This action cannot be undone."
-        itemName={title}
-        onConfirm={handleDeleteRule}
-        isDeleting={isDeletingRule}
-      />
+          <div className="space-y-4 py-4">
+            <div className="text-sm">
+              <div className="font-medium">{newExceptionField}</div>
+              <div className="text-muted-foreground">
+                {operatorLabels[newExceptionOperator]}: {newExceptionValue}
+              </div>
+              {newExceptionReason && (
+                <div className="text-muted-foreground mt-1 italic">
+                  Reason: {newExceptionReason}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="exception-create-reason">Change Reason *</Label>
+              <Textarea
+                id="exception-create-reason"
+                placeholder="e.g., Adding exception for known false positive..."
+                value={exceptionChangeReason}
+                onChange={(e) => setExceptionChangeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExceptionCreateReason(false)
+                setExceptionChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddExceptionConfirm}
+              disabled={!exceptionChangeReason.trim() || isAddingException}
+            >
+              {isAddingException ? 'Adding...' : 'Add Exception'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Exception Toggle Reason Dialog */}
+      <Dialog open={showExceptionToggleReason} onOpenChange={setShowExceptionToggleReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingExceptionToggle?.isActive ? 'Enable' : 'Disable'} Exception
+            </DialogTitle>
+            <DialogDescription>
+              Please explain why you're {pendingExceptionToggle?.isActive ? 'enabling' : 'disabling'} this exception.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {pendingExceptionToggle && (() => {
+              const exception = exceptions.find(e => e.id === pendingExceptionToggle.id)
+              return exception ? (
+                <div className="text-sm">
+                  <div className="font-medium">{exception.field}</div>
+                  <div className="text-muted-foreground">
+                    {operatorLabels[exception.operator]}: {exception.value}
+                  </div>
+                </div>
+              ) : null
+            })()}
+            <div className="space-y-2">
+              <Label htmlFor="exception-toggle-reason">Change Reason *</Label>
+              <Textarea
+                id="exception-toggle-reason"
+                placeholder={pendingExceptionToggle?.isActive
+                  ? "e.g., Re-enabling after investigation..."
+                  : "e.g., Temporarily disabling for testing..."}
+                value={exceptionChangeReason}
+                onChange={(e) => setExceptionChangeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExceptionToggleReason(false)
+                setPendingExceptionToggle(null)
+                setExceptionChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleToggleExceptionConfirm}
+              disabled={!exceptionChangeReason.trim()}
+            >
+              {pendingExceptionToggle?.isActive ? 'Enable' : 'Disable'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Exception Delete Reason Dialog */}
+      <Dialog open={showExceptionDeleteReason} onOpenChange={setShowExceptionDeleteReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Exception</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this exception? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {exceptionToDelete && (
+              <div className="text-sm p-3 bg-muted rounded-md">
+                <div className="font-medium">{exceptionToDelete.field}</div>
+                <div className="text-muted-foreground">
+                  {operatorLabels[exceptionToDelete.operator]}: {exceptionToDelete.value}
+                </div>
+                {exceptionToDelete.reason && (
+                  <div className="text-muted-foreground mt-1 italic">
+                    Reason: {exceptionToDelete.reason}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="exception-delete-reason">Change Reason *</Label>
+              <Textarea
+                id="exception-delete-reason"
+                placeholder="e.g., Exception no longer needed, false positive resolved..."
+                value={exceptionChangeReason}
+                onChange={(e) => setExceptionChangeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExceptionDeleteReason(false)
+                setExceptionToDelete(null)
+                setExceptionChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteException}
+              disabled={!exceptionChangeReason.trim() || isDeletingException}
+            >
+              {isDeletingException ? 'Deleting...' : 'Delete Exception'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Threshold Change Reason Dialog */}
+      <Dialog open={showThresholdReason} onOpenChange={setShowThresholdReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingThresholdEnabled !== null
+                ? (pendingThresholdEnabled ? 'Enable Threshold Alerting' : 'Disable Threshold Alerting')
+                : 'Update Threshold Settings'
+              }
+            </DialogTitle>
+            <DialogDescription>
+              {pendingThresholdEnabled !== null
+                ? `Please provide a reason for ${pendingThresholdEnabled ? 'enabling' : 'disabling'} threshold alerting.`
+                : 'Please provide a reason for changing threshold settings.'
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {pendingThresholdEnabled === null && (
+              <div className="text-sm p-3 bg-muted rounded-md space-y-1">
+                <div className="font-medium">Changes:</div>
+                {thresholdCount !== originalThresholdCount && (
+                  <div className="text-muted-foreground">
+                    Count: {originalThresholdCount ?? 'not set'} → {thresholdCount ?? 'not set'}
+                  </div>
+                )}
+                {thresholdWindowMinutes !== originalThresholdWindowMinutes && (
+                  <div className="text-muted-foreground">
+                    Window: {originalThresholdWindowMinutes ?? 'not set'} → {thresholdWindowMinutes ?? 'not set'} minutes
+                  </div>
+                )}
+                {thresholdGroupBy !== originalThresholdGroupBy && (
+                  <div className="text-muted-foreground">
+                    Group by: {originalThresholdGroupBy || 'none'} → {thresholdGroupBy || 'none'}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="threshold-reason">Change Reason *</Label>
+              <Textarea
+                id="threshold-reason"
+                placeholder="e.g., Adjusting threshold to reduce noise..."
+                value={thresholdChangeReason}
+                onChange={(e) => setThresholdChangeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowThresholdReason(false)
+                setPendingThresholdEnabled(null)
+                setThresholdChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={pendingThresholdEnabled !== null ? handleThresholdToggleConfirm : handleApplyThresholdFields}
+              disabled={!thresholdChangeReason.trim() || isUpdatingThreshold}
+            >
+              {isUpdatingThreshold ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Applying...
+                </>
+              ) : (
+                pendingThresholdEnabled !== null
+                  ? (pendingThresholdEnabled ? 'Enable' : 'Disable')
+                  : 'Apply Changes'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rule Delete Reason Dialog */}
+      <Dialog open={showDeleteReason} onOpenChange={setShowDeleteReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Rule</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{title}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-reason">Reason for Deletion *</Label>
+              <Textarea
+                id="delete-reason"
+                placeholder="e.g., Rule is no longer needed, replaced by another rule..."
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteReason(false)
+                setDeleteReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteRuleConfirm}
+              disabled={!deleteReason.trim() || isDeletingRule}
+            >
+              {isDeletingRule ? 'Deleting...' : 'Delete Rule'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Activity Panel */}
       {!isNew && (
@@ -1832,6 +2314,211 @@ export default function RuleEditorPage() {
               disabled={!changeReason.trim() || isSaving}
             >
               {isSaving ? 'Saving...' : 'Save with Reason'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deploy Reason Modal */}
+      <Dialog open={showDeployReason} onOpenChange={setShowDeployReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deploy Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're deploying this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="deploy-reason">Reason for Deploy *</Label>
+              <Textarea
+                id="deploy-reason"
+                placeholder="e.g., Ready for production, completed testing..."
+                value={deployReason}
+                onChange={(e) => setDeployReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeployReason(false)
+                setDeployReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDeployConfirm}
+              disabled={!deployReason.trim() || isDeploying}
+            >
+              {isDeploying ? 'Deploying...' : 'Deploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Undeploy Reason Modal */}
+      <Dialog open={showUndeployReason} onOpenChange={setShowUndeployReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Undeploy Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're undeploying this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Show warning if there are deployed correlation rules */}
+            {linkedCorrelations.some(c => c.deployed) && (
+              <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
+                  Warning: This rule is linked to correlation rules
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
+                  Undeploying this rule will also undeploy any deployed correlation rules that depend on it.
+                </p>
+                <div className="space-y-1">
+                  {linkedCorrelations.map((corr) => (
+                    <div key={corr.id} className="flex items-center justify-between py-1 px-2 bg-white dark:bg-gray-900 rounded text-sm">
+                      <span>{corr.name}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        corr.deployed ? 'bg-green-600 text-white' : 'bg-gray-500 text-white'
+                      }`}>
+                        {corr.deployed ? 'Deployed' : 'Undeployed'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="undeploy-reason">Reason for Undeploy *</Label>
+              <Textarea
+                id="undeploy-reason"
+                placeholder="e.g., False positives, needs revision, no longer needed..."
+                value={deployReason}
+                onChange={(e) => setDeployReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUndeployReason(false)
+                setDeployReason('')
+                setLinkedCorrelations([])
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleUndeployConfirm}
+              disabled={!deployReason.trim() || isDeploying}
+            >
+              {isDeploying ? 'Undeploying...' : 'Undeploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Snooze Reason Modal */}
+      <Dialog open={showSnoozeReason} onOpenChange={setShowSnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Snooze Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're snoozing this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="text-sm text-muted-foreground">
+              Snoozing for: {pendingSnoozeIndefinite ? 'Indefinitely' : `${pendingSnoozeHours} hour${pendingSnoozeHours !== 1 ? 's' : ''}`}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="snooze-reason">Reason for Snooze *</Label>
+              <Textarea
+                id="snooze-reason"
+                placeholder="e.g., Investigating false positives, scheduled maintenance..."
+                value={snoozeReason}
+                onChange={(e) => setSnoozeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSnoozeReason(false)
+                setSnoozeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSnoozeConfirm}
+              disabled={!snoozeReason.trim() || isSnoozing}
+            >
+              {isSnoozing ? 'Snoozing...' : 'Snooze'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unsnooze Reason Modal */}
+      <Dialog open={showUnsnoozeReason} onOpenChange={setShowUnsnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsnooze Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're unsnoozing this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="unsnooze-reason">Reason for Unsnooze *</Label>
+              <Textarea
+                id="unsnooze-reason"
+                placeholder="e.g., Investigation complete, issue resolved..."
+                value={snoozeReason}
+                onChange={(e) => setSnoozeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUnsnoozeReason(false)
+                setSnoozeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUnsnoozeConfirm}
+              disabled={!snoozeReason.trim() || isSnoozing}
+            >
+              {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
             </Button>
           </DialogFooter>
         </DialogContent>

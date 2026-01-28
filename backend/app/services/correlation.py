@@ -13,7 +13,7 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.correlation_rule import CorrelationRule
+from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_state import CorrelationState
 from app.models.rule import Rule
 from app.services.field_mapping import resolve_mappings
@@ -91,6 +91,34 @@ async def resolve_entity_field(
     return str(entity_value)
 
 
+async def get_deployed_version_data(
+    db: AsyncSession,
+    corr_rule: CorrelationRule,
+) -> CorrelationRuleVersion | None:
+    """
+    Get the deployed version snapshot for a correlation rule.
+
+    Args:
+        db: Database session
+        corr_rule: The correlation rule
+
+    Returns:
+        The deployed version snapshot, or None if not deployed
+    """
+    if corr_rule.deployed_version is None:
+        return None
+
+    result = await db.execute(
+        select(CorrelationRuleVersion).where(
+            and_(
+                CorrelationRuleVersion.correlation_rule_id == corr_rule.id,
+                CorrelationRuleVersion.version_number == corr_rule.deployed_version,
+            )
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def check_correlation(
     db: AsyncSession,
     rule_id: UUID,
@@ -101,7 +129,7 @@ async def check_correlation(
     Check if this alert triggers any correlation rules.
 
     Called when a new alert is created. Checks if:
-    1. This rule is part of any enabled correlation rules
+    1. This rule is part of any deployed correlation rules
     2. There's an existing matching state entry from the paired rule
     3. The match is within the time window
 
@@ -119,11 +147,11 @@ async def check_correlation(
     """
     triggered = []
 
-    # Find all correlation rules where this rule is either A or B
+    # Find all deployed correlation rules where this rule is either A or B
     result = await db.execute(
         select(CorrelationRule).where(
             and_(
-                CorrelationRule.is_enabled == True,
+                CorrelationRule.deployed_at.isnot(None),
                 or_(
                     CorrelationRule.rule_a_id == rule_id,
                     CorrelationRule.rule_b_id == rule_id,
@@ -133,17 +161,29 @@ async def check_correlation(
     )
     correlation_rules = result.scalars().all()
 
-    # Group correlation rules by sigma_field to avoid redundant resolution
-    # Store as dict: sigma_field -> list of correlation rules
-    corr_rules_by_field: dict[str, list[CorrelationRule]] = {}
+    # Fetch deployed version data for each correlation rule
+    # Create list of (corr_rule, deployed_data) tuples
+    rules_with_deployed_data: list[tuple[CorrelationRule, CorrelationRuleVersion]] = []
     for corr_rule in correlation_rules:
-        sigma_field = corr_rule.entity_field
+        deployed_data = await get_deployed_version_data(db, corr_rule)
+        if deployed_data is None:
+            logger.warning(
+                f"Correlation rule {corr_rule.id} has no deployed version data, skipping"
+            )
+            continue
+        rules_with_deployed_data.append((corr_rule, deployed_data))
+
+    # Group correlation rules by sigma_field (from deployed data) to avoid redundant resolution
+    # Store as dict: sigma_field -> list of (corr_rule, deployed_data) tuples
+    corr_rules_by_field: dict[str, list[tuple[CorrelationRule, CorrelationRuleVersion]]] = {}
+    for corr_rule, deployed_data in rules_with_deployed_data:
+        sigma_field = deployed_data.entity_field
         if sigma_field not in corr_rules_by_field:
             corr_rules_by_field[sigma_field] = []
-        corr_rules_by_field[sigma_field].append(corr_rule)
+        corr_rules_by_field[sigma_field].append((corr_rule, deployed_data))
 
     # For each unique sigma_field, resolve the entity value and check correlations
-    for sigma_field, corr_rules in corr_rules_by_field.items():
+    for sigma_field, corr_rules_data in corr_rules_by_field.items():
         # Resolve the Sigma field to an entity value for this rule
         entity_value = await resolve_entity_field(db, rule_id, sigma_field, log_document)
         if not entity_value:
@@ -152,15 +192,17 @@ async def check_correlation(
 
         now = datetime.utcnow()
 
-        for corr_rule in corr_rules:
+        for corr_rule, deployed_data in corr_rules_data:
             # Determine which rule in the pair just fired and which to wait for
-            if rule_id == corr_rule.rule_a_id:
-                paired_rule_id = corr_rule.rule_b_id
+            # Use deployed_data for rule IDs
+            if rule_id == deployed_data.rule_a_id:
+                paired_rule_id = deployed_data.rule_b_id
             else:
-                paired_rule_id = corr_rule.rule_a_id
+                paired_rule_id = deployed_data.rule_a_id
 
             # Check for existing state from the paired rule
-            cutoff = now - timedelta(minutes=corr_rule.time_window_minutes)
+            # Use deployed_data for time window
+            cutoff = now - timedelta(minutes=deployed_data.time_window_minutes)
 
             state_result = await db.execute(
                 select(CorrelationState).where(
@@ -182,13 +224,14 @@ async def check_correlation(
                 )
 
                 # Create a correlation alert (this will be stored/processed elsewhere)
+                # Use deployed_data for severity and rule IDs
                 triggered.append(
                     {
                         "correlation_rule_id": str(corr_rule.id),
                         "correlation_name": corr_rule.name,
-                        "severity": corr_rule.severity,
-                        "rule_a_id": str(corr_rule.rule_a_id),
-                        "rule_b_id": str(corr_rule.rule_b_id),
+                        "severity": deployed_data.severity,
+                        "rule_a_id": str(deployed_data.rule_a_id),
+                        "rule_b_id": str(deployed_data.rule_b_id),
                         "sigma_field": sigma_field,
                         "entity_value": entity_value,
                         "first_alert_id": existing_state.alert_id,
@@ -202,7 +245,8 @@ async def check_correlation(
                 await db.delete(existing_state)
             else:
                 # No match yet, store this event for future correlation
-                expires_at = now + timedelta(minutes=corr_rule.time_window_minutes)
+                # Use deployed_data for time window
+                expires_at = now + timedelta(minutes=deployed_data.time_window_minutes)
                 state = CorrelationState(
                     correlation_rule_id=corr_rule.id,
                     entity_value=entity_value,

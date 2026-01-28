@@ -60,3 +60,6 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     field_mappings = relationship(
         "FieldMapping", back_populates="index_pattern", cascade="all, delete-orphan"
     )
+    health_suppressions = relationship(
+        "HealthAlertSuppression", back_populates="index_pattern", cascade="all, delete-orphan"
+    )

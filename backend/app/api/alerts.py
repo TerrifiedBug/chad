@@ -249,8 +249,9 @@ async def bulk_delete_alerts(
                 alert = alerts[alert_id_str]
 
                 # Delete from OpenSearch first (fail fast)
+                # Use refresh=True to ensure immediate consistency for subsequent queries
                 try:
-                    os_client.delete(index=alert.alert_index, id=alert.alert_id)
+                    os_client.delete(index=alert.alert_index, id=alert.alert_id, refresh=True)
                 except Exception as e:
                     # Don't proceed with DB deletion if OpenSearch fails
                     failed.append({"id": alert_id_str, "error": f"Failed to delete from OpenSearch: {e}"})
@@ -277,8 +278,9 @@ async def bulk_delete_alerts(
                         continue
 
                     # Delete from OpenSearch
+                    # Use refresh=True to ensure immediate consistency for subsequent queries
                     hit = hits[0]
-                    os_client.delete(index=hit["_index"], id=alert_id_str)
+                    os_client.delete(index=hit["_index"], id=hit["_id"], refresh=True)
 
                     await audit_log(db, current_user.id, "alert.bulk_delete", "alert", alert_id_str,
                                   {"note": "Alert deleted from OpenSearch only (no DB record)"},

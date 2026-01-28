@@ -169,6 +169,11 @@ class AITestResponse(BaseModel):
     last_test_success: bool | None = None
 
 
+class AIStatusResponse(BaseModel):
+    configured: bool
+    provider: str | None = None
+
+
 @router.post("/opensearch/test", response_model=OpenSearchTestResponse)
 async def test_opensearch_connection(
     config: OpenSearchConfig,
@@ -587,6 +592,40 @@ async def ping_ai_connection(
             success=False, provider=provider, error=f"Error: {str(e)}",
             last_tested=now, last_test_success=False
         )
+
+
+@router.get("/ai/status", response_model=AIStatusResponse)
+async def get_ai_status(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Check if AI is configured (has valid API key). Available to all authenticated users."""
+    ai_settings = await get_setting(db, "ai")
+    if not ai_settings:
+        return AIStatusResponse(configured=False, provider=None)
+
+    provider = ai_settings.get("ai_provider", "disabled")
+
+    if provider == "disabled":
+        return AIStatusResponse(configured=False, provider=None)
+
+    if provider == "ollama":
+        # Ollama just needs a URL, no API key required
+        url = ai_settings.get("ai_ollama_url", "")
+        configured = bool(url)
+    elif provider == "openai":
+        api_key = ai_settings.get("ai_openai_key", "")
+        configured = bool(api_key)
+    elif provider == "anthropic":
+        api_key = ai_settings.get("ai_anthropic_key", "")
+        configured = bool(api_key)
+    else:
+        configured = False
+
+    return AIStatusResponse(
+        configured=configured,
+        provider=provider if configured else None
+    )
 
 
 @router.post("/opensearch")

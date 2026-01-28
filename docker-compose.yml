@@ -28,8 +28,8 @@ services:
       - CHAD_ENCRYPTION_KEY=${CHAD_ENCRYPTION_KEY}
       # Application URL
       - APP_URL=${APP_URL:-http://localhost}
-      # Logging (production default is WARNING for quiet logs)
-      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
+      # Logging (production default is warning for quiet logs)
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
       # - CHAD_SSO_ONLY=true  # Enable SSO-only authentication (optional)
     depends_on:
       postgres:

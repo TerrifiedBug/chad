@@ -6,7 +6,6 @@ import {
   FieldMapping,
   FieldMappingCreate,
   IndexPattern,
-  AISuggestion,
 } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
@@ -67,12 +66,6 @@ export default function FieldMappingsPage() {
   const [deleteMapping, setDeleteMapping] = useState<FieldMapping | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // AI Suggestions
-  const [showSuggestModal, setShowSuggestModal] = useState(false)
-  const [suggestSigmaFields, setSuggestSigmaFields] = useState('')
-  const [suggestions, setSuggestions] = useState<AISuggestion[]>([])
-  const [isSuggesting, setIsSuggesting] = useState(false)
-  const [savingSuggestions, setSavingSuggestions] = useState<Set<string>>(new Set())
 
   // Load functions - must be declared before useEffect that uses them
   const loadData = useCallback(async () => {
@@ -103,6 +96,7 @@ export default function FieldMappingsPage() {
     loadData()
   }, [loadData])
 
+
   // Set first index pattern as default tab when loaded
   useEffect(() => {
     if (indexPatterns.length > 0 && !activeTab) {
@@ -124,19 +118,21 @@ export default function FieldMappingsPage() {
         // Switch to the index pattern tab
         setActiveTab(indexPatternId)
 
-        // If fields are provided, open the suggest modal with them pre-filled
-        if (fields) {
-          setSuggestSigmaFields(fields.split(',').join('\n'))
-          setShowSuggestModal(true)
-        }
-
         // Clear the URL parameters
         setSearchParams({})
 
-        showToast(
-          'Configure field mappings for the unmapped fields listed below.',
-          'info'
-        )
+        if (fields) {
+          const fieldList = fields.split(',').join(', ')
+          showToast(
+            `Unmapped fields: ${fieldList}. Add mappings for these fields.`,
+            'info'
+          )
+        } else {
+          showToast(
+            'Configure field mappings for this index pattern.',
+            'info'
+          )
+        }
       }
     }
 
@@ -293,83 +289,6 @@ export default function FieldMappingsPage() {
     }
   }
 
-  const openSuggestModal = () => {
-    setSuggestSigmaFields('')
-    setSuggestions([])
-    setShowSuggestModal(true)
-  }
-
-  const handleSuggest = async () => {
-    const fields = suggestSigmaFields
-      .split('\n')
-      .map((f) => f.trim())
-      .filter((f) => f)
-
-    if (fields.length === 0) {
-      showToast('Please enter at least one field', 'error')
-      return
-    }
-
-    if (!activeTab) {
-      showToast('Please select an index pattern to get AI suggestions', 'error')
-      return
-    }
-
-    setIsSuggesting(true)
-    try {
-      const result = await fieldMappingsApi.suggest({
-        index_pattern_id: activeTab,
-        sigma_fields: fields,
-      })
-      setSuggestions(result)
-      if (result.length === 0) {
-        showToast('No suggestions returned', 'error')
-      }
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'AI suggestion failed', 'error')
-    } finally {
-      setIsSuggesting(false)
-    }
-  }
-
-  const acceptSuggestion = async (suggestion: AISuggestion) => {
-    if (!suggestion.target_field) return
-
-    setSavingSuggestions((prev) => new Set(prev).add(suggestion.sigma_field))
-    try {
-      await fieldMappingsApi.create({
-        sigma_field: suggestion.sigma_field,
-        target_field: suggestion.target_field,
-        index_pattern_id: activeTab,
-        origin: 'ai_suggested',
-        confidence: suggestion.confidence,
-      })
-      showToast(`Mapping for ${suggestion.sigma_field} saved`)
-      // Remove from suggestions list
-      setSuggestions((prev) =>
-        prev.filter((s) => s.sigma_field !== suggestion.sigma_field)
-      )
-      loadMappings()
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
-    } finally {
-      setSavingSuggestions((prev) => {
-        const next = new Set(prev)
-        next.delete(suggestion.sigma_field)
-        return next
-      })
-    }
-  }
-
-  const getConfidenceBadge = (confidence: number) => {
-    if (confidence >= 0.8) {
-      return <Badge variant="default" className="bg-green-600">High ({Math.round(confidence * 100)}%)</Badge>
-    } else if (confidence >= 0.5) {
-      return <Badge variant="secondary" className="bg-yellow-600">Medium ({Math.round(confidence * 100)}%)</Badge>
-    } else {
-      return <Badge variant="outline">Low ({Math.round(confidence * 100)}%)</Badge>
-    }
-  }
 
   if (isLoading) {
     return (
@@ -388,16 +307,10 @@ export default function FieldMappingsPage() {
             Map Sigma rule field names to your log field names
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={openSuggestModal}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Suggest with AI
-          </Button>
-          <Button onClick={openAddModal}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Mapping
-          </Button>
-        </div>
+        <Button onClick={openAddModal}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Mapping
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -428,14 +341,6 @@ export default function FieldMappingsPage() {
                     onClick={openAddModal}
                   >
                     Add one
-                  </button>
-                  {' '}
-                  or{' '}
-                  <button
-                    className="text-primary underline"
-                    onClick={openSuggestModal}
-                  >
-                    get AI suggestions
                   </button>
                 </div>
               ) : (
@@ -639,107 +544,6 @@ export default function FieldMappingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* AI Suggest Modal */}
-      <Dialog open={showSuggestModal} onOpenChange={setShowSuggestModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>AI Field Mapping Suggestions</DialogTitle>
-            <DialogDescription>
-              Enter Sigma field names (one per line) to get AI suggestions for
-              mapping them to your log fields.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="sigma-fields">Sigma Fields (one per line)</Label>
-              <textarea
-                id="sigma-fields"
-                className="w-full h-32 px-3 py-2 border rounded-md bg-background resize-none font-mono text-sm"
-                value={suggestSigmaFields}
-                onChange={(e) => setSuggestSigmaFields(e.target.value)}
-                placeholder="SourceIp&#10;DestinationIp&#10;User&#10;CommandLine"
-              />
-            </div>
-            <Button
-              onClick={handleSuggest}
-              disabled={isSuggesting || !suggestSigmaFields.trim()}
-            >
-              {isSuggesting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Getting Suggestions...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Get Suggestions
-                </>
-              )}
-            </Button>
-
-            {suggestions.length > 0 && (
-              <div className="space-y-2 pt-4 border-t">
-                <Label>Suggestions</Label>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Sigma Field</TableHead>
-                      <TableHead>Suggested Target</TableHead>
-                      <TableHead>Confidence</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead className="w-[100px]">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {suggestions.map((suggestion) => (
-                      <TableRow key={suggestion.sigma_field}>
-                        <TableCell className="font-mono">
-                          {suggestion.sigma_field}
-                        </TableCell>
-                        <TableCell className="font-mono">
-                          {suggestion.target_field || (
-                            <span className="text-muted-foreground italic">
-                              No match
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {suggestion.target_field
-                            ? getConfidenceBadge(suggestion.confidence)
-                            : '-'}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                          {suggestion.reason}
-                        </TableCell>
-                        <TableCell>
-                          {suggestion.target_field && (
-                            <Button
-                              size="sm"
-                              onClick={() => acceptSuggestion(suggestion)}
-                              disabled={savingSuggestions.has(suggestion.sigma_field)}
-                            >
-                              {savingSuggestions.has(suggestion.sigma_field) ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                'Accept'
-                              )}
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSuggestModal(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

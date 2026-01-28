@@ -19,8 +19,10 @@ class Webhook(Base, UUIDMixin, TimestampMixin):
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
-    auth_header: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # Encrypted auth header value (e.g., Bearer token, API key)
+    header_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    header_value: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # header_name: Custom header name (e.g., X-API-Key, Authorization)
+    # header_value: Encrypted header value (e.g., Bearer token, API key)
     # Provider type for payload formatting: generic, discord, slack
     provider: Mapped[str] = mapped_column(String(20), default="generic")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

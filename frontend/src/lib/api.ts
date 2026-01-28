@@ -115,11 +115,15 @@ export class ApiClient {
     return response.json()
   }
 
-  async delete(path: string): Promise<void> {
-    const response = await fetch(`${API_BASE}${path}`, {
+  async delete(path: string, body?: unknown): Promise<void> {
+    const options: RequestInit = {
       method: 'DELETE',
       headers: this.getHeaders('DELETE'),
-    })
+    }
+    if (body) {
+      options.body = JSON.stringify(body)
+    }
+    const response = await fetch(`${API_BASE}${path}`, options)
     this.updateCsrfToken(response)
     if (!response.ok) {
       let error = await response.json().catch(() => ({ detail: 'Request failed' }))
@@ -221,6 +225,8 @@ export const settingsApi = {
     api.post<WebhookTestResponse>('/settings/webhooks/test', { url, provider }),
   testAI: () =>
     api.post<AITestResponse>('/settings/ai/test', {}),
+  getAIStatus: () =>
+    api.get<{ configured: boolean; provider: string | null }>('/settings/ai/status'),
   // Version endpoints
   getVersion: () =>
     api.get<VersionResponse>('/settings/version'),
@@ -269,6 +275,7 @@ export type RuleExceptionCreate = {
   operator?: ExceptionOperator
   value: string
   reason?: string
+  change_reason: string
 }
 
 export type RuleExceptionUpdate = {
@@ -277,6 +284,7 @@ export type RuleExceptionUpdate = {
   value?: string
   reason?: string
   is_active?: boolean
+  change_reason: string
 }
 
 // Activity types
@@ -454,13 +462,13 @@ export const rulesApi = {
     api.post<Rule>('/rules', data),
   update: (id: string, data: RuleUpdate) =>
     api.patch<Rule>(`/rules/${id}`, data),
-  delete: (id: string) =>
-    api.delete(`/rules/${id}`),
+  delete: (id: string, changeReason?: string) =>
+    api.delete(`/rules/${id}`, changeReason ? { change_reason: changeReason } : undefined),
   validate: (yaml_content: string, index_pattern_id?: string) =>
     api.post<RuleValidateResponse>('/rules/validate', { yaml_content, index_pattern_id }),
   test: (yaml_content: string, sample_logs: Record<string, unknown>[]) =>
     api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs }),
-  deploy: async (id: string): Promise<RuleDeployResponse> => {
+  deploy: async (id: string, changeReason: string): Promise<RuleDeployResponse> => {
     const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
       method: 'POST',
       headers: {
@@ -469,6 +477,7 @@ export const rulesApi = {
           ? { Authorization: `Bearer ${localStorage.getItem('chad-token')}` }
           : {}),
       },
+      body: JSON.stringify({ change_reason: changeReason }),
     })
     if (!response.ok) {
       let error = await response.json().catch(() => ({ detail: 'Request failed' }))
@@ -485,8 +494,10 @@ export const rulesApi = {
     }
     return response.json()
   },
-  undeploy: (id: string) =>
-    api.post<{ success: boolean }>(`/rules/${id}/undeploy`),
+  undeploy: (id: string, changeReason: string) =>
+    api.post<{ success: boolean }>(`/rules/${id}/undeploy`, { change_reason: changeReason }),
+  getLinkedCorrelations: (id: string, deployedOnly: boolean = false) =>
+    api.get<{ correlations: { id: string; name: string; deployed: boolean }[] }>(`/rules/${id}/linked-correlations?deployed_only=${deployedOnly}`),
   rollback: (id: string, version: number, reason: string) =>
     api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`, { change_reason: reason }),
   // Exceptions
@@ -498,25 +509,49 @@ export const rulesApi = {
     api.post<RuleException>(`/rules/${ruleId}/exceptions`, data),
   updateException: (ruleId: string, exceptionId: string, data: RuleExceptionUpdate) =>
     api.patch<RuleException>(`/rules/${ruleId}/exceptions/${exceptionId}`, data),
-  deleteException: (ruleId: string, exceptionId: string) =>
-    api.delete(`/rules/${ruleId}/exceptions/${exceptionId}`),
+  deleteException: (ruleId: string, exceptionId: string, changeReason: string) =>
+    api.delete(`/rules/${ruleId}/exceptions/${exceptionId}`, { change_reason: changeReason }),
   // Snooze
-  snooze: (id: string, hours?: number, indefinite?: boolean) =>
+  snooze: (id: string, changeReason: string, hours?: number, indefinite?: boolean) =>
     api.post<{ success: boolean; snooze_until: string | null; snooze_indefinite: boolean; status: string }>(
       `/rules/${id}/snooze`,
-      { hours, indefinite: indefinite ?? false }
+      { hours, indefinite: indefinite ?? false, change_reason: changeReason }
     ),
-  unsnooze: (id: string) =>
-    api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`),
+  unsnooze: (id: string, changeReason: string) =>
+    api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`, { change_reason: changeReason }),
+  // Threshold settings
+  updateThreshold: (
+    id: string,
+    enabled: boolean,
+    changeReason: string,
+    count?: number | null,
+    windowMinutes?: number | null,
+    groupBy?: string | null
+  ) =>
+    api.patch<{
+      success: boolean;
+      threshold_enabled: boolean;
+      threshold_count: number | null;
+      threshold_window_minutes: number | null;
+      threshold_group_by: string | null;
+    }>(`/rules/${id}/threshold`, {
+      enabled,
+      count: count ?? null,
+      window_minutes: windowMinutes ?? null,
+      group_by: groupBy ?? null,
+      change_reason: changeReason,
+    }),
   // Bulk operations
-  bulkEnable: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/enable', { rule_ids: ruleIds }),
-  bulkDelete: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/delete', { rule_ids: ruleIds }),
-  bulkDeploy: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/deploy', { rule_ids: ruleIds }),
-  bulkUndeploy: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/undeploy', { rule_ids: ruleIds }),
+  bulkSnooze: (ruleIds: string[], changeReason: string, hours?: number, indefinite?: boolean) =>
+    api.post<BulkOperationResult>('/rules/bulk/snooze', { rule_ids: ruleIds, change_reason: changeReason, hours, indefinite: indefinite ?? false }),
+  bulkUnsnooze: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/unsnooze', { rule_ids: ruleIds, change_reason: changeReason }),
+  bulkDelete: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/delete', { rule_ids: ruleIds, change_reason: changeReason }),
+  bulkDeploy: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/deploy', { rule_ids: ruleIds, change_reason: changeReason }),
+  bulkUndeploy: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/undeploy', { rule_ids: ruleIds, change_reason: changeReason }),
   checkDeploymentEligibility: (ruleIds: string[]) =>
     api.post<DeploymentEligibilityResult>('/rules/check-deployment-eligibility', { rule_ids: ruleIds }),
   // Activity and comments
@@ -1187,6 +1222,7 @@ export type Webhook = {
   name: string
   url: string
   has_auth: boolean
+  header_name: string | null
   provider: WebhookProvider
   enabled: boolean
   created_at: string
@@ -1196,9 +1232,9 @@ export type Webhook = {
 // Webhooks API
 export const webhooksApi = {
   list: () => api.get<Webhook[]>('/webhooks'),
-  create: (data: { name: string; url: string; auth_header?: string; provider?: WebhookProvider; enabled?: boolean }) =>
+  create: (data: { name: string; url: string; header_name?: string; header_value?: string; provider?: WebhookProvider; enabled?: boolean }) =>
     api.post<Webhook>('/webhooks', data),
-  update: (id: string, data: Partial<{ name: string; url: string; auth_header: string; provider: WebhookProvider; enabled: boolean }>) =>
+  update: (id: string, data: Partial<{ name: string; url: string; header_name: string; header_value: string; provider: WebhookProvider; enabled: boolean }>) =>
     api.patch<Webhook>(`/webhooks/${id}`, data),
   delete: (id: string) => api.delete(`/webhooks/${id}`),
   test: (id: string) => api.post<{ success: boolean; status_code?: number; error?: string }>(`/webhooks/${id}/test`),
@@ -1638,11 +1674,18 @@ export type CorrelationRule = {
   entity_field: string
   time_window_minutes: number
   severity: 'critical' | 'high' | 'medium' | 'low' | 'informational'
-  is_enabled: boolean
   created_at: string
   updated_at: string
   created_by?: string
   last_edited_by?: string | null
+  // Deployment tracking
+  deployed_at?: string | null
+  deployed_version?: number | null
+  current_version: number
+  needs_redeploy: boolean
+  // Linked rule deployment status
+  rule_a_deployed: boolean
+  rule_b_deployed: boolean
 }
 
 export type CorrelationRuleCreate = {
@@ -1652,7 +1695,7 @@ export type CorrelationRuleCreate = {
   entity_field: string
   time_window_minutes: number
   severity: string
-  is_enabled?: boolean
+  change_reason: string
 }
 
 export type CorrelationRuleUpdate = {
@@ -1660,7 +1703,38 @@ export type CorrelationRuleUpdate = {
   entity_field?: string
   time_window_minutes?: number
   severity?: string
-  is_enabled?: boolean
+  change_reason: string
+}
+
+export type CorrelationRuleVersion = {
+  id: string
+  version_number: number
+  name: string
+  rule_a_id: string
+  rule_b_id: string
+  entity_field: string
+  time_window_minutes: number
+  severity: string
+  changed_by: string
+  changed_by_email?: string | null
+  change_reason: string
+  created_at: string
+}
+
+export type CorrelationRuleComment = {
+  id: string
+  correlation_rule_id: string
+  user_id: string | null
+  user_email: string | null
+  content: string
+  created_at: string
+}
+
+export type CorrelationActivityItem = {
+  type: 'version' | 'deploy' | 'undeploy' | 'comment'
+  timestamp: string
+  user_email: string | null
+  data: Record<string, unknown>
 }
 
 export type CorrelationRuleListResponse = {
@@ -1670,14 +1744,24 @@ export type CorrelationRuleListResponse = {
 
 // Correlation Rules API
 export const correlationRulesApi = {
-  list: (includeDisabled = false) => {
+  list: (includeUndeployed = true) => {
     const params = new URLSearchParams()
-    if (includeDisabled) params.append('include_disabled', 'true')
+    if (includeUndeployed) params.append('include_undeployed', 'true')
     return api.get<CorrelationRuleListResponse>(`/correlation-rules?${params}`)
   },
   get: (id: string) => api.get<CorrelationRule>(`/correlation-rules/${id}`),
   create: (data: CorrelationRuleCreate) => api.post<CorrelationRule>(`/correlation-rules`, data),
   update: (id: string, data: CorrelationRuleUpdate) => api.patch<CorrelationRule>(`/correlation-rules/${id}`, data),
   delete: (id: string) => api.delete(`/correlation-rules/${id}`),
+  deploy: (id: string, changeReason: string) => api.post<CorrelationRule>(`/correlation-rules/${id}/deploy`, { change_reason: changeReason }),
+  undeploy: (id: string, changeReason: string) => api.post<CorrelationRule>(`/correlation-rules/${id}/undeploy`, { change_reason: changeReason }),
+  getVersions: (id: string) => api.get<CorrelationRuleVersion[]>(`/correlation-rules/${id}/versions`),
+  getActivity: (id: string) => api.get<CorrelationActivityItem[]>(`/correlation-rules/${id}/activity`),
+  addComment: (id: string, content: string) => api.post<CorrelationRuleComment>(`/correlation-rules/${id}/comments`, { content }),
+  rollback: (id: string, versionNumber: number, changeReason: string) =>
+    api.post<{ success: boolean; new_version_number: number; rolled_back_from: number }>(
+      `/correlation-rules/${id}/rollback/${versionNumber}`,
+      { change_reason: changeReason }
+    ),
 }
 

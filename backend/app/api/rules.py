@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional, require_permission_dep
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
+from app.models.correlation_rule import CorrelationRule
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
@@ -59,6 +60,24 @@ router = APIRouter(prefix="/rules", tags=["rules"])
 class SnoozeRequest(BaseModel):
     hours: int | None = Field(default=None, ge=1, le=168)  # None allowed if indefinite
     indefinite: bool = False
+    change_reason: str = Field(..., min_length=1, max_length=10000)
+
+
+class BulkSnoozeRequest(BaseModel):
+    """Request body for bulk snooze operations."""
+    rule_ids: list[str]
+    hours: int | None = Field(default=None, ge=1, le=168)  # None allowed if indefinite
+    indefinite: bool = False
+    change_reason: str = Field(..., min_length=1, max_length=10000)
+
+
+class ThresholdUpdateRequest(BaseModel):
+    """Request body for updating threshold settings."""
+    enabled: bool
+    count: int | None = Field(default=None, ge=1)
+    window_minutes: int | None = Field(default=None, ge=1)
+    group_by: str | None = None
+    change_reason: str = Field(..., min_length=1, max_length=10000)
 
 
 class DeploymentEligibilityRequest(BaseModel):
@@ -471,6 +490,7 @@ async def delete_rule(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+    change_reason: str | None = Body(None, min_length=1, max_length=10000, embed=True),
 ):
     result = await db.execute(select(Rule).where(Rule.id == rule_id))
     rule = result.scalar_one_or_none()
@@ -482,7 +502,10 @@ async def delete_rule(
         )
 
     # Capture details before delete
-    await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), {"title": rule.title}, ip_address=get_client_ip(request))
+    audit_details = {"title": rule.title}
+    if change_reason:
+        audit_details["change_reason"] = change_reason
+    await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), audit_details, ip_address=get_client_ip(request))
     await db.delete(rule)
     await db.commit()
 
@@ -1003,7 +1026,7 @@ async def bulk_deploy_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_deploy", "rule", None,
-        {"count": len(success), "rule_ids": success},
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
         ip_address=get_client_ip(request)
     )
     await db.commit()
@@ -1018,6 +1041,7 @@ async def deploy_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """
     Deploy a rule to its OpenSearch percolator index.
@@ -1173,7 +1197,7 @@ async def deploy_rule(
 
     await db.commit()
     await db.refresh(rule)
-    await audit_log(db, current_user.id, "rule.deploy", "rule", str(rule.id), {"title": rule.title, "percolator_index": percolator_index}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "rule.deploy", "rule", str(rule.id), {"title": rule.title, "percolator_index": percolator_index, "change_reason": change_reason}, ip_address=get_client_ip(request))
     await db.commit()
 
     return RuleDeployResponse(
@@ -1195,6 +1219,7 @@ async def bulk_undeploy_rules(
     """Undeploy multiple rules from OpenSearch."""
     success = []
     failed = []
+    all_undeployed_correlations = []
 
     for rule_id in data.rule_ids:
         try:
@@ -1221,6 +1246,13 @@ async def bulk_undeploy_rules(
                 rule.status = RuleStatus.UNDEPLOYED
                 rule.snooze_until = None
                 rule.snooze_indefinite = False
+
+                # Auto-undeploy any linked correlation rules
+                undeployed_correlations = await undeploy_linked_correlations(
+                    db, rule_id, current_user.id, data.change_reason, request
+                )
+                all_undeployed_correlations.extend(undeployed_correlations)
+
                 success.append(rule_id)
             else:
                 failed.append({"id": rule_id, "error": "Rule not found"})
@@ -1230,12 +1262,64 @@ async def bulk_undeploy_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_undeploy", "rule", None,
-        {"count": len(success), "rule_ids": success},
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason, "undeployed_correlations": all_undeployed_correlations},
         ip_address=get_client_ip(request)
     )
     await db.commit()
 
     return BulkOperationResult(success=success, failed=failed)
+
+
+async def undeploy_linked_correlations(
+    db: AsyncSession,
+    rule_id: UUID,
+    user_id: UUID,
+    change_reason: str,
+    request: Request,
+) -> list[str]:
+    """
+    Undeploy any deployed correlation rules that depend on this rule.
+
+    Returns list of undeployed correlation rule names.
+    """
+    from sqlalchemy import or_
+
+    # Find deployed correlation rules that reference this rule
+    result = await db.execute(
+        select(CorrelationRule).where(
+            or_(
+                CorrelationRule.rule_a_id == rule_id,
+                CorrelationRule.rule_b_id == rule_id,
+            ),
+            CorrelationRule.deployed_at.isnot(None),
+        )
+    )
+    correlations = result.scalars().all()
+
+    undeployed_names = []
+    for corr in correlations:
+        old_deployed_version = corr.deployed_version
+        corr.deployed_at = None
+        corr.deployed_version = None
+        undeployed_names.append(corr.name)
+
+        # Log audit event for each correlation
+        await audit_log(
+            db,
+            user_id,
+            "correlation_rule_undeployed",
+            "correlation_rule",
+            str(corr.id),
+            {
+                "name": corr.name,
+                "previous_deployed_version": old_deployed_version,
+                "change_reason": f"Auto-undeployed: underlying rule undeployed. {change_reason}",
+                "triggered_by_rule_id": str(rule_id),
+            },
+            ip_address=get_client_ip(request),
+        )
+
+    return undeployed_names
 
 
 @router.post("/{rule_id}/undeploy", response_model=RuleUndeployResponse)
@@ -1245,6 +1329,7 @@ async def undeploy_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """Remove a rule from its percolator index."""
     # Fetch rule with index pattern
@@ -1279,13 +1364,22 @@ async def undeploy_rule(
     rule.snooze_until = None
     rule.snooze_indefinite = False
 
+    # Auto-undeploy any linked correlation rules
+    undeployed_correlations = await undeploy_linked_correlations(
+        db, rule_id, current_user.id, change_reason, request
+    )
+
     await db.commit()
-    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title, "change_reason": change_reason, "undeployed_correlations": undeployed_correlations}, ip_address=get_client_ip(request))
     await db.commit()
+
+    message = "Rule undeployed successfully" if was_deleted else "Rule was not found in percolator index"
+    if undeployed_correlations:
+        message += f". Also undeployed {len(undeployed_correlations)} correlation rule(s): {', '.join(undeployed_correlations)}"
 
     return RuleUndeployResponse(
         success=True,
-        message="Rule undeployed successfully" if was_deleted else "Rule was not found in percolator index",
+        message=message,
     )
 
 
@@ -1365,6 +1459,115 @@ async def rollback_rule(
     )
 
 
+# Bulk snooze/unsnooze must be defined before /{rule_id}/snooze to avoid route conflicts
+@router.post("/bulk/snooze", response_model=BulkOperationResult)
+async def bulk_snooze_rules(
+    data: BulkSnoozeRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Snooze multiple rules for the specified number of hours or indefinitely."""
+    if not data.indefinite and data.hours is None:
+        raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
+
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                # Cannot snooze undeployed rules
+                if rule.status == RuleStatus.UNDEPLOYED:
+                    failed.append({"id": rule_id, "error": "Cannot snooze an undeployed rule"})
+                    continue
+
+                if data.indefinite:
+                    rule.snooze_until = None
+                    rule.snooze_indefinite = True
+                else:
+                    rule.snooze_until = datetime.now(UTC) + timedelta(hours=data.hours)
+                    rule.snooze_indefinite = False
+                rule.status = RuleStatus.SNOOZED
+
+                # Remove from percolator when snoozing (prevents alert generation)
+                if rule.deployed_at is not None and os_client is not None:
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                    percolator.undeploy_rule(percolator_index, str(rule.id))
+
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_snooze", "rule", None,
+        {"count": len(success), "rule_ids": success, "hours": data.hours, "indefinite": data.indefinite, "change_reason": data.change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/bulk/unsnooze", response_model=BulkOperationResult)
+async def bulk_unsnooze_rules(
+    data: BulkOperationRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Unsnooze multiple rules (clears snooze and sets status to DEPLOYED)."""
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                old_status = rule.status
+                rule.status = RuleStatus.DEPLOYED
+                rule.snooze_until = None
+                rule.snooze_indefinite = False
+                success.append(rule_id)
+
+                # Sync status to OpenSearch if deployed
+                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.DEPLOYED:
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                    percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_unsnooze", "rule", None,
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
 @router.post("/{rule_id}/snooze")
 async def snooze_rule(
     rule_id: UUID,
@@ -1416,7 +1619,7 @@ async def snooze_rule(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.snooze", "rule", str(rule.id),
-        {"title": rule.title, "hours": snooze_request.hours, "indefinite": snooze_request.indefinite},
+        {"title": rule.title, "hours": snooze_request.hours, "indefinite": snooze_request.indefinite, "change_reason": snooze_request.change_reason},
         ip_address=get_client_ip(http_request)
     )
     await db.commit()
@@ -1436,6 +1639,7 @@ async def unsnooze_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """Remove snooze from a rule."""
     result = await db.execute(
@@ -1495,10 +1699,63 @@ async def unsnooze_rule(
             )
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title, "change_reason": change_reason}, ip_address=get_client_ip(request))
     await db.commit()
 
     return {"success": True, "status": "enabled"}
+
+
+@router.patch("/{rule_id}/threshold")
+async def update_rule_threshold(
+    rule_id: UUID,
+    data: ThresholdUpdateRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+):
+    """Update threshold settings for a rule with change reason."""
+    result = await db.execute(select(Rule).where(Rule.id == rule_id))
+    rule = result.scalar_one_or_none()
+
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    # Track old values for audit
+    old_values = {
+        "threshold_enabled": rule.threshold_enabled,
+        "threshold_count": rule.threshold_count,
+        "threshold_window_minutes": rule.threshold_window_minutes,
+        "threshold_group_by": rule.threshold_group_by,
+    }
+
+    # Update threshold settings
+    rule.threshold_enabled = data.enabled
+    rule.threshold_count = data.count if data.enabled else None
+    rule.threshold_window_minutes = data.window_minutes if data.enabled else None
+    rule.threshold_group_by = data.group_by if data.enabled else None
+
+    new_values = {
+        "threshold_enabled": rule.threshold_enabled,
+        "threshold_count": rule.threshold_count,
+        "threshold_window_minutes": rule.threshold_window_minutes,
+        "threshold_group_by": rule.threshold_group_by,
+    }
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.threshold_update", "rule", str(rule.id),
+        {"title": rule.title, "old_values": old_values, "new_values": new_values, "change_reason": data.change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "threshold_enabled": rule.threshold_enabled,
+        "threshold_count": rule.threshold_count,
+        "threshold_window_minutes": rule.threshold_window_minutes,
+        "threshold_group_by": rule.threshold_group_by,
+    }
 
 
 # Rule Exception Endpoints
@@ -1553,7 +1810,7 @@ async def create_rule_exception(
     db.add(exception)
     await db.commit()
     await db.refresh(exception)
-    await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field, "change_reason": exception_data.change_reason}, ip_address=get_client_ip(request))
     await db.commit()
     return exception
 
@@ -1588,7 +1845,7 @@ async def update_rule_exception(
 
     await db.commit()
     await db.refresh(exception)
-    await audit_log(db, current_user.id, "exception.update", "rule_exception", str(exception.id), {"rule_id": str(rule_id)}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "exception.update", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "change_reason": exception_data.change_reason}, ip_address=get_client_ip(request))
     await db.commit()
     return exception
 
@@ -1603,6 +1860,7 @@ async def delete_rule_exception(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """Delete an exception."""
     result = await db.execute(
@@ -1617,7 +1875,7 @@ async def delete_rule_exception(
         raise HTTPException(status_code=404, detail="Exception not found")
 
     # Capture details before delete
-    await audit_log(db, current_user.id, "exception.delete", "rule_exception", str(exception_id), {"rule_id": str(rule_id)}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "exception.delete", "rule_exception", str(exception_id), {"rule_id": str(rule_id), "change_reason": change_reason}, ip_address=get_client_ip(request))
     await db.delete(exception)
     await db.commit()
 
@@ -1704,55 +1962,60 @@ async def get_rule_fields(
         return RuleFieldsResponse(fields=[])
 
 
-# Bulk Operations Endpoints
+class LinkedCorrelationRule(BaseModel):
+    """A correlation rule that references this rule."""
+
+    id: str
+    name: str
+    deployed: bool
 
 
-@router.post("/bulk/enable", response_model=BulkOperationResult)
-async def bulk_enable_rules(
-    data: BulkOperationRequest,
-    request: Request,
+class LinkedCorrelationsResponse(BaseModel):
+    """Response with correlation rules that reference this rule."""
+
+    correlations: list[LinkedCorrelationRule]
+
+
+@router.get("/{rule_id}/linked-correlations", response_model=LinkedCorrelationsResponse)
+async def get_linked_correlations(
+    rule_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
-    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+    _: Annotated[User, Depends(get_current_user)],
+    deployed_only: bool = True,
 ):
-    """Enable multiple rules (also clears any snooze)."""
-    success = []
-    failed = []
+    """
+    Get correlation rules that reference this rule.
 
-    for rule_id in data.rule_ids:
-        try:
-            result = await db.execute(
-                select(Rule)
-                .where(Rule.id == rule_id)
-                .options(selectinload(Rule.index_pattern))
-            )
-            rule = result.scalar_one_or_none()
-            if rule:
-                old_status = rule.status
-                rule.status = RuleStatus.DEPLOYED
-                rule.snooze_until = None
-                rule.snooze_indefinite = False
-                success.append(rule_id)
+    Returns a list of correlation rules where this rule is either rule_a or rule_b.
+    By default, only returns deployed correlations (useful for undeploy warnings).
+    """
+    from sqlalchemy import or_
 
-                # Sync status to OpenSearch if deployed
-                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.DEPLOYED:
-                    percolator = PercolatorService(os_client)
-                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-                    percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
-            else:
-                failed.append({"id": rule_id, "error": "Rule not found"})
-        except Exception as e:
-            failed.append({"id": rule_id, "error": str(e)})
-
-    await db.commit()
-    await audit_log(
-        db, current_user.id, "rule.bulk_enable", "rule", None,
-        {"count": len(success), "rule_ids": success},
-        ip_address=get_client_ip(request)
+    # Find correlation rules that reference this rule
+    query = select(CorrelationRule).where(
+        or_(
+            CorrelationRule.rule_a_id == rule_id,
+            CorrelationRule.rule_b_id == rule_id,
+        )
     )
-    await db.commit()
 
-    return BulkOperationResult(success=success, failed=failed)
+    # Filter to only deployed correlations if requested
+    if deployed_only:
+        query = query.where(CorrelationRule.deployed_at.isnot(None))
+
+    result = await db.execute(query)
+    correlations = result.scalars().all()
+
+    return LinkedCorrelationsResponse(
+        correlations=[
+            LinkedCorrelationRule(
+                id=str(corr.id),
+                name=corr.name,
+                deployed=corr.deployed_at is not None,
+            )
+            for corr in correlations
+        ]
+    )
 
 
 @router.post("/bulk/delete", response_model=BulkOperationResult)
@@ -1792,7 +2055,7 @@ async def bulk_delete_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_delete", "rule", None,
-        {"count": len(success), "rule_ids": success},
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
         ip_address=get_client_ip(request)
     )
     await db.commit()

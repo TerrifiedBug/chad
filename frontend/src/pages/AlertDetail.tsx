@@ -291,8 +291,8 @@ function CorrelationInfoCard({ correlations, ruleId }: { correlations: Correlati
                   <div className="text-sm font-medium truncate">
                     {correlation.name}
                   </div>
-                  {!correlation.is_enabled && (
-                    <span className="text-xs text-muted-foreground">(Disabled)</span>
+                  {!correlation.deployed_at && (
+                    <span className="text-xs text-muted-foreground">(Not Deployed)</span>
                   )}
                   <Badge
                     className={`text-xs ${
@@ -590,7 +590,8 @@ export default function AlertDetailPage() {
         field: exceptionField,
         operator: exceptionOperator,
         value: exceptionValue,
-        reason: exceptionReason
+        reason: exceptionReason,
+        change_reason: exceptionReason  // Use same reason for audit trail
       })
 
       setShowExceptionDialog(false)
