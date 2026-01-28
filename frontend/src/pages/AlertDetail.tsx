@@ -701,7 +701,7 @@ export default function AlertDetailPage() {
             variant="destructive"
             size="sm"
             onClick={handleDelete}
-            disabled={isUpdating || !hasPermission('manage_rules')}
+            disabled={isUpdating || !hasPermission('manage_alerts')}
           >
             <Trash2 className="h-4 w-4 mr-1" />
             Delete
