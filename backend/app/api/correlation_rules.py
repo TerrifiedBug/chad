@@ -773,11 +773,13 @@ async def get_correlation_rule_activity(
                 user_email=v.author.email if v.author else None,
                 data={
                     "version_number": v.version_number,
-                    "change_reason": v.change_reason,
                     "name": v.name,
+                    "rule_a_id": str(v.rule_a_id),
+                    "rule_b_id": str(v.rule_b_id),
                     "entity_field": v.entity_field,
                     "time_window_minutes": v.time_window_minutes,
                     "severity": v.severity,
+                    "change_reason": v.change_reason,
                 },
             )
         )
