@@ -40,7 +40,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw, AlertCircle } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw, AlertCircle, Copy, Trash2 } from 'lucide-react'
 
 const TIME_WINDOW_OPTIONS = [
   { value: 1, label: '1 minute' },
@@ -497,6 +504,44 @@ export default function CorrelationRuleEditorPage() {
     }
   }
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const handleClone = async () => {
+    if (!id) return
+    try {
+      const clonedRule = await correlationRulesApi.create({
+        name: `${formData.name} (Copy)`,
+        rule_a_id: formData.rule_a_id,
+        rule_b_id: formData.rule_b_id,
+        entity_field: formData.entity_field,
+        time_window_minutes: formData.time_window_minutes,
+        severity: formData.severity,
+        change_reason: `Cloned from ${formData.name}`,
+      })
+      showToast('Correlation rule cloned successfully', 'success')
+      navigate(`/correlation/${clonedRule.id}`)
+    } catch (err) {
+      console.error('Clone failed:', err)
+      showToast('Failed to clone correlation rule', 'error')
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!id) return
+    setIsDeleting(true)
+    try {
+      await correlationRulesApi.delete(id)
+      showToast('Correlation rule deleted', 'success')
+      navigate('/correlation')
+    } catch (err) {
+      showToast('Failed to delete correlation rule', 'error')
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+
   // Loading state
   if (isLoading) {
     return (
@@ -529,16 +574,9 @@ export default function CorrelationRuleEditorPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">
-                {isEditing ? 'Edit Correlation Rule' : 'Create Correlation Rule'}
-              </h1>
-              {correlationRule?.deployed_at && correlationRule?.needs_redeploy && (
-                <span className="px-2 py-0.5 rounded text-xs font-medium border border-yellow-500 text-yellow-600">
-                  Needs Redeploy
-                </span>
-              )}
-            </div>
+            <h1 className="text-2xl font-bold">
+              {isEditing ? 'Edit Correlation Rule' : 'Create Correlation Rule'}
+            </h1>
             {isEditing && correlationRule?.deployed_at && (
               <p className={`text-xs ${correlationRule?.needs_redeploy ? 'text-yellow-600' : 'text-green-600'}`}>
                 {correlationRule?.needs_redeploy
@@ -565,6 +603,27 @@ export default function CorrelationRuleEditorPage() {
               <History className="h-4 w-4 mr-2" />
               Activity
             </Button>
+          )}
+          {isEditing && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  More Actions <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="z-50 bg-popover">
+                <DropdownMenuItem onClick={handleClone}>
+                  <Copy className="mr-2 h-4 w-4" /> Clone Rule
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete Rule
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {isEditing && correlationRule?.deployed_at && correlationRule?.needs_redeploy && (
             <TooltipProvider>
@@ -937,6 +996,34 @@ export default function CorrelationRuleEditorPage() {
               disabled={!deployReason.trim() || isDeploying}
             >
               {isDeploying ? 'Undeploying...' : 'Undeploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Correlation Rule</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this correlation rule? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>
