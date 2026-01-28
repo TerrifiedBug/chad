@@ -1018,6 +1018,7 @@ async def deploy_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """
     Deploy a rule to its OpenSearch percolator index.
@@ -1173,7 +1174,7 @@ async def deploy_rule(
 
     await db.commit()
     await db.refresh(rule)
-    await audit_log(db, current_user.id, "rule.deploy", "rule", str(rule.id), {"title": rule.title, "percolator_index": percolator_index}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "rule.deploy", "rule", str(rule.id), {"title": rule.title, "percolator_index": percolator_index, "change_reason": change_reason}, ip_address=get_client_ip(request))
     await db.commit()
 
     return RuleDeployResponse(
@@ -1245,6 +1246,7 @@ async def undeploy_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """Remove a rule from its percolator index."""
     # Fetch rule with index pattern
@@ -1280,7 +1282,7 @@ async def undeploy_rule(
     rule.snooze_indefinite = False
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title, "change_reason": change_reason}, ip_address=get_client_ip(request))
     await db.commit()
 
     return RuleUndeployResponse(

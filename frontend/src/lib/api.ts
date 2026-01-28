@@ -462,7 +462,7 @@ export const rulesApi = {
     api.post<RuleValidateResponse>('/rules/validate', { yaml_content, index_pattern_id }),
   test: (yaml_content: string, sample_logs: Record<string, unknown>[]) =>
     api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs }),
-  deploy: async (id: string): Promise<RuleDeployResponse> => {
+  deploy: async (id: string, changeReason: string): Promise<RuleDeployResponse> => {
     const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
       method: 'POST',
       headers: {
@@ -471,6 +471,7 @@ export const rulesApi = {
           ? { Authorization: `Bearer ${localStorage.getItem('chad-token')}` }
           : {}),
       },
+      body: JSON.stringify({ change_reason: changeReason }),
     })
     if (!response.ok) {
       let error = await response.json().catch(() => ({ detail: 'Request failed' }))
@@ -487,8 +488,8 @@ export const rulesApi = {
     }
     return response.json()
   },
-  undeploy: (id: string) =>
-    api.post<{ success: boolean }>(`/rules/${id}/undeploy`),
+  undeploy: (id: string, changeReason: string) =>
+    api.post<{ success: boolean }>(`/rules/${id}/undeploy`, { change_reason: changeReason }),
   rollback: (id: string, version: number, reason: string) =>
     api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`, { change_reason: reason }),
   // Exceptions

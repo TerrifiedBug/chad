@@ -217,6 +217,11 @@ export default function RuleEditorPage() {
   const [showChangeReason, setShowChangeReason] = useState(false)
   const [changeReason, setChangeReason] = useState('')
 
+  // Deploy/Undeploy change reason dialog state
+  const [showDeployReason, setShowDeployReason] = useState(false)
+  const [showUndeployReason, setShowUndeployReason] = useState(false)
+  const [deployReason, setDeployReason] = useState('')
+
   // Load functions - must be declared before useEffect that uses them
   const loadExceptions = useCallback(async () => {
     if (!id || isNew) return
@@ -637,12 +642,19 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleDeploy = async () => {
+  const handleDeploy = () => {
     if (!id) return
+    setDeployReason('')
+    setShowDeployReason(true)
+  }
+
+  const handleDeployConfirm = async () => {
+    if (!id || !deployReason.trim()) return
+    setShowDeployReason(false)
     setIsDeploying(true)
     setDeployError('')
     try {
-      const result = await rulesApi.deploy(id)
+      const result = await rulesApi.deploy(id, deployReason)
       setDeployedAt(result.deployed_at)
       setDeployedVersion(result.deployed_version)
       setNeedsRedeploy(false)
@@ -650,6 +662,7 @@ export default function RuleEditorPage() {
       if (status !== 'snoozed') {
         setStatus('deployed')
       }
+      setDeployReason('')
     } catch (err) {
       if (err instanceof DeploymentUnmappedFieldsError) {
         // Show unmapped fields dialog
@@ -666,18 +679,26 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleUndeploy = async () => {
+  const handleUndeploy = () => {
     if (!id) return
+    setDeployReason('')
+    setShowUndeployReason(true)
+  }
+
+  const handleUndeployConfirm = async () => {
+    if (!id || !deployReason.trim()) return
+    setShowUndeployReason(false)
     setIsDeploying(true)
     setDeployError('')
     try {
-      await rulesApi.undeploy(id)
+      await rulesApi.undeploy(id, deployReason)
       setDeployedAt(null)
       setDeployedVersion(null)
       setStatus('undeployed')
       // Clear snooze state as well (backend does this too)
       setSnoozeUntil(null)
       setSnoozeIndefinite(false)
+      setDeployReason('')
     } catch (err) {
       setDeployError(err instanceof Error ? err.message : 'Undeploy failed')
     } finally {
@@ -1832,6 +1853,95 @@ export default function RuleEditorPage() {
               disabled={!changeReason.trim() || isSaving}
             >
               {isSaving ? 'Saving...' : 'Save with Reason'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deploy Reason Modal */}
+      <Dialog open={showDeployReason} onOpenChange={setShowDeployReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deploy Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're deploying this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="deploy-reason">Reason for Deploy *</Label>
+              <Textarea
+                id="deploy-reason"
+                placeholder="e.g., Ready for production, completed testing..."
+                value={deployReason}
+                onChange={(e) => setDeployReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeployReason(false)
+                setDeployReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDeployConfirm}
+              disabled={!deployReason.trim() || isDeploying}
+            >
+              {isDeploying ? 'Deploying...' : 'Deploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Undeploy Reason Modal */}
+      <Dialog open={showUndeployReason} onOpenChange={setShowUndeployReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Undeploy Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're undeploying this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="undeploy-reason">Reason for Undeploy *</Label>
+              <Textarea
+                id="undeploy-reason"
+                placeholder="e.g., False positives, needs revision, no longer needed..."
+                value={deployReason}
+                onChange={(e) => setDeployReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUndeployReason(false)
+                setDeployReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleUndeployConfirm}
+              disabled={!deployReason.trim() || isDeploying}
+            >
+              {isDeploying ? 'Undeploying...' : 'Undeploy'}
             </Button>
           </DialogFooter>
         </DialogContent>
