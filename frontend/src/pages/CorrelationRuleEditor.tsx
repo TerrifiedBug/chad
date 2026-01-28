@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo, CorrelationRule } from '@/lib/api'
-import { toast } from 'sonner'
+import { useToast } from '@/components/ui/toast-provider'
 import type { Severity } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -179,6 +179,7 @@ export default function CorrelationRuleEditorPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const isEditing = Boolean(id)
+  const { showToast } = useToast()
 
   const [rules, setRules] = useState<Rule[]>([])
   const [availableFields, setAvailableFields] = useState<string[]>([])
@@ -489,9 +490,9 @@ export default function CorrelationRuleEditorPage() {
         time_window_minutes: updated.time_window_minutes,
         severity: updated.severity,
       })
-      toast.success(`Restored to version ${versionNumber}`)
+      showToast(`Restored to version ${versionNumber}`, 'success')
     } catch (err) {
-      toast.error('Failed to restore version')
+      showToast('Failed to restore version', 'error')
       throw err
     }
   }
