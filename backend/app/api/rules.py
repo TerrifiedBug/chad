@@ -1389,6 +1389,115 @@ async def rollback_rule(
     )
 
 
+# Bulk snooze/unsnooze must be defined before /{rule_id}/snooze to avoid route conflicts
+@router.post("/bulk/snooze", response_model=BulkOperationResult)
+async def bulk_snooze_rules(
+    data: BulkSnoozeRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Snooze multiple rules for the specified number of hours or indefinitely."""
+    if not data.indefinite and data.hours is None:
+        raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
+
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                # Cannot snooze undeployed rules
+                if rule.status == RuleStatus.UNDEPLOYED:
+                    failed.append({"id": rule_id, "error": "Cannot snooze an undeployed rule"})
+                    continue
+
+                if data.indefinite:
+                    rule.snooze_until = None
+                    rule.snooze_indefinite = True
+                else:
+                    rule.snooze_until = datetime.now(UTC) + timedelta(hours=data.hours)
+                    rule.snooze_indefinite = False
+                rule.status = RuleStatus.SNOOZED
+
+                # Remove from percolator when snoozing (prevents alert generation)
+                if rule.deployed_at is not None and os_client is not None:
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                    percolator.undeploy_rule(percolator_index, str(rule.id))
+
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_snooze", "rule", None,
+        {"count": len(success), "rule_ids": success, "hours": data.hours, "indefinite": data.indefinite, "change_reason": data.change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/bulk/unsnooze", response_model=BulkOperationResult)
+async def bulk_unsnooze_rules(
+    data: BulkOperationRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Unsnooze multiple rules (clears snooze and sets status to DEPLOYED)."""
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                old_status = rule.status
+                rule.status = RuleStatus.DEPLOYED
+                rule.snooze_until = None
+                rule.snooze_indefinite = False
+                success.append(rule_id)
+
+                # Sync status to OpenSearch if deployed
+                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.DEPLOYED:
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                    percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_unsnooze", "rule", None,
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
 @router.post("/{rule_id}/snooze")
 async def snooze_rule(
     rule_id: UUID,
@@ -1781,117 +1890,6 @@ async def get_rule_fields(
         # If we can't get fields from OpenSearch, return empty list
         # This allows the UI to still function
         return RuleFieldsResponse(fields=[])
-
-
-# Bulk Operations Endpoints
-
-
-@router.post("/bulk/snooze", response_model=BulkOperationResult)
-async def bulk_snooze_rules(
-    data: BulkSnoozeRequest,
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
-    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
-):
-    """Snooze multiple rules for the specified number of hours or indefinitely."""
-    if not data.indefinite and data.hours is None:
-        raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
-
-    success = []
-    failed = []
-
-    for rule_id in data.rule_ids:
-        try:
-            result = await db.execute(
-                select(Rule)
-                .where(Rule.id == rule_id)
-                .options(selectinload(Rule.index_pattern))
-            )
-            rule = result.scalar_one_or_none()
-            if rule:
-                # Cannot snooze undeployed rules
-                if rule.status == RuleStatus.UNDEPLOYED:
-                    failed.append({"id": rule_id, "error": "Cannot snooze an undeployed rule"})
-                    continue
-
-                if data.indefinite:
-                    rule.snooze_until = None
-                    rule.snooze_indefinite = True
-                else:
-                    rule.snooze_until = datetime.now(UTC) + timedelta(hours=data.hours)
-                    rule.snooze_indefinite = False
-                rule.status = RuleStatus.SNOOZED
-
-                # Remove from percolator when snoozing (prevents alert generation)
-                if rule.deployed_at is not None and os_client is not None:
-                    percolator = PercolatorService(os_client)
-                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-                    percolator.undeploy_rule(percolator_index, str(rule.id))
-
-                success.append(rule_id)
-            else:
-                failed.append({"id": rule_id, "error": "Rule not found"})
-        except Exception as e:
-            failed.append({"id": rule_id, "error": str(e)})
-
-    await db.commit()
-    await audit_log(
-        db, current_user.id, "rule.bulk_snooze", "rule", None,
-        {"count": len(success), "rule_ids": success, "hours": data.hours, "indefinite": data.indefinite, "change_reason": data.change_reason},
-        ip_address=get_client_ip(request)
-    )
-    await db.commit()
-
-    return BulkOperationResult(success=success, failed=failed)
-
-
-@router.post("/bulk/unsnooze", response_model=BulkOperationResult)
-async def bulk_unsnooze_rules(
-    data: BulkOperationRequest,
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
-    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
-):
-    """Unsnooze multiple rules (clears snooze and sets status to DEPLOYED)."""
-    success = []
-    failed = []
-
-    for rule_id in data.rule_ids:
-        try:
-            result = await db.execute(
-                select(Rule)
-                .where(Rule.id == rule_id)
-                .options(selectinload(Rule.index_pattern))
-            )
-            rule = result.scalar_one_or_none()
-            if rule:
-                old_status = rule.status
-                rule.status = RuleStatus.DEPLOYED
-                rule.snooze_until = None
-                rule.snooze_indefinite = False
-                success.append(rule_id)
-
-                # Sync status to OpenSearch if deployed
-                if rule.deployed_at is not None and os_client is not None and old_status != RuleStatus.DEPLOYED:
-                    percolator = PercolatorService(os_client)
-                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-                    percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
-            else:
-                failed.append({"id": rule_id, "error": "Rule not found"})
-        except Exception as e:
-            failed.append({"id": rule_id, "error": str(e)})
-
-    await db.commit()
-    await audit_log(
-        db, current_user.id, "rule.bulk_unsnooze", "rule", None,
-        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
-        ip_address=get_client_ip(request)
-    )
-    await db.commit()
-
-    return BulkOperationResult(success=success, failed=failed)
 
 
 @router.post("/bulk/delete", response_model=BulkOperationResult)

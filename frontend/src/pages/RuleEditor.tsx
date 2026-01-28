@@ -1641,13 +1641,14 @@ export default function RuleEditorPage() {
                         emptyMessage={indexPatternId ? 'No fields available for this index pattern' : 'Select an index pattern first'}
                       />
                     </div>
-                    {/* Apply button - only show for existing rules with pending changes */}
-                    {!isNew && hasThresholdFieldChanges && canManageRules && (
+                    {/* Apply button - always show for existing rules, disabled when no changes */}
+                    {!isNew && canManageRules && (
                       <div className="pt-2 border-t">
                         <Button
                           size="sm"
                           onClick={handleApplyThresholdClick}
-                          disabled={isUpdatingThreshold}
+                          disabled={isUpdatingThreshold || !hasThresholdFieldChanges}
+                          variant={hasThresholdFieldChanges ? 'default' : 'outline'}
                         >
                           {isUpdatingThreshold ? (
                             <>
