@@ -40,7 +40,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw } from 'lucide-react'
+import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw, AlertCircle } from 'lucide-react'
 
 const TIME_WINDOW_OPTIONS = [
   { value: 1, label: '1 minute' },
@@ -540,8 +540,11 @@ export default function CorrelationRuleEditorPage() {
               )}
             </div>
             {isEditing && correlationRule?.deployed_at && (
-              <p className="text-xs text-green-600">
-                Deployed v{correlationRule.deployed_version}
+              <p className={`text-xs ${correlationRule?.needs_redeploy ? 'text-yellow-600' : 'text-green-600'}`}>
+                {correlationRule?.needs_redeploy
+                  ? `Deployed v${correlationRule.deployed_version} (current is v${correlationRule.current_version} - redeploy needed)`
+                  : `Deployed v${correlationRule.deployed_version}`
+                }
               </p>
             )}
             {isEditing && !correlationRule?.deployed_at && (
@@ -563,44 +566,71 @@ export default function CorrelationRuleEditorPage() {
               Activity
             </Button>
           )}
-          {isEditing && (
-            correlationRule?.deployed_at ? (
-              <Button
-                variant="ghost"
-                onClick={handleUndeploy}
-                disabled={isDeploying}
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                {isDeploying ? 'Undeploying...' : 'Undeploy'}
-              </Button>
-            ) : (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="outline"
-                        onClick={handleDeploy}
-                        disabled={isDeploying || !isFormValid || !linkedRulesDeploymentStatus.allDeployed}
-                      >
-                        <Rocket className="h-4 w-4 mr-2" />
-                        {isDeploying ? 'Deploying...' : 'Deploy'}
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {!linkedRulesDeploymentStatus.allDeployed && (
-                    <TooltipContent>
-                      <p>Linked rules must be deployed first:</p>
-                      <ul className="list-disc ml-4">
-                        {linkedRulesDeploymentStatus.undeployedNames.map(name => (
-                          <li key={name}>{name}</li>
-                        ))}
-                      </ul>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              </TooltipProvider>
-            )
+          {isEditing && correlationRule?.deployed_at && correlationRule?.needs_redeploy && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="outline"
+                      onClick={handleDeploy}
+                      disabled={isDeploying || !linkedRulesDeploymentStatus.allDeployed}
+                    >
+                      <Rocket className="h-4 w-4 mr-2" />
+                      {isDeploying ? 'Redeploying...' : 'Redeploy'}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!linkedRulesDeploymentStatus.allDeployed && (
+                  <TooltipContent>
+                    <p>Linked rules must be deployed first:</p>
+                    <ul className="list-disc ml-4">
+                      {linkedRulesDeploymentStatus.undeployedNames.map(name => (
+                        <li key={name}>{name}</li>
+                      ))}
+                    </ul>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {isEditing && correlationRule?.deployed_at && (
+            <Button
+              variant="ghost"
+              onClick={handleUndeploy}
+              disabled={isDeploying}
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              {isDeploying ? 'Undeploying...' : 'Undeploy'}
+            </Button>
+          )}
+          {isEditing && !correlationRule?.deployed_at && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="outline"
+                      onClick={handleDeploy}
+                      disabled={isDeploying || !isFormValid || !linkedRulesDeploymentStatus.allDeployed}
+                    >
+                      <Rocket className="h-4 w-4 mr-2" />
+                      {isDeploying ? 'Deploying...' : 'Deploy'}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!linkedRulesDeploymentStatus.allDeployed && (
+                  <TooltipContent>
+                    <p>Linked rules must be deployed first:</p>
+                    <ul className="list-disc ml-4">
+                      {linkedRulesDeploymentStatus.undeployedNames.map(name => (
+                        <li key={name}>{name}</li>
+                      ))}
+                    </ul>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           )}
           <Button
             onClick={handleSave}
@@ -614,6 +644,22 @@ export default function CorrelationRuleEditorPage() {
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
           {error}
+        </div>
+      )}
+
+      {isEditing && correlationRule?.deployed_at && correlationRule?.needs_redeploy && (
+        <div className="bg-orange-500/10 text-orange-600 text-sm p-3 rounded-md flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            This correlation rule has been modified since deployment. Redeploy to apply changes.
+          </div>
+          <Button
+            size="sm"
+            onClick={handleDeploy}
+            disabled={isDeploying || !linkedRulesDeploymentStatus.allDeployed}
+          >
+            {isDeploying ? 'Redeploying...' : 'Redeploy Now'}
+          </Button>
         </div>
       )}
 

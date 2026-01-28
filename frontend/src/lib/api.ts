@@ -1758,18 +1758,10 @@ export const correlationRulesApi = {
   getVersions: (id: string) => api.get<CorrelationRuleVersion[]>(`/correlation-rules/${id}/versions`),
   getActivity: (id: string) => api.get<CorrelationActivityItem[]>(`/correlation-rules/${id}/activity`),
   addComment: (id: string, content: string) => api.post<CorrelationRuleComment>(`/correlation-rules/${id}/comments`, { content }),
-  rollback: async (id: string, versionNumber: number, changeReason: string): Promise<{
-    success: boolean
-    new_version_number: number
-    rolled_back_from: number
-  }> => {
-    const response = await fetch(`${API_BASE}/correlation-rules/${id}/rollback/${versionNumber}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ change_reason: changeReason }),
-    })
-    if (!response.ok) throw new Error('Rollback failed')
-    return response.json()
-  },
+  rollback: (id: string, versionNumber: number, changeReason: string) =>
+    api.post<{ success: boolean; new_version_number: number; rolled_back_from: number }>(
+      `/correlation-rules/${id}/rollback/${versionNumber}`,
+      { change_reason: changeReason }
+    ),
 }
 
