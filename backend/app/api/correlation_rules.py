@@ -357,7 +357,7 @@ async def update_correlation_rule(
             time_window_minutes=rule.time_window_minutes,
             severity=rule.severity,
             changed_by=current_user.id,
-            change_reason=data.change_reason,
+            change_reason=data.change_reason or "Updated correlation rule",
         )
         db.add(version)
 

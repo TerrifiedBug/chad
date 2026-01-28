@@ -28,7 +28,7 @@ class CorrelationRuleUpdate(BaseModel):
     entity_field: str | None = Field(None, max_length=100)
     time_window_minutes: int | None = Field(None, ge=1, le=1440)
     severity: str | None = Field(None, pattern="^(critical|high|medium|low|informational)$")
-    change_reason: str = Field(..., min_length=1, max_length=10000)
+    change_reason: str | None = None
 
 
 class CorrelationRuleResponse(CorrelationRuleBase):
@@ -49,6 +49,10 @@ class CorrelationRuleResponse(CorrelationRuleBase):
     # Include related rule info
     rule_a_title: str | None = None
     rule_b_title: str | None = None
+
+    # Linked rule deployment status (for determining if correlation can be deployed)
+    rule_a_deployed: bool = True
+    rule_b_deployed: bool = True
 
     class Config:
         from_attributes = True
