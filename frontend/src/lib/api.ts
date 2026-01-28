@@ -1,4 +1,18 @@
 import { getErrorMessage, logError, isApiError, isLegacyError } from './errors'
+import { QueryClient } from '@tanstack/react-query'
+
+// Create React Query client for cache management
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    mutations: {
+      retry: 1,
+    },
+    queries: {
+      retry: 1,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    },
+  },
+})
 
 const API_BASE = '/api'
 
@@ -708,6 +722,9 @@ export type AlertCountsResponse = {
   last_24h: number
 }
 
+// Query keys for React Query cache invalidation
+export const ALERTS_QUERY_KEY = 'alerts'
+
 // Alerts API
 export const alertsApi = {
   list: (params?: {
@@ -733,11 +750,17 @@ export const alertsApi = {
   updateStatus: (id: string, status: AlertStatus) =>
     api.patch<{ success: boolean; status: AlertStatus }>(`/alerts/${id}/status`, { status }),
   delete: (id: string) =>
-    api.delete(`/alerts/${id}`),
+    api.delete(`/alerts/${id}`).then(() => {
+      queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
+    }),
   bulkUpdateStatus: (data: { alert_ids: string[]; status: AlertStatus }) =>
-    api.patch<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data),
+    api.patch<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data).then(() => {
+      queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
+    }),
   bulkDelete: (data: { alert_ids: string[] }) =>
-    api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data),
+    api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data).then(() => {
+      queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
+    }),
 }
 
 // Dashboard stats types
