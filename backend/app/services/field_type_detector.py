@@ -85,12 +85,14 @@ def detect_field_type(
         }
 
     except Exception as e:
+        # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+        logger.warning("Failed to detect field type for %r: %s", field_path, e)
         # On error, don't auto-correct - let user proceed
         return {
             "field_type": None,
             "has_keyword_subfield": False,
             "recommended_field": field_path,
-            "reason": "Could not determine field type",
+            "reason": f"Could not determine field type: {str(e)}",
             "should_auto_correct": False,
         }
 

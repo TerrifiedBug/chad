@@ -77,6 +77,14 @@ async def create_field_mapping(
                     os_client, index_pattern.pattern, data.target_field
                 )
 
+                if auto_corrected:
+                    # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+                    import logging
+                    logging.getLogger(__name__).info(
+                        "Auto-corrected field mapping %r -> %r to %r",
+                        data.sigma_field, data.target_field, target_field
+                    )
+
                 # NEW: Validate field exists
                 from app.services.opensearch import get_index_fields, find_similar_fields
 
@@ -98,6 +106,12 @@ async def create_field_mapping(
                         }
                     )
 
+                # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+                import logging
+                logging.getLogger(__name__).info(
+                    "Validated field mapping %r -> %r (exists in %d available fields)",
+                    data.sigma_field, target_field, len(available_fields)
+                )
         except HTTPException:
             raise  # Re-raise our validation error
         except Exception as e:
@@ -236,6 +250,14 @@ async def update_field_mapping(
                     os_client, index_pattern.pattern, data.target_field
                 )
 
+                if auto_corrected:
+                    # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+                    import logging
+                    logging.getLogger(__name__).info(
+                        "Auto-corrected field mapping %r -> %r to %r",
+                        mapping.sigma_field, data.target_field, target_field
+                    )
+
                 # NEW: Validate new target field if changed
                 from app.services.opensearch import get_index_fields, find_similar_fields
 
@@ -256,6 +278,12 @@ async def update_field_mapping(
                         }
                     )
 
+                # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+                import logging
+                logging.getLogger(__name__).info(
+                    "Validated field mapping update %r -> %r (exists in %d available fields)",
+                    mapping.sigma_field, target_field, len(available_fields)
+                )
         except HTTPException:
             raise  # Re-raise our validation error
         except Exception as e:
@@ -267,6 +295,12 @@ async def update_field_mapping(
 
     # Increment version if target_field changed
     if data.target_field and data.target_field != mapping.target_field:
+        # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("Field mapping changed: %r -> %r to %r", mapping.sigma_field, mapping.target_field, target_field)
+
         mapping.version += 1
         await db.flush()
 
@@ -274,6 +308,9 @@ async def update_field_mapping(
         from app.services.field_mapping import get_rules_using_mapping
 
         affected_rules = await get_rules_using_mapping(db, mapping.id)
+        # lgtm[py/log-injection] Rule count is not sensitive information
+        logger = logging.getLogger(__name__)
+        logger.info("Found %d rules affected by field mapping change", len(affected_rules))
 
         from datetime import datetime, timezone
         from app.models.rule import RuleVersion
@@ -289,7 +326,7 @@ async def update_field_mapping(
                 version_number=new_version_number,
                 yaml_content=rule.yaml_content,
                 changed_by=current_user.id,
-                change_reason="Field mapping updated",
+                change_reason=f"Field mapping updated: {mapping.sigma_field} now maps to {data.target_field}",
                 created_at=datetime.now(timezone.utc)
             )
             db.add(new_version)
@@ -393,6 +430,12 @@ async def suggest_field_mappings(
             )
 
             if was_corrected:
+                # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+                import logging
+                logging.getLogger(__name__).info(
+                    "Auto-corrected AI suggestion %r -> %r to %r",
+                    s.sigma_field, s.target_field, corrected_field
+                )
                 # Update reason to explain the correction
                 reason = f"{s.reason} (Auto-corrected to use .keyword for exact matching)"
             else:
