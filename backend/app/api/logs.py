@@ -11,6 +11,7 @@ Flow:
 """
 
 import secrets
+from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -141,139 +142,180 @@ async def receive_logs(
     total_matches = 0
     alerts_created = []
 
+    # Health metrics tracking
+    logs_errored = 0
+    latencies = []
+    processing_errors = []
+
     # Cache exceptions per rule to avoid repeated DB queries
     rule_exceptions_cache: dict[str, list[dict]] = {}
 
     for log in logs:
+        # Extract timestamp early for latency calculation
+        log_timestamp_str = log.get("@timestamp")
+        log_time = None
+
+        if log_timestamp_str:
+            try:
+                # Parse ISO 8601 timestamp (handle Z and +00:00)
+                log_time = datetime.fromisoformat(
+                    log_timestamp_str.replace("Z", "+00:00")
+                )
+            except (ValueError, AttributeError) as e:
+                processing_errors.append(f"Invalid timestamp format: {e}")
+                logs_errored += 1
+                log_time = None
+        else:
+            # Missing timestamp is an error
+            processing_errors.append("Log missing @timestamp field")
+            logs_errored += 1
+
         # Run percolate query
-        matches = alert_service.match_log(percolator_index, log)
+        try:
+            matches = alert_service.match_log(percolator_index, log)
+        except Exception as e:
+            processing_errors.append(f"Percolate failed for log: {str(e)}")
+            logs_errored += 1
+            # Continue to next log instead of failing entire batch
+            continue
 
         for match in matches:
-            # Only process enabled rules
-            if not match.get("enabled", True):
-                continue
-
-            rule_id = match["rule_id"]
-
-            # Get exceptions for this rule (with caching)
-            if rule_id not in rule_exceptions_cache:
-                try:
-                    rule_uuid = UUID(rule_id)
-                    exc_result = await db.execute(
-                        select(RuleException).where(
-                            RuleException.rule_id == rule_uuid,
-                            RuleException.is_active == True,
-                        )
-                    )
-                    exceptions = exc_result.scalars().all()
-                    rule_exceptions_cache[rule_id] = [
-                        {
-                            "field": e.field,
-                            "operator": e.operator.value,
-                            "value": e.value,
-                            "is_active": e.is_active,
-                        }
-                        for e in exceptions
-                    ]
-                except (ValueError, Exception):
-                    rule_exceptions_cache[rule_id] = []
-
-            # Check if this match should be suppressed by an exception
-            if should_suppress_alert(log, rule_exceptions_cache[rule_id]):
-                continue
-
-            # Enrich log with GeoIP data if configured
-            enriched_log = await enrich_alert(db, log, index_pattern)
-
-            # Create alert
-            alert = alert_service.create_alert(
-                alerts_index=alerts_index,
-                rule_id=rule_id,
-                rule_title=match["rule_title"],
-                severity=match["severity"],
-                tags=match.get("tags", []),
-                log_document=enriched_log,
-            )
-            alerts_created.append(alert)
-            total_matches += 1
-
-            # Check for correlation triggers and create correlation alerts
             try:
-                triggered_correlations = await check_correlation(
-                    db,
-                    rule_id=UUID(rule_id),
-                    log_document=enriched_log,
-                    alert_id=alert["alert_id"],
-                )
-                if triggered_correlations:
-                    import logging
-                    logger = logging.getLogger(__name__)
+                # Only process enabled rules
+                if not match.get("enabled", True):
+                    continue
 
-                    # Create correlation alerts
-                    for corr in triggered_correlations:
-                        # Create a correlation alert with the combined information
-                        correlation_alert = alert_service.create_alert(
-                            alerts_index=alerts_index,
-                            rule_id=corr["correlation_rule_id"],
-                            rule_title=corr["correlation_name"],
-                            severity=corr.get("severity", "high"),
-                            tags=["correlation"],
-                            log_document={
-                                "correlation": {
-                                    "correlation_rule_id": corr["correlation_rule_id"],
-                                    "correlation_name": corr["correlation_name"],
-                                    "source_alerts": corr.get("source_alerts", []),
-                                    "entity_field": corr.get("entity_field"),
-                                    "entity_value": corr.get("entity_value"),
-                                },
-                                "@timestamp": enriched_log.get("@timestamp"),
-                            },
+                rule_id = match["rule_id"]
+
+                # Get exceptions for this rule (with caching)
+                if rule_id not in rule_exceptions_cache:
+                    try:
+                        rule_uuid = UUID(rule_id)
+                        exc_result = await db.execute(
+                            select(RuleException).where(
+                                RuleException.rule_id == rule_uuid,
+                                RuleException.is_active == True,
+                            )
                         )
-                        alerts_created.append(correlation_alert)
-                        total_matches += 1
+                        exceptions = exc_result.scalars().all()
+                        rule_exceptions_cache[rule_id] = [
+                            {
+                                "field": e.field,
+                                "operator": e.operator.value,
+                                "value": e.value,
+                                "is_active": e.is_active,
+                            }
+                            for e in exceptions
+                        ]
+                    except (ValueError, Exception):
+                        rule_exceptions_cache[rule_id] = []
 
-                        # Broadcast correlation alert via WebSocket
-                        try:
-                            corr_broadcast = AlertBroadcast(
-                                alert_id=str(correlation_alert["alert_id"]),
+                # Check if this match should be suppressed by an exception
+                if should_suppress_alert(log, rule_exceptions_cache[rule_id]):
+                    continue
+
+                # Enrich log with GeoIP data if configured
+                enriched_log = await enrich_alert(db, log, index_pattern)
+
+                # Create alert
+                alert = alert_service.create_alert(
+                    alerts_index=alerts_index,
+                    rule_id=rule_id,
+                    rule_title=match["rule_title"],
+                    severity=match["severity"],
+                    tags=match.get("tags", []),
+                    log_document=enriched_log,
+                )
+                alerts_created.append(alert)
+                total_matches += 1
+
+                # Calculate end-to-end latency if we have valid timestamps
+                if log_time and alert.get("created_at"):
+                    try:
+                        alert_timestamp_str = alert.get("created_at")
+                        alert_time = datetime.fromisoformat(
+                            alert_timestamp_str.replace("Z", "+00:00")
+                        )
+                        latency_ms = int((alert_time - log_time).total_seconds() * 1000)
+                        latencies.append(latency_ms)
+                    except (ValueError, AttributeError) as e:
+                        processing_errors.append(f"Latency calculation warning: {e}")
+
+                # Check for correlation triggers and create correlation alerts
+                try:
+                    triggered_correlations = await check_correlation(
+                        db,
+                        rule_id=UUID(rule_id),
+                        log_document=enriched_log,
+                        alert_id=alert["alert_id"],
+                    )
+                    if triggered_correlations:
+                        import logging
+                        logger = logging.getLogger(__name__)
+
+                        for corr in triggered_correlations:
+                            correlation_alert = alert_service.create_alert(
+                                alerts_index=alerts_index,
                                 rule_id=corr["correlation_rule_id"],
                                 rule_title=corr["correlation_name"],
                                 severity=corr.get("severity", "high"),
-                                timestamp=correlation_alert.get("created_at", ""),
-                                matched_log={"correlation": True, **corr},
+                                tags=["correlation"],
+                                log_document={
+                                    "correlation": {
+                                        "correlation_rule_id": corr["correlation_rule_id"],
+                                        "correlation_name": corr["correlation_name"],
+                                        "source_alerts": corr.get("source_alerts", []),
+                                        "entity_field": corr.get("entity_field"),
+                                        "entity_value": corr.get("entity_value"),
+                                    },
+                                    "@timestamp": enriched_log.get("@timestamp"),
+                                },
                             )
-                            await manager.broadcast_alert(corr_broadcast)
-                        except Exception as e:
-                            logger.error(f"WebSocket broadcast failed for correlation alert: {e}")
+                            alerts_created.append(correlation_alert)
+                            total_matches += 1
 
-                        logger.info(
-                            f"Correlation alert created: {corr['correlation_name']} "
-                            f"(entity: {corr.get('entity_value')})"
-                        )
+                            try:
+                                corr_broadcast = AlertBroadcast(
+                                    alert_id=str(correlation_alert["alert_id"]),
+                                    rule_id=corr["correlation_rule_id"],
+                                    rule_title=corr["correlation_name"],
+                                    severity=corr.get("severity", "high"),
+                                    timestamp=correlation_alert.get("created_at", ""),
+                                    matched_log={"correlation": True, **corr},
+                                )
+                                await manager.broadcast_alert(corr_broadcast)
+                            except Exception as e:
+                                logger.error("WebSocket broadcast failed for correlation alert: %s", e)
+
+                            logger.info(
+                                "Correlation alert created: %s (entity: %s)",
+                                corr['correlation_name'],
+                                corr.get('entity_value')
+                            )
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error("Correlation check failed: %s", e)
+
+                # Broadcast alert via WebSocket for real-time updates
+                try:
+                    alert_broadcast = AlertBroadcast(
+                        alert_id=str(alert["alert_id"]),
+                        rule_id=rule_id,
+                        rule_title=alert.get("rule_title", "Unknown Rule"),
+                        severity=alert.get("severity", "medium"),
+                        timestamp=alert.get("created_at", ""),
+                        matched_log=enriched_log,
+                    )
+                    await manager.broadcast_alert(alert_broadcast)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning("WebSocket broadcast failed: %s", e)
+
             except Exception as e:
-                # Log but don't fail the alert creation
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Correlation check failed: {e}")
-
-            # Broadcast alert via WebSocket for real-time updates
-            try:
-                alert_broadcast = AlertBroadcast(
-                    alert_id=str(alert["alert_id"]),
-                    rule_id=rule_id,
-                    rule_title=alert.get("rule_title", "Unknown Rule"),
-                    severity=alert.get("severity", "medium"),
-                    timestamp=alert.get("created_at", ""),
-                    matched_log=enriched_log,
-                )
-                await manager.broadcast_alert(alert_broadcast)
-            except Exception as e:
-                # Log but don't fail the alert creation
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"WebSocket broadcast failed: {e}")
-
-    # Send notifications through the new notification system
+                processing_errors.append(f"Alert creation failed for match: {str(e)}")
+                logs_errored += 1
+                continue
+        # Send notifications through the new notification system
     if alerts_created:
         # Get app URL for alert links
         app_url = await get_app_url(db)
@@ -293,26 +335,42 @@ async def receive_logs(
             except Exception as e:
                 # Log but don't fail the request if notification fails
                 import logging
-                logging.getLogger(__name__).error(f"Failed to send notification: {e}")
+                logging.getLogger(__name__).error("Failed to send notification: %s", e)
 
     # Record health metrics for this batch of logs
     try:
+        # Calculate average latency
+        avg_latency = (
+            int(sum(latencies) / len(latencies)) if latencies else 0
+        )
+
         metric = IndexHealthMetrics(
             index_pattern_id=index_pattern.id,
             logs_received=len(logs),
-            logs_processed=len(logs),
-            logs_errored=0,  # TODO: Track actual errors if needed
+            logs_processed=len(logs) - logs_errored,
+            logs_errored=logs_errored,
             alerts_generated=len(alerts_created),
             rules_triggered=total_matches,
-            queue_depth=0,  # TODO: Track actual queue depth if needed
-            avg_latency_ms=0,  # TODO: Track actual latency if needed
+            queue_depth=0,  # TODO: Track actual queue depth from BackgroundTasks
+            avg_latency_ms=avg_latency,
         )
         db.add(metric)
         await db.commit()
+
+        # Log processing errors for monitoring
+        if processing_errors:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Batch processing had %d errors: First 3 errors: %s",
+                len(processing_errors),
+                processing_errors[:3]
+            )
+
     except Exception as e:
         # Log but don't fail the request if metric recording fails
         import logging
-        logging.getLogger(__name__).error(f"Failed to record health metrics: {e}")
+        logging.getLogger(__name__).error("Failed to record health metrics: %s", e)
 
     return LogMatchResponse(
         logs_received=len(logs),

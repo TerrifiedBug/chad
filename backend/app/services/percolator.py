@@ -118,9 +118,20 @@ class PercolatorService:
         title: str,
         severity: str,
         tags: list[str],
-        enabled: bool = True,
     ) -> None:
-        """Deploy or update a rule in the percolator index."""
+        """Deploy or update a rule in the percolator index.
+
+        Args:
+            percolator_index: Name of the percolator index
+            rule_id: Unique rule identifier
+            query: Translated percolator query
+            title: Rule title
+            severity: Rule severity
+            tags: Rule tags
+
+        Returns:
+            None
+        """
         now = datetime.now(timezone.utc).isoformat()
 
         # Check if rule already exists to preserve created_at
@@ -133,7 +144,6 @@ class PercolatorService:
             "rule_title": title,
             "severity": severity,
             "tags": tags,
-            "enabled": enabled,
             "created_at": created_at,
             "updated_at": now,
         }

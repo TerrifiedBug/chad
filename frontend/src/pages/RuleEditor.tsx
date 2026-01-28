@@ -55,6 +55,7 @@ import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
+import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -189,6 +190,10 @@ export default function RuleEditorPage() {
   const [thresholdCount, setThresholdCount] = useState<number | null>(null)
   const [thresholdWindowMinutes, setThresholdWindowMinutes] = useState<number | null>(null)
   const [thresholdGroupBy, setThresholdGroupBy] = useState<string | null>(null)
+
+  // Available fields for group_by dropdown
+  const [availableGroupByFields, setAvailableGroupByFields] = useState<string[]>([])
+  const [isLoadingGroupByFields, setIsLoadingGroupByFields] = useState(false)
 
   // Collapsible section state
   const [showThreshold, setShowThreshold] = useState(false)
@@ -375,6 +380,29 @@ export default function RuleEditorPage() {
     setSnoozeIndefinite(false)
     setSnoozeUntil(null)
   }, [id])
+
+  // Load available fields for group_by dropdown when index pattern changes
+  useEffect(() => {
+    const loadGroupByFields = async () => {
+      if (!indexPatternId) {
+        setAvailableGroupByFields([])
+        return
+      }
+
+      setIsLoadingGroupByFields(true)
+      try {
+        const data = await rulesApi.getIndexFields(indexPatternId)
+        setAvailableGroupByFields(data.fields || [])
+      } catch (err) {
+        console.error('Failed to load index fields:', err)
+        setAvailableGroupByFields([])
+      } finally {
+        setIsLoadingGroupByFields(false)
+      }
+    }
+
+    loadGroupByFields()
+  }, [indexPatternId])
 
   // Handle clone state from navigation
   useEffect(() => {
@@ -1432,17 +1460,17 @@ export default function RuleEditorPage() {
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Group by field (optional)</Label>
-                      <Input
-                        value={thresholdGroupBy ?? ''}
-                        onChange={(e) => setThresholdGroupBy(e.target.value || null)}
-                        placeholder="user.name"
-                        className="h-8 text-sm"
+                      <SearchableFieldSelector
+                        fields={availableGroupByFields}
+                        value={thresholdGroupBy}
+                        onChange={setThresholdGroupBy}
+                        label="Group by field (optional)"
+                        placeholder="Select field..."
+                        description="Count matches separately per unique value of this field"
                         disabled={!canManageRules}
+                        isLoading={isLoadingGroupByFields}
+                        emptyMessage={indexPatternId ? 'No fields available for this index pattern' : 'Select an index pattern first'}
                       />
-                      <div className="text-xs text-muted-foreground">
-                        Count matches separately per unique value of this field
-                      </div>
                     </div>
                   </div>
                 )}
@@ -1531,22 +1559,15 @@ export default function RuleEditorPage() {
                   <div className="border-t pt-4 space-y-3">
                     <Label className="text-xs font-medium">Add Exception</Label>
                     <div className="space-y-2">
-                      <Select
+                      <SearchableFieldSelector
+                        fields={availableFields}
                         value={newExceptionField}
-                        onValueChange={canManageRules ? setNewExceptionField : undefined}
-                        disabled={isLoadingFields || !canManageRules}
-                      >
-                        <SelectTrigger className="h-8 text-sm" disabled={isLoadingFields || !canManageRules}>
-                          <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select a field..."} />
-                        </SelectTrigger>
-                        <SelectContent className="z-50 bg-popover max-h-48">
-                          {availableFields.map((field) => (
-                            <SelectItem key={field} value={field}>
-                              {field}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={canManageRules ? setNewExceptionField : undefined}
+                        placeholder="Select a field..."
+                        disabled={!canManageRules}
+                        isLoading={isLoadingFields}
+                        emptyMessage={indexPatternId ? 'No fields available for this index pattern' : 'Select an index pattern first'}
+                      />
                       <Select
                         value={newExceptionOperator}
                         onValueChange={canManageRules ? (value) =>

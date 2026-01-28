@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, correlationRulesApi, Alert, AlertStatus, TIEnrichmentIndicator, CorrelationRule } from '@/lib/api'
+import { alertsApi, correlationRulesApi, rulesApi, Alert, AlertStatus, TIEnrichmentIndicator, CorrelationRule } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,9 +17,21 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2 } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2 } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
+import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -368,6 +380,50 @@ function extractGeoIPData(doc: Record<string, unknown>): GeoIPEntry[] {
   return entries
 }
 
+// Field extraction helper for exception creation
+function extractFieldsFromLog(logDoc: Record<string, unknown>): string[] {
+  const fields: string[] = []
+
+  function extract(obj: Record<string, unknown>, prefix = '') {
+    for (const [key, value] of Object.entries(obj)) {
+      const fieldPath = prefix ? `${prefix}.${key}` : key
+
+      if (value !== null && typeof value === 'object') {
+        // Nested object - recurse
+        extract(value as Record<string, unknown>, fieldPath)
+      } else {
+        // Scalar value - this is a field
+        fields.push(fieldPath)
+      }
+    }
+  }
+
+  extract(logDoc)
+  return fields.sort()
+}
+
+// Helper to get field value from log document
+function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): string {
+  const MAX_DEPTH = 10
+  const parts = fieldPath.split('.')
+
+  if (parts.length > MAX_DEPTH) {
+    return ''
+  }
+
+  let value: unknown = logDoc
+
+  for (const part of parts) {
+    if (value && typeof value === 'object' && part in (value as Record<string, unknown>)) {
+      value = (value as Record<string, unknown>)[part]
+    } else {
+      return ''
+    }
+  }
+
+  return String(value ?? '')
+}
+
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -377,6 +433,19 @@ export default function AlertDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [error, setError] = useState('')
   const [correlations, setCorrelations] = useState<CorrelationRule[]>([])
+
+  // Exception dialog state
+  const [showExceptionDialog, setShowExceptionDialog] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [exceptionFields, setExceptionFields] = useState<string[]>([])
+  const [isExtractingFields, setIsExtractingFields] = useState(false)
+
+  // Exception form state
+  const [exceptionField, setExceptionField] = useState('')
+  const [exceptionOperator, setExceptionOperator] = useState<'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'regex'>('equals')
+  const [exceptionValue, setExceptionValue] = useState('')
+  const [exceptionReason, setExceptionReason] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
 
   // Load alert function - must be declared before useEffect that uses it
   const loadAlert = useCallback(async () => {
@@ -426,6 +495,115 @@ export default function AlertDetailPage() {
       setError(err instanceof Error ? err.message : 'Failed to update status')
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const handleDelete = () => {
+    setShowDeleteConfirm(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!id) return
+    setIsUpdating(true)
+    setShowDeleteConfirm(false)
+    try {
+      await alertsApi.delete(id)
+      navigate('/alerts')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete alert')
+      setIsUpdating(false)
+    }
+  }
+
+  const handleOpenExceptionDialog = async () => {
+    if (!alert || !alert.log_document) {
+      setError('Alert has no log document')
+      return
+    }
+
+    setIsExtractingFields(true)
+    setShowExceptionDialog(true)
+
+    try {
+      const fields = extractFieldsFromLog(alert.log_document)
+      setExceptionFields(fields)
+
+      // Auto-select preferred field
+      const preferredFields = ['process.executable', 'process.command_line', 'user.name', 'source.ip']
+      const selectedField = fields.find(f => preferredFields.includes(f)) || fields[0] || ''
+      setExceptionField(selectedField)
+
+      // Auto-fill value and detect operator
+      if (selectedField) {
+        const fieldValue = getFieldValue(alert.log_document, selectedField)
+        setExceptionValue(fieldValue)
+
+        // Auto-detect operator based on value characteristics
+        if (fieldValue.includes('\\') || fieldValue.includes('/')) {
+          setExceptionOperator('contains')
+        } else {
+          setExceptionOperator('equals')
+        }
+      }
+
+      setExceptionReason(`False positive from alert ${alert.alert_id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to extract fields from log')
+    } finally {
+      setIsExtractingFields(false)
+    }
+  }
+
+  const handleCreateException = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // Null check for alert
+    if (!alert?.rule_id) {
+      setError('Alert data not available')
+      return
+    }
+
+    if (!exceptionField || !exceptionValue || !exceptionReason) {
+      setError('Please fill in all fields')
+      return
+    }
+
+    // Validate input lengths to prevent abuse
+    const MAX_REASON_LENGTH = 1000
+    const MAX_VALUE_LENGTH = 500
+
+    if (exceptionReason.length > MAX_REASON_LENGTH) {
+      setError(`Reason must be less than ${MAX_REASON_LENGTH} characters`)
+      return
+    }
+
+    if (exceptionValue.length > MAX_VALUE_LENGTH) {
+      setError(`Value must be less than ${MAX_VALUE_LENGTH} characters`)
+      return
+    }
+
+    setIsCreating(true)
+    setError('')
+
+    try {
+      await rulesApi.createException(alert.rule_id, {
+        field: exceptionField,
+        operator: exceptionOperator,
+        value: exceptionValue,
+        reason: exceptionReason
+      })
+
+      setShowExceptionDialog(false)
+
+      // Reset form
+      setExceptionField('')
+      setExceptionOperator('equals')
+      setExceptionValue('')
+      setExceptionReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create exception')
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -509,6 +687,25 @@ export default function AlertDetailPage() {
               <SelectItem value="false_positive">False Positive</SelectItem>
             </SelectContent>
           </Select>
+          {hasPermission('manage_rules') && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleOpenExceptionDialog()}
+            >
+              <ShieldAlert className="h-4 w-4 mr-1" />
+              Create Exception
+            </Button>
+          )}
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleDelete}
+            disabled={isUpdating || !hasPermission('manage_rules')}
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Delete
+          </Button>
         </div>
       </div>
 
@@ -670,6 +867,145 @@ export default function AlertDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Create Exception Dialog */}
+      <Dialog open={showExceptionDialog} onOpenChange={setShowExceptionDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create Rule Exception</DialogTitle>
+            <DialogDescription>
+              Create an exception for rule: <strong>{alert?.rule_title}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          {isExtractingFields ? (
+            <div className="py-8 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="ml-2">Extracting fields from alert...</span>
+            </div>
+          ) : (
+            <form onSubmit={handleCreateException} className="space-y-4">
+              {/* Field Selection */}
+              <div className="space-y-2">
+                <SearchableFieldSelector
+                  fields={exceptionFields}
+                  value={exceptionField}
+                  onChange={setExceptionField}
+                  onSelect={(field) => {
+                    // Auto-fill the value with the field's value from the alert document
+                    if (alert?.log_document) {
+                      const fieldValue = getFieldValue(alert.log_document, field)
+                      setExceptionValue(fieldValue)
+                    }
+                  }}
+                  label="Field"
+                  placeholder="Select a field from the alert"
+                  emptyMessage="No fields available in this alert"
+                />
+              </div>
+
+              {/* Operator Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="exception-operator">Operator</Label>
+                <Select value={exceptionOperator} onValueChange={(v: any) => setExceptionOperator(v)}>
+                  <SelectTrigger id="exception-operator">
+                    <SelectValue placeholder="Select operator" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="equals">Equals</SelectItem>
+                    <SelectItem value="not_equals">Not Equals</SelectItem>
+                    <SelectItem value="contains">Contains</SelectItem>
+                    <SelectItem value="not_contains">Does Not Contain</SelectItem>
+                    <SelectItem value="starts_with">Starts With</SelectItem>
+                    <SelectItem value="ends_with">Ends With</SelectItem>
+                    <SelectItem value="regex">Regex</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Value Input */}
+              <div className="space-y-2">
+                <Label htmlFor="exception-value">Value</Label>
+                <Input
+                  id="exception-value"
+                  value={exceptionValue}
+                  onChange={(e) => setExceptionValue(e.target.value)}
+                  placeholder="Auto-filled from alert or enter value to match"
+                  required
+                />
+              </div>
+
+              {/* Reason */}
+              <div className="space-y-2">
+                <Label htmlFor="exception-reason">Reason</Label>
+                <Textarea
+                  id="exception-reason"
+                  value={exceptionReason}
+                  onChange={(e) => setExceptionReason(e.target.value)}
+                  placeholder="Explain why this exception is needed..."
+                  rows={3}
+                  required
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowExceptionDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isCreating}>
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Exception'
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Alert</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this alert? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={isUpdating}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={isUpdating}
+            >
+              {isUpdating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </TooltipProvider>
   )

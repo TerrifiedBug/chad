@@ -60,26 +60,43 @@ async def get_failed_attempt_count(
     return result.scalar() or 0
 
 
-async def is_account_locked(db: AsyncSession, email: str) -> tuple[bool, int]:
+async def is_account_locked(db: AsyncSession, email: str) -> tuple[bool, int | None]:
     """
     Check if account is locked due to too many failed attempts.
 
     Returns:
-        (is_locked, remaining_minutes)
+        (is_locked, remaining_minutes) - remaining_minutes is None if not locked
     """
     settings = await get_rate_limit_settings(db)
 
     if not settings["enabled"]:
-        return False, 0
+        return False, None
 
     count = await get_failed_attempt_count(
         db, email, settings["lockout_minutes"]
     )
 
     if count >= settings["max_attempts"]:
+        # Find the oldest failed attempt in the window to calculate remaining time
+        cutoff = datetime.utcnow() - timedelta(minutes=settings["lockout_minutes"])
+        result = await db.execute(
+            select(LoginAttempt).where(
+                LoginAttempt.email == email.lower(),
+                LoginAttempt.attempted_at >= cutoff,
+            ).order_by(LoginAttempt.attempted_at.asc()).limit(1)
+        )
+        oldest_attempt = result.scalar_one_or_none()
+
+        if oldest_attempt:
+            # Calculate minutes elapsed since the first failed attempt
+            elapsed = (datetime.utcnow() - oldest_attempt.attempted_at.replace(tzinfo=None)).total_seconds() / 60
+            remaining = settings["lockout_minutes"] - int(elapsed)
+            return True, max(0, remaining)
+
+        # Fallback if we can't find the oldest attempt
         return True, settings["lockout_minutes"]
 
-    return False, 0
+    return False, None
 
 
 async def clear_failed_attempts(db: AsyncSession, email: str) -> None:

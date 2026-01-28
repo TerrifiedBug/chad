@@ -25,10 +25,10 @@ class FieldMapping(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    index_pattern_id: Mapped[uuid.UUID | None] = mapped_column(
+    index_pattern_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("index_patterns.id", ondelete="CASCADE"),
-        nullable=True,  # NULL = global mapping
+        nullable=False  # Required - all mappings must be per-index
     )
     sigma_field: Mapped[str] = mapped_column(String(255), nullable=False)
     target_field: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -42,6 +42,7 @@ class FieldMapping(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    version: Mapped[int] = mapped_column(nullable=False, default=1)
 
     # Relationships
     index_pattern = relationship("IndexPattern", back_populates="field_mappings")

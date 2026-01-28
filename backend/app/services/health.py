@@ -218,7 +218,7 @@ async def get_index_health(
         "totals_24h": {
             "logs_received": logs_received,
             "logs_errored": logs_errored,
-            "alerts_generated": alerts_24h,  # From OpenSearch
+            "alerts_generated": alerts_generated,  # From database metrics
         },
     }
 

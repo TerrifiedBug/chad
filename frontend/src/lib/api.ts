@@ -732,6 +732,12 @@ export const alertsApi = {
     api.get<AlertCountsResponse>('/alerts/counts'),
   updateStatus: (id: string, status: AlertStatus) =>
     api.patch<{ success: boolean; status: AlertStatus }>(`/alerts/${id}/status`, { status }),
+  delete: (id: string) =>
+    api.delete(`/alerts/${id}`),
+  bulkUpdateStatus: (data: { alert_ids: string[]; status: AlertStatus }) =>
+    api.patch<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data),
+  bulkDelete: (data: { alert_ids: string[] }) =>
+    api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data),
 }
 
 // Dashboard stats types
@@ -800,6 +806,10 @@ export const usersApi = {
     ),
   delete: (userId: string) =>
     api.delete(`/users/${userId}`),
+  getLockStatus: (email: string) =>
+    api.get<{email: string; locked: boolean; remaining_minutes: number | null}>(`/users/lock-status/${email}`),
+  unlockUser: (userId: string) =>
+    api.post<{success: boolean; email: string; message: string}>(`/users/${userId}/unlock`),
 }
 
 // Extended Settings API
@@ -815,6 +825,7 @@ export type SsoStatus = {
   enabled: boolean
   configured: boolean
   provider_name: string
+  sso_only?: boolean
 }
 
 // Login response type (for login that might require 2FA)

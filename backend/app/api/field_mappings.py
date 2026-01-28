@@ -58,7 +58,11 @@ async def create_field_mapping(
     target_field = data.target_field
     auto_corrected = False
 
-    if data.index_pattern_id and os_client:
+    if not data.index_pattern_id:
+        # Global mapping - skip validation
+        import logging
+        logging.getLogger(__name__).info("Global mapping - skipping field validation")
+    elif os_client:
         from app.services.field_type_detector import auto_correct_field_mapping
 
         try:
@@ -74,14 +78,47 @@ async def create_field_mapping(
                 )
 
                 if auto_corrected:
+                    # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
                     import logging
                     logging.getLogger(__name__).info(
-                        f"Auto-corrected field mapping '{data.sigma_field}' -> '{data.target_field}' to '{target_field}'"
+                        "Auto-corrected field mapping %r -> %r to %r",
+                        data.sigma_field, data.target_field, target_field
                     )
+
+                # NEW: Validate field exists
+                from app.services.opensearch import get_index_fields, find_similar_fields
+
+                available_fields = get_index_fields(
+                    os_client, index_pattern.pattern, include_multi_fields=True
+                )
+
+                if available_fields and target_field not in available_fields:
+                    similar_fields = find_similar_fields(target_field, available_fields)
+
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error": "field_not_found",
+                            "message": f"Field '{target_field}' does not exist in index pattern '{index_pattern.name}'",
+                            "field": target_field,
+                            "index_pattern": index_pattern.name,
+                            "suggestions": similar_fields[:5],
+                        }
+                    )
+
+                # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+                import logging
+                logging.getLogger(__name__).info(
+                    "Validated field mapping %r -> %r (exists in %d available fields)",
+                    data.sigma_field, target_field, len(available_fields)
+                )
+        except HTTPException:
+            raise  # Re-raise our validation error
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(
-                f"Failed to auto-correct field mapping: {e}. Using user-provided value."
+                "Failed to auto-correct/validate field mapping: %s. Using user-provided value.",
+                e
             )
 
     try:
@@ -214,15 +251,88 @@ async def update_field_mapping(
                 )
 
                 if auto_corrected:
+                    # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
                     import logging
                     logging.getLogger(__name__).info(
-                        f"Auto-corrected field mapping '{mapping.sigma_field}' -> '{data.target_field}' to '{target_field}'"
+                        "Auto-corrected field mapping %r -> %r to %r",
+                        mapping.sigma_field, data.target_field, target_field
                     )
+
+                # NEW: Validate new target field if changed
+                from app.services.opensearch import get_index_fields, find_similar_fields
+
+                available_fields = get_index_fields(
+                    os_client, index_pattern.pattern, include_multi_fields=True
+                )
+
+                if available_fields and target_field not in available_fields:
+                    similar_fields = find_similar_fields(target_field, available_fields)
+
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error": "field_not_found",
+                            "message": f"Field '{target_field}' does not exist in index pattern",
+                            "field": target_field,
+                            "suggestions": similar_fields[:5],
+                        }
+                    )
+
+                # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+                import logging
+                logging.getLogger(__name__).info(
+                    "Validated field mapping update %r -> %r (exists in %d available fields)",
+                    mapping.sigma_field, target_field, len(available_fields)
+                )
+        except HTTPException:
+            raise  # Re-raise our validation error
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(
-                f"Failed to auto-correct field mapping: {e}. Using user-provided value."
+                "Failed to auto-correct/validate field mapping: %s. Using user-provided value.",
+                e
             )
+
+    # Increment version if target_field changed
+    if data.target_field and data.target_field != mapping.target_field:
+        # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("Field mapping changed: %r -> %r to %r", mapping.sigma_field, mapping.target_field, target_field)
+
+        mapping.version += 1
+        await db.flush()
+
+        # Find affected rules and bump their versions
+        from app.services.field_mapping import get_rules_using_mapping
+
+        affected_rules = await get_rules_using_mapping(db, mapping.id)
+        # lgtm[py/log-injection] Rule count is not sensitive information
+        logger = logging.getLogger(__name__)
+        logger.info("Found %d rules affected by field mapping change", len(affected_rules))
+
+        from datetime import datetime, timezone
+        from app.models.rule import RuleVersion
+
+        for rule in affected_rules:
+            # Get the current latest version number
+            current_version = rule.versions[0].version_number if rule.versions else 1
+            new_version_number = current_version + 1
+
+            # Create new version
+            new_version = RuleVersion(
+                rule_id=rule.id,
+                version_number=new_version_number,
+                yaml_content=rule.yaml_content,
+                changed_by=current_user.id,
+                change_reason=f"Field mapping updated: {mapping.sigma_field} now maps to {data.target_field}",
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(new_version)
+
+        # Commit immediately
+        await db.commit()
 
     # Update the mapping with corrected field
     updated_mapping = await update_mapping(
@@ -320,9 +430,11 @@ async def suggest_field_mappings(
             )
 
             if was_corrected:
+                # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
                 import logging
                 logging.getLogger(__name__).info(
-                    f"Auto-corrected AI suggestion '{s.sigma_field}' -> '{s.target_field}' to '{corrected_field}'"
+                    "Auto-corrected AI suggestion %r -> %r to %r",
+                    s.sigma_field, s.target_field, corrected_field
                 )
                 # Update reason to explain the correction
                 reason = f"{s.reason} (Auto-corrected to use .keyword for exact matching)"

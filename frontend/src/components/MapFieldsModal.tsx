@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Loader2, Sparkles, Check, X, Search } from 'lucide-react'
 import {
   fieldMappingsApi,
@@ -43,7 +42,6 @@ export function MapFieldsModal({
   const [availableFields, setAvailableFields] = useState<string[]>([])
   const [indexPatternName, setIndexPatternName] = useState('')
   const [mappings, setMappings] = useState<MappingEntry[]>([])
-  const [scope, setScope] = useState<'index' | 'global'>('index')
   const [isLoading, setIsLoading] = useState(false)
   const [isSuggestingAI, setIsSuggestingAI] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -181,7 +179,7 @@ export function MapFieldsModal({
         await fieldMappingsApi.create({
           sigma_field: mapping.sigmaField,
           target_field: mapping.targetField,
-          index_pattern_id: scope === 'index' ? indexPatternId : null,
+          index_pattern_id: indexPatternId,
           origin: mapping.confidence !== undefined ? 'ai_suggested' : 'manual',
           confidence: mapping.confidence,
         })
@@ -189,7 +187,23 @@ export function MapFieldsModal({
       onMappingsSaved()
       onOpenChange(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save mappings')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save mappings'
+
+      // Check if it's a field_not_found error
+      const errorObj = err as any & { detail?: { error?: string; suggestions?: string[] } }
+
+      if (errorObj.detail?.error === 'field_not_found') {
+        const suggestions = errorObj.detail.suggestions || []
+        const suggestionText = suggestions.length > 0
+          ? ` Did you mean: ${suggestions.slice(0, 3).join(', ')}?`
+          : ''
+
+        setError(
+          `Field "${errorObj.detail.field}" does not exist in this index pattern.${suggestionText}`
+        )
+      } else {
+        setError(errorMessage)
+      }
     } finally {
       setIsSaving(false)
     }
@@ -210,8 +224,9 @@ export function MapFieldsModal({
         </DialogHeader>
 
         {error && (
-          <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
-            {error}
+          <div className="bg-destructive/15 border border-destructive/50 text-destructive text-sm p-4 rounded-md mb-4">
+            <p className="font-medium">Validation Error</p>
+            <p className="whitespace-pre-wrap mt-1">{error}</p>
           </div>
         )}
 
@@ -221,29 +236,6 @@ export function MapFieldsModal({
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Scope Selection */}
-            <div className="space-y-2">
-              <Label>Mapping Scope</Label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant={scope === 'index' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setScope('index')}
-                >
-                  This index only
-                </Button>
-                <Button
-                  type="button"
-                  variant={scope === 'global' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setScope('global')}
-                >
-                  Global (all indices)
-                </Button>
-              </div>
-            </div>
-
             {/* Field Mappings Table */}
             <div className="border rounded-md">
               <table className="w-full">

@@ -37,14 +37,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Globe, Loader2, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
+import { Loader2, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 
 export default function FieldMappingsPage() {
   const { showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [isLoading, setIsLoading] = useState(true)
   const [indexPatterns, setIndexPatterns] = useState<IndexPattern[]>([])
-  const [activeTab, setActiveTab] = useState<string>('global')
+  const [activeTab, setActiveTab] = useState<string>('')
   const [mappings, setMappings] = useState<FieldMapping[]>([])
   const initialParamsProcessed = useRef(false)
 
@@ -53,8 +53,8 @@ export default function FieldMappingsPage() {
   const [editingMapping, setEditingMapping] = useState<FieldMapping | null>(null)
   const [formSigmaField, setFormSigmaField] = useState('')
   const [formTargetField, setFormTargetField] = useState('')
-  const [formScope, setFormScope] = useState<'global' | 'index'>('global')
   const [isSaving, setIsSaving] = useState(false)
+  const [modalError, setModalError] = useState('')
 
   // Available fields for target field dropdown
   const [availableFields, setAvailableFields] = useState<string[]>([])
@@ -88,8 +88,11 @@ export default function FieldMappingsPage() {
 
   const loadMappings = useCallback(async () => {
     try {
-      const indexPatternId = activeTab === 'global' ? null : activeTab
-      const data = await fieldMappingsApi.list(indexPatternId)
+      if (!activeTab) {
+        setMappings([])
+        return
+      }
+      const data = await fieldMappingsApi.list(activeTab)
       setMappings(data)
     } catch {
       showToast('Failed to load field mappings', 'error')
@@ -99,6 +102,13 @@ export default function FieldMappingsPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // Set first index pattern as default tab when loaded
+  useEffect(() => {
+    if (indexPatterns.length > 0 && !activeTab) {
+      setActiveTab(indexPatterns[0].id)
+    }
+  }, [indexPatterns, activeTab])
 
   // Handle URL parameters from rule deployment redirect
   useEffect(() => {
@@ -156,10 +166,10 @@ export default function FieldMappingsPage() {
     setFormTargetField('')
     setFieldSearch('')
     setShowFieldDropdown(false)
-    setFormScope(activeTab === 'global' ? 'global' : 'index')
+    setModalError('')
     setShowModal(true)
-    // Load available fields if on an index tab
-    if (activeTab !== 'global') {
+    // Load available fields
+    if (activeTab) {
       loadAvailableFields(activeTab)
     } else {
       setAvailableFields([])
@@ -172,14 +182,12 @@ export default function FieldMappingsPage() {
     setFormTargetField(mapping.target_field)
     setFieldSearch(mapping.target_field)
     setShowFieldDropdown(false)
-    setFormScope(mapping.index_pattern_id ? 'index' : 'global')
+    setModalError('')
     setShowModal(true)
-    // Load available fields if editing an index-specific mapping
-    if (mapping.index_pattern_id) {
-      loadAvailableFields(mapping.index_pattern_id)
-    } else if (activeTab !== 'global') {
-      // For global mappings being edited while on an index tab, show that index's fields
-      loadAvailableFields(activeTab)
+    // Load available fields
+    const patternId = mapping.index_pattern_id || activeTab
+    if (patternId) {
+      loadAvailableFields(patternId)
     } else {
       setAvailableFields([])
     }
@@ -211,30 +219,59 @@ export default function FieldMappingsPage() {
     }
 
     setIsSaving(true)
+    setModalError('')
     try {
       if (editingMapping) {
         await fieldMappingsApi.update(editingMapping.id, {
           target_field: formTargetField.trim(),
         })
         showToast('Mapping updated')
+        setShowModal(false)
+        loadMappings()
       } else {
+        if (!activeTab) {
+          setModalError('Please select an index pattern first')
+          return
+        }
         const data: FieldMappingCreate = {
           sigma_field: formSigmaField.trim(),
           target_field: formTargetField.trim(),
-          index_pattern_id:
-            formScope === 'global'
-              ? null
-              : activeTab === 'global'
-              ? null
-              : activeTab,
+          index_pattern_id: activeTab,
         }
         await fieldMappingsApi.create(data)
         showToast('Mapping created')
+        setShowModal(false)
+        loadMappings()
       }
-      setShowModal(false)
-      loadMappings()
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
+    } catch (err: any) {
+      // Parse error response - handle object or string messages
+      let errorMessage = 'Save failed'
+
+      if (typeof err?.message === 'string') {
+        errorMessage = err.message
+      } else if (typeof err?.message === 'object') {
+        // Extract from error object
+        errorMessage = err.message.detail || err.message.error || JSON.stringify(err.message)
+      } else if (err?.detail) {
+        errorMessage = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail)
+      }
+
+      // Check if it's a field_not_found error
+      const errorObj = err as any & { detail?: { error?: string; field?: string; suggestions?: string[] } }
+
+      if (errorObj.detail?.error === 'field_not_found') {
+        const suggestions = errorObj.detail.suggestions || []
+        const suggestionText = suggestions.length > 0
+          ? ` Did you mean: ${suggestions.slice(0, 3).join(', ')}?`
+          : ''
+
+        setModalError(
+          `Field "${errorObj.detail.field}" does not exist in this index pattern.${suggestionText}`
+        )
+      } else {
+        // Ensure errorMessage is a string
+        setModalError(String(errorMessage))
+      }
     } finally {
       setIsSaving(false)
     }
@@ -273,7 +310,7 @@ export default function FieldMappingsPage() {
       return
     }
 
-    if (activeTab === 'global') {
+    if (!activeTab) {
       showToast('Please select an index pattern to get AI suggestions', 'error')
       return
     }
@@ -303,7 +340,7 @@ export default function FieldMappingsPage() {
       await fieldMappingsApi.create({
         sigma_field: suggestion.sigma_field,
         target_field: suggestion.target_field,
-        index_pattern_id: activeTab === 'global' ? null : activeTab,
+        index_pattern_id: activeTab,
         origin: 'ai_suggested',
         confidence: suggestion.confidence,
       })
@@ -352,12 +389,10 @@ export default function FieldMappingsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {activeTab !== 'global' && (
-            <Button variant="outline" onClick={openSuggestModal}>
-              <Sparkles className="mr-2 h-4 w-4" />
-              Suggest with AI
-            </Button>
-          )}
+          <Button variant="outline" onClick={openSuggestModal}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            Suggest with AI
+          </Button>
           <Button onClick={openAddModal}>
             <Plus className="mr-2 h-4 w-4" />
             Add Mapping
@@ -367,10 +402,6 @@ export default function FieldMappingsPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="global" className="flex items-center gap-1">
-            <Globe className="h-4 w-4" />
-            Global
-          </TabsTrigger>
           {indexPatterns.map((pattern) => (
             <TabsTrigger key={pattern.id} value={pattern.id}>
               {pattern.name}
@@ -382,12 +413,10 @@ export default function FieldMappingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>
-                {activeTab === 'global' ? 'Global Mappings' : `Mappings for ${indexPatterns.find((p) => p.id === activeTab)?.name}`}
+                {`Mappings for ${indexPatterns.find((p) => p.id === activeTab)?.name || 'Select an Index Pattern'}`}
               </CardTitle>
               <CardDescription>
-                {activeTab === 'global'
-                  ? 'Global mappings apply to all index patterns unless overridden by a per-index mapping.'
-                  : 'Per-index mappings override global mappings for this index pattern.'}
+                Define field mappings for this index pattern. These mappings translate Sigma rule fields to your specific log field names.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -400,18 +429,14 @@ export default function FieldMappingsPage() {
                   >
                     Add one
                   </button>
-                  {activeTab !== 'global' && (
-                    <>
-                      {' '}
-                      or{' '}
-                      <button
-                        className="text-primary underline"
-                        onClick={openSuggestModal}
-                      >
-                        get AI suggestions
-                      </button>
-                    </>
-                  )}
+                  {' '}
+                  or{' '}
+                  <button
+                    className="text-primary underline"
+                    onClick={openSuggestModal}
+                  >
+                    get AI suggestions
+                  </button>
                 </div>
               ) : (
                 <Table>
@@ -489,6 +514,14 @@ export default function FieldMappingsPage() {
                 : 'Create a new field mapping from a Sigma field to a log field.'}
             </DialogDescription>
           </DialogHeader>
+
+          {modalError && (
+            <div className="bg-destructive/15 border border-destructive/50 text-destructive text-sm p-4 rounded-md mb-4">
+              <p className="font-medium">Validation Error</p>
+              <p className="whitespace-pre-wrap mt-1">{modalError}</p>
+            </div>
+          )}
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="sigma-field">Sigma Field</Label>
@@ -502,7 +535,7 @@ export default function FieldMappingsPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="target-field">Target Field</Label>
-              {activeTab !== 'global' || editingMapping?.index_pattern_id ? (
+              {activeTab || editingMapping?.index_pattern_id ? (
                 <div ref={fieldDropdownRef} className="relative">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

@@ -360,6 +360,12 @@ export default function SigmaHQPage() {
   const handleImport = async () => {
     if (!selectedRule || !selectedIndexPatternId) return
 
+    // Prevent duplicate clicks - check if already importing
+    if (isImporting) {
+      console.warn('Import already in progress, ignoring duplicate click')
+      return
+    }
+
     setIsImporting(true)
     setImportError('')
     setImportSuccess('')
@@ -372,10 +378,19 @@ export default function SigmaHQPage() {
           setShowImportDialog(false)
           navigate(`/rules/${result.rule_id}`)
         }, 1500)
+        // Don't reset isImporting on success - keep button disabled until navigation
+        return
       }
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Import failed')
-    } finally {
+      const errorMessage = err instanceof Error ? err.message : 'Import failed'
+
+      // Check for duplicate rule error
+      if (errorMessage.includes('rule_already_imported')) {
+        setImportError('This rule has already been imported from SigmaHQ.')
+      } else {
+        setImportError(errorMessage)
+      }
+      // Reset loading state on error so user can try again
       setIsImporting(false)
     }
   }

@@ -18,8 +18,7 @@ async def resolve_mappings(
 
     Resolution order:
     1. Per-index mapping (index_pattern_id matches)
-    2. Global mapping (index_pattern_id is NULL)
-    3. None if no mapping found
+    2. None if no mapping found
 
     Returns:
         Dict mapping sigma_field -> target_field (or None if unmapped)
@@ -27,32 +26,22 @@ async def resolve_mappings(
     if not sigma_fields:
         return {}
 
-    # Fetch all relevant mappings (global + per-index)
+    # Fetch per-index mappings only (global mappings removed)
     result = await db.execute(
         select(FieldMapping).where(
             and_(
                 FieldMapping.sigma_field.in_(sigma_fields),
-                or_(
-                    FieldMapping.index_pattern_id == index_pattern_id,
-                    FieldMapping.index_pattern_id.is_(None),
-                ),
+                FieldMapping.index_pattern_id == index_pattern_id,
             )
         )
     )
     mappings = result.scalars().all()
 
-    # Build lookup: per-index wins over global
+    # Build lookup
     resolved: dict[str, str | None] = {field: None for field in sigma_fields}
 
-    # First pass: apply global mappings
     for mapping in mappings:
-        if mapping.index_pattern_id is None:
-            resolved[mapping.sigma_field] = mapping.target_field
-
-    # Second pass: override with per-index mappings
-    for mapping in mappings:
-        if mapping.index_pattern_id == index_pattern_id:
-            resolved[mapping.sigma_field] = mapping.target_field
+        resolved[mapping.sigma_field] = mapping.target_field
 
     return resolved
 
@@ -84,7 +73,7 @@ async def create_mapping(
     sigma_field: str,
     target_field: str,
     created_by: UUID,
-    index_pattern_id: UUID | None = None,
+    index_pattern_id: UUID,  # Now required
     origin: MappingOrigin = MappingOrigin.MANUAL,
     confidence: float | None = None,
 ) -> FieldMapping:
@@ -144,3 +133,63 @@ async def delete_mapping(db: AsyncSession, mapping_id: UUID) -> bool:
     await db.delete(mapping)
     await db.commit()
     return True
+
+
+async def get_rules_using_mapping(
+    db: AsyncSession,
+    mapping_id: UUID,
+) -> list:
+    """Get all rules that use a specific field mapping."""
+    from sqlalchemy.orm import selectinload
+    from app.models.rule import Rule
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Get the mapping
+    result = await db.execute(select(FieldMapping).where(FieldMapping.id == mapping_id))
+    mapping = result.scalar_one_or_none()
+
+    if not mapping:
+        logger.warning(f"Mapping {mapping_id} not found")
+        return []
+
+    logger.info(f"Checking for rules using field mapping: {mapping.sigma_field} -> {mapping.target_field}")
+
+    # Find all rules for this index pattern
+    rules_result = await db.execute(
+        select(Rule)
+        .options(selectinload(Rule.versions))
+        .where(Rule.index_pattern_id == mapping.index_pattern_id)
+    )
+    rules = rules_result.scalars().all()
+
+    logger.info(f"Found {len(rules)} rules for index pattern {mapping.index_pattern_id}")
+
+    # Check each rule's YAML for the sigma_field
+    affected_rules = []
+    from app.services.sigma import sigma_service
+
+    for rule in rules:
+        try:
+            # Parse YAML into SigmaRule object
+            sigma_rule = sigma_service.parse_rule(rule.yaml_content)
+            if sigma_rule is None:
+                logger.warning(f"  -> Failed to parse rule {rule.id}: Could not parse Sigma rule")
+                continue
+
+            # Extract fields from the parsed rule
+            fields = sigma_service.extract_fields(sigma_rule)
+
+            logger.info(f"Rule {rule.id} ({rule.title}) has fields: {list(fields)[:10]}")  # Log first 10 fields
+
+            if mapping.sigma_field in fields:
+                logger.info(f"  -> Rule {rule.id} USES this field mapping!")
+                affected_rules.append(rule)
+        except Exception as e:
+            # If we can't parse the YAML, skip this rule
+            logger.warning(f"  -> Failed to parse rule {rule.id}: {e}")
+            continue
+
+    logger.info(f"Total affected rules: {len(affected_rules)}")
+    return affected_rules

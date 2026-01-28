@@ -264,6 +264,36 @@ def get_index_fields(
     return fields
 
 
+def find_similar_fields(target_field: str, available_fields: list[str] | set[str]) -> list[str]:
+    """Find fields similar to target_field using fuzzy matching.
+
+    Args:
+        target_field: Field name to find matches for
+        available_fields: List/set of available field names
+
+    Returns:
+        List of similar field names (max 5)
+    """
+    from difflib import get_close_matches
+
+    similar = list(get_close_matches(target_field, available_fields, n=5, cutoff=0.6))
+
+    # Also check for component matching in nested fields
+    if '.' in target_field:
+        components = target_field.split('.')
+        for field in available_fields:
+            if isinstance(field, str) and '.' in field:
+                field_components = field.split('.')
+                # Check if any component matches
+                for comp in components:
+                    if comp in field_components and field not in similar:
+                        similar.append(field)
+                        if len(similar) >= 5:
+                            return similar
+
+    return similar
+
+
 def _extract_fields(
     properties: dict[str, Any],
     prefix: str,

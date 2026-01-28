@@ -19,7 +19,16 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Link2 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Link2, Trash2 } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 
@@ -59,6 +68,12 @@ export default function AlertsPage() {
   const [severityFilter, setSeverityFilter] = useState<string>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
+
+  // Bulk selection state
+  const [selectedAlerts, setSelectedAlerts] = useState<Set<string>>(new Set())
+  const [selectAll, setSelectAll] = useState(false)
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
 
   // Load data function - must be declared before useEffect that uses it
   const loadData = useCallback(async () => {
@@ -101,6 +116,71 @@ export default function AlertsPage() {
   const filteredAlerts = alerts.filter((alert) =>
     alert.rule_title.toLowerCase().includes(search.toLowerCase())
   )
+
+  // Bulk operation handlers
+  const handleSelectAll = (checked: boolean) => {
+    setSelectAll(checked)
+    if (checked) {
+      setSelectedAlerts(new Set(filteredAlerts.map(a => a.alert_id)))
+    } else {
+      setSelectedAlerts(new Set())
+    }
+  }
+
+  const handleSelectAlert = (alertId: string, checked: boolean) => {
+    const newSelected = new Set(selectedAlerts)
+    if (checked) {
+      newSelected.add(alertId)
+    } else {
+      newSelected.delete(alertId)
+    }
+    setSelectedAlerts(newSelected)
+    setSelectAll(newSelected.size === filteredAlerts.length && filteredAlerts.length > 0)
+  }
+
+  const handleBulkStatusUpdate = async (newStatus: AlertStatus) => {
+    if (selectedAlerts.size === 0) return
+
+    setIsBulkUpdating(true)
+    setError('')
+    try {
+      await alertsApi.bulkUpdateStatus({
+        alert_ids: Array.from(selectedAlerts),
+        status: newStatus
+      })
+      setSelectedAlerts(new Set())
+      setSelectAll(false)
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update alerts')
+    } finally {
+      setIsBulkUpdating(false)
+    }
+  }
+
+  const handleBulkDelete = () => {
+    if (selectedAlerts.size === 0) return
+    setShowBulkDeleteConfirm(true)
+  }
+
+  const confirmBulkDelete = async () => {
+    if (selectedAlerts.size === 0) return
+    setIsBulkUpdating(true)
+    setError('')
+    setShowBulkDeleteConfirm(false)
+    try {
+      await alertsApi.bulkDelete({
+        alert_ids: Array.from(selectedAlerts)
+      })
+      setSelectedAlerts(new Set())
+      setSelectAll(false)
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete alerts')
+    } finally {
+      setIsBulkUpdating(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -203,6 +283,51 @@ export default function AlertsPage() {
         </Button>
       </div>
 
+      {/* Bulk Action Bar */}
+      {selectedAlerts.size > 0 && (
+        <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+          <div className="text-sm font-medium">
+            {selectedAlerts.size} alert{selectedAlerts.size !== 1 ? 's' : ''} selected
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkStatusUpdate('acknowledged')}
+              disabled={isBulkUpdating}
+            >
+              Acknowledge
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkStatusUpdate('resolved')}
+              disabled={isBulkUpdating}
+            >
+              Resolve
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkStatusUpdate('false_positive')}
+              disabled={isBulkUpdating}
+            >
+              False Positive
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBulkDelete}
+              disabled={isBulkUpdating}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
+
+
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
           {error}
@@ -223,6 +348,13 @@ export default function AlertsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={selectAll}
+                      onCheckedChange={handleSelectAll}
+                      aria-label="Select all alerts"
+                    />
+                  </TableHead>
                   <TableHead>Rule</TableHead>
                   <TableHead>Severity</TableHead>
                   <TableHead>Status</TableHead>
@@ -235,8 +367,21 @@ export default function AlertsPage() {
                   <TableRow
                     key={alert.alert_id}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => navigate(`/alerts/${alert.alert_id}`)}
+                    onClick={(e) => {
+                      // Don't navigate if clicking checkbox
+                      if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
+                        return
+                      }
+                      navigate(`/alerts/${alert.alert_id}`)
+                    }}
                   >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedAlerts.has(alert.alert_id)}
+                        onCheckedChange={(checked) => handleSelectAlert(alert.alert_id, checked as boolean)}
+                        aria-label={`Select alert ${alert.alert_id}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
                         {alert.tags.includes('correlation') && (
@@ -349,6 +494,40 @@ export default function AlertsPage() {
           </div>
         </div>
       )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog
+        open={showBulkDeleteConfirm}
+        onOpenChange={(open) => {
+          if (isBulkUpdating) return
+          setShowBulkDeleteConfirm(open)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Alerts</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedAlerts.size} alert{selectedAlerts.size !== 1 ? 's' : ''}? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowBulkDeleteConfirm(false)}
+              disabled={isBulkUpdating}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmBulkDelete}
+              disabled={isBulkUpdating}
+            >
+              {isBulkUpdating ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
