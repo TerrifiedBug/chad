@@ -36,6 +36,10 @@ class HealthSettingsResponse(BaseModel):
     latency_ms: int
     queue_warning: int
     queue_critical: int
+    detection_latency_warning_ms: int
+    detection_latency_critical_ms: int
+    opensearch_latency_warning_ms: int
+    opensearch_latency_critical_ms: int
 
 
 class HealthSettingsUpdate(BaseModel):
@@ -46,6 +50,10 @@ class HealthSettingsUpdate(BaseModel):
     latency_ms: int | None = None
     queue_warning: int | None = None
     queue_critical: int | None = None
+    detection_latency_warning_ms: int = Field(default=2000, ge=100)
+    detection_latency_critical_ms: int = Field(default=10000, ge=100)
+    opensearch_latency_warning_ms: int = Field(default=1000, ge=100)
+    opensearch_latency_critical_ms: int = Field(default=5000, ge=100)
 
 
 @router.get("/indices")
@@ -95,6 +103,10 @@ async def get_health_settings(
         latency_ms=thresholds.get("latency_ms", DEFAULT_LATENCY_MS),
         queue_warning=thresholds.get("queue_warning", DEFAULT_QUEUE_WARNING),
         queue_critical=thresholds.get("queue_critical", DEFAULT_QUEUE_CRITICAL),
+        detection_latency_warning_ms=thresholds.get("detection_latency_warning_ms", 2000),
+        detection_latency_critical_ms=thresholds.get("detection_latency_critical_ms", 10000),
+        opensearch_latency_warning_ms=thresholds.get("opensearch_latency_warning_ms", 1000),
+        opensearch_latency_critical_ms=thresholds.get("opensearch_latency_critical_ms", 5000),
     )
 
 
@@ -123,6 +135,10 @@ async def update_health_settings(
         latency_ms=thresholds.get("latency_ms", DEFAULT_LATENCY_MS),
         queue_warning=thresholds.get("queue_warning", DEFAULT_QUEUE_WARNING),
         queue_critical=thresholds.get("queue_critical", DEFAULT_QUEUE_CRITICAL),
+        detection_latency_warning_ms=thresholds.get("detection_latency_warning_ms", 2000),
+        detection_latency_critical_ms=thresholds.get("detection_latency_critical_ms", 10000),
+        opensearch_latency_warning_ms=thresholds.get("opensearch_latency_warning_ms", 1000),
+        opensearch_latency_critical_ms=thresholds.get("opensearch_latency_critical_ms", 5000),
     )
 
 
