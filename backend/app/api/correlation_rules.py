@@ -3,19 +3,24 @@
 from datetime import datetime, UTC
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from uuid import UUID
 
 from app.api.deps import get_current_user, get_db, require_permission_dep
+from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
+from app.models.correlation_rule_comment import CorrelationRuleComment
 from app.models.rule import Rule
 from app.services.audit import audit_log
 from app.utils.request import get_client_ip
 from app.schemas.correlation import (
+    CorrelationActivityItem,
+    CorrelationRuleCommentCreate,
+    CorrelationRuleCommentResponse,
     CorrelationRuleCreate,
     CorrelationRuleDeployRequest,
     CorrelationRuleListResponse,
@@ -490,3 +495,164 @@ async def delete_correlation_rule(
     await db.commit()
 
     return {"message": "Correlation rule deleted"}
+
+
+# Correlation Rule Comments Endpoints
+
+
+@router.get("/{rule_id}/comments", response_model=list[CorrelationRuleCommentResponse])
+async def list_correlation_rule_comments(
+    rule_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """List all comments for a correlation rule."""
+    rule_result = await db.execute(
+        select(CorrelationRule).where(CorrelationRule.id == UUID(rule_id))
+    )
+    if rule_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correlation rule not found")
+
+    result = await db.execute(
+        select(CorrelationRuleComment)
+        .where(CorrelationRuleComment.correlation_rule_id == UUID(rule_id))
+        .order_by(CorrelationRuleComment.created_at.desc())
+    )
+    comments = result.scalars().all()
+    return [
+        CorrelationRuleCommentResponse(
+            id=str(c.id),
+            correlation_rule_id=str(c.correlation_rule_id),
+            user_id=str(c.user_id) if c.user_id else None,
+            user_email=c.user.email if c.user else None,
+            content=c.content,
+            created_at=c.created_at,
+        )
+        for c in comments
+    ]
+
+
+@router.post("/{rule_id}/comments", response_model=CorrelationRuleCommentResponse, status_code=status.HTTP_201_CREATED)
+async def create_correlation_rule_comment(
+    rule_id: str,
+    data: CorrelationRuleCommentCreate,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Add a comment to a correlation rule."""
+    rule_result = await db.execute(
+        select(CorrelationRule).where(CorrelationRule.id == UUID(rule_id))
+    )
+    if rule_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correlation rule not found")
+
+    comment = CorrelationRuleComment(
+        correlation_rule_id=UUID(rule_id),
+        user_id=current_user.id,
+        content=data.content,
+    )
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment)
+
+    await audit_log(
+        db, current_user.id, "correlation_rule.comment", "correlation_rule", rule_id,
+        {"comment_id": str(comment.id)},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return CorrelationRuleCommentResponse(
+        id=str(comment.id),
+        correlation_rule_id=str(comment.correlation_rule_id),
+        user_id=str(comment.user_id),
+        user_email=current_user.email,
+        content=comment.content,
+        created_at=comment.created_at,
+    )
+
+
+# Correlation Rule Activity Timeline Endpoint
+
+
+@router.get("/{rule_id}/activity", response_model=list[CorrelationActivityItem])
+async def get_correlation_rule_activity(
+    rule_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    skip: int = 0,
+    limit: int = 50,
+):
+    """Get unified activity timeline for a correlation rule."""
+    # First verify rule exists
+    rule_result = await db.execute(
+        select(CorrelationRule).where(CorrelationRule.id == UUID(rule_id))
+    )
+    if rule_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correlation rule not found")
+
+    activities: list[CorrelationActivityItem] = []
+
+    # Get versions (from CorrelationRuleVersion model)
+    versions_result = await db.execute(
+        select(CorrelationRuleVersion)
+        .where(CorrelationRuleVersion.correlation_rule_id == UUID(rule_id))
+        .options(selectinload(CorrelationRuleVersion.author))
+        .order_by(CorrelationRuleVersion.version_number.desc())
+    )
+    for v in versions_result.scalars():
+        activities.append(
+            CorrelationActivityItem(
+                type="version",
+                timestamp=v.created_at,
+                user_email=v.author.email if v.author else None,
+                data={
+                    "version_number": v.version_number,
+                    "change_reason": v.change_reason,
+                    "name": v.name,
+                    "entity_field": v.entity_field,
+                    "time_window_minutes": v.time_window_minutes,
+                    "severity": v.severity,
+                },
+            )
+        )
+
+    # Get comments
+    comments_result = await db.execute(
+        select(CorrelationRuleComment)
+        .where(CorrelationRuleComment.correlation_rule_id == UUID(rule_id))
+        .options(selectinload(CorrelationRuleComment.user))
+    )
+    for c in comments_result.scalars():
+        activities.append(
+            CorrelationActivityItem(
+                type="comment",
+                timestamp=c.created_at,
+                user_email=c.user.email if c.user else None,
+                data={"content": c.content, "id": str(c.id)},
+            )
+        )
+
+    # Get deploy/undeploy events from audit log
+    audit_result = await db.execute(
+        select(AuditLog, User)
+        .outerjoin(User, AuditLog.user_id == User.id)
+        .where(
+            AuditLog.resource_id == rule_id,
+            AuditLog.action.in_(["correlation_rule_deployed", "correlation_rule_undeployed"]),
+        )
+    )
+    for a, user in audit_result:
+        activities.append(
+            CorrelationActivityItem(
+                type="deploy" if a.action == "correlation_rule_deployed" else "undeploy",
+                timestamp=a.created_at,
+                user_email=user.email if user else None,
+                data=a.details or {},
+            )
+        )
+
+    # Sort by timestamp descending and apply pagination
+    activities.sort(key=lambda x: x.timestamp, reverse=True)
+    return activities[skip : skip + limit]

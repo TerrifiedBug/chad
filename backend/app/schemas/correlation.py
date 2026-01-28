@@ -85,3 +85,32 @@ class CorrelationRuleVersionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CorrelationRuleCommentCreate(BaseModel):
+    """Schema for creating a comment on a correlation rule."""
+
+    content: str = Field(..., min_length=1, max_length=10000)
+
+
+class CorrelationRuleCommentResponse(BaseModel):
+    """Schema for correlation rule comment response."""
+
+    id: str
+    correlation_rule_id: str
+    user_id: str | None
+    user_email: str | None
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CorrelationActivityItem(BaseModel):
+    """Activity timeline item for a correlation rule."""
+
+    type: str  # 'version', 'deploy', 'undeploy', 'comment'
+    timestamp: datetime
+    user_email: str | None
+    data: dict

@@ -1716,6 +1716,22 @@ export type CorrelationRuleVersion = {
   created_at: string
 }
 
+export type CorrelationRuleComment = {
+  id: string
+  correlation_rule_id: string
+  user_id: string | null
+  user_email: string | null
+  content: string
+  created_at: string
+}
+
+export type CorrelationActivityItem = {
+  type: 'version' | 'deploy' | 'undeploy' | 'comment'
+  timestamp: string
+  user_email: string | null
+  data: Record<string, unknown>
+}
+
 export type CorrelationRuleListResponse = {
   correlation_rules: CorrelationRule[]
   total: number
@@ -1735,5 +1751,7 @@ export const correlationRulesApi = {
   deploy: (id: string, changeReason: string) => api.post<CorrelationRule>(`/correlation-rules/${id}/deploy`, { change_reason: changeReason }),
   undeploy: (id: string, changeReason: string) => api.post<CorrelationRule>(`/correlation-rules/${id}/undeploy`, { change_reason: changeReason }),
   getVersions: (id: string) => api.get<CorrelationRuleVersion[]>(`/correlation-rules/${id}/versions`),
+  getActivity: (id: string) => api.get<CorrelationActivityItem[]>(`/correlation-rules/${id}/activity`),
+  addComment: (id: string, content: string) => api.post<CorrelationRuleComment>(`/correlation-rules/${id}/comments`, { content }),
 }
 

@@ -25,7 +25,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { ChevronLeft, Loader2, Check, ChevronDown } from 'lucide-react'
+import { ChevronLeft, Loader2, Check, ChevronDown, History } from 'lucide-react'
 
 const TIME_WINDOW_OPTIONS = [
   { value: 1, label: '1 minute' },
@@ -138,6 +138,8 @@ export default function CorrelationRuleEditorPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
+  const [isActivityOpen, setIsActivityOpen] = useState(false)
+  const [currentVersion, setCurrentVersion] = useState(1)
   const [ruleAFieldMappings, setRuleAFieldMappings] = useState<FieldMappingInfo[]>([])
   const [ruleBFieldMappings, setRuleBFieldMappings] = useState<FieldMappingInfo[]>([])
   const [isLoadingEditData, setIsLoadingEditData] = useState(false) // Track if editing data is loading
@@ -247,6 +249,7 @@ export default function CorrelationRuleEditorPage() {
         severity: rule.severity,
         change_reason: '',
       })
+      setCurrentVersion(rule.current_version)
       // Load common fields with the current entity_field to ensure it's in the list
       // Pass the IDs directly to avoid race condition with formData state updates
       await loadCommonFields(rule.entity_field, rule.rule_a_id, rule.rule_b_id)
@@ -488,62 +491,50 @@ export default function CorrelationRuleEditorPage() {
   )
 
   return (
-    <div className={`space-y-6 ${isEditing ? 'max-w-6xl' : 'max-w-2xl'}`}>
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/correlation')}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold">
-            {isEditing ? 'Edit Correlation Rule' : 'Create Correlation Rule'}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {isEditing
-              ? 'Modify the correlation rule configuration'
-              : 'Define when two rules together indicate a higher-priority pattern'}
-          </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/correlation')}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">
+              {isEditing ? 'Edit Correlation Rule' : 'Create Correlation Rule'}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {isEditing
+                ? 'Modify the correlation rule configuration'
+                : 'Define when two rules together indicate a higher-priority pattern'}
+            </p>
+          </div>
         </div>
+        {isEditing && (
+          <Button variant="outline" onClick={() => setIsActivityOpen(true)}>
+            <History className="h-4 w-4 mr-2" />
+            Activity
+          </Button>
+        )}
       </div>
 
-      {isEditing && id ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main form - takes 2 columns */}
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Rule Configuration</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {formContent}
-                </form>
-              </CardContent>
-            </Card>
-          </div>
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle>Rule Configuration</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {formContent}
+          </form>
+        </CardContent>
+      </Card>
 
-          {/* Activity Panel - takes 1 column */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle>Activity Log</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CorrelationActivityPanel correlationId={id} />
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Rule Configuration</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {formContent}
-            </form>
-          </CardContent>
-        </Card>
+      {/* Activity Panel (slide-out) */}
+      {isEditing && id && (
+        <CorrelationActivityPanel
+          correlationId={id}
+          currentVersion={currentVersion}
+          isOpen={isActivityOpen}
+          onClose={() => setIsActivityOpen(false)}
+        />
       )}
     </div>
   )
