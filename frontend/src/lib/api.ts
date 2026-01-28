@@ -115,11 +115,15 @@ export class ApiClient {
     return response.json()
   }
 
-  async delete(path: string): Promise<void> {
-    const response = await fetch(`${API_BASE}${path}`, {
+  async delete(path: string, body?: unknown): Promise<void> {
+    const options: RequestInit = {
       method: 'DELETE',
       headers: this.getHeaders('DELETE'),
-    })
+    }
+    if (body) {
+      options.body = JSON.stringify(body)
+    }
+    const response = await fetch(`${API_BASE}${path}`, options)
     this.updateCsrfToken(response)
     if (!response.ok) {
       let error = await response.json().catch(() => ({ detail: 'Request failed' }))
@@ -271,6 +275,7 @@ export type RuleExceptionCreate = {
   operator?: ExceptionOperator
   value: string
   reason?: string
+  change_reason: string
 }
 
 export type RuleExceptionUpdate = {
@@ -279,6 +284,7 @@ export type RuleExceptionUpdate = {
   value?: string
   reason?: string
   is_active?: boolean
+  change_reason: string
 }
 
 // Activity types
@@ -501,8 +507,8 @@ export const rulesApi = {
     api.post<RuleException>(`/rules/${ruleId}/exceptions`, data),
   updateException: (ruleId: string, exceptionId: string, data: RuleExceptionUpdate) =>
     api.patch<RuleException>(`/rules/${ruleId}/exceptions/${exceptionId}`, data),
-  deleteException: (ruleId: string, exceptionId: string) =>
-    api.delete(`/rules/${ruleId}/exceptions/${exceptionId}`),
+  deleteException: (ruleId: string, exceptionId: string, changeReason: string) =>
+    api.delete(`/rules/${ruleId}/exceptions/${exceptionId}`, { change_reason: changeReason }),
   // Snooze
   snooze: (id: string, changeReason: string, hours?: number, indefinite?: boolean) =>
     api.post<{ success: boolean; snooze_until: string | null; snooze_indefinite: boolean; status: string }>(

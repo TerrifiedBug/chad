@@ -163,7 +163,6 @@ export default function RuleEditorPage() {
 
   // Exception delete confirmation state
   const [exceptionToDelete, setExceptionToDelete] = useState<RuleException | null>(null)
-  const [isDeleteExceptionDialogOpen, setIsDeleteExceptionDialogOpen] = useState(false)
   const [isDeletingException, setIsDeletingException] = useState(false)
 
   // Correlation rules state
@@ -228,6 +227,13 @@ export default function RuleEditorPage() {
   const [snoozeReason, setSnoozeReason] = useState('')
   const [pendingSnoozeHours, setPendingSnoozeHours] = useState<number | undefined>(undefined)
   const [pendingSnoozeIndefinite, setPendingSnoozeIndefinite] = useState(false)
+
+  // Exception change reason dialog state
+  const [showExceptionCreateReason, setShowExceptionCreateReason] = useState(false)
+  const [exceptionChangeReason, setExceptionChangeReason] = useState('')
+  const [showExceptionToggleReason, setShowExceptionToggleReason] = useState(false)
+  const [pendingExceptionToggle, setPendingExceptionToggle] = useState<{ id: string; isActive: boolean } | null>(null)
+  const [showExceptionDeleteReason, setShowExceptionDeleteReason] = useState(false)
 
   // Load functions - must be declared before useEffect that uses them
   const loadExceptions = useCallback(async () => {
@@ -714,12 +720,19 @@ export default function RuleEditorPage() {
   }
 
   // Exception handlers
-  const handleAddException = async () => {
+  const handleAddException = () => {
     if (!id || !newExceptionField.trim() || !newExceptionValue.trim()) {
       setError('Field and value are required for exceptions')
       return
     }
+    // Show change reason dialog
+    setExceptionChangeReason('')
+    setShowExceptionCreateReason(true)
+  }
 
+  const handleAddExceptionConfirm = async () => {
+    if (!id || !exceptionChangeReason.trim()) return
+    setShowExceptionCreateReason(false)
     setIsAddingException(true)
     try {
       const data: RuleExceptionCreate = {
@@ -727,6 +740,7 @@ export default function RuleEditorPage() {
         operator: newExceptionOperator,
         value: newExceptionValue.trim(),
         reason: newExceptionReason.trim() || undefined,
+        change_reason: exceptionChangeReason.trim(),
       }
       const newException = await rulesApi.createException(id, data)
       setExceptions((prev) => [...prev, newException])
@@ -735,6 +749,7 @@ export default function RuleEditorPage() {
       setNewExceptionOperator('equals')
       setNewExceptionValue('')
       setNewExceptionReason('')
+      setExceptionChangeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add exception')
     } finally {
@@ -742,13 +757,27 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleToggleException = async (exceptionId: string, isActive: boolean) => {
+  const handleToggleException = (exceptionId: string, isActive: boolean) => {
     if (!id) return
+    // Show change reason dialog
+    setPendingExceptionToggle({ id: exceptionId, isActive })
+    setExceptionChangeReason('')
+    setShowExceptionToggleReason(true)
+  }
+
+  const handleToggleExceptionConfirm = async () => {
+    if (!id || !pendingExceptionToggle || !exceptionChangeReason.trim()) return
+    setShowExceptionToggleReason(false)
     try {
-      const updated = await rulesApi.updateException(id, exceptionId, { is_active: isActive })
+      const updated = await rulesApi.updateException(id, pendingExceptionToggle.id, {
+        is_active: pendingExceptionToggle.isActive,
+        change_reason: exceptionChangeReason.trim(),
+      })
       setExceptions((prev) =>
-        prev.map((e) => (e.id === exceptionId ? updated : e))
+        prev.map((e) => (e.id === pendingExceptionToggle.id ? updated : e))
       )
+      setPendingExceptionToggle(null)
+      setExceptionChangeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update exception')
     }
@@ -761,17 +790,19 @@ export default function RuleEditorPage() {
 
   const openDeleteExceptionDialog = (exception: RuleException) => {
     setExceptionToDelete(exception)
-    setIsDeleteExceptionDialogOpen(true)
+    setExceptionChangeReason('')
+    setShowExceptionDeleteReason(true)
   }
 
   const confirmDeleteException = async () => {
-    if (!id || !exceptionToDelete) return
+    if (!id || !exceptionToDelete || !exceptionChangeReason.trim()) return
     setIsDeletingException(true)
     try {
-      await rulesApi.deleteException(id, exceptionToDelete.id)
+      await rulesApi.deleteException(id, exceptionToDelete.id, exceptionChangeReason.trim())
       setExceptions((prev) => prev.filter((e) => e.id !== exceptionToDelete.id))
-      setIsDeleteExceptionDialogOpen(false)
+      setShowExceptionDeleteReason(false)
       setExceptionToDelete(null)
+      setExceptionChangeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete exception')
     } finally {
@@ -1756,16 +1787,179 @@ export default function RuleEditorPage() {
         </div>
       </div>
 
-      {/* Exception Delete Confirmation Modal */}
-      <DeleteConfirmModal
-        open={isDeleteExceptionDialogOpen}
-        onOpenChange={setIsDeleteExceptionDialogOpen}
-        title="Delete Exception"
-        description="Are you sure you want to delete this exception? This action cannot be undone."
-        itemName={exceptionToDelete ? `${exceptionToDelete.field} ${operatorLabels[exceptionToDelete.operator]} ${exceptionToDelete.value}` : undefined}
-        onConfirm={confirmDeleteException}
-        isDeleting={isDeletingException}
-      />
+      {/* Exception Create Reason Dialog */}
+      <Dialog open={showExceptionCreateReason} onOpenChange={setShowExceptionCreateReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Exception</DialogTitle>
+            <DialogDescription>
+              Please explain why you're adding this exception. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="text-sm">
+              <div className="font-medium">{newExceptionField}</div>
+              <div className="text-muted-foreground">
+                {operatorLabels[newExceptionOperator]}: {newExceptionValue}
+              </div>
+              {newExceptionReason && (
+                <div className="text-muted-foreground mt-1 italic">
+                  Reason: {newExceptionReason}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="exception-create-reason">Change Reason *</Label>
+              <Textarea
+                id="exception-create-reason"
+                placeholder="e.g., Adding exception for known false positive..."
+                value={exceptionChangeReason}
+                onChange={(e) => setExceptionChangeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExceptionCreateReason(false)
+                setExceptionChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddExceptionConfirm}
+              disabled={!exceptionChangeReason.trim() || isAddingException}
+            >
+              {isAddingException ? 'Adding...' : 'Add Exception'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Exception Toggle Reason Dialog */}
+      <Dialog open={showExceptionToggleReason} onOpenChange={setShowExceptionToggleReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingExceptionToggle?.isActive ? 'Enable' : 'Disable'} Exception
+            </DialogTitle>
+            <DialogDescription>
+              Please explain why you're {pendingExceptionToggle?.isActive ? 'enabling' : 'disabling'} this exception.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {pendingExceptionToggle && (() => {
+              const exception = exceptions.find(e => e.id === pendingExceptionToggle.id)
+              return exception ? (
+                <div className="text-sm">
+                  <div className="font-medium">{exception.field}</div>
+                  <div className="text-muted-foreground">
+                    {operatorLabels[exception.operator]}: {exception.value}
+                  </div>
+                </div>
+              ) : null
+            })()}
+            <div className="space-y-2">
+              <Label htmlFor="exception-toggle-reason">Change Reason *</Label>
+              <Textarea
+                id="exception-toggle-reason"
+                placeholder={pendingExceptionToggle?.isActive
+                  ? "e.g., Re-enabling after investigation..."
+                  : "e.g., Temporarily disabling for testing..."}
+                value={exceptionChangeReason}
+                onChange={(e) => setExceptionChangeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExceptionToggleReason(false)
+                setPendingExceptionToggle(null)
+                setExceptionChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleToggleExceptionConfirm}
+              disabled={!exceptionChangeReason.trim()}
+            >
+              {pendingExceptionToggle?.isActive ? 'Enable' : 'Disable'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Exception Delete Reason Dialog */}
+      <Dialog open={showExceptionDeleteReason} onOpenChange={setShowExceptionDeleteReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Exception</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this exception? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {exceptionToDelete && (
+              <div className="text-sm p-3 bg-muted rounded-md">
+                <div className="font-medium">{exceptionToDelete.field}</div>
+                <div className="text-muted-foreground">
+                  {operatorLabels[exceptionToDelete.operator]}: {exceptionToDelete.value}
+                </div>
+                {exceptionToDelete.reason && (
+                  <div className="text-muted-foreground mt-1 italic">
+                    Reason: {exceptionToDelete.reason}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="exception-delete-reason">Change Reason *</Label>
+              <Textarea
+                id="exception-delete-reason"
+                placeholder="e.g., Exception no longer needed, false positive resolved..."
+                value={exceptionChangeReason}
+                onChange={(e) => setExceptionChangeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExceptionDeleteReason(false)
+                setExceptionToDelete(null)
+                setExceptionChangeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteException}
+              disabled={!exceptionChangeReason.trim() || isDeletingException}
+            >
+              {isDeletingException ? 'Deleting...' : 'Delete Exception'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Rule Delete Confirmation Modal */}
       <DeleteConfirmModal

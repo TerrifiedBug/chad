@@ -590,7 +590,8 @@ export default function AlertDetailPage() {
         field: exceptionField,
         operator: exceptionOperator,
         value: exceptionValue,
-        reason: exceptionReason
+        reason: exceptionReason,
+        change_reason: exceptionReason  // Use same reason for audit trail
       })
 
       setShowExceptionDialog(false)

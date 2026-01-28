@@ -25,6 +25,16 @@ import {
 import { ChevronDown, Clock, FileCode, FileText, FolderTree, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -83,6 +93,12 @@ export default function RulesPage() {
   const [isBulkOperating, setIsBulkOperating] = useState(false)
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [showBulkSnooze, setShowBulkSnooze] = useState(false)
+
+  // Bulk snooze change reason state
+  const [showBulkSnoozeReason, setShowBulkSnoozeReason] = useState(false)
+  const [bulkSnoozeReason, setBulkSnoozeReason] = useState('')
+  const [pendingBulkSnoozeHours, setPendingBulkSnoozeHours] = useState<number | undefined>(undefined)
+  const [pendingBulkSnoozeIndefinite, setPendingBulkSnoozeIndefinite] = useState(false)
 
   // Deployment eligibility state
   const [deploymentEligibility, setDeploymentEligibility] = useState<DeploymentEligibilityResult | null>(null)
@@ -332,16 +348,26 @@ export default function RulesPage() {
     }
   }
 
-  // Bulk snooze handler
-  const handleBulkSnooze = async (hours?: number, indefinite?: boolean) => {
+  // Bulk snooze handler - shows change reason dialog
+  const handleBulkSnooze = (hours?: number, indefinite?: boolean) => {
     if (selectedRules.size === 0) return
-
     setShowBulkSnooze(false)
+    setPendingBulkSnoozeHours(hours)
+    setPendingBulkSnoozeIndefinite(indefinite ?? false)
+    setBulkSnoozeReason('')
+    setShowBulkSnoozeReason(true)
+  }
+
+  // Execute bulk snooze after change reason provided
+  const handleBulkSnoozeConfirm = async () => {
+    if (selectedRules.size === 0 || !bulkSnoozeReason.trim()) return
+
+    setShowBulkSnoozeReason(false)
     setIsBulkOperating(true)
     try {
       const ruleIds = Array.from(selectedRules)
       const results = await Promise.allSettled(
-        ruleIds.map((id) => rulesApi.snooze(id, hours, indefinite))
+        ruleIds.map((id) => rulesApi.snooze(id, bulkSnoozeReason, pendingBulkSnoozeHours, pendingBulkSnoozeIndefinite))
       )
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length
@@ -352,6 +378,7 @@ export default function RulesPage() {
       }
 
       clearSelection()
+      setBulkSnoozeReason('')
       loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bulk snooze failed')
@@ -927,6 +954,53 @@ export default function RulesPage() {
         onConfirm={handleBulkDelete}
         isDeleting={isBulkOperating}
       />
+
+      {/* Bulk Snooze Reason Dialog */}
+      <Dialog open={showBulkSnoozeReason} onOpenChange={setShowBulkSnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Snooze Rules</DialogTitle>
+            <DialogDescription>
+              Please explain why you're snoozing {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="text-sm text-muted-foreground">
+              Duration: {pendingBulkSnoozeIndefinite ? 'Indefinitely' : `${pendingBulkSnoozeHours} hour${pendingBulkSnoozeHours !== 1 ? 's' : ''}`}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bulk-snooze-reason">Reason for Snooze *</Label>
+              <Textarea
+                id="bulk-snooze-reason"
+                placeholder="e.g., Investigating false positives, scheduled maintenance..."
+                value={bulkSnoozeReason}
+                onChange={(e) => setBulkSnoozeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowBulkSnoozeReason(false)
+                setBulkSnoozeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkSnoozeConfirm}
+              disabled={!bulkSnoozeReason.trim() || isBulkOperating}
+            >
+              {isBulkOperating ? 'Snoozing...' : 'Snooze'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
