@@ -936,7 +936,7 @@ export default function RuleEditorPage() {
                   <span className="text-sm text-gray-500 font-medium">Undeployed</span>
                   <Button
                     variant="outline"
-                    disabled={!canManageRules}
+                    disabled
                     title="Deploy the rule first to enable snooze"
                   >
                     <Clock className="h-4 w-4 mr-1" />
