@@ -504,13 +504,13 @@ export const rulesApi = {
   deleteException: (ruleId: string, exceptionId: string) =>
     api.delete(`/rules/${ruleId}/exceptions/${exceptionId}`),
   // Snooze
-  snooze: (id: string, hours?: number, indefinite?: boolean) =>
+  snooze: (id: string, changeReason: string, hours?: number, indefinite?: boolean) =>
     api.post<{ success: boolean; snooze_until: string | null; snooze_indefinite: boolean; status: string }>(
       `/rules/${id}/snooze`,
-      { hours, indefinite: indefinite ?? false }
+      { hours, indefinite: indefinite ?? false, change_reason: changeReason }
     ),
-  unsnooze: (id: string) =>
-    api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`),
+  unsnooze: (id: string, changeReason: string) =>
+    api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`, { change_reason: changeReason }),
   // Bulk operations
   bulkEnable: (ruleIds: string[]) =>
     api.post<BulkOperationResult>('/rules/bulk/enable', { rule_ids: ruleIds }),

@@ -59,6 +59,7 @@ router = APIRouter(prefix="/rules", tags=["rules"])
 class SnoozeRequest(BaseModel):
     hours: int | None = Field(default=None, ge=1, le=168)  # None allowed if indefinite
     indefinite: bool = False
+    change_reason: str = Field(..., min_length=1, max_length=10000)
 
 
 class DeploymentEligibilityRequest(BaseModel):
@@ -1418,7 +1419,7 @@ async def snooze_rule(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.snooze", "rule", str(rule.id),
-        {"title": rule.title, "hours": snooze_request.hours, "indefinite": snooze_request.indefinite},
+        {"title": rule.title, "hours": snooze_request.hours, "indefinite": snooze_request.indefinite, "change_reason": snooze_request.change_reason},
         ip_address=get_client_ip(http_request)
     )
     await db.commit()
@@ -1438,6 +1439,7 @@ async def unsnooze_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """Remove snooze from a rule."""
     result = await db.execute(
@@ -1497,7 +1499,7 @@ async def unsnooze_rule(
             )
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title, "change_reason": change_reason}, ip_address=get_client_ip(request))
     await db.commit()
 
     return {"success": True, "status": "enabled"}

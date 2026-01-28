@@ -222,6 +222,13 @@ export default function RuleEditorPage() {
   const [showUndeployReason, setShowUndeployReason] = useState(false)
   const [deployReason, setDeployReason] = useState('')
 
+  // Snooze/Unsnooze change reason dialog state
+  const [showSnoozeReason, setShowSnoozeReason] = useState(false)
+  const [showUnsnoozeReason, setShowUnsnoozeReason] = useState(false)
+  const [snoozeReason, setSnoozeReason] = useState('')
+  const [pendingSnoozeHours, setPendingSnoozeHours] = useState<number | undefined>(undefined)
+  const [pendingSnoozeIndefinite, setPendingSnoozeIndefinite] = useState(false)
+
   // Load functions - must be declared before useEffect that uses them
   const loadExceptions = useCallback(async () => {
     if (!id || isNew) return
@@ -773,29 +780,32 @@ export default function RuleEditorPage() {
   }
 
   // Snooze handlers
-  const handleSnooze = async (hours: number) => {
+  const handleSnooze = (hours: number) => {
     if (!id || !canManageRules) return
+    setPendingSnoozeHours(hours)
+    setPendingSnoozeIndefinite(false)
+    setSnoozeReason('')
+    setShowSnoozeReason(true)
+  }
+
+  const handleSnoozeIndefinite = () => {
+    if (!id || !canManageRules) return
+    setPendingSnoozeHours(undefined)
+    setPendingSnoozeIndefinite(true)
+    setSnoozeReason('')
+    setShowSnoozeReason(true)
+  }
+
+  const handleSnoozeConfirm = async () => {
+    if (!id || !snoozeReason.trim()) return
+    setShowSnoozeReason(false)
     setIsSnoozing(true)
     try {
-      const result = await rulesApi.snooze(id, hours, false)
+      const result = await rulesApi.snooze(id, snoozeReason, pendingSnoozeHours, pendingSnoozeIndefinite)
       setStatus('snoozed')
       setSnoozeUntil(result.snooze_until)
-      setSnoozeIndefinite(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to snooze rule')
-    } finally {
-      setIsSnoozing(false)
-    }
-  }
-
-  const handleSnoozeIndefinite = async () => {
-    if (!id || !canManageRules) return
-    setIsSnoozing(true)
-    try {
-      const result = await rulesApi.snooze(id, undefined, true)
-      setStatus('snoozed')
-      setSnoozeUntil(null)
       setSnoozeIndefinite(result.snooze_indefinite)
+      setSnoozeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to snooze rule')
     } finally {
@@ -803,14 +813,22 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleUnsnooze = async () => {
+  const handleUnsnooze = () => {
     if (!id) return
+    setSnoozeReason('')
+    setShowUnsnoozeReason(true)
+  }
+
+  const handleUnsnoozeConfirm = async () => {
+    if (!id || !snoozeReason.trim()) return
+    setShowUnsnoozeReason(false)
     setIsSnoozing(true)
     try {
-      await rulesApi.unsnooze(id)
+      await rulesApi.unsnooze(id, snoozeReason)
       setStatus('deployed')  // Unsnooze returns to deployed state
       setSnoozeUntil(null)
       setSnoozeIndefinite(false)
+      setSnoozeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unsnooze rule')
     } finally {
@@ -1942,6 +1960,97 @@ export default function RuleEditorPage() {
               disabled={!deployReason.trim() || isDeploying}
             >
               {isDeploying ? 'Undeploying...' : 'Undeploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Snooze Reason Modal */}
+      <Dialog open={showSnoozeReason} onOpenChange={setShowSnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Snooze Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're snoozing this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="text-sm text-muted-foreground">
+              Snoozing for: {pendingSnoozeIndefinite ? 'Indefinitely' : `${pendingSnoozeHours} hour${pendingSnoozeHours !== 1 ? 's' : ''}`}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="snooze-reason">Reason for Snooze *</Label>
+              <Textarea
+                id="snooze-reason"
+                placeholder="e.g., Investigating false positives, scheduled maintenance..."
+                value={snoozeReason}
+                onChange={(e) => setSnoozeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSnoozeReason(false)
+                setSnoozeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSnoozeConfirm}
+              disabled={!snoozeReason.trim() || isSnoozing}
+            >
+              {isSnoozing ? 'Snoozing...' : 'Snooze'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unsnooze Reason Modal */}
+      <Dialog open={showUnsnoozeReason} onOpenChange={setShowUnsnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsnooze Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're unsnoozing this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="unsnooze-reason">Reason for Unsnooze *</Label>
+              <Textarea
+                id="unsnooze-reason"
+                placeholder="e.g., Investigation complete, issue resolved..."
+                value={snoozeReason}
+                onChange={(e) => setSnoozeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUnsnoozeReason(false)
+                setSnoozeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUnsnoozeConfirm}
+              disabled={!snoozeReason.trim() || isSnoozing}
+            >
+              {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
             </Button>
           </DialogFooter>
         </DialogContent>
