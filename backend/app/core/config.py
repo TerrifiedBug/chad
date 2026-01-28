@@ -69,6 +69,19 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SETUP_COMPLETED: bool = False
 
+    # Logging
+    LOG_LEVEL: str = "WARNING"
+
+    @field_validator('LOG_LEVEL')
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Validate log level is one of the standard Python levels."""
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        level = v.upper()
+        if level not in valid_levels:
+            raise ValueError(f"LOG_LEVEL must be one of {valid_levels}, got '{v}'")
+        return level
+
     # Frontend URL (for redirects after SSO login)
     # Default "/" works for production (same origin behind reverse proxy)
     # Only set explicitly for local dev with different ports
