@@ -472,6 +472,7 @@ async def delete_rule(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+    change_reason: str | None = Body(None, min_length=1, max_length=10000, embed=True),
 ):
     result = await db.execute(select(Rule).where(Rule.id == rule_id))
     rule = result.scalar_one_or_none()
@@ -483,7 +484,10 @@ async def delete_rule(
         )
 
     # Capture details before delete
-    await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), {"title": rule.title}, ip_address=get_client_ip(request))
+    audit_details = {"title": rule.title}
+    if change_reason:
+        audit_details["change_reason"] = change_reason
+    await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), audit_details, ip_address=get_client_ip(request))
     await db.delete(rule)
     await db.commit()
 
@@ -1004,7 +1008,7 @@ async def bulk_deploy_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_deploy", "rule", None,
-        {"count": len(success), "rule_ids": success},
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
         ip_address=get_client_ip(request)
     )
     await db.commit()
@@ -1232,7 +1236,7 @@ async def bulk_undeploy_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_undeploy", "rule", None,
-        {"count": len(success), "rule_ids": success},
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
         ip_address=get_client_ip(request)
     )
     await db.commit()
@@ -1752,7 +1756,7 @@ async def bulk_enable_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_enable", "rule", None,
-        {"count": len(success), "rule_ids": success},
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
         ip_address=get_client_ip(request)
     )
     await db.commit()
@@ -1797,7 +1801,7 @@ async def bulk_delete_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_delete", "rule", None,
-        {"count": len(success), "rule_ids": success},
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
         ip_address=get_client_ip(request)
     )
     await db.commit()

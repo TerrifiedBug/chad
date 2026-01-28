@@ -51,7 +51,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
@@ -177,7 +176,8 @@ export default function RuleEditorPage() {
   const [isActivityOpen, setIsActivityOpen] = useState(false)
 
   // Delete rule confirmation state
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showDeleteReason, setShowDeleteReason] = useState(false)
+  const [deleteReason, setDeleteReason] = useState('')
   const [isDeletingRule, setIsDeletingRule] = useState(false)
 
   // Rule source state (for existing rules)
@@ -234,6 +234,9 @@ export default function RuleEditorPage() {
   const [showExceptionToggleReason, setShowExceptionToggleReason] = useState(false)
   const [pendingExceptionToggle, setPendingExceptionToggle] = useState<{ id: string; isActive: boolean } | null>(null)
   const [showExceptionDeleteReason, setShowExceptionDeleteReason] = useState(false)
+
+  // TODO: Threshold change reason state - will be implemented when threshold changes apply immediately
+  // For now, threshold changes still require clicking Save button
 
   // Load functions - must be declared before useEffect that uses them
   const loadExceptions = useCallback(async () => {
@@ -903,12 +906,20 @@ export default function RuleEditorPage() {
     URL.revokeObjectURL(url)
   }
 
-  // Delete rule handler
-  const handleDeleteRule = async () => {
+  // Delete rule handler - show reason dialog
+  const handleDeleteRule = () => {
     if (!id || !canManageRules) return
+    setDeleteReason('')
+    setShowDeleteReason(true)
+  }
+
+  // Confirm delete rule with reason
+  const handleDeleteRuleConfirm = async () => {
+    if (!id || !deleteReason.trim()) return
+    setShowDeleteReason(false)
     setIsDeletingRule(true)
     try {
-      await rulesApi.delete(id)
+      await rulesApi.delete(id, deleteReason.trim())
       navigate('/rules')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete rule')
@@ -1061,7 +1072,7 @@ export default function RuleEditorPage() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => setShowDeleteConfirm(true)}
+                  onClick={handleDeleteRule}
                   className="text-destructive focus:text-destructive"
                   disabled={!canManageRules}
                 >
@@ -1961,16 +1972,50 @@ export default function RuleEditorPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Rule Delete Confirmation Modal */}
-      <DeleteConfirmModal
-        open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
-        title="Delete Rule"
-        description="Are you sure you want to delete this rule? This action cannot be undone."
-        itemName={title}
-        onConfirm={handleDeleteRule}
-        isDeleting={isDeletingRule}
-      />
+      {/* Rule Delete Reason Dialog */}
+      <Dialog open={showDeleteReason} onOpenChange={setShowDeleteReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Rule</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{title}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-reason">Reason for Deletion *</Label>
+              <Textarea
+                id="delete-reason"
+                placeholder="e.g., Rule is no longer needed, replaced by another rule..."
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteReason(false)
+                setDeleteReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteRuleConfirm}
+              disabled={!deleteReason.trim() || isDeletingRule}
+            >
+              {isDeletingRule ? 'Deleting...' : 'Delete Rule'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Activity Panel */}
       {!isNew && (

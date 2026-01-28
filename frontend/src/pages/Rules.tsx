@@ -24,7 +24,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ChevronDown, Clock, FileCode, FileText, FolderTree, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
-import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import {
   Dialog,
   DialogContent,
@@ -91,12 +90,15 @@ export default function RulesPage() {
 
   // Bulk operation state
   const [isBulkOperating, setIsBulkOperating] = useState(false)
-  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [showBulkSnooze, setShowBulkSnooze] = useState(false)
 
-  // Bulk snooze change reason state
+  // Bulk operation change reason state
+  const [bulkOperationReason, setBulkOperationReason] = useState('')
+  const [showBulkDeployReason, setShowBulkDeployReason] = useState(false)
+  const [showBulkUndeployReason, setShowBulkUndeployReason] = useState(false)
   const [showBulkSnoozeReason, setShowBulkSnoozeReason] = useState(false)
-  const [bulkSnoozeReason, setBulkSnoozeReason] = useState('')
+  const [showBulkUnsnoozeReason, setShowBulkUnsnoozeReason] = useState(false)
+  const [showBulkDeleteReason, setShowBulkDeleteReason] = useState(false)
   const [pendingBulkSnoozeHours, setPendingBulkSnoozeHours] = useState<number | undefined>(undefined)
   const [pendingBulkSnoozeIndefinite, setPendingBulkSnoozeIndefinite] = useState(false)
 
@@ -308,41 +310,85 @@ export default function RulesPage() {
     setLastSelectedIndex(null)
   }
 
-  // Bulk action handler
-  const handleBulkAction = async (action: 'deploy' | 'undeploy' | 'unsnooze' | 'delete') => {
+  // Bulk action handler - shows change reason dialog
+  const handleBulkAction = (action: 'deploy' | 'undeploy' | 'unsnooze' | 'delete') => {
     if (selectedRules.size === 0) return
+    setBulkOperationReason('')
 
-    if (action === 'delete') {
-      setShowBulkDeleteConfirm(true)
-      return
+    switch (action) {
+      case 'deploy':
+        setShowBulkDeployReason(true)
+        break
+      case 'undeploy':
+        setShowBulkUndeployReason(true)
+        break
+      case 'unsnooze':
+        setShowBulkUnsnoozeReason(true)
+        break
+      case 'delete':
+        setShowBulkDeleteReason(true)
+        break
     }
+  }
 
+  // Execute bulk deploy after change reason provided
+  const handleBulkDeployConfirm = async () => {
+    if (selectedRules.size === 0 || !bulkOperationReason.trim()) return
+    setShowBulkDeployReason(false)
     setIsBulkOperating(true)
     try {
       const ruleIds = Array.from(selectedRules)
-      let result
-
-      switch (action) {
-        case 'deploy':
-          result = await rulesApi.bulkDeploy(ruleIds)
-          break
-        case 'undeploy':
-          result = await rulesApi.bulkUndeploy(ruleIds)
-          break
-        case 'unsnooze':
-          // bulkEnable clears snooze and sets status to deployed
-          result = await rulesApi.bulkEnable(ruleIds)
-          break
+      const result = await rulesApi.bulkDeploy(ruleIds, bulkOperationReason)
+      if (result.failed.length > 0) {
+        setError(`${result.success.length} deployed, ${result.failed.length} failed`)
       }
-
-      if (result && result.failed.length > 0) {
-        setError(`${result.success.length} succeeded, ${result.failed.length} failed`)
-      }
-
       clearSelection()
-      loadData() // Refresh the list
+      setBulkOperationReason('')
+      loadData()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulk operation failed')
+      setError(err instanceof Error ? err.message : 'Bulk deploy failed')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
+  // Execute bulk undeploy after change reason provided
+  const handleBulkUndeployConfirm = async () => {
+    if (selectedRules.size === 0 || !bulkOperationReason.trim()) return
+    setShowBulkUndeployReason(false)
+    setIsBulkOperating(true)
+    try {
+      const ruleIds = Array.from(selectedRules)
+      const result = await rulesApi.bulkUndeploy(ruleIds, bulkOperationReason)
+      if (result.failed.length > 0) {
+        setError(`${result.success.length} undeployed, ${result.failed.length} failed`)
+      }
+      clearSelection()
+      setBulkOperationReason('')
+      loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk undeploy failed')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
+  // Execute bulk unsnooze after change reason provided
+  const handleBulkUnsnoozeConfirm = async () => {
+    if (selectedRules.size === 0 || !bulkOperationReason.trim()) return
+    setShowBulkUnsnoozeReason(false)
+    setIsBulkOperating(true)
+    try {
+      const ruleIds = Array.from(selectedRules)
+      const result = await rulesApi.bulkEnable(ruleIds, bulkOperationReason)
+      if (result.failed.length > 0) {
+        setError(`${result.success.length} unsnoozed, ${result.failed.length} failed`)
+      }
+      clearSelection()
+      setBulkOperationReason('')
+      loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk unsnooze failed')
     } finally {
       setIsBulkOperating(false)
     }
@@ -354,20 +400,20 @@ export default function RulesPage() {
     setShowBulkSnooze(false)
     setPendingBulkSnoozeHours(hours)
     setPendingBulkSnoozeIndefinite(indefinite ?? false)
-    setBulkSnoozeReason('')
+    setBulkOperationReason('')
     setShowBulkSnoozeReason(true)
   }
 
   // Execute bulk snooze after change reason provided
   const handleBulkSnoozeConfirm = async () => {
-    if (selectedRules.size === 0 || !bulkSnoozeReason.trim()) return
+    if (selectedRules.size === 0 || !bulkOperationReason.trim()) return
 
     setShowBulkSnoozeReason(false)
     setIsBulkOperating(true)
     try {
       const ruleIds = Array.from(selectedRules)
       const results = await Promise.allSettled(
-        ruleIds.map((id) => rulesApi.snooze(id, bulkSnoozeReason, pendingBulkSnoozeHours, pendingBulkSnoozeIndefinite))
+        ruleIds.map((id) => rulesApi.snooze(id, bulkOperationReason, pendingBulkSnoozeHours, pendingBulkSnoozeIndefinite))
       )
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length
@@ -378,7 +424,7 @@ export default function RulesPage() {
       }
 
       clearSelection()
-      setBulkSnoozeReason('')
+      setBulkOperationReason('')
       loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bulk snooze failed')
@@ -388,18 +434,20 @@ export default function RulesPage() {
   }
 
   // Handler for confirmed bulk delete
-  const handleBulkDelete = async () => {
-    setShowBulkDeleteConfirm(false)
+  const handleBulkDeleteConfirm = async () => {
+    if (selectedRules.size === 0 || !bulkOperationReason.trim()) return
+    setShowBulkDeleteReason(false)
     setIsBulkOperating(true)
     try {
       const ruleIds = Array.from(selectedRules)
-      const result = await rulesApi.bulkDelete(ruleIds)
+      const result = await rulesApi.bulkDelete(ruleIds, bulkOperationReason)
 
       if (result.failed.length > 0) {
         setError(`${result.success.length} deleted, ${result.failed.length} failed`)
       }
 
       clearSelection()
+      setBulkOperationReason('')
       loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bulk delete failed')
@@ -945,15 +993,71 @@ export default function RulesPage() {
         </TooltipProvider>
       )}
 
-      {/* Bulk Delete Confirmation */}
-      <DeleteConfirmModal
-        open={showBulkDeleteConfirm}
-        onOpenChange={setShowBulkDeleteConfirm}
-        title="Delete Rules"
-        description={`Are you sure you want to delete ${selectedRules.size} rule${selectedRules.size > 1 ? 's' : ''}? This action cannot be undone.`}
-        onConfirm={handleBulkDelete}
-        isDeleting={isBulkOperating}
-      />
+      {/* Bulk Deploy Reason Dialog */}
+      <Dialog open={showBulkDeployReason} onOpenChange={setShowBulkDeployReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deploy Rules</DialogTitle>
+            <DialogDescription>
+              Please explain why you're deploying {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-deploy-reason">Reason *</Label>
+              <Textarea
+                id="bulk-deploy-reason"
+                placeholder="e.g., Deploying new detection rules for incident response..."
+                value={bulkOperationReason}
+                onChange={(e) => setBulkOperationReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowBulkDeployReason(false); setBulkOperationReason('') }}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkDeployConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
+              {isBulkOperating ? 'Deploying...' : 'Deploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Undeploy Reason Dialog */}
+      <Dialog open={showBulkUndeployReason} onOpenChange={setShowBulkUndeployReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Undeploy Rules</DialogTitle>
+            <DialogDescription>
+              Please explain why you're undeploying {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-undeploy-reason">Reason *</Label>
+              <Textarea
+                id="bulk-undeploy-reason"
+                placeholder="e.g., Rules causing too many false positives, needs tuning..."
+                value={bulkOperationReason}
+                onChange={(e) => setBulkOperationReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowBulkUndeployReason(false); setBulkOperationReason('') }}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkUndeployConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
+              {isBulkOperating ? 'Undeploying...' : 'Undeploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bulk Snooze Reason Dialog */}
       <Dialog open={showBulkSnoozeReason} onOpenChange={setShowBulkSnoozeReason}>
@@ -961,42 +1065,97 @@ export default function RulesPage() {
           <DialogHeader>
             <DialogTitle>Snooze Rules</DialogTitle>
             <DialogDescription>
-              Please explain why you're snoozing {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}. This helps maintain an audit trail.
+              Please explain why you're snoozing {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}.
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4 py-4">
             <div className="text-sm text-muted-foreground">
               Duration: {pendingBulkSnoozeIndefinite ? 'Indefinitely' : `${pendingBulkSnoozeHours} hour${pendingBulkSnoozeHours !== 1 ? 's' : ''}`}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="bulk-snooze-reason">Reason for Snooze *</Label>
+              <Label htmlFor="bulk-snooze-reason">Reason *</Label>
               <Textarea
                 id="bulk-snooze-reason"
                 placeholder="e.g., Investigating false positives, scheduled maintenance..."
-                value={bulkSnoozeReason}
-                onChange={(e) => setBulkSnoozeReason(e.target.value)}
+                value={bulkOperationReason}
+                onChange={(e) => setBulkOperationReason(e.target.value)}
                 rows={3}
                 className="resize-none"
               />
             </div>
           </div>
-
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowBulkSnoozeReason(false)
-                setBulkSnoozeReason('')
-              }}
-            >
+            <Button variant="outline" onClick={() => { setShowBulkSnoozeReason(false); setBulkOperationReason('') }}>
               Cancel
             </Button>
-            <Button
-              onClick={handleBulkSnoozeConfirm}
-              disabled={!bulkSnoozeReason.trim() || isBulkOperating}
-            >
+            <Button onClick={handleBulkSnoozeConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
               {isBulkOperating ? 'Snoozing...' : 'Snooze'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Unsnooze Reason Dialog */}
+      <Dialog open={showBulkUnsnoozeReason} onOpenChange={setShowBulkUnsnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsnooze Rules</DialogTitle>
+            <DialogDescription>
+              Please explain why you're unsnoozing {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-unsnooze-reason">Reason *</Label>
+              <Textarea
+                id="bulk-unsnooze-reason"
+                placeholder="e.g., Investigation complete, re-enabling detection..."
+                value={bulkOperationReason}
+                onChange={(e) => setBulkOperationReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowBulkUnsnoozeReason(false); setBulkOperationReason('') }}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkUnsnoozeConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
+              {isBulkOperating ? 'Unsnoozing...' : 'Unsnooze'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Reason Dialog */}
+      <Dialog open={showBulkDeleteReason} onOpenChange={setShowBulkDeleteReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Rules</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-delete-reason">Reason for Deletion *</Label>
+              <Textarea
+                id="bulk-delete-reason"
+                placeholder="e.g., Rules are obsolete, replaced by new detection logic..."
+                value={bulkOperationReason}
+                onChange={(e) => setBulkOperationReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowBulkDeleteReason(false); setBulkOperationReason('') }}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDeleteConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
+              {isBulkOperating ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

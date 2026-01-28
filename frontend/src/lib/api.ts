@@ -462,8 +462,8 @@ export const rulesApi = {
     api.post<Rule>('/rules', data),
   update: (id: string, data: RuleUpdate) =>
     api.patch<Rule>(`/rules/${id}`, data),
-  delete: (id: string) =>
-    api.delete(`/rules/${id}`),
+  delete: (id: string, changeReason?: string) =>
+    api.delete(`/rules/${id}`, changeReason ? { change_reason: changeReason } : undefined),
   validate: (yaml_content: string, index_pattern_id?: string) =>
     api.post<RuleValidateResponse>('/rules/validate', { yaml_content, index_pattern_id }),
   test: (yaml_content: string, sample_logs: Record<string, unknown>[]) =>
@@ -518,14 +518,14 @@ export const rulesApi = {
   unsnooze: (id: string, changeReason: string) =>
     api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`, { change_reason: changeReason }),
   // Bulk operations
-  bulkEnable: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/enable', { rule_ids: ruleIds }),
-  bulkDelete: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/delete', { rule_ids: ruleIds }),
-  bulkDeploy: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/deploy', { rule_ids: ruleIds }),
-  bulkUndeploy: (ruleIds: string[]) =>
-    api.post<BulkOperationResult>('/rules/bulk/undeploy', { rule_ids: ruleIds }),
+  bulkEnable: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/enable', { rule_ids: ruleIds, change_reason: changeReason }),
+  bulkDelete: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/delete', { rule_ids: ruleIds, change_reason: changeReason }),
+  bulkDeploy: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/deploy', { rule_ids: ruleIds, change_reason: changeReason }),
+  bulkUndeploy: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/undeploy', { rule_ids: ruleIds, change_reason: changeReason }),
   checkDeploymentEligibility: (ruleIds: string[]) =>
     api.post<DeploymentEligibilityResult>('/rules/check-deployment-eligibility', { rule_ids: ruleIds }),
   // Activity and comments
