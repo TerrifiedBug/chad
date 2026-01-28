@@ -518,8 +518,10 @@ export const rulesApi = {
   unsnooze: (id: string, changeReason: string) =>
     api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`, { change_reason: changeReason }),
   // Bulk operations
-  bulkEnable: (ruleIds: string[], changeReason: string) =>
-    api.post<BulkOperationResult>('/rules/bulk/enable', { rule_ids: ruleIds, change_reason: changeReason }),
+  bulkSnooze: (ruleIds: string[], changeReason: string, hours?: number, indefinite?: boolean) =>
+    api.post<BulkOperationResult>('/rules/bulk/snooze', { rule_ids: ruleIds, change_reason: changeReason, hours, indefinite: indefinite ?? false }),
+  bulkUnsnooze: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>('/rules/bulk/unsnooze', { rule_ids: ruleIds, change_reason: changeReason }),
   bulkDelete: (ruleIds: string[], changeReason: string) =>
     api.post<BulkOperationResult>('/rules/bulk/delete', { rule_ids: ruleIds, change_reason: changeReason }),
   bulkDeploy: (ruleIds: string[], changeReason: string) =>

@@ -380,7 +380,7 @@ export default function RulesPage() {
     setIsBulkOperating(true)
     try {
       const ruleIds = Array.from(selectedRules)
-      const result = await rulesApi.bulkEnable(ruleIds, bulkOperationReason)
+      const result = await rulesApi.bulkUnsnooze(ruleIds, bulkOperationReason)
       if (result.failed.length > 0) {
         setError(`${result.success.length} unsnoozed, ${result.failed.length} failed`)
       }
@@ -412,17 +412,10 @@ export default function RulesPage() {
     setIsBulkOperating(true)
     try {
       const ruleIds = Array.from(selectedRules)
-      const results = await Promise.allSettled(
-        ruleIds.map((id) => rulesApi.snooze(id, bulkOperationReason, pendingBulkSnoozeHours, pendingBulkSnoozeIndefinite))
-      )
-
-      const succeeded = results.filter((r) => r.status === 'fulfilled').length
-      const failed = results.filter((r) => r.status === 'rejected').length
-
-      if (failed > 0) {
-        setError(`${succeeded} snoozed, ${failed} failed`)
+      const result = await rulesApi.bulkSnooze(ruleIds, bulkOperationReason, pendingBulkSnoozeHours, pendingBulkSnoozeIndefinite)
+      if (result.failed.length > 0) {
+        setError(`${result.success.length} snoozed, ${result.failed.length} failed`)
       }
-
       clearSelection()
       setBulkOperationReason('')
       loadData()

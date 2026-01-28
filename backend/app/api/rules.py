@@ -62,6 +62,14 @@ class SnoozeRequest(BaseModel):
     change_reason: str = Field(..., min_length=1, max_length=10000)
 
 
+class BulkSnoozeRequest(BaseModel):
+    """Request body for bulk snooze operations."""
+    rule_ids: list[str]
+    hours: int | None = Field(default=None, ge=1, le=168)  # None allowed if indefinite
+    indefinite: bool = False
+    change_reason: str = Field(..., min_length=1, max_length=10000)
+
+
 class DeploymentEligibilityRequest(BaseModel):
     rule_ids: list[UUID]
 
@@ -1716,15 +1724,75 @@ async def get_rule_fields(
 # Bulk Operations Endpoints
 
 
-@router.post("/bulk/enable", response_model=BulkOperationResult)
-async def bulk_enable_rules(
+@router.post("/bulk/snooze", response_model=BulkOperationResult)
+async def bulk_snooze_rules(
+    data: BulkSnoozeRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Snooze multiple rules for the specified number of hours or indefinitely."""
+    if not data.indefinite and data.hours is None:
+        raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
+
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(Rule)
+                .where(Rule.id == rule_id)
+                .options(selectinload(Rule.index_pattern))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                # Cannot snooze undeployed rules
+                if rule.status == RuleStatus.UNDEPLOYED:
+                    failed.append({"id": rule_id, "error": "Cannot snooze an undeployed rule"})
+                    continue
+
+                if data.indefinite:
+                    rule.snooze_until = None
+                    rule.snooze_indefinite = True
+                else:
+                    rule.snooze_until = datetime.now(UTC) + timedelta(hours=data.hours)
+                    rule.snooze_indefinite = False
+                rule.status = RuleStatus.SNOOZED
+
+                # Remove from percolator when snoozing (prevents alert generation)
+                if rule.deployed_at is not None and os_client is not None:
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                    percolator.undeploy_rule(percolator_index, str(rule.id))
+
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.bulk_snooze", "rule", None,
+        {"count": len(success), "rule_ids": success, "hours": data.hours, "indefinite": data.indefinite, "change_reason": data.change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/bulk/unsnooze", response_model=BulkOperationResult)
+async def bulk_unsnooze_rules(
     data: BulkOperationRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
-    """Enable multiple rules (also clears any snooze)."""
+    """Unsnooze multiple rules (clears snooze and sets status to DEPLOYED)."""
     success = []
     failed = []
 
@@ -1755,7 +1823,7 @@ async def bulk_enable_rules(
 
     await db.commit()
     await audit_log(
-        db, current_user.id, "rule.bulk_enable", "rule", None,
+        db, current_user.id, "rule.bulk_unsnooze", "rule", None,
         {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
         ip_address=get_client_ip(request)
     )
