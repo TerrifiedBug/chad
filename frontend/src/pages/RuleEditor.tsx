@@ -220,6 +220,9 @@ export default function RuleEditorPage() {
   const [showUndeployReason, setShowUndeployReason] = useState(false)
   const [deployReason, setDeployReason] = useState('')
 
+  // Linked correlations state (shown in undeploy dialog)
+  const [linkedCorrelations, setLinkedCorrelations] = useState<{ id: string; name: string; deployed: boolean }[]>([])
+
   // Snooze/Unsnooze change reason dialog state
   const [showSnoozeReason, setShowSnoozeReason] = useState(false)
   const [showUnsnoozeReason, setShowUnsnoozeReason] = useState(false)
@@ -699,8 +702,18 @@ export default function RuleEditorPage() {
     }
   }
 
-  const handleUndeploy = () => {
+  const handleUndeploy = async () => {
     if (!id) return
+
+    // Check for linked correlation rules (get all to display in dialog)
+    try {
+      const response = await rulesApi.getLinkedCorrelations(id, false)
+      setLinkedCorrelations(response.correlations)
+    } catch {
+      // If check fails, proceed anyway (fail open for UX)
+      setLinkedCorrelations([])
+    }
+
     setDeployReason('')
     setShowUndeployReason(true)
   }
@@ -719,6 +732,7 @@ export default function RuleEditorPage() {
       setSnoozeUntil(null)
       setSnoozeIndefinite(false)
       setDeployReason('')
+      setLinkedCorrelations([])
     } catch (err) {
       setDeployError(err instanceof Error ? err.message : 'Undeploy failed')
     } finally {
@@ -1101,17 +1115,14 @@ export default function RuleEditorPage() {
                   </Button>
                 </>
               ) : status === 'undeployed' ? (
-                <>
-                  <span className="text-sm text-gray-500 font-medium">Undeployed</span>
-                  <Button
-                    variant="outline"
-                    disabled
-                    title="Deploy the rule first to enable snooze"
-                  >
-                    <Clock className="h-4 w-4 mr-1" />
-                    Snooze
-                  </Button>
-                </>
+                <Button
+                  variant="outline"
+                  disabled
+                  title="Deploy the rule first to enable snooze"
+                >
+                  <Clock className="h-4 w-4 mr-1" />
+                  Snooze
+                </Button>
               ) : (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1854,9 +1865,13 @@ export default function RuleEditorPage() {
                                 <div className="text-sm font-medium truncate">
                                   {correlation.name}
                                 </div>
-                                {!correlation.deployed_at && (
-                                  <span className="text-xs text-muted-foreground">(Not Deployed)</span>
-                                )}
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                  correlation.deployed_at
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-gray-500 text-white'
+                                }`}>
+                                  {correlation.deployed_at ? 'Deployed' : 'Undeployed'}
+                                </span>
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 <div>Correlates with:</div>
@@ -2359,6 +2374,30 @@ export default function RuleEditorPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* Show warning if there are deployed correlation rules */}
+            {linkedCorrelations.some(c => c.deployed) && (
+              <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
+                  Warning: This rule is linked to correlation rules
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
+                  Undeploying this rule will also undeploy any deployed correlation rules that depend on it.
+                </p>
+                <div className="space-y-1">
+                  {linkedCorrelations.map((corr) => (
+                    <div key={corr.id} className="flex items-center justify-between py-1 px-2 bg-white dark:bg-gray-900 rounded text-sm">
+                      <span>{corr.name}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        corr.deployed ? 'bg-green-600 text-white' : 'bg-gray-500 text-white'
+                      }`}>
+                        {corr.deployed ? 'Deployed' : 'Undeployed'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="undeploy-reason">Reason for Undeploy *</Label>
               <Textarea
@@ -2378,6 +2417,7 @@ export default function RuleEditorPage() {
               onClick={() => {
                 setShowUndeployReason(false)
                 setDeployReason('')
+                setLinkedCorrelations([])
               }}
             >
               Cancel

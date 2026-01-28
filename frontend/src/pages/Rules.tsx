@@ -101,6 +101,7 @@ export default function RulesPage() {
   const [showBulkDeleteReason, setShowBulkDeleteReason] = useState(false)
   const [pendingBulkSnoozeHours, setPendingBulkSnoozeHours] = useState<number | undefined>(undefined)
   const [pendingBulkSnoozeIndefinite, setPendingBulkSnoozeIndefinite] = useState(false)
+  const [bulkLinkedCorrelations, setBulkLinkedCorrelations] = useState<{ id: string; name: string; deployed: boolean }[]>([])
 
   // Deployment eligibility state
   const [deploymentEligibility, setDeploymentEligibility] = useState<DeploymentEligibilityResult | null>(null)
@@ -311,7 +312,7 @@ export default function RulesPage() {
   }
 
   // Bulk action handler - shows change reason dialog
-  const handleBulkAction = (action: 'deploy' | 'undeploy' | 'unsnooze' | 'delete') => {
+  const handleBulkAction = async (action: 'deploy' | 'undeploy' | 'unsnooze' | 'delete') => {
     if (selectedRules.size === 0) return
     setBulkOperationReason('')
 
@@ -320,6 +321,23 @@ export default function RulesPage() {
         setShowBulkDeployReason(true)
         break
       case 'undeploy':
+        // Fetch linked correlations for all selected rules
+        try {
+          const allCorrelations: { id: string; name: string; deployed: boolean }[] = []
+          const seenIds = new Set<string>()
+          for (const ruleId of selectedRules) {
+            const response = await rulesApi.getLinkedCorrelations(ruleId, false)
+            for (const corr of response.correlations) {
+              if (!seenIds.has(corr.id)) {
+                seenIds.add(corr.id)
+                allCorrelations.push(corr)
+              }
+            }
+          }
+          setBulkLinkedCorrelations(allCorrelations)
+        } catch {
+          setBulkLinkedCorrelations([])
+        }
         setShowBulkUndeployReason(true)
         break
       case 'unsnooze':
@@ -365,6 +383,7 @@ export default function RulesPage() {
       }
       clearSelection()
       setBulkOperationReason('')
+      setBulkLinkedCorrelations([])
       loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bulk undeploy failed')
@@ -1029,6 +1048,28 @@ export default function RulesPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* Show warning if there are deployed correlation rules */}
+            {bulkLinkedCorrelations.some(c => c.deployed) && (
+              <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
+                  Warning: Selected rules are linked to correlation rules
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
+                  Undeploying these rules will also undeploy any deployed correlation rules that depend on them.
+                </p>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {bulkLinkedCorrelations.map((corr) => (
+                    <div key={corr.id} className="flex items-center justify-between py-1 px-2 bg-white dark:bg-gray-900 rounded text-sm">
+                      <span>{corr.name}</span>
+                      <Badge variant={corr.deployed ? 'default' : 'secondary'} className="text-xs">
+                        {corr.deployed ? 'Deployed' : 'Undeployed'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="bulk-undeploy-reason">Reason *</Label>
               <Textarea
@@ -1042,7 +1083,7 @@ export default function RulesPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowBulkUndeployReason(false); setBulkOperationReason('') }}>
+            <Button variant="outline" onClick={() => { setShowBulkUndeployReason(false); setBulkOperationReason(''); setBulkLinkedCorrelations([]) }}>
               Cancel
             </Button>
             <Button onClick={handleBulkUndeployConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>

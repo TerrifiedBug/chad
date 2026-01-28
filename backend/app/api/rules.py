@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional, require_permission_dep
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
+from app.models.correlation_rule import CorrelationRule
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
@@ -1218,6 +1219,7 @@ async def bulk_undeploy_rules(
     """Undeploy multiple rules from OpenSearch."""
     success = []
     failed = []
+    all_undeployed_correlations = []
 
     for rule_id in data.rule_ids:
         try:
@@ -1244,6 +1246,13 @@ async def bulk_undeploy_rules(
                 rule.status = RuleStatus.UNDEPLOYED
                 rule.snooze_until = None
                 rule.snooze_indefinite = False
+
+                # Auto-undeploy any linked correlation rules
+                undeployed_correlations = await undeploy_linked_correlations(
+                    db, rule_id, current_user.id, data.change_reason, request
+                )
+                all_undeployed_correlations.extend(undeployed_correlations)
+
                 success.append(rule_id)
             else:
                 failed.append({"id": rule_id, "error": "Rule not found"})
@@ -1253,12 +1262,64 @@ async def bulk_undeploy_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_undeploy", "rule", None,
-        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason, "undeployed_correlations": all_undeployed_correlations},
         ip_address=get_client_ip(request)
     )
     await db.commit()
 
     return BulkOperationResult(success=success, failed=failed)
+
+
+async def undeploy_linked_correlations(
+    db: AsyncSession,
+    rule_id: UUID,
+    user_id: UUID,
+    change_reason: str,
+    request: Request,
+) -> list[str]:
+    """
+    Undeploy any deployed correlation rules that depend on this rule.
+
+    Returns list of undeployed correlation rule names.
+    """
+    from sqlalchemy import or_
+
+    # Find deployed correlation rules that reference this rule
+    result = await db.execute(
+        select(CorrelationRule).where(
+            or_(
+                CorrelationRule.rule_a_id == rule_id,
+                CorrelationRule.rule_b_id == rule_id,
+            ),
+            CorrelationRule.deployed_at.isnot(None),
+        )
+    )
+    correlations = result.scalars().all()
+
+    undeployed_names = []
+    for corr in correlations:
+        old_deployed_version = corr.deployed_version
+        corr.deployed_at = None
+        corr.deployed_version = None
+        undeployed_names.append(corr.name)
+
+        # Log audit event for each correlation
+        await audit_log(
+            db,
+            user_id,
+            "correlation_rule_undeployed",
+            "correlation_rule",
+            str(corr.id),
+            {
+                "name": corr.name,
+                "previous_deployed_version": old_deployed_version,
+                "change_reason": f"Auto-undeployed: underlying rule undeployed. {change_reason}",
+                "triggered_by_rule_id": str(rule_id),
+            },
+            ip_address=get_client_ip(request),
+        )
+
+    return undeployed_names
 
 
 @router.post("/{rule_id}/undeploy", response_model=RuleUndeployResponse)
@@ -1303,13 +1364,22 @@ async def undeploy_rule(
     rule.snooze_until = None
     rule.snooze_indefinite = False
 
+    # Auto-undeploy any linked correlation rules
+    undeployed_correlations = await undeploy_linked_correlations(
+        db, rule_id, current_user.id, change_reason, request
+    )
+
     await db.commit()
-    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title, "change_reason": change_reason}, ip_address=get_client_ip(request))
+    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title, "change_reason": change_reason, "undeployed_correlations": undeployed_correlations}, ip_address=get_client_ip(request))
     await db.commit()
+
+    message = "Rule undeployed successfully" if was_deleted else "Rule was not found in percolator index"
+    if undeployed_correlations:
+        message += f". Also undeployed {len(undeployed_correlations)} correlation rule(s): {', '.join(undeployed_correlations)}"
 
     return RuleUndeployResponse(
         success=True,
-        message="Rule undeployed successfully" if was_deleted else "Rule was not found in percolator index",
+        message=message,
     )
 
 
@@ -1890,6 +1960,62 @@ async def get_rule_fields(
         # If we can't get fields from OpenSearch, return empty list
         # This allows the UI to still function
         return RuleFieldsResponse(fields=[])
+
+
+class LinkedCorrelationRule(BaseModel):
+    """A correlation rule that references this rule."""
+
+    id: str
+    name: str
+    deployed: bool
+
+
+class LinkedCorrelationsResponse(BaseModel):
+    """Response with correlation rules that reference this rule."""
+
+    correlations: list[LinkedCorrelationRule]
+
+
+@router.get("/{rule_id}/linked-correlations", response_model=LinkedCorrelationsResponse)
+async def get_linked_correlations(
+    rule_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    deployed_only: bool = True,
+):
+    """
+    Get correlation rules that reference this rule.
+
+    Returns a list of correlation rules where this rule is either rule_a or rule_b.
+    By default, only returns deployed correlations (useful for undeploy warnings).
+    """
+    from sqlalchemy import or_
+
+    # Find correlation rules that reference this rule
+    query = select(CorrelationRule).where(
+        or_(
+            CorrelationRule.rule_a_id == rule_id,
+            CorrelationRule.rule_b_id == rule_id,
+        )
+    )
+
+    # Filter to only deployed correlations if requested
+    if deployed_only:
+        query = query.where(CorrelationRule.deployed_at.isnot(None))
+
+    result = await db.execute(query)
+    correlations = result.scalars().all()
+
+    return LinkedCorrelationsResponse(
+        correlations=[
+            LinkedCorrelationRule(
+                id=str(corr.id),
+                name=corr.name,
+                deployed=corr.deployed_at is not None,
+            )
+            for corr in correlations
+        ]
+    )
 
 
 @router.post("/bulk/delete", response_model=BulkOperationResult)

@@ -824,9 +824,9 @@ export default function Notifications() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="generic">Generic Webhook</SelectItem>
                   <SelectItem value="discord">Discord</SelectItem>
                   <SelectItem value="slack">Slack</SelectItem>
-                  <SelectItem value="generic">Generic (Raw JSON)</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
