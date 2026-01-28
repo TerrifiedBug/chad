@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   fieldMappingsApi,
   indexPatternsApi,
+  settingsApi,
   FieldMapping,
   FieldMappingCreate,
   IndexPattern,
@@ -37,6 +38,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { Loader2, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 
 export default function FieldMappingsPage() {
@@ -73,6 +80,7 @@ export default function FieldMappingsPage() {
   const [suggestions, setSuggestions] = useState<AISuggestion[]>([])
   const [isSuggesting, setIsSuggesting] = useState(false)
   const [savingSuggestions, setSavingSuggestions] = useState<Set<string>>(new Set())
+  const [aiConfigured, setAiConfigured] = useState(false)
 
   // Load functions - must be declared before useEffect that uses them
   const loadData = useCallback(async () => {
@@ -102,6 +110,13 @@ export default function FieldMappingsPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // Check if AI is configured
+  useEffect(() => {
+    settingsApi.getAIStatus()
+      .then(status => setAiConfigured(status.configured))
+      .catch(() => setAiConfigured(false))
+  }, [])
 
   // Set first index pattern as default tab when loaded
   useEffect(() => {
@@ -389,10 +404,27 @@ export default function FieldMappingsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={openSuggestModal}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Suggest with AI
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    variant="outline"
+                    onClick={openSuggestModal}
+                    disabled={!aiConfigured}
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Suggest with AI
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!aiConfigured && (
+                <TooltipContent>
+                  <p>Configure AI in Settings to enable suggestions</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
           <Button onClick={openAddModal}>
             <Plus className="mr-2 h-4 w-4" />
             Add Mapping

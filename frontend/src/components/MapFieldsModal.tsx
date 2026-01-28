@@ -13,8 +13,15 @@ import { Loader2, Sparkles, Check, X, Search } from 'lucide-react'
 import {
   fieldMappingsApi,
   indexPatternsApi,
+  settingsApi,
   AISuggestion,
 } from '@/lib/api'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 type MappingEntry = {
   sigmaField: string
@@ -45,6 +52,7 @@ export function MapFieldsModal({
   const [isLoading, setIsLoading] = useState(false)
   const [isSuggestingAI, setIsSuggestingAI] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [aiConfigured, setAiConfigured] = useState(false)
   const [error, setError] = useState('')
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -100,6 +108,13 @@ export function MapFieldsModal({
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Check if AI is configured
+  useEffect(() => {
+    settingsApi.getAIStatus()
+      .then(status => setAiConfigured(status.configured))
+      .catch(() => setAiConfigured(false))
   }, [])
 
   const handleFieldChange = (sigmaField: string, targetField: string, searchValue?: string) => {
@@ -335,15 +350,28 @@ export function MapFieldsModal({
             </div>
 
             {/* AI Suggest Button */}
-            <Button
-              variant="outline"
-              onClick={handleSuggestAI}
-              disabled={isSuggestingAI}
-              className="w-full"
-            >
-              <Sparkles className="h-4 w-4 mr-2" />
-              {isSuggestingAI ? 'Getting AI Suggestions...' : 'Suggest with AI'}
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="w-full">
+                    <Button
+                      variant="outline"
+                      onClick={handleSuggestAI}
+                      disabled={isSuggestingAI || !aiConfigured}
+                      className="w-full"
+                    >
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      {isSuggestingAI ? 'Getting AI Suggestions...' : 'Suggest with AI'}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!aiConfigured && (
+                  <TooltipContent>
+                    <p>Configure AI in Settings to enable suggestions</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           </div>
         )}
 

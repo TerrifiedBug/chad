@@ -221,6 +221,8 @@ export const settingsApi = {
     api.post<WebhookTestResponse>('/settings/webhooks/test', { url, provider }),
   testAI: () =>
     api.post<AITestResponse>('/settings/ai/test', {}),
+  getAIStatus: () =>
+    api.get<{ configured: boolean; provider: string | null }>('/settings/ai/status'),
   // Version endpoints
   getVersion: () =>
     api.get<VersionResponse>('/settings/version'),
