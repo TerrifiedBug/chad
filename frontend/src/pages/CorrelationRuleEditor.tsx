@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo, CorrelationRule } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import type { Severity } from '@/types/api'
@@ -182,11 +182,24 @@ function SearchableRuleSelector({
   )
 }
 
+interface CloneFromState {
+  name: string
+  rule_a_id: string
+  rule_b_id: string
+  entity_field: string
+  time_window_minutes: number
+  severity: Severity
+}
+
 export default function CorrelationRuleEditorPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { id } = useParams<{ id: string }>()
   const isEditing = Boolean(id)
   const { showToast } = useToast()
+
+  // Check for clone data from location state
+  const cloneFrom = (location.state as { cloneFrom?: CloneFromState } | null)?.cloneFrom
 
   const [rules, setRules] = useState<Rule[]>([])
   const [availableFields, setAvailableFields] = useState<string[]>([])
@@ -219,7 +232,7 @@ export default function CorrelationRuleEditorPage() {
     entity_field: string
     time_window_minutes: number
     severity: Severity
-  }>({
+  }>(cloneFrom ?? {
     name: '',
     rule_a_id: '',
     rule_b_id: '',
@@ -507,24 +520,21 @@ export default function CorrelationRuleEditorPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const handleClone = async () => {
-    if (!id) return
-    try {
-      const clonedRule = await correlationRulesApi.create({
-        name: `${formData.name} (Copy)`,
-        rule_a_id: formData.rule_a_id,
-        rule_b_id: formData.rule_b_id,
-        entity_field: formData.entity_field,
-        time_window_minutes: formData.time_window_minutes,
-        severity: formData.severity,
-        change_reason: `Cloned from ${formData.name}`,
-      })
-      showToast('Correlation rule cloned successfully', 'success')
-      navigate(`/correlation/${clonedRule.id}`)
-    } catch (err) {
-      console.error('Clone failed:', err)
-      showToast('Failed to clone correlation rule', 'error')
-    }
+  const handleClone = () => {
+    // Navigate to create form with pre-populated values
+    navigate('/correlation/new', {
+      state: {
+        cloneFrom: {
+          name: `${formData.name} (Copy)`,
+          rule_a_id: formData.rule_a_id,
+          rule_b_id: formData.rule_b_id,
+          entity_field: formData.entity_field,
+          time_window_minutes: formData.time_window_minutes,
+          severity: formData.severity,
+        }
+      }
+    })
+    showToast('Edit the cloned rule and save when ready', 'info')
   }
 
   const handleDelete = async () => {

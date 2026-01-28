@@ -234,16 +234,17 @@ async def create_correlation_rule(
     if not rule_b:
         raise HTTPException(404, f"Rule B (ID: {data.rule_b_id}) not found")
 
-    # Check for duplicate
+    # Check for duplicate (same rule pair AND same entity field)
     existing = await db.execute(
         select(CorrelationRule).where(
             (CorrelationRule.rule_a_id == UUID(data.rule_a_id))
             & (CorrelationRule.rule_b_id == UUID(data.rule_b_id))
+            & (CorrelationRule.entity_field == data.entity_field)
         )
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
-            400, "Correlation rule for this rule pair already exists"
+            400, "A correlation rule for this rule pair and entity field already exists"
         )
 
     # Create the correlation rule
