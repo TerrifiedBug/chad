@@ -312,9 +312,24 @@ class VirusTotalClient(TIClient):
         try:
             # Try to get user info as a simple API test
             response = await self._client.get("/users/me")
-            return response.status_code == 200
-        except Exception:
-            return False
+            if response.status_code == 200:
+                return True
+            elif response.status_code == 401:
+                raise Exception("Invalid API key - authentication failed")
+            elif response.status_code == 403:
+                raise Exception("API key lacks required permissions")
+            elif response.status_code == 429:
+                raise Exception("Rate limit exceeded - try again later")
+            else:
+                raise Exception(f"API returned status {response.status_code}")
+        except httpx.ConnectError:
+            raise Exception("Could not connect to VirusTotal API - check network")
+        except httpx.TimeoutException:
+            raise Exception("Connection timed out - VirusTotal may be slow or unreachable")
+        except Exception as e:
+            if "Invalid API key" in str(e) or "API returned" in str(e) or "Could not connect" in str(e) or "timed out" in str(e):
+                raise  # Re-raise our descriptive errors
+            raise Exception(f"Connection failed: {e}")
 
     async def close(self) -> None:
         """Close the HTTP client."""
