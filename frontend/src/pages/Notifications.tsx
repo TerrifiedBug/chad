@@ -121,6 +121,12 @@ const emptyFormData: WebhookFormData = {
   enabled: true,
 }
 
+const providerPlaceholders: Record<WebhookProvider, { name: string; url: string }> = {
+  generic: { name: 'Alert Webhook', url: 'https://your-endpoint.com/webhook' },
+  discord: { name: 'Discord Alerts', url: 'https://discord.com/api/webhooks/...' },
+  slack: { name: 'Slack Alerts', url: 'https://hooks.slack.com/services/...' },
+}
+
 export default function Notifications() {
   const { showToast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
@@ -788,7 +794,7 @@ export default function Notifications() {
                 id="webhook-name"
                 value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Discord Alerts"
+                placeholder={providerPlaceholders[formData.provider]?.name || 'Alert Webhook'}
               />
             </div>
             <div className="space-y-2">
@@ -816,7 +822,7 @@ export default function Notifications() {
                 id="webhook-url"
                 value={formData.url}
                 onChange={e => setFormData({ ...formData, url: e.target.value })}
-                placeholder="https://discord.com/api/webhooks/..."
+                placeholder={providerPlaceholders[formData.provider]?.url || 'https://your-endpoint.com/webhook'}
               />
             </div>
             <div className="space-y-2">
