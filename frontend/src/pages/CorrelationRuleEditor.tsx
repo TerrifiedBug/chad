@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo } from '@/lib/api'
+import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo, CorrelationRule } from '@/lib/api'
+import { toast } from 'sonner'
 import type { Severity } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +34,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw } from 'lucide-react'
 
 const TIME_WINDOW_OPTIONS = [
@@ -54,6 +61,29 @@ const SEVERITY_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'informational', label: 'Informational' },
 ]
+
+// Status badge helper
+function RuleStatusBadge({ status }: { status: string }) {
+  if (status === 'deployed') {
+    return (
+      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-600 text-white">
+        Deployed
+      </span>
+    )
+  }
+  if (status === 'snoozed') {
+    return (
+      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-500 text-white">
+        Snoozed
+      </span>
+    )
+  }
+  return (
+    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-500 text-white">
+      Undeployed
+    </span>
+  )
+}
 
 // Searchable Rule Selector Component
 function SearchableRuleSelector({
@@ -92,11 +122,20 @@ function SearchableRuleSelector({
           disabled={disabled}
           className="w-full justify-between"
         >
-          {selectedRule ? selectedRule.title : placeholder}
+          <div className="flex items-center gap-2 truncate">
+            {selectedRule ? (
+              <>
+                <span className="truncate">{selectedRule.title}</span>
+                <RuleStatusBadge status={selectedRule.status} />
+              </>
+            ) : (
+              placeholder
+            )}
+          </div>
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[300px] p-0">
+      <PopoverContent className="w-[400px] p-0">
         <div className="p-2">
           <Input
             placeholder="Search rules..."
@@ -123,9 +162,10 @@ function SearchableRuleSelector({
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
               >
                 <Check
-                  className={`h-4 w-4 ${value === rule.id ? 'opacity-100' : 'opacity-0'}`}
+                  className={`h-4 w-4 shrink-0 ${value === rule.id ? 'opacity-100' : 'opacity-0'}`}
                 />
-                <span className="flex-1 text-left">{rule.title}</span>
+                <span className="flex-1 text-left truncate">{rule.title}</span>
+                <RuleStatusBadge status={rule.status} />
               </button>
             ))
           )}
@@ -149,8 +189,7 @@ export default function CorrelationRuleEditorPage() {
   const [error, setError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [isActivityOpen, setIsActivityOpen] = useState(false)
-  const [deployedAt, setDeployedAt] = useState<string | null>(null)
-  const [deployedVersion, setDeployedVersion] = useState<number | null>(null)
+  const [correlationRule, setCorrelationRule] = useState<CorrelationRule | null>(null)
   const [ruleAFieldMappings, setRuleAFieldMappings] = useState<FieldMappingInfo[]>([])
   const [ruleBFieldMappings, setRuleBFieldMappings] = useState<FieldMappingInfo[]>([])
   const [isLoadingEditData, setIsLoadingEditData] = useState(false)
@@ -193,6 +232,25 @@ export default function CorrelationRuleEditorPage() {
       formData.severity !== originalData.severity
     )
   }, [formData, originalData])
+
+  // Check if linked rules are deployed
+  const linkedRulesDeploymentStatus = (() => {
+    const ruleA = rules.find(r => r.id === formData.rule_a_id)
+    const ruleB = rules.find(r => r.id === formData.rule_b_id)
+    const undeployedRules: string[] = []
+
+    if (ruleA && ruleA.status !== 'deployed') {
+      undeployedRules.push(ruleA.title)
+    }
+    if (ruleB && ruleB.status !== 'deployed') {
+      undeployedRules.push(ruleB.title)
+    }
+
+    return {
+      allDeployed: undeployedRules.length === 0,
+      undeployedNames: undeployedRules,
+    }
+  })()
 
   // Load functions
   async function loadRuleFields(ruleId: string): Promise<{ fields: string[], mappings: FieldMappingInfo[] }> {
@@ -249,7 +307,9 @@ export default function CorrelationRuleEditorPage() {
   const loadRules = async () => {
     setIsLoading(true)
     try {
-      const response = await rulesApi.list({ status: 'deployed' })
+      // Load all rules (not just deployed) so we can show status badges
+      // and properly validate that linked rules are deployed before deployment
+      const response = await rulesApi.list({})
       setRules(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rules')
@@ -273,8 +333,7 @@ export default function CorrelationRuleEditorPage() {
       }
       setFormData(data)
       setOriginalData(data)
-      setDeployedAt(rule.deployed_at || null)
-      setDeployedVersion(rule.deployed_version || null)
+      setCorrelationRule(rule)
       await loadCommonFields(rule.entity_field, rule.rule_a_id, rule.rule_b_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load correlation rule')
@@ -373,8 +432,7 @@ export default function CorrelationRuleEditorPage() {
 
     try {
       const result = await correlationRulesApi.deploy(id, deployReason)
-      setDeployedAt(result.deployed_at || null)
-      setDeployedVersion(result.deployed_version || null)
+      setCorrelationRule(result)
       setDeployReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Deploy failed')
@@ -396,14 +454,45 @@ export default function CorrelationRuleEditorPage() {
     setError('')
 
     try {
-      await correlationRulesApi.undeploy(id, deployReason)
-      setDeployedAt(null)
-      setDeployedVersion(null)
+      const result = await correlationRulesApi.undeploy(id, deployReason)
+      setCorrelationRule(result)
       setDeployReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Undeploy failed')
     } finally {
       setIsDeploying(false)
+    }
+  }
+
+  // Restore handler for version rollback
+  const handleRestore = async (versionNumber: number, reason: string) => {
+    if (!id) return
+    try {
+      await correlationRulesApi.rollback(id, versionNumber, reason)
+      // Reload the rule to get updated data
+      const updated = await correlationRulesApi.get(id)
+      setCorrelationRule(updated)
+      // Update form data
+      setFormData({
+        name: updated.name,
+        rule_a_id: updated.rule_a_id,
+        rule_b_id: updated.rule_b_id,
+        entity_field: updated.entity_field,
+        time_window_minutes: updated.time_window_minutes,
+        severity: updated.severity,
+      })
+      setOriginalData({
+        name: updated.name,
+        rule_a_id: updated.rule_a_id,
+        rule_b_id: updated.rule_b_id,
+        entity_field: updated.entity_field,
+        time_window_minutes: updated.time_window_minutes,
+        severity: updated.severity,
+      })
+      toast.success(`Restored to version ${versionNumber}`)
+    } catch (err) {
+      toast.error('Failed to restore version')
+      throw err
     }
   }
 
@@ -439,15 +528,22 @@ export default function CorrelationRuleEditorPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">
-              {isEditing ? 'Edit Correlation Rule' : 'Create Correlation Rule'}
-            </h1>
-            {isEditing && deployedAt && (
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">
+                {isEditing ? 'Edit Correlation Rule' : 'Create Correlation Rule'}
+              </h1>
+              {correlationRule?.deployed_at && correlationRule?.needs_redeploy && (
+                <span className="px-2 py-0.5 rounded text-xs font-medium border border-yellow-500 text-yellow-600">
+                  Needs Redeploy
+                </span>
+              )}
+            </div>
+            {isEditing && correlationRule?.deployed_at && (
               <p className="text-xs text-green-600">
-                Deployed v{deployedVersion}
+                Deployed v{correlationRule.deployed_version}
               </p>
             )}
-            {isEditing && !deployedAt && (
+            {isEditing && !correlationRule?.deployed_at && (
               <p className="text-xs text-muted-foreground">Not deployed</p>
             )}
           </div>
@@ -467,7 +563,7 @@ export default function CorrelationRuleEditorPage() {
             </Button>
           )}
           {isEditing && (
-            deployedAt ? (
+            correlationRule?.deployed_at ? (
               <Button
                 variant="ghost"
                 onClick={handleUndeploy}
@@ -477,14 +573,32 @@ export default function CorrelationRuleEditorPage() {
                 {isDeploying ? 'Undeploying...' : 'Undeploy'}
               </Button>
             ) : (
-              <Button
-                variant="outline"
-                onClick={handleDeploy}
-                disabled={isDeploying || !isFormValid}
-              >
-                <Rocket className="h-4 w-4 mr-2" />
-                {isDeploying ? 'Deploying...' : 'Deploy'}
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        variant="outline"
+                        onClick={handleDeploy}
+                        disabled={isDeploying || !isFormValid || !linkedRulesDeploymentStatus.allDeployed}
+                      >
+                        <Rocket className="h-4 w-4 mr-2" />
+                        {isDeploying ? 'Deploying...' : 'Deploy'}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {!linkedRulesDeploymentStatus.allDeployed && (
+                    <TooltipContent>
+                      <p>Linked rules must be deployed first:</p>
+                      <ul className="list-disc ml-4">
+                        {linkedRulesDeploymentStatus.undeployedNames.map(name => (
+                          <li key={name}>{name}</li>
+                        ))}
+                      </ul>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
             )
           )}
           <Button
@@ -527,6 +641,7 @@ export default function CorrelationRuleEditorPage() {
                 onChange={(value) => setFormData({ ...formData, rule_a_id: value })}
                 disabled={isSaving}
                 placeholder="Select first rule"
+                excludeRuleId={formData.rule_b_id}
               />
             </div>
 
@@ -634,6 +749,16 @@ export default function CorrelationRuleEditorPage() {
           correlationId={id}
           isOpen={isActivityOpen}
           onClose={() => setIsActivityOpen(false)}
+          currentVersion={correlationRule?.current_version || 1}
+          currentData={{
+            name: formData.name,
+            rule_a_id: formData.rule_a_id,
+            rule_b_id: formData.rule_b_id,
+            entity_field: formData.entity_field,
+            time_window_minutes: formData.time_window_minutes,
+            severity: formData.severity,
+          }}
+          onRestore={handleRestore}
         />
       )}
 
