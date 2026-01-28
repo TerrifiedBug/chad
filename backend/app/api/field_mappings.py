@@ -114,7 +114,8 @@ async def create_field_mapping(
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(
-                f"Failed to auto-correct/validate field mapping: {e}. Using user-provided value."
+                "Failed to auto-correct/validate field mapping: %s. Using user-provided value.",
+                e
             )
 
     try:
@@ -249,7 +250,8 @@ async def update_field_mapping(
                 if auto_corrected:
                     import logging
                     logging.getLogger(__name__).info(
-                        f"Auto-corrected field mapping '{mapping.sigma_field}' -> '{data.target_field}' to '{target_field}'"
+                        "Auto-corrected field mapping %r -> %r to %r",
+                        mapping.sigma_field, data.target_field, target_field
                     )
 
                 # NEW: Validate new target field if changed
@@ -281,7 +283,8 @@ async def update_field_mapping(
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(
-                f"Failed to auto-correct/validate field mapping: {e}. Using user-provided value."
+                "Failed to auto-correct/validate field mapping: %s. Using user-provided value.",
+                e
             )
 
     # Increment version if target_field changed
@@ -420,7 +423,8 @@ async def suggest_field_mappings(
             if was_corrected:
                 import logging
                 logging.getLogger(__name__).info(
-                    f"Auto-corrected AI suggestion '{s.sigma_field}' -> '{s.target_field}' to '{corrected_field}'"
+                    "Auto-corrected AI suggestion %r -> %r to %r",
+                    s.sigma_field, s.target_field, corrected_field
                 )
                 # Update reason to explain the correction
                 reason = f"{s.reason} (Auto-corrected to use .keyword for exact matching)"
