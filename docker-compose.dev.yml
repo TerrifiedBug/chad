@@ -35,8 +35,8 @@ services:
       # Frontend URL for SSO redirects (local dev needs explicit URL due to different ports)
       - FRONTEND_URL=http://localhost:3000
       - APP_URL=http://localhost:3000
-      # Logging (development uses INFO for verbose logs)
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Logging (development uses info for verbose logs)
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
       - "8000:8000"
     depends_on:

@@ -25,4 +25,4 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Default command (overridden in docker-compose for dev)
 # Use LOG_LEVEL environment variable to control logging verbosity
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level $LOG_LEVEL"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-warning}"]
