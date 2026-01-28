@@ -1,3 +1,4 @@
+from app.models.alert import Alert
 from app.models.api_key import APIKey
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.audit_log import AuditLog
@@ -24,6 +25,7 @@ from app.models.two_factor_token import TwoFactorToken
 from app.models.user import User, UserRole
 
 __all__ = [
+    "Alert",
     "AlertNotificationSetting",
     "APIKey",
     "AttackTechnique",
