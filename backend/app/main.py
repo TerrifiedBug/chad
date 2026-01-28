@@ -258,7 +258,7 @@ async def add_security_headers(request: Request, call_next):
 # Request validation middleware
 app.add_middleware(
     RequestValidationMiddleware,
-    max_request_size=10 * 1024 * 1024,  # 10 MB
+    max_request_size=50 * 1024 * 1024,  # 50 MB - for high-volume, tune shipper batch settings instead
     enforce_content_type=True,
 )
 
