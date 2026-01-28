@@ -340,8 +340,10 @@ class SchedulerService:
         logger.debug("Running scheduled health check")
         session = await self._get_session()
         try:
-            # Check index health
+            # Check index health (updates suppression state in DB)
             issues = await check_index_health(session)
+            # Commit suppression state changes so escalation persists between runs
+            await session.commit()
             if issues:
                 logger.info(f"Health check found {len(issues)} issues")
 
@@ -375,6 +377,7 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Scheduled health check failed: {e}")
+            await session.rollback()
         finally:
             await session.close()
 
