@@ -83,6 +83,29 @@ export default function IndexPatternsPage() {
     latencyMs: null as number | null,
   })
 
+  // Health monitoring overrides state
+  const [enableHealthAlerting, setEnableHealthAlerting] = useState(false)
+  const [healthOverrides, setHealthOverrides] = useState({
+    detection_latency_warning_seconds: '',
+    detection_latency_critical_seconds: '',
+    opensearch_latency_warning_seconds: '',
+    opensearch_latency_critical_seconds: '',
+    error_rate_percent: '',
+    no_data_minutes: '',
+    queue_warning: '',
+    queue_critical: '',
+  })
+  const [globalDefaults, setGlobalDefaults] = useState({
+    detection_latency_warning: 2,
+    detection_latency_critical: 10,
+    opensearch_latency_warning: 1,
+    opensearch_latency_critical: 5,
+    error_rate_percent: 5,
+    no_data_minutes: 15,
+    queue_warning: 10000,
+    queue_critical: 100000,
+  })
+
   // GeoIP enrichment state
   const [geoipFields, setGeoipFields] = useState<string[]>([])
 
@@ -152,7 +175,28 @@ export default function IndexPatternsPage() {
   useEffect(() => {
     loadPatterns()
     loadTiSources()
+    loadGlobalDefaults()
   }, [loadPatterns, loadTiSources])
+
+  // Load global health defaults
+  const loadGlobalDefaults = async () => {
+    try {
+      const settings = await healthApi.getSettings()
+      setGlobalDefaults({
+        detection_latency_warning: settings.detection_latency_warning_ms / 1000, // Convert ms to seconds
+        detection_latency_critical: settings.detection_latency_critical_ms / 1000,
+        opensearch_latency_warning: settings.opensearch_latency_warning_ms / 1000,
+        opensearch_latency_critical: settings.opensearch_latency_critical_ms / 1000,
+        error_rate_percent: settings.error_rate_percent,
+        no_data_minutes: settings.no_data_minutes,
+        queue_warning: settings.queue_warning,
+        queue_critical: settings.queue_critical,
+      })
+    } catch (err) {
+      console.error('Failed to load global health defaults:', err)
+      // Continue with hardcoded defaults
+    }
+  }
 
   const loadHealthData = async () => {
     try {
@@ -181,6 +225,17 @@ export default function IndexPatternsPage() {
       errorRatePercent: null,
       latencyMs: null,
     })
+    setEnableHealthAlerting(false)
+    setHealthOverrides({
+      detection_latency_warning_seconds: '',
+      detection_latency_critical_seconds: '',
+      opensearch_latency_warning_seconds: '',
+      opensearch_latency_critical_seconds: '',
+      error_rate_percent: '',
+      no_data_minutes: '',
+      queue_warning: '',
+      queue_critical: '',
+    })
     setGeoipFields([])
     setTiConfig({})
     setTiFieldInputs({})
@@ -206,6 +261,18 @@ export default function IndexPatternsPage() {
       noDataMinutes: pattern.health_no_data_minutes,
       errorRatePercent: pattern.health_error_rate_percent,
       latencyMs: pattern.health_latency_ms,
+    })
+    setEnableHealthAlerting(pattern.health_alerting_enabled || false)
+    // TODO: Load health_overrides from pattern when backend integration is ready
+    setHealthOverrides({
+      detection_latency_warning_seconds: '',
+      detection_latency_critical_seconds: '',
+      opensearch_latency_warning_seconds: '',
+      opensearch_latency_critical_seconds: '',
+      error_rate_percent: '',
+      no_data_minutes: '',
+      queue_warning: '',
+      queue_critical: '',
     })
     setGeoipFields(pattern.geoip_fields || [])
     // Load TI config from pattern
@@ -769,72 +836,140 @@ export default function IndexPatternsPage() {
                     </div>
                     <Switch
                       id="health-enabled"
-                      checked={healthAlerting.enabled}
-                      onCheckedChange={(checked) =>
-                        setHealthAlerting({ ...healthAlerting, enabled: checked })
-                      }
+                      checked={enableHealthAlerting}
+                      onCheckedChange={setEnableHealthAlerting}
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <p className="text-xs text-muted-foreground">
-                      Leave empty to use global defaults from the Health page.
-                    </p>
+                  {enableHealthAlerting && (
+                    <div className="space-y-6 pt-4 border-t">
+                      <p className="text-xs text-muted-foreground">
+                        Leave empty to use global defaults from the Health page.
+                      </p>
 
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <Label htmlFor="no-data-minutes" className="text-xs">No Data (min)</Label>
-                        <Input
-                          id="no-data-minutes"
-                          type="number"
-                          min="1"
-                          placeholder="15"
-                          value={healthAlerting.noDataMinutes ?? ''}
-                          onChange={(e) =>
-                            setHealthAlerting({
-                              ...healthAlerting,
-                              noDataMinutes: e.target.value ? parseInt(e.target.value) : null,
-                            })
-                          }
-                        />
+                      {/* Detection Latency */}
+                      <div>
+                        <h4 className="text-sm font-medium mb-3">Detection Latency</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="detection-warning">Warning (seconds)</Label>
+                            <Input
+                              id="detection-warning"
+                              type="number"
+                              min="1"
+                              step="0.1"
+                              placeholder={`Global: ${globalDefaults.detection_latency_warning}`}
+                              value={healthOverrides.detection_latency_warning_seconds}
+                              onChange={(e) => setHealthOverrides({...healthOverrides, detection_latency_warning_seconds: e.target.value})}
+                            />
+                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.detection_latency_warning} seconds</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="detection-critical">Critical (seconds)</Label>
+                            <Input
+                              id="detection-critical"
+                              type="number"
+                              min="1"
+                              step="0.1"
+                              placeholder={`Global: ${globalDefaults.detection_latency_critical}`}
+                              value={healthOverrides.detection_latency_critical_seconds}
+                              onChange={(e) => setHealthOverrides({...healthOverrides, detection_latency_critical_seconds: e.target.value})}
+                            />
+                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.detection_latency_critical} seconds</p>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="space-y-1">
-                        <Label htmlFor="error-rate" className="text-xs">Error Rate (%)</Label>
-                        <Input
-                          id="error-rate"
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          placeholder="5.0"
-                          value={healthAlerting.errorRatePercent ?? ''}
-                          onChange={(e) =>
-                            setHealthAlerting({
-                              ...healthAlerting,
-                              errorRatePercent: e.target.value ? parseFloat(e.target.value) : null,
-                            })
-                          }
-                        />
+                      {/* OpenSearch Query Latency */}
+                      <div>
+                        <h4 className="text-sm font-medium mb-3">OpenSearch Query Latency</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="opensearch-warning">Warning (seconds)</Label>
+                            <Input
+                              id="opensearch-warning"
+                              type="number"
+                              min="1"
+                              step="0.1"
+                              placeholder={`Global: ${globalDefaults.opensearch_latency_warning}`}
+                              value={healthOverrides.opensearch_latency_warning_seconds}
+                              onChange={(e) => setHealthOverrides({...healthOverrides, opensearch_latency_warning_seconds: e.target.value})}
+                            />
+                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.opensearch_latency_warning} seconds</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="opensearch-critical">Critical (seconds)</Label>
+                            <Input
+                              id="opensearch-critical"
+                              type="number"
+                              min="1"
+                              step="0.1"
+                              placeholder={`Global: ${globalDefaults.opensearch_latency_critical}`}
+                              value={healthOverrides.opensearch_latency_critical_seconds}
+                              onChange={(e) => setHealthOverrides({...healthOverrides, opensearch_latency_critical_seconds: e.target.value})}
+                            />
+                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.opensearch_latency_critical} seconds</p>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="space-y-1">
-                        <Label htmlFor="latency-ms" className="text-xs">Latency (ms)</Label>
-                        <Input
-                          id="latency-ms"
-                          type="number"
-                          min="1"
-                          placeholder="1000"
-                          value={healthAlerting.latencyMs ?? ''}
-                          onChange={(e) =>
-                            setHealthAlerting({
-                              ...healthAlerting,
-                              latencyMs: e.target.value ? parseInt(e.target.value) : null,
-                            })
-                          }
-                        />
+                      {/* Other Thresholds */}
+                      <div>
+                        <h4 className="text-sm font-medium mb-3">Other Thresholds</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="error-rate">Error Rate (%)</Label>
+                            <Input
+                              id="error-rate"
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              placeholder={`Global: ${globalDefaults.error_rate_percent}`}
+                              value={healthOverrides.error_rate_percent}
+                              onChange={(e) => setHealthOverrides({...healthOverrides, error_rate_percent: e.target.value})}
+                            />
+                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.error_rate_percent}%</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="no-data">No Data (minutes)</Label>
+                            <Input
+                              id="no-data"
+                              type="number"
+                              min="1"
+                              placeholder={`Global: ${globalDefaults.no_data_minutes}`}
+                              value={healthOverrides.no_data_minutes}
+                              onChange={(e) => setHealthOverrides({...healthOverrides, no_data_minutes: e.target.value})}
+                            />
+                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.no_data_minutes} min</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="queue-warning">Queue Warning</Label>
+                            <Input
+                              id="queue-warning"
+                              type="number"
+                              min="1"
+                              placeholder={`Global: ${globalDefaults.queue_warning}`}
+                              value={healthOverrides.queue_warning}
+                              onChange={(e) => setHealthOverrides({...healthOverrides, queue_warning: e.target.value})}
+                            />
+                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.queue_warning}</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="queue-critical">Queue Critical</Label>
+                            <Input
+                              id="queue-critical"
+                              type="number"
+                              min="1"
+                              placeholder={`Global: ${globalDefaults.queue_critical}`}
+                              value={healthOverrides.queue_critical}
+                              onChange={(e) => setHealthOverrides({...healthOverrides, queue_critical: e.target.value})}
+                            />
+                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.queue_critical}</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
