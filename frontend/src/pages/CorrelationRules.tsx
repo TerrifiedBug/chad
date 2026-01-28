@@ -17,8 +17,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { ChevronLeft, Plus, MoreVertical, Power, PowerOff, Trash2, Edit } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { ChevronLeft, Plus, MoreVertical, Power, PowerOff, Trash2, Edit, Rocket, CircleOff } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
@@ -44,6 +55,12 @@ export default function CorrelationRulesPage() {
   const [error, setError] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
 
+  // Deploy/Undeploy state
+  const [showDeployDialog, setShowDeployDialog] = useState<string | null>(null)
+  const [showUndeployDialog, setShowUndeployDialog] = useState<string | null>(null)
+  const [deployReason, setDeployReason] = useState('')
+  const [isDeploying, setIsDeploying] = useState(false)
+
   useEffect(() => {
     loadRules()
   }, [])
@@ -63,10 +80,44 @@ export default function CorrelationRulesPage() {
 
   const handleToggleEnabled = async (rule: CorrelationRule) => {
     try {
-      await correlationRulesApi.update(rule.id, { is_enabled: !rule.is_enabled })
+      const action = rule.is_enabled ? 'Disabled' : 'Enabled'
+      await correlationRulesApi.update(rule.id, {
+        is_enabled: !rule.is_enabled,
+        change_reason: `${action} correlation rule from list view`
+      })
       await loadRules()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update rule')
+    }
+  }
+
+  const handleDeploy = async () => {
+    if (!showDeployDialog || !deployReason.trim()) return
+    setIsDeploying(true)
+    try {
+      await correlationRulesApi.deploy(showDeployDialog, deployReason)
+      await loadRules()
+      setShowDeployDialog(null)
+      setDeployReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to deploy rule')
+    } finally {
+      setIsDeploying(false)
+    }
+  }
+
+  const handleUndeploy = async () => {
+    if (!showUndeployDialog || !deployReason.trim()) return
+    setIsDeploying(true)
+    try {
+      await correlationRulesApi.undeploy(showUndeployDialog, deployReason)
+      await loadRules()
+      setShowUndeployDialog(null)
+      setDeployReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to undeploy rule')
+    } finally {
+      setIsDeploying(false)
     }
   }
 
@@ -130,6 +181,7 @@ export default function CorrelationRulesPage() {
                   <TableHead>Entity Field</TableHead>
                   <TableHead>Time Window</TableHead>
                   <TableHead>Severity</TableHead>
+                  <TableHead>Deploy Status</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Updated</TableHead>
                   <TableHead>Updated By</TableHead>
@@ -153,6 +205,21 @@ export default function CorrelationRulesPage() {
                       <Badge className={severityColors[rule.severity]}>
                         {rule.severity}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {rule.deployed_at ? (
+                        rule.needs_redeploy ? (
+                          <Badge variant="outline" className="border-yellow-500 text-yellow-600">
+                            Needs Redeploy
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-green-500 text-green-600">
+                            Deployed
+                          </Badge>
+                        )
+                      ) : (
+                        <Badge variant="secondary">Not Deployed</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={rule.is_enabled ? 'default' : 'secondary'}>
@@ -192,6 +259,25 @@ export default function CorrelationRulesPage() {
                               </>
                             )}
                           </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {rule.deployed_at ? (
+                            <DropdownMenuItem onClick={() => setShowUndeployDialog(rule.id)}>
+                              <CircleOff className="h-4 w-4 mr-2" />
+                              Undeploy
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onClick={() => setShowDeployDialog(rule.id)}>
+                              <Rocket className="h-4 w-4 mr-2" />
+                              Deploy
+                            </DropdownMenuItem>
+                          )}
+                          {rule.needs_redeploy && (
+                            <DropdownMenuItem onClick={() => setShowDeployDialog(rule.id)}>
+                              <Rocket className="h-4 w-4 mr-2" />
+                              Redeploy
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => setShowDeleteConfirm(rule.id)}
                             className="text-destructive focus:text-destructive"
@@ -217,6 +303,103 @@ export default function CorrelationRulesPage() {
         title="Delete Correlation Rule"
         description="Are you sure you want to delete this correlation rule? This action cannot be undone."
       />
+
+      {/* Deploy Reason Dialog */}
+      <Dialog open={showDeployDialog !== null} onOpenChange={(open) => {
+        if (!open) {
+          setShowDeployDialog(null)
+          setDeployReason('')
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deploy Correlation Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're deploying this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="deploy-reason">Reason for Deploy *</Label>
+              <Textarea
+                id="deploy-reason"
+                placeholder="e.g., Ready for production, completed testing..."
+                value={deployReason}
+                onChange={(e) => setDeployReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeployDialog(null)
+                setDeployReason('')
+              }}
+              disabled={isDeploying}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDeploy}
+              disabled={!deployReason.trim() || isDeploying}
+            >
+              {isDeploying ? 'Deploying...' : 'Deploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Undeploy Reason Dialog */}
+      <Dialog open={showUndeployDialog !== null} onOpenChange={(open) => {
+        if (!open) {
+          setShowUndeployDialog(null)
+          setDeployReason('')
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Undeploy Correlation Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're undeploying this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="undeploy-reason">Reason for Undeploy *</Label>
+              <Textarea
+                id="undeploy-reason"
+                placeholder="e.g., False positives, needs revision, no longer needed..."
+                value={deployReason}
+                onChange={(e) => setDeployReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUndeployDialog(null)
+                setDeployReason('')
+              }}
+              disabled={isDeploying}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleUndeploy}
+              disabled={!deployReason.trim() || isDeploying}
+            >
+              {isDeploying ? 'Undeploying...' : 'Undeploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -5,6 +5,7 @@ import type { Severity } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { CorrelationActivityPanel } from '@/components/CorrelationActivityPanel'
 import {
   Select,
@@ -149,6 +150,7 @@ export default function CorrelationRuleEditorPage() {
     time_window_minutes: number
     severity: Severity
     is_enabled: boolean
+    change_reason: string
   }>({
     name: '',
     rule_a_id: '',
@@ -157,6 +159,7 @@ export default function CorrelationRuleEditorPage() {
     time_window_minutes: 5,
     severity: 'high',
     is_enabled: true,
+    change_reason: '',
   })
 
   // Load functions - must be declared before useEffect that uses them
@@ -245,6 +248,7 @@ export default function CorrelationRuleEditorPage() {
         time_window_minutes: rule.time_window_minutes,
         severity: rule.severity,
         is_enabled: rule.is_enabled,
+        change_reason: '',
       })
       // Load common fields with the current entity_field to ensure it's in the list
       // Pass the IDs directly to avoid race condition with formData state updates
@@ -466,6 +470,22 @@ export default function CorrelationRuleEditorPage() {
         </Label>
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="change_reason">Change Reason *</Label>
+        <Textarea
+          id="change_reason"
+          placeholder={isEditing ? "e.g., Updated time window, fixed entity field..." : "e.g., Initial creation, detecting brute force patterns..."}
+          value={formData.change_reason}
+          onChange={(e) => setFormData({ ...formData, change_reason: e.target.value })}
+          rows={3}
+          className="resize-none"
+          required
+        />
+        <p className="text-xs text-muted-foreground">
+          Explain why you're {isEditing ? 'updating' : 'creating'} this rule. This helps maintain an audit trail.
+        </p>
+      </div>
+
       <div className="flex gap-2 pt-4">
         <Button
           type="button"
@@ -475,7 +495,7 @@ export default function CorrelationRuleEditorPage() {
         >
           Cancel
         </Button>
-        <Button type="submit" disabled={isSaving || isLoading || !formData.name || !formData.rule_a_id || !formData.rule_b_id}>
+        <Button type="submit" disabled={isSaving || isLoading || !formData.name || !formData.rule_a_id || !formData.rule_b_id || !formData.change_reason.trim()}>
           {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
           {isEditing ? 'Update' : 'Create'} Rule
         </Button>

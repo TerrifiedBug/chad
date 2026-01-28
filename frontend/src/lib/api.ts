@@ -1677,6 +1677,11 @@ export type CorrelationRule = {
   updated_at: string
   created_by?: string
   last_edited_by?: string | null
+  // Deployment tracking
+  deployed_at?: string | null
+  deployed_version?: number | null
+  current_version: number
+  needs_redeploy: boolean
 }
 
 export type CorrelationRuleCreate = {
@@ -1687,6 +1692,7 @@ export type CorrelationRuleCreate = {
   time_window_minutes: number
   severity: string
   is_enabled?: boolean
+  change_reason: string
 }
 
 export type CorrelationRuleUpdate = {
@@ -1695,6 +1701,22 @@ export type CorrelationRuleUpdate = {
   time_window_minutes?: number
   severity?: string
   is_enabled?: boolean
+  change_reason: string
+}
+
+export type CorrelationRuleVersion = {
+  id: string
+  version_number: number
+  name: string
+  rule_a_id: string
+  rule_b_id: string
+  entity_field: string
+  time_window_minutes: number
+  severity: string
+  changed_by: string
+  changed_by_email?: string | null
+  change_reason: string
+  created_at: string
 }
 
 export type CorrelationRuleListResponse = {
@@ -1713,5 +1735,8 @@ export const correlationRulesApi = {
   create: (data: CorrelationRuleCreate) => api.post<CorrelationRule>(`/correlation-rules`, data),
   update: (id: string, data: CorrelationRuleUpdate) => api.patch<CorrelationRule>(`/correlation-rules/${id}`, data),
   delete: (id: string) => api.delete(`/correlation-rules/${id}`),
+  deploy: (id: string, changeReason: string) => api.post<CorrelationRule>(`/correlation-rules/${id}/deploy`, { change_reason: changeReason }),
+  undeploy: (id: string, changeReason: string) => api.post<CorrelationRule>(`/correlation-rules/${id}/undeploy`, { change_reason: changeReason }),
+  getVersions: (id: string) => api.get<CorrelationRuleVersion[]>(`/correlation-rules/${id}/versions`),
 }
 
