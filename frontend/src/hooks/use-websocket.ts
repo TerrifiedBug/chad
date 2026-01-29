@@ -115,7 +115,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
           if (message.type === 'alert') {
             const alertData = message.data as AlertData
-            console.log('Alert received via WebSocket:', alertData)
+            // Log only the alert ID, not user-controlled content to prevent log injection
+            console.log('Alert received via WebSocket, id:', alertData.id)
             setAlerts((prev) => [alertData, ...prev])
 
             // Show browser notification if enabled and severity matches
@@ -124,7 +125,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               showBrowserNotification(alertData)
             }
           } else if (message.type === 'connected') {
-            console.log('WebSocket welcome message:', message.message)
+            // Don't log server message content to prevent log injection
+            console.log('WebSocket connected successfully')
           } else if (message.type === 'pong') {
             // Server responded to our ping with a refreshed token
             // This extends the session while actively viewing live alerts
@@ -144,7 +146,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
 
       ws.onclose = (event) => {
-        console.log('WebSocket disconnected:', event.code, event.reason)
+        // Only log the code, not the reason which could contain user-controlled content
+        console.log('WebSocket disconnected, code:', event.code)
         setIsConnected(false)
         wsRef.current = null
 
