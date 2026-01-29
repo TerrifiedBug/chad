@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -262,7 +263,17 @@ async def create_rule(
         threshold_group_by=rule_data.threshold_group_by,
     )
     db.add(rule)
-    await db.flush()  # Flush to get the rule.id
+
+    try:
+        await db.flush()  # Flush to get the rule.id
+    except IntegrityError as e:
+        await db.rollback()
+        if "uq_rules_title" in str(e.orig) or "unique constraint" in str(e.orig).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A rule with the title '{rule_data.title}' already exists. Please choose a different title.",
+            )
+        raise
 
     # Create initial version
     version = RuleVersion(
@@ -275,7 +286,17 @@ async def create_rule(
     )
     db.add(version)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        if "uq_rules_title" in str(e.orig) or "unique constraint" in str(e.orig).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A rule with the title '{rule_data.title}' already exists. Please choose a different title.",
+            )
+        raise
+
     await db.refresh(rule)
 
     # Update ATT&CK mappings from tags
@@ -452,7 +473,17 @@ async def update_rule(
         if field != "change_reason":  # Skip - belongs to RuleVersion, not Rule
             setattr(rule, field, value)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        if "uq_rules_title" in str(e.orig) or "unique constraint" in str(e.orig).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A rule with the title '{rule.title}' already exists. Please choose a different title.",
+            )
+        raise
+
     await db.refresh(rule)
 
     # Update ATT&CK mappings if yaml_content changed
