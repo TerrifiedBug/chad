@@ -10,6 +10,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import create_token_with_dynamic_timeout
 from app.api.deps import get_current_user_websocket, get_db
 from app.models.user import User
 from app.services.websocket import manager
@@ -73,7 +74,20 @@ async def websocket_alerts(
 
             # Handle ping/pong for keepalive
             if data == "ping":
-                await websocket.send_text("pong")
+                # Extend the user's session by issuing a new token
+                # This prevents session timeout while actively viewing live alerts
+                try:
+                    new_token = await create_token_with_dynamic_timeout(
+                        str(user.id), db, user.token_version
+                    )
+                    await websocket.send_json({
+                        "type": "pong",
+                        "token": new_token,
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to refresh token for {user.email}: {e}")
+                    # Still send pong even if token refresh fails
+                    await websocket.send_json({"type": "pong"})
             else:
                 logger.debug(f"Received WebSocket message from {user.username}: {data}")
 

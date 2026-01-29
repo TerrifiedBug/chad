@@ -1,23 +1,23 @@
 """Correlation rules API - manage multi-rule alert correlations."""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from uuid import UUID
 
 from app.api.deps import get_current_user, get_db, require_permission_dep
 from app.models.audit_log import AuditLog
-from app.models.user import User
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_rule_comment import CorrelationRuleComment
 from app.models.rule import Rule
-from app.services.audit import audit_log
-from app.utils.request import get_client_ip
+from app.models.user import User
+from app.schemas.bulk import BulkOperationResult
 from app.schemas.correlation import (
+    BulkCorrelationSnoozeRequest,
     CorrelationActivityItem,
     CorrelationRuleCommentCreate,
     CorrelationRuleCommentResponse,
@@ -28,7 +28,10 @@ from app.schemas.correlation import (
     CorrelationRuleRollbackResponse,
     CorrelationRuleUpdate,
     CorrelationRuleVersionResponse,
+    CorrelationSnoozeRequest,
 )
+from app.services.audit import audit_log
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/correlation-rules", tags=["correlation"])
 
@@ -58,6 +61,8 @@ def build_correlation_response(
         deployed_version=rule.deployed_version,
         current_version=rule.current_version,
         needs_redeploy=rule.needs_redeploy,
+        snooze_until=rule.snooze_until,
+        snooze_indefinite=rule.snooze_indefinite,
         rule_a_title=rule_a_title,
         rule_b_title=rule_b_title,
         rule_a_deployed=rule_a_deployed,
@@ -823,3 +828,190 @@ async def get_correlation_rule_activity(
     # Sort by timestamp descending and apply pagination
     activities.sort(key=lambda x: x.timestamp, reverse=True)
     return activities[skip : skip + limit]
+
+
+# Snooze endpoints - bulk operations must be defined before single operations to avoid route conflicts
+
+
+@router.post("/bulk/snooze", response_model=BulkOperationResult)
+async def bulk_snooze_correlation_rules(
+    data: BulkCorrelationSnoozeRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+):
+    """Snooze multiple correlation rules for the specified number of hours or indefinitely."""
+    if not data.indefinite and data.hours is None:
+        raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
+
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(CorrelationRule).where(CorrelationRule.id == UUID(rule_id))
+            )
+            rule = result.scalar_one_or_none()
+
+            if rule:
+                if rule.deployed_at is None:
+                    failed.append({"id": rule_id, "error": "Rule is not deployed"})
+                    continue
+
+                # Set snooze fields
+                if data.indefinite:
+                    rule.snooze_until = None
+                    rule.snooze_indefinite = True
+                else:
+                    rule.snooze_until = datetime.now(UTC) + timedelta(hours=data.hours)
+                    rule.snooze_indefinite = False
+
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "correlation_rule.bulk_snooze", "correlation_rule", None,
+        {
+            "count": len(success), "rule_ids": success, "hours": data.hours,
+            "indefinite": data.indefinite, "change_reason": data.change_reason
+        },
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/bulk/unsnooze", response_model=BulkOperationResult)
+async def bulk_unsnooze_correlation_rules(
+    data: BulkCorrelationSnoozeRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+):
+    """Unsnooze multiple correlation rules."""
+    success = []
+    failed = []
+
+    for rule_id in data.rule_ids:
+        try:
+            result = await db.execute(
+                select(CorrelationRule).where(CorrelationRule.id == UUID(rule_id))
+            )
+            rule = result.scalar_one_or_none()
+
+            if rule:
+                if not rule.snooze_until and not rule.snooze_indefinite:
+                    failed.append({"id": rule_id, "error": "Rule is not snoozed"})
+                    continue
+
+                # Clear snooze fields
+                rule.snooze_until = None
+                rule.snooze_indefinite = False
+
+                success.append(rule_id)
+            else:
+                failed.append({"id": rule_id, "error": "Rule not found"})
+        except Exception as e:
+            failed.append({"id": rule_id, "error": str(e)})
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "correlation_rule.bulk_unsnooze", "correlation_rule", None,
+        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return BulkOperationResult(success=success, failed=failed)
+
+
+@router.post("/{rule_id}/snooze")
+async def snooze_correlation_rule(
+    rule_id: str,
+    snooze_request: CorrelationSnoozeRequest,
+    http_request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+):
+    """Snooze a correlation rule for the specified number of hours or indefinitely."""
+    if not snooze_request.indefinite and snooze_request.hours is None:
+        raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
+
+    result = await db.execute(
+        select(CorrelationRule).where(CorrelationRule.id == UUID(rule_id))
+    )
+    rule = result.scalar_one_or_none()
+
+    if not rule:
+        raise HTTPException(404, "Correlation rule not found")
+
+    if rule.deployed_at is None:
+        raise HTTPException(400, "Cannot snooze an undeployed rule")
+
+    # Set snooze fields
+    snooze_until = None
+    if snooze_request.indefinite:
+        rule.snooze_until = None
+        rule.snooze_indefinite = True
+    else:
+        snooze_until = datetime.now(UTC) + timedelta(hours=snooze_request.hours)
+        rule.snooze_until = snooze_until
+        rule.snooze_indefinite = False
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "correlation_rule.snooze", "correlation_rule", rule_id,
+        {
+            "name": rule.name, "hours": snooze_request.hours,
+            "indefinite": snooze_request.indefinite, "change_reason": snooze_request.change_reason
+        },
+        ip_address=get_client_ip(http_request)
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "snooze_until": snooze_until.isoformat() if snooze_until else None,
+        "snooze_indefinite": snooze_request.indefinite,
+    }
+
+
+@router.post("/{rule_id}/unsnooze")
+async def unsnooze_correlation_rule(
+    rule_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
+):
+    """Remove snooze from a correlation rule."""
+    result = await db.execute(
+        select(CorrelationRule).where(CorrelationRule.id == UUID(rule_id))
+    )
+    rule = result.scalar_one_or_none()
+
+    if not rule:
+        raise HTTPException(404, "Correlation rule not found")
+
+    if not rule.snooze_until and not rule.snooze_indefinite:
+        raise HTTPException(400, "Rule is not snoozed")
+
+    # Clear snooze fields
+    rule.snooze_until = None
+    rule.snooze_indefinite = False
+
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "correlation_rule.unsnooze", "correlation_rule", rule_id,
+        {"name": rule.name, "change_reason": change_reason},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    return {"success": True}

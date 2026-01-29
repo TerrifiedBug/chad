@@ -47,7 +47,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw, AlertCircle, Copy, Trash2 } from 'lucide-react'
+import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw, AlertCircle, Copy, Trash2, Clock } from 'lucide-react'
 
 const TIME_WINDOW_OPTIONS = [
   { value: 1, label: '1 minute' },
@@ -221,6 +221,14 @@ export default function CorrelationRuleEditorPage() {
   const [showDeployReason, setShowDeployReason] = useState(false)
   const [showUndeployReason, setShowUndeployReason] = useState(false)
   const [deployReason, setDeployReason] = useState('')
+
+  // Snooze state
+  const [isSnoozing, setIsSnoozing] = useState(false)
+  const [showSnoozeReason, setShowSnoozeReason] = useState(false)
+  const [showUnsnoozeReason, setShowUnsnoozeReason] = useState(false)
+  const [snoozeReason, setSnoozeReason] = useState('')
+  const [pendingSnoozeHours, setPendingSnoozeHours] = useState<number | undefined>(undefined)
+  const [pendingSnoozeIndefinite, setPendingSnoozeIndefinite] = useState(false)
 
   // Track original values for change detection
   const [originalData, setOriginalData] = useState<typeof formData | null>(null)
@@ -517,6 +525,78 @@ export default function CorrelationRuleEditorPage() {
     }
   }
 
+  // Snooze handlers
+  const handleSnooze = (hours: number) => {
+    if (!id) return
+    setPendingSnoozeHours(hours)
+    setPendingSnoozeIndefinite(false)
+    setSnoozeReason('')
+    setShowSnoozeReason(true)
+  }
+
+  const handleSnoozeIndefinite = () => {
+    if (!id) return
+    setPendingSnoozeHours(undefined)
+    setPendingSnoozeIndefinite(true)
+    setSnoozeReason('')
+    setShowSnoozeReason(true)
+  }
+
+  const handleSnoozeConfirm = async () => {
+    if (!id || !snoozeReason.trim()) return
+    setShowSnoozeReason(false)
+    setIsSnoozing(true)
+    try {
+      await correlationRulesApi.snooze(
+        id,
+        pendingSnoozeHours ?? null,
+        pendingSnoozeIndefinite,
+        snoozeReason
+      )
+      // Reload the rule to get updated snooze state
+      const updated = await correlationRulesApi.get(id)
+      setCorrelationRule(updated)
+      setSnoozeReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to snooze rule')
+    } finally {
+      setIsSnoozing(false)
+    }
+  }
+
+  const handleUnsnooze = () => {
+    if (!id) return
+    setSnoozeReason('')
+    setShowUnsnoozeReason(true)
+  }
+
+  const handleUnsnoozeConfirm = async () => {
+    if (!id || !snoozeReason.trim()) return
+    setShowUnsnoozeReason(false)
+    setIsSnoozing(true)
+    try {
+      await correlationRulesApi.unsnooze(id, snoozeReason)
+      // Reload the rule to get updated snooze state
+      const updated = await correlationRulesApi.get(id)
+      setCorrelationRule(updated)
+      setSnoozeReason('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to unsnooze rule')
+    } finally {
+      setIsSnoozing(false)
+    }
+  }
+
+  // Helper to determine if rule is currently snoozed
+  const isSnoozed = correlationRule?.snooze_indefinite ||
+    (correlationRule?.snooze_until && new Date(correlationRule.snooze_until) > new Date())
+
+  // Format snooze expiry for display
+  const formatSnoozeExpiry = (dateStr: string) => {
+    const date = new Date(dateStr)
+    return date.toLocaleString()
+  }
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -607,6 +687,45 @@ export default function CorrelationRuleEditorPage() {
               <Check className="h-4 w-4" />
               Saved
             </span>
+          )}
+          {/* Snooze controls for deployed rules - first on left to match Rules pattern */}
+          {isEditing && correlationRule?.deployed_at && (
+            isSnoozed ? (
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-yellow-500" />
+                <span className="text-sm text-yellow-600">
+                  {correlationRule.snooze_indefinite
+                    ? 'Snoozed indefinitely'
+                    : correlationRule.snooze_until
+                      ? `Snoozed until ${formatSnoozeExpiry(correlationRule.snooze_until)}`
+                      : 'Snoozed'}
+                </span>
+                <Button
+                  variant="outline"
+                  onClick={handleUnsnooze}
+                  disabled={isSnoozing}
+                >
+                  {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
+                </Button>
+              </div>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={isSnoozing}>
+                    <Clock className="h-4 w-4 mr-1" />
+                    Snooze
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="z-50 bg-popover">
+                  <DropdownMenuItem onClick={() => handleSnooze(1)}>1 hour</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleSnooze(4)}>4 hours</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleSnooze(24)}>24 hours</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleSnooze(168)}>1 week</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSnoozeIndefinite}>Indefinitely</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
           )}
           {isEditing && (
             <Button variant="outline" onClick={() => setIsActivityOpen(true)}>
@@ -1006,6 +1125,97 @@ export default function CorrelationRuleEditorPage() {
               disabled={!deployReason.trim() || isDeploying}
             >
               {isDeploying ? 'Undeploying...' : 'Undeploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Snooze Reason Modal */}
+      <Dialog open={showSnoozeReason} onOpenChange={setShowSnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Snooze Correlation Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're snoozing this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="text-sm text-muted-foreground">
+              Duration: {pendingSnoozeIndefinite ? 'Indefinitely' : `${pendingSnoozeHours} hour${pendingSnoozeHours !== 1 ? 's' : ''}`}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="snooze-reason">Reason for Snooze *</Label>
+              <Textarea
+                id="snooze-reason"
+                placeholder="e.g., Investigating false positives, scheduled maintenance..."
+                value={snoozeReason}
+                onChange={(e) => setSnoozeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSnoozeReason(false)
+                setSnoozeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSnoozeConfirm}
+              disabled={!snoozeReason.trim() || isSnoozing}
+            >
+              {isSnoozing ? 'Snoozing...' : 'Snooze'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unsnooze Reason Modal */}
+      <Dialog open={showUnsnoozeReason} onOpenChange={setShowUnsnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsnooze Correlation Rule</DialogTitle>
+            <DialogDescription>
+              Please explain why you're unsnoozing this rule. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="unsnooze-reason">Reason for Unsnooze *</Label>
+              <Textarea
+                id="unsnooze-reason"
+                placeholder="e.g., Investigation complete, issue resolved..."
+                value={snoozeReason}
+                onChange={(e) => setSnoozeReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUnsnoozeReason(false)
+                setSnoozeReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUnsnoozeConfirm}
+              disabled={!snoozeReason.trim() || isSnoozing}
+            >
+              {isSnoozing ? 'Unsnoozing...' : 'Unsnooze'}
             </Button>
           </DialogFooter>
         </DialogContent>

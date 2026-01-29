@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useWebSocket } from '@/hooks/use-websocket'
+import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,7 +20,10 @@ const severityColors: Record<string, string> = {
 
 export default function LiveAlertFeedPage() {
   const navigate = useNavigate()
-  const { isConnected, alerts, error, clearAlerts } = useWebSocket()
+  const { user } = useAuth()
+  const { isConnected, alerts, error, clearAlerts } = useWebSocket({
+    notificationPreferences: user?.notification_preferences,
+  })
   const [expandedAlert, setExpandedAlert] = useState<string | null>(null)
 
   const toggleExpand = (alertId: string) => {

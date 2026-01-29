@@ -130,6 +130,9 @@ class SchedulerService:
             # Add correlation state cleanup job (runs every 5 minutes)
             self._schedule_correlation_cleanup()
 
+            # Add version cleanup job (runs daily at 3 AM)
+            self._schedule_version_cleanup()
+
             logger.info("Scheduler jobs synced from settings")
 
         finally:
@@ -158,6 +161,18 @@ class SchedulerService:
             misfire_grace_time=300,  # 5 minute grace period
         )
         logger.info("Scheduled correlation_cleanup job (every 5 minutes)")
+
+    def _schedule_version_cleanup(self):
+        """Schedule the version cleanup job (daily at 3 AM)."""
+        scheduler.add_job(
+            self._run_version_cleanup,
+            trigger=CronTrigger(hour=3, minute=0),
+            id="version_cleanup",
+            name="version cleanup",
+            replace_existing=True,
+            misfire_grace_time=3600,  # 1 hour grace period
+        )
+        logger.info("Scheduled version_cleanup job (daily at 3:00 AM)")
 
     def _schedule_job(self, job_id: str, func, frequency: str):
         """Schedule or reschedule a job."""
@@ -549,6 +564,141 @@ class SchedulerService:
                 logger.info(f"Correlation cleanup: removed {count} expired states")
         except Exception as e:
             logger.error(f"Scheduled correlation cleanup failed: {e}")
+        finally:
+            await session.close()
+
+    async def _run_version_cleanup(self):
+        """
+        Execute version cleanup job.
+
+        Deletes old rule and correlation rule versions based on settings:
+        - version_cleanup_enabled: Whether cleanup is enabled (default: True)
+        - version_cleanup_min_keep: Minimum versions to always keep (default: 10)
+        - version_cleanup_max_age_days: Max age in days for versions beyond min_keep (default: 90)
+        """
+        from datetime import timedelta
+
+        from sqlalchemy import delete, func, and_
+
+        from app.models.rule import RuleVersion
+        from app.models.correlation_rule import CorrelationRuleVersion
+        from app.services.settings import get_setting
+
+        logger.info("Running scheduled version cleanup")
+        session = await self._get_session()
+        try:
+            # Get cleanup settings
+            cleanup_settings = await get_setting(session, "version_cleanup") or {}
+            if not cleanup_settings.get("enabled", True):
+                logger.debug("Version cleanup is disabled")
+                return
+
+            min_keep = cleanup_settings.get("min_keep", 10)
+            max_age_days = cleanup_settings.get("max_age_days", 90)
+            cutoff_date = datetime.now(UTC) - timedelta(days=max_age_days)
+
+            total_deleted = 0
+
+            # Clean up rule versions
+            # For each rule, get versions to delete (beyond min_keep AND older than cutoff)
+            # This is done per-rule to ensure we always keep min_keep versions
+            from app.models.rule import Rule
+            rule_result = await session.execute(select(Rule.id))
+            rule_ids = [r[0] for r in rule_result.fetchall()]
+
+            for rule_id in rule_ids:
+                # Get version count for this rule
+                count_result = await session.execute(
+                    select(func.count()).select_from(RuleVersion).where(RuleVersion.rule_id == rule_id)
+                )
+                version_count = count_result.scalar()
+
+                if version_count <= min_keep:
+                    continue  # Don't delete if at or below minimum
+
+                # Get the version_number of the min_keep-th newest version
+                threshold_result = await session.execute(
+                    select(RuleVersion.version_number)
+                    .where(RuleVersion.rule_id == rule_id)
+                    .order_by(RuleVersion.version_number.desc())
+                    .offset(min_keep - 1)
+                    .limit(1)
+                )
+                threshold_version = threshold_result.scalar()
+                if threshold_version is None:
+                    continue
+
+                # Delete versions older than threshold AND older than cutoff date
+                delete_result = await session.execute(
+                    delete(RuleVersion).where(
+                        and_(
+                            RuleVersion.rule_id == rule_id,
+                            RuleVersion.version_number < threshold_version,
+                            RuleVersion.created_at < cutoff_date
+                        )
+                    )
+                )
+                total_deleted += delete_result.rowcount
+
+            # Clean up correlation rule versions (same logic)
+            from app.models.correlation_rule import CorrelationRule
+            corr_result = await session.execute(select(CorrelationRule.id))
+            corr_ids = [r[0] for r in corr_result.fetchall()]
+
+            for corr_id in corr_ids:
+                count_result = await session.execute(
+                    select(func.count()).select_from(CorrelationRuleVersion).where(
+                        CorrelationRuleVersion.correlation_rule_id == corr_id
+                    )
+                )
+                version_count = count_result.scalar()
+
+                if version_count <= min_keep:
+                    continue
+
+                threshold_result = await session.execute(
+                    select(CorrelationRuleVersion.version_number)
+                    .where(CorrelationRuleVersion.correlation_rule_id == corr_id)
+                    .order_by(CorrelationRuleVersion.version_number.desc())
+                    .offset(min_keep - 1)
+                    .limit(1)
+                )
+                threshold_version = threshold_result.scalar()
+                if threshold_version is None:
+                    continue
+
+                delete_result = await session.execute(
+                    delete(CorrelationRuleVersion).where(
+                        and_(
+                            CorrelationRuleVersion.correlation_rule_id == corr_id,
+                            CorrelationRuleVersion.version_number < threshold_version,
+                            CorrelationRuleVersion.created_at < cutoff_date
+                        )
+                    )
+                )
+                total_deleted += delete_result.rowcount
+
+            await session.commit()
+
+            if total_deleted > 0:
+                logger.info(f"Version cleanup: deleted {total_deleted} old versions")
+                # Audit log
+                from app.services.audit import audit_log
+                await audit_log(
+                    session,
+                    None,
+                    "system.version_cleanup",
+                    "system",
+                    None,
+                    {"versions_deleted": total_deleted, "min_keep": min_keep, "max_age_days": max_age_days}
+                )
+                await session.commit()
+            else:
+                logger.debug("Version cleanup: no versions to delete")
+
+        except Exception as e:
+            logger.error(f"Scheduled version cleanup failed: {e}")
+            await session.rollback()
         finally:
             await session.close()
 

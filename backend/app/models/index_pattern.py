@@ -56,6 +56,16 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     # Format: {"virustotal": {"enabled": true, "fields": ["source.ip"]}, ...}
     ti_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
 
+    # IP allowlist for log shipping - restrict which IPs can ship logs
+    # Format: ["10.10.40.1", "10.10.40.0/24"] - supports IPs and CIDR ranges
+    # None = allow all IPs (no restriction)
+    allowed_ips: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+
+    # Rate limiting for log shipping
+    rate_limit_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    rate_limit_requests_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True, default=100)
+    rate_limit_events_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True, default=50000)
+
     # Relationships
     field_mappings = relationship(
         "FieldMapping", back_populates="index_pattern", cascade="all, delete-orphan"

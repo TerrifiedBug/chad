@@ -1,8 +1,17 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { alertsApi, Alert, AlertStatus, AlertCountsResponse } from '@/lib/api'
+import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat } from '@/lib/api'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -20,6 +29,7 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -28,9 +38,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Link2, Trash2 } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
+import { DateRangePicker } from '@/components/ui/date-range-picker'
+import { DateRange } from 'react-day-picker'
+import { cn } from '@/lib/utils'
+
+const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -65,8 +80,16 @@ export default function AlertsPage() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<AlertStatus | 'all'>('all')
-  const [severityFilter, setSeverityFilter] = useState<string>('all')
+  const [severityFilter, setSeverityFilter] = useState<string[]>([])
   const [page, setPage] = useState(1)
+
+  const toggleSeverityFilter = (severity: string) => {
+    setSeverityFilter(prev =>
+      prev.includes(severity)
+        ? prev.filter(s => s !== severity)
+        : [...prev, severity]
+    )
+  }
   const [pageSize, setPageSize] = useState(25)
 
   // Bulk selection state
@@ -74,6 +97,12 @@ export default function AlertsPage() {
   const [selectAll, setSelectAll] = useState(false)
   const [isBulkUpdating, setIsBulkUpdating] = useState(false)
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+
+  // Export state
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  const [exportFormat, setExportFormat] = useState<ReportFormat>('pdf')
+  const [exportDateRange, setExportDateRange] = useState<DateRange | undefined>()
+  const [isExporting, setIsExporting] = useState(false)
 
   // Load data function - must be declared before useEffect that uses it
   const loadData = useCallback(async () => {
@@ -84,7 +113,8 @@ export default function AlertsPage() {
       const [alertsResponse, countsResponse] = await Promise.all([
         alertsApi.list({
           status: statusFilter === 'all' ? undefined : statusFilter,
-          severity: severityFilter === 'all' ? undefined : severityFilter,
+          // Pass single severity if exactly one selected, otherwise filter client-side
+          severity: severityFilter.length === 1 ? severityFilter[0] : undefined,
           limit: pageSize,
           offset,
         }),
@@ -113,9 +143,17 @@ export default function AlertsPage() {
   const canGoPrevious = page > 1
   const canGoNext = page < totalPages
 
-  const filteredAlerts = alerts.filter((alert) =>
-    alert.rule_title.toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredAlerts = alerts.filter((alert) => {
+    // Search filter
+    if (!alert.rule_title.toLowerCase().includes(search.toLowerCase())) {
+      return false
+    }
+    // Severity filter (client-side when multiple selected)
+    if (severityFilter.length > 1 && !severityFilter.includes(alert.severity)) {
+      return false
+    }
+    return true
+  })
 
   // Bulk operation handlers
   const handleSelectAll = (checked: boolean) => {
@@ -182,10 +220,44 @@ export default function AlertsPage() {
     }
   }
 
+  // Handle export
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const blob = await reportsApi.generateAlertSummary({
+        format: exportFormat,
+        date_from: exportDateRange?.from?.toISOString().split('T')[0],
+        date_to: exportDateRange?.to?.toISOString().split('T')[0],
+        severity: severityFilter.length > 0 ? severityFilter : undefined,
+      })
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const timestamp = new Date().toISOString().slice(0, 10)
+      a.download = `alert-summary-${timestamp}.${exportFormat}`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      setShowExportDialog(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export report')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Alerts</h1>
+        <Button variant="outline" onClick={() => setShowExportDialog(true)}>
+          <Download className="h-4 w-4 mr-2" />
+          Export Report
+        </Button>
       </div>
 
       {/* Stats Cards */}
@@ -262,22 +334,43 @@ export default function AlertsPage() {
             <SelectItem value="false_positive">False Positive</SelectItem>
           </SelectContent>
         </Select>
-        <Select
-          value={severityFilter}
-          onValueChange={setSeverityFilter}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Severity" />
-          </SelectTrigger>
-          <SelectContent className="z-50 bg-popover">
-            <SelectItem value="all">All Severity</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="high">High</SelectItem>
-            <SelectItem value="medium">Medium</SelectItem>
-            <SelectItem value="low">Low</SelectItem>
-            <SelectItem value="informational">Informational</SelectItem>
-          </SelectContent>
-        </Select>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="w-40 justify-between">
+              Severity
+              {severityFilter.length > 0 && (
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                  {severityFilter.length}
+                </Badge>
+              )}
+              <ChevronDown className="h-4 w-4 ml-auto" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="z-50">
+            <DropdownMenuLabel>Filter by Severity</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {SEVERITIES.map((severity) => (
+              <DropdownMenuCheckboxItem
+                key={severity}
+                checked={severityFilter.includes(severity)}
+                onCheckedChange={() => toggleSeverityFilter(severity)}
+                onSelect={(e) => e.preventDefault()}
+              >
+                <span
+                  className={cn(
+                    'mr-2 inline-block w-2 h-2 rounded-full',
+                    severity === 'critical' && 'bg-red-500',
+                    severity === 'high' && 'bg-orange-500',
+                    severity === 'medium' && 'bg-yellow-500',
+                    severity === 'low' && 'bg-blue-500',
+                    severity === 'informational' && 'bg-gray-500'
+                  )}
+                />
+                {capitalize(severity)} ({counts?.by_severity?.[severity] || 0})
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button variant="outline" onClick={loadData}>
           Refresh
         </Button>
@@ -338,7 +431,7 @@ export default function AlertsPage() {
         <div className="text-center py-8 text-muted-foreground">Loading...</div>
       ) : filteredAlerts.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          {search || statusFilter !== 'all' || severityFilter !== 'all'
+          {search || statusFilter !== 'all' || severityFilter.length > 0
             ? 'No alerts match your filters'
             : 'No alerts yet. Alerts will appear when rules match incoming logs.'}
         </div>
@@ -524,6 +617,79 @@ export default function AlertsPage() {
               disabled={isBulkUpdating}
             >
               {isBulkUpdating ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Dialog */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export Alert Summary Report</DialogTitle>
+            <DialogDescription>
+              Generate a report of alert statistics and trends.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Format</Label>
+              <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as ReportFormat)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pdf">
+                    <span className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      PDF
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="csv">
+                    <span className="flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4" />
+                      CSV
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Date Range</Label>
+              <DateRangePicker
+                value={exportDateRange}
+                onChange={setExportDateRange}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave empty to export the last 30 days.
+              </p>
+            </div>
+
+            {severityFilter.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Filtering by severity: {severityFilter.join(', ')}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleExport} disabled={isExporting}>
+              {isExporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

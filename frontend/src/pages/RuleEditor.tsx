@@ -155,6 +155,15 @@ export default function RuleEditorPage() {
   const [newExceptionReason, setNewExceptionReason] = useState('')
   const [isAddingException, setIsAddingException] = useState(false)
 
+  // Multi-condition exception state (for AND logic)
+  type ExceptionCondition = {
+    id: string
+    field: string
+    operator: ExceptionOperator
+    value: string
+  }
+  const [exceptionConditions, setExceptionConditions] = useState<ExceptionCondition[]>([])
+
   // Add state for available fields from OpenSearch
   const [availableFields, setAvailableFields] = useState<string[]>([])
   const [isLoadingFields, setIsLoadingFields] = useState(false)
@@ -741,31 +750,84 @@ export default function RuleEditorPage() {
   }
 
   // Exception handlers
-  const handleAddException = () => {
-    if (!id || !newExceptionField.trim() || !newExceptionValue.trim()) {
-      setError('Field and value are required for exceptions')
+  // Add a condition to the multi-condition list
+  const handleAddCondition = () => {
+    if (!newExceptionField.trim() || !newExceptionValue.trim()) {
+      setError('Field and value are required for conditions')
       return
     }
+    const newCondition: ExceptionCondition = {
+      id: crypto.randomUUID(),
+      field: newExceptionField.trim(),
+      operator: newExceptionOperator,
+      value: newExceptionValue.trim(),
+    }
+    setExceptionConditions((prev) => [...prev, newCondition])
+    // Reset input fields for next condition
+    setNewExceptionField('')
+    setNewExceptionOperator('equals')
+    setNewExceptionValue('')
+  }
+
+  // Remove a condition from the list
+  const handleRemoveCondition = (conditionId: string) => {
+    setExceptionConditions((prev) => prev.filter((c) => c.id !== conditionId))
+  }
+
+  const handleAddException = () => {
+    // Must have at least one condition (either in list or currently typed)
+    const hasCurrentCondition = newExceptionField.trim() && newExceptionValue.trim()
+    const hasListConditions = exceptionConditions.length > 0
+
+    if (!id || (!hasCurrentCondition && !hasListConditions)) {
+      setError('At least one condition is required for exceptions')
+      return
+    }
+
+    // If there's a currently typed condition, add it to the list first
+    if (hasCurrentCondition) {
+      const newCondition: ExceptionCondition = {
+        id: crypto.randomUUID(),
+        field: newExceptionField.trim(),
+        operator: newExceptionOperator,
+        value: newExceptionValue.trim(),
+      }
+      setExceptionConditions((prev) => [...prev, newCondition])
+      setNewExceptionField('')
+      setNewExceptionOperator('equals')
+      setNewExceptionValue('')
+    }
+
     // Show change reason dialog
     setExceptionChangeReason('')
     setShowExceptionCreateReason(true)
   }
 
   const handleAddExceptionConfirm = async () => {
-    if (!id || !exceptionChangeReason.trim()) return
+    if (!id || !exceptionChangeReason.trim() || exceptionConditions.length === 0) return
     setShowExceptionCreateReason(false)
     setIsAddingException(true)
     try {
-      const data: RuleExceptionCreate = {
-        field: newExceptionField.trim(),
-        operator: newExceptionOperator,
-        value: newExceptionValue.trim(),
-        reason: newExceptionReason.trim() || undefined,
-        change_reason: exceptionChangeReason.trim(),
+      // Generate a shared group_id for all conditions (AND logic)
+      const groupId = crypto.randomUUID()
+      const newExceptions: RuleException[] = []
+
+      for (const cond of exceptionConditions) {
+        const data: RuleExceptionCreate = {
+          field: cond.field,
+          operator: cond.operator,
+          value: cond.value,
+          reason: newExceptionReason.trim() || undefined,
+          change_reason: exceptionChangeReason.trim(),
+          group_id: groupId,
+        }
+        const newException = await rulesApi.createException(id, data)
+        newExceptions.push(newException)
       }
-      const newException = await rulesApi.createException(id, data)
-      setExceptions((prev) => [...prev, newException])
+
+      setExceptions((prev) => [...prev, ...newExceptions])
       // Reset form
+      setExceptionConditions([])
       setNewExceptionField('')
       setNewExceptionOperator('equals')
       setNewExceptionValue('')
@@ -916,19 +978,37 @@ export default function RuleEditorPage() {
   }
 
   // Snooze handlers
-  const handleSnooze = (hours: number) => {
+  const handleSnooze = async (hours: number) => {
     if (!id || !canManageRules) return
     setPendingSnoozeHours(hours)
     setPendingSnoozeIndefinite(false)
     setSnoozeReason('')
+
+    // Check for linked correlation rules (get all to display in dialog)
+    try {
+      const response = await rulesApi.getLinkedCorrelations(id, false)
+      setLinkedCorrelations(response.correlations)
+    } catch {
+      setLinkedCorrelations([])
+    }
+
     setShowSnoozeReason(true)
   }
 
-  const handleSnoozeIndefinite = () => {
+  const handleSnoozeIndefinite = async () => {
     if (!id || !canManageRules) return
     setPendingSnoozeHours(undefined)
     setPendingSnoozeIndefinite(true)
     setSnoozeReason('')
+
+    // Check for linked correlation rules (get all to display in dialog)
+    try {
+      const response = await rulesApi.getLinkedCorrelations(id, false)
+      setLinkedCorrelations(response.correlations)
+    } catch {
+      setLinkedCorrelations([])
+    }
+
     setShowSnoozeReason(true)
   }
 
@@ -942,6 +1022,7 @@ export default function RuleEditorPage() {
       setSnoozeUntil(result.snooze_until)
       setSnoozeIndefinite(result.snooze_indefinite)
       setSnoozeReason('')
+      setLinkedCorrelations([])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to snooze rule')
     } finally {
@@ -1702,61 +1783,121 @@ export default function RuleEditorPage() {
               </CardHeader>
               {showExceptions && (
                 <CardContent className="space-y-4">
-                  {/* Existing exceptions list */}
+                  {/* Existing exceptions list - grouped by group_id */}
                   {exceptions.length === 0 ? (
                     <div className="text-sm text-muted-foreground">
                       No exceptions defined
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {exceptions.map((exception) => (
+                      {/* Group exceptions by group_id */}
+                      {Object.entries(
+                        exceptions.reduce((groups, exception) => {
+                          const groupId = exception.group_id || exception.id
+                          if (!groups[groupId]) {
+                            groups[groupId] = []
+                          }
+                          groups[groupId].push(exception)
+                          return groups
+                        }, {} as Record<string, RuleException[]>)
+                      ).map(([groupId, groupExceptions]) => (
                         <div
-                          key={exception.id}
-                          className={`p-2 border rounded-md space-y-1 ${
-                            !exception.is_active ? 'opacity-50' : ''
+                          key={groupId}
+                          className={`p-3 border rounded-md space-y-2 ${
+                            !groupExceptions.every(e => e.is_active) ? 'opacity-50' : ''
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate">
-                                {exception.field}
+                          {/* Show AND badge for multi-condition groups */}
+                          {groupExceptions.length > 1 && (
+                            <div className="flex items-center gap-1 mb-2">
+                              <span className="text-xs font-medium text-blue-600 bg-blue-100 px-2 py-0.5 rounded">
+                                AND Group ({groupExceptions.length} conditions)
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Render each condition in the group */}
+                          {groupExceptions.map((exception, idx) => (
+                            <div key={exception.id} className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                {groupExceptions.length > 1 && idx > 0 && (
+                                  <div className="text-xs text-blue-600 font-medium mb-1">AND</div>
+                                )}
+                                <div className="text-sm font-medium truncate">
+                                  {exception.field}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {operatorLabels[exception.operator]}: {exception.value}
+                                </div>
+                                {exception.reason && idx === 0 && (
+                                  <div className="text-xs text-muted-foreground mt-1 italic">
+                                    Reason: {exception.reason}
+                                  </div>
+                                )}
                               </div>
-                              <div className="text-xs text-muted-foreground">
-                                {operatorLabels[exception.operator]}: {exception.value}
-                              </div>
-                              {exception.reason && (
-                                <div className="text-xs text-muted-foreground mt-1 italic">
-                                  Reason: {exception.reason}
+                              {/* Only show controls on first item for grouped exceptions */}
+                              {(groupExceptions.length === 1 || idx === 0) && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Switch
+                                    checked={exception.is_active}
+                                    onCheckedChange={canManageRules ? (checked) =>
+                                      handleToggleException(exception.id, checked)
+                                    : undefined}
+                                    disabled={!canManageRules}
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    disabled={!canManageRules}
+                                    onClick={() => openDeleteExceptionDialog(exception)}
+                                  >
+                                    <Trash2 className="h-3 w-3 text-destructive" />
+                                  </Button>
                                 </div>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <Switch
-                                checked={exception.is_active}
-                                onCheckedChange={canManageRules ? (checked) =>
-                                  handleToggleException(exception.id, checked)
-                                : undefined}
-                                disabled={!canManageRules}
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                disabled={!canManageRules}
-                                onClick={() => openDeleteExceptionDialog(exception)}
-                              >
-                                <Trash2 className="h-3 w-3 text-destructive" />
-                              </Button>
-                            </div>
-                          </div>
+                          ))}
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* Add exception form */}
+                  {/* Add exception form - supports multiple conditions with AND logic */}
                   <div className="border-t pt-4 space-y-3">
                     <Label className="text-xs font-medium">Add Exception</Label>
+
+                    {/* Show existing conditions */}
+                    {exceptionConditions.length > 0 && (
+                      <div className="space-y-2 p-3 bg-muted/50 rounded-md">
+                        <div className="text-xs font-medium text-muted-foreground">
+                          Conditions (all must match):
+                        </div>
+                        {exceptionConditions.map((cond, idx) => (
+                          <div key={cond.id} className="flex items-center gap-2">
+                            {idx > 0 && (
+                              <span className="text-xs font-medium text-blue-600">AND</span>
+                            )}
+                            <div className="flex-1 p-2 bg-background border rounded text-sm">
+                              <span className="font-medium">{cond.field}</span>
+                              <span className="text-muted-foreground mx-1">{operatorLabels[cond.operator]}</span>
+                              <span className="font-mono">{cond.value}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleRemoveCondition(cond.id)}
+                              disabled={!canManageRules}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* New condition input fields */}
                     <div className="space-y-2">
                       <SearchableFieldSelector
                         fields={availableFields}
@@ -1795,18 +1936,13 @@ export default function RuleEditorPage() {
                         className="w-full min-h-[60px] p-2 text-sm border rounded-md bg-background resize-none"
                         disabled={!canManageRules}
                       />
-                      <Input
-                        placeholder="Reason (optional)"
-                        value={newExceptionReason}
-                        onChange={(e) => setNewExceptionReason(e.target.value)}
-                        className="h-8 text-sm"
-                        disabled={!canManageRules}
-                      />
+
+                      {/* Add Another Condition button */}
                       <Button
+                        variant="outline"
                         size="sm"
-                        onClick={handleAddException}
+                        onClick={handleAddCondition}
                         disabled={
-                          isAddingException ||
                           !newExceptionField.trim() ||
                           !newExceptionValue.trim() ||
                           !canManageRules
@@ -1814,7 +1950,31 @@ export default function RuleEditorPage() {
                         className="w-full"
                       >
                         <Plus className="h-3 w-3 mr-2" />
-                        {isAddingException ? 'Adding...' : 'Add Exception'}
+                        Add Another Condition (AND)
+                      </Button>
+
+                      {/* Reason - applies to all conditions */}
+                      <Input
+                        placeholder="Reason (optional)"
+                        value={newExceptionReason}
+                        onChange={(e) => setNewExceptionReason(e.target.value)}
+                        className="h-8 text-sm"
+                        disabled={!canManageRules}
+                      />
+
+                      {/* Create Exception button */}
+                      <Button
+                        size="sm"
+                        onClick={handleAddException}
+                        disabled={
+                          isAddingException ||
+                          (exceptionConditions.length === 0 && (!newExceptionField.trim() || !newExceptionValue.trim())) ||
+                          !canManageRules
+                        }
+                        className="w-full"
+                      >
+                        <Plus className="h-3 w-3 mr-2" />
+                        {isAddingException ? 'Adding...' : `Create Exception${exceptionConditions.length > 0 ? ` (${exceptionConditions.length + (newExceptionField.trim() && newExceptionValue.trim() ? 1 : 0)} conditions)` : ''}`}
                       </Button>
                     </div>
                   </div>
@@ -1931,13 +2091,26 @@ export default function RuleEditorPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="text-sm">
-              <div className="font-medium">{newExceptionField}</div>
-              <div className="text-muted-foreground">
-                {operatorLabels[newExceptionOperator]}: {newExceptionValue}
-              </div>
+            {/* Show all conditions being added */}
+            <div className="space-y-2 p-3 bg-muted/50 rounded-md">
+              {exceptionConditions.length > 1 && (
+                <div className="text-xs font-medium text-blue-600 mb-2">
+                  AND Group ({exceptionConditions.length} conditions - all must match)
+                </div>
+              )}
+              {exceptionConditions.map((cond, idx) => (
+                <div key={cond.id} className="text-sm">
+                  {idx > 0 && (
+                    <div className="text-xs font-medium text-blue-600 mb-1">AND</div>
+                  )}
+                  <div className="font-medium">{cond.field}</div>
+                  <div className="text-muted-foreground">
+                    {operatorLabels[cond.operator]}: {cond.value}
+                  </div>
+                </div>
+              ))}
               {newExceptionReason && (
-                <div className="text-muted-foreground mt-1 italic">
+                <div className="text-muted-foreground mt-2 italic border-t pt-2">
                   Reason: {newExceptionReason}
                 </div>
               )}
@@ -1961,15 +2134,17 @@ export default function RuleEditorPage() {
               onClick={() => {
                 setShowExceptionCreateReason(false)
                 setExceptionChangeReason('')
+                setExceptionConditions([])
+                setNewExceptionReason('')
               }}
             >
               Cancel
             </Button>
             <Button
               onClick={handleAddExceptionConfirm}
-              disabled={!exceptionChangeReason.trim() || isAddingException}
+              disabled={!exceptionChangeReason.trim() || isAddingException || exceptionConditions.length === 0}
             >
-              {isAddingException ? 'Adding...' : 'Add Exception'}
+              {isAddingException ? 'Adding...' : `Add Exception${exceptionConditions.length > 1 ? ` (${exceptionConditions.length} conditions)` : ''}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2444,6 +2619,30 @@ export default function RuleEditorPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* Show warning if there are deployed correlation rules */}
+            {linkedCorrelations.some(c => c.deployed) && (
+              <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
+                  Warning: This rule is linked to correlation rules
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
+                  Snoozing this rule will also snooze any deployed correlation rules that depend on it.
+                </p>
+                <div className="space-y-1">
+                  {linkedCorrelations.map((corr) => (
+                    <div key={corr.id} className="flex items-center justify-between py-1 px-2 bg-white dark:bg-gray-900 rounded text-sm">
+                      <span>{corr.name}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        corr.deployed ? 'bg-green-600 text-white' : 'bg-gray-500 text-white'
+                      }`}>
+                        {corr.deployed ? 'Deployed' : 'Undeployed'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="text-sm text-muted-foreground">
               Snoozing for: {pendingSnoozeIndefinite ? 'Indefinitely' : `${pendingSnoozeHours} hour${pendingSnoozeHours !== 1 ? 's' : ''}`}
             </div>
@@ -2466,6 +2665,7 @@ export default function RuleEditorPage() {
               onClick={() => {
                 setShowSnoozeReason(false)
                 setSnoozeReason('')
+                setLinkedCorrelations([])
               }}
             >
               Cancel

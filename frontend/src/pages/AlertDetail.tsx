@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, correlationRulesApi, rulesApi, Alert, AlertStatus, TIEnrichmentIndicator, CorrelationRule } from '@/lib/api'
+import { alertsApi, correlationRulesApi, rulesApi, Alert, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,9 +29,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2 } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
+
+// Type for exception conditions (for AND grouping)
+type ExceptionCondition = {
+  id: string
+  field: string
+  operator: ExceptionOperator
+  value: string
+}
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -440,12 +448,45 @@ export default function AlertDetailPage() {
   const [exceptionFields, setExceptionFields] = useState<string[]>([])
   const [isExtractingFields, setIsExtractingFields] = useState(false)
 
-  // Exception form state
-  const [exceptionField, setExceptionField] = useState('')
-  const [exceptionOperator, setExceptionOperator] = useState<'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'regex'>('equals')
-  const [exceptionValue, setExceptionValue] = useState('')
+  // Exception form state - now supports multiple AND conditions
+  const [exceptionConditions, setExceptionConditions] = useState<ExceptionCondition[]>([])
   const [exceptionReason, setExceptionReason] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+
+  // Helper to generate unique condition IDs
+  const generateConditionId = () => `cond-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+
+  // Add a new condition to the list
+  const addCondition = () => {
+    const preferredFields = ['process.executable', 'process.command_line', 'user.name', 'source.ip']
+    const defaultField = exceptionFields.find(f =>
+      preferredFields.includes(f) && !exceptionConditions.some(c => c.field === f)
+    ) || exceptionFields[0] || ''
+
+    const fieldValue = alert?.log_document ? getFieldValue(alert.log_document, defaultField) : ''
+
+    setExceptionConditions([
+      ...exceptionConditions,
+      {
+        id: generateConditionId(),
+        field: defaultField,
+        operator: 'equals',
+        value: fieldValue,
+      }
+    ])
+  }
+
+  // Update a condition
+  const updateCondition = (id: string, updates: Partial<ExceptionCondition>) => {
+    setExceptionConditions(conditions =>
+      conditions.map(c => c.id === id ? { ...c, ...updates } : c)
+    )
+  }
+
+  // Remove a condition
+  const removeCondition = (id: string) => {
+    setExceptionConditions(conditions => conditions.filter(c => c.id !== id))
+  }
 
   // Load alert function - must be declared before useEffect that uses it
   const loadAlert = useCallback(async () => {
@@ -528,23 +569,28 @@ export default function AlertDetailPage() {
       const fields = extractFieldsFromLog(alert.log_document)
       setExceptionFields(fields)
 
-      // Auto-select preferred field
+      // Auto-select preferred field for first condition
       const preferredFields = ['process.executable', 'process.command_line', 'user.name', 'source.ip']
       const selectedField = fields.find(f => preferredFields.includes(f)) || fields[0] || ''
-      setExceptionField(selectedField)
 
       // Auto-fill value and detect operator
+      let operator: ExceptionOperator = 'equals'
+      let fieldValue = ''
       if (selectedField) {
-        const fieldValue = getFieldValue(alert.log_document, selectedField)
-        setExceptionValue(fieldValue)
-
+        fieldValue = getFieldValue(alert.log_document, selectedField)
         // Auto-detect operator based on value characteristics
         if (fieldValue.includes('\\') || fieldValue.includes('/')) {
-          setExceptionOperator('contains')
-        } else {
-          setExceptionOperator('equals')
+          operator = 'contains'
         }
       }
+
+      // Initialize with one condition
+      setExceptionConditions([{
+        id: generateConditionId(),
+        field: selectedField,
+        operator,
+        value: fieldValue,
+      }])
 
       setExceptionReason(`False positive from alert ${alert.alert_id}`)
     } catch (err) {
@@ -563,8 +609,21 @@ export default function AlertDetailPage() {
       return
     }
 
-    if (!exceptionField || !exceptionValue || !exceptionReason) {
-      setError('Please fill in all fields')
+    if (exceptionConditions.length === 0) {
+      setError('Please add at least one condition')
+      return
+    }
+
+    // Validate all conditions have field and value
+    for (const cond of exceptionConditions) {
+      if (!cond.field || !cond.value) {
+        setError('All conditions must have field and value')
+        return
+      }
+    }
+
+    if (!exceptionReason) {
+      setError('Please provide a reason')
       return
     }
 
@@ -577,29 +636,48 @@ export default function AlertDetailPage() {
       return
     }
 
-    if (exceptionValue.length > MAX_VALUE_LENGTH) {
-      setError(`Value must be less than ${MAX_VALUE_LENGTH} characters`)
-      return
+    for (const cond of exceptionConditions) {
+      if (cond.value.length > MAX_VALUE_LENGTH) {
+        setError(`Value must be less than ${MAX_VALUE_LENGTH} characters`)
+        return
+      }
     }
 
     setIsCreating(true)
     setError('')
 
     try {
+      // Generate a shared group_id for all conditions (AND logic)
+      const groupId = crypto.randomUUID()
+
+      // Create first exception (creates the group)
+      const firstCond = exceptionConditions[0]
       await rulesApi.createException(alert.rule_id, {
-        field: exceptionField,
-        operator: exceptionOperator,
-        value: exceptionValue,
+        field: firstCond.field,
+        operator: firstCond.operator,
+        value: firstCond.value,
         reason: exceptionReason,
-        change_reason: exceptionReason  // Use same reason for audit trail
+        change_reason: exceptionReason,
+        group_id: groupId,
       })
+
+      // Create additional conditions in the same group
+      for (let i = 1; i < exceptionConditions.length; i++) {
+        const cond = exceptionConditions[i]
+        await rulesApi.createException(alert.rule_id, {
+          field: cond.field,
+          operator: cond.operator,
+          value: cond.value,
+          reason: exceptionReason,
+          change_reason: exceptionReason,
+          group_id: groupId,
+        })
+      }
 
       setShowExceptionDialog(false)
 
       // Reset form
-      setExceptionField('')
-      setExceptionOperator('equals')
-      setExceptionValue('')
+      setExceptionConditions([])
       setExceptionReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create exception')
@@ -886,55 +964,109 @@ export default function AlertDetailPage() {
             </div>
           ) : (
             <form onSubmit={handleCreateException} className="space-y-4">
-              {/* Field Selection */}
-              <div className="space-y-2">
-                <SearchableFieldSelector
-                  fields={exceptionFields}
-                  value={exceptionField}
-                  onChange={setExceptionField}
-                  onSelect={(field) => {
-                    // Auto-fill the value with the field's value from the alert document
-                    if (alert?.log_document) {
-                      const fieldValue = getFieldValue(alert.log_document, field)
-                      setExceptionValue(fieldValue)
-                    }
-                  }}
-                  label="Field"
-                  placeholder="Select a field from the alert"
-                  emptyMessage="No fields available in this alert"
-                />
+              {/* Conditions - grouped with AND logic */}
+              <div className="space-y-3">
+                <Label>Conditions {exceptionConditions.length > 1 && <span className="text-muted-foreground text-xs ml-1">(all must match)</span>}</Label>
+
+                {exceptionConditions.map((condition, index) => (
+                  <div key={condition.id} className="p-3 border rounded-lg bg-muted/30 space-y-3">
+                    {index > 0 && (
+                      <div className="flex items-center justify-center mb-2">
+                        <span className="text-xs font-medium bg-primary/10 text-primary px-2 py-0.5 rounded">AND</span>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 space-y-2">
+                        {/* Field */}
+                        <SearchableFieldSelector
+                          fields={exceptionFields}
+                          value={condition.field}
+                          onChange={(field) => updateCondition(condition.id, { field })}
+                          onSelect={(field) => {
+                            if (alert?.log_document) {
+                              const fieldValue = getFieldValue(alert.log_document, field)
+                              updateCondition(condition.id, { field, value: fieldValue })
+                            }
+                          }}
+                          label=""
+                          placeholder="Select field"
+                          emptyMessage="No fields available"
+                        />
+
+                        <div className="grid grid-cols-2 gap-2">
+                          {/* Operator */}
+                          <Select
+                            value={condition.operator}
+                            onValueChange={(v) => updateCondition(condition.id, { operator: v as ExceptionOperator })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Operator" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="equals">Equals</SelectItem>
+                              <SelectItem value="not_equals">Not Equals</SelectItem>
+                              <SelectItem value="contains">Contains</SelectItem>
+                              <SelectItem value="not_contains">Not Contains</SelectItem>
+                              <SelectItem value="starts_with">Starts With</SelectItem>
+                              <SelectItem value="ends_with">Ends With</SelectItem>
+                              <SelectItem value="regex">Regex</SelectItem>
+                            </SelectContent>
+                          </Select>
+
+                          {/* Value */}
+                          <Input
+                            value={condition.value}
+                            onChange={(e) => updateCondition(condition.id, { value: e.target.value })}
+                            placeholder="Value"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Remove button (only if more than one condition) */}
+                      {exceptionConditions.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeCondition(condition.id)}
+                          className="mt-1 text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Add AND condition button */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addCondition}
+                  className="w-full"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add AND Condition
+                </Button>
               </div>
 
-              {/* Operator Selection */}
-              <div className="space-y-2">
-                <Label htmlFor="exception-operator">Operator</Label>
-                <Select value={exceptionOperator} onValueChange={(v: any) => setExceptionOperator(v)}>
-                  <SelectTrigger id="exception-operator">
-                    <SelectValue placeholder="Select operator" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="equals">Equals</SelectItem>
-                    <SelectItem value="not_equals">Not Equals</SelectItem>
-                    <SelectItem value="contains">Contains</SelectItem>
-                    <SelectItem value="not_contains">Does Not Contain</SelectItem>
-                    <SelectItem value="starts_with">Starts With</SelectItem>
-                    <SelectItem value="ends_with">Ends With</SelectItem>
-                    <SelectItem value="regex">Regex</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Value Input */}
-              <div className="space-y-2">
-                <Label htmlFor="exception-value">Value</Label>
-                <Input
-                  id="exception-value"
-                  value={exceptionValue}
-                  onChange={(e) => setExceptionValue(e.target.value)}
-                  placeholder="Auto-filled from alert or enter value to match"
-                  required
-                />
-              </div>
+              {/* Preview */}
+              {exceptionConditions.length > 0 && (
+                <div className="p-3 bg-muted rounded-lg">
+                  <Label className="text-xs text-muted-foreground">Preview:</Label>
+                  <p className="text-sm font-mono mt-1">
+                    {exceptionConditions.map((c, i) => (
+                      <span key={c.id}>
+                        {i > 0 && <span className="text-primary font-bold"> AND </span>}
+                        <span className="text-blue-600">{c.field || '?'}</span>
+                        <span className="text-muted-foreground"> {c.operator.replace('_', ' ')} </span>
+                        <span className="text-green-600">"{c.value || '?'}"</span>
+                      </span>
+                    ))}
+                  </p>
+                </div>
+              )}
 
               {/* Reason */}
               <div className="space-y-2">

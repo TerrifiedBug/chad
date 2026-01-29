@@ -4,6 +4,7 @@ interface WebSocketMessage {
   type: string
   data?: unknown
   message?: string
+  token?: string
 }
 
 interface AlertData {
@@ -15,12 +16,54 @@ interface AlertData {
   matched_log: Record<string, unknown>
 }
 
-export function useWebSocket() {
+interface NotificationPreferences {
+  browser_notifications: boolean
+  severities: string[]
+}
+
+interface UseWebSocketOptions {
+  notificationPreferences?: NotificationPreferences
+}
+
+function showBrowserNotification(alert: AlertData) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') {
+    return
+  }
+
+  // Only show notification if tab is not visible
+  if (!document.hidden) {
+    return
+  }
+
+  const severity = alert.severity.toUpperCase()
+  const notification = new Notification(`${severity}: ${alert.rule_title}`, {
+    body: `New ${alert.severity} alert detected`,
+    icon: '/favicon.ico',
+    tag: alert.alert_id, // Prevent duplicate notifications for same alert
+  })
+
+  // Close notification after 10 seconds
+  setTimeout(() => notification.close(), 10000)
+
+  // Focus window when clicked
+  notification.onclick = () => {
+    window.focus()
+    notification.close()
+  }
+}
+
+export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [isConnected, setIsConnected] = useState(false)
   const [alerts, setAlerts] = useState<AlertData[]>([])
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const optionsRef = useRef(options)
+
+  // Keep options ref updated
+  useEffect(() => {
+    optionsRef.current = options
+  }, [options])
 
   const getToken = () => {
     return localStorage.getItem('chad-token')
@@ -71,13 +114,24 @@ export function useWebSocket() {
           console.log('WebSocket message received:', message.type)
 
           if (message.type === 'alert') {
-            console.log('Alert received via WebSocket:', message.data)
-            setAlerts((prev) => [message.data as AlertData, ...prev])
+            const alertData = message.data as AlertData
+            console.log('Alert received via WebSocket:', alertData)
+            setAlerts((prev) => [alertData, ...prev])
+
+            // Show browser notification if enabled and severity matches
+            const prefs = optionsRef.current.notificationPreferences
+            if (prefs?.browser_notifications && prefs.severities?.includes(alertData.severity)) {
+              showBrowserNotification(alertData)
+            }
           } else if (message.type === 'connected') {
             console.log('WebSocket welcome message:', message.message)
           } else if (message.type === 'pong') {
-            // Server responded to our ping
-            console.debug('Pong received')
+            // Server responded to our ping with a refreshed token
+            // This extends the session while actively viewing live alerts
+            if (message.token) {
+              localStorage.setItem('chad-token', message.token as string)
+              console.debug('Session extended via WebSocket ping')
+            }
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err)
@@ -113,7 +167,7 @@ export function useWebSocket() {
       console.error('Failed to create WebSocket connection:', err)
       setError(`Failed to connect: ${err}`)
     }
-  }, []) // getToken is defined inside, so no deps needed
+  }, []) // getToken is defined inside, options accessed via ref
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {

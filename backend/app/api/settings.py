@@ -838,6 +838,68 @@ async def test_geoip_lookup(
     )
 
 
+# Version cleanup settings models
+class VersionCleanupSettings(BaseModel):
+    enabled: bool = True
+    min_keep: int = 10
+    max_age_days: int = 90
+
+
+class VersionCleanupSettingsResponse(BaseModel):
+    enabled: bool
+    min_keep: int
+    max_age_days: int
+
+
+@router.get("/version-cleanup", response_model=VersionCleanupSettingsResponse)
+async def get_version_cleanup_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Get version cleanup settings."""
+    cleanup = await get_setting(db, "version_cleanup")
+    return VersionCleanupSettingsResponse(
+        enabled=cleanup.get("enabled", True) if cleanup else True,
+        min_keep=cleanup.get("min_keep", 10) if cleanup else 10,
+        max_age_days=cleanup.get("max_age_days", 90) if cleanup else 90,
+    )
+
+
+@router.put("/version-cleanup", response_model=VersionCleanupSettingsResponse)
+async def update_version_cleanup_settings(
+    data: VersionCleanupSettings,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
+):
+    """Update version cleanup settings."""
+    # Validate values
+    if data.min_keep < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="min_keep must be at least 1"
+        )
+    if data.max_age_days < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="max_age_days must be at least 1"
+        )
+
+    cleanup = {
+        "enabled": data.enabled,
+        "min_keep": data.min_keep,
+        "max_age_days": data.max_age_days,
+    }
+    await set_setting(db, "version_cleanup", cleanup)
+    await audit_log(
+        db, current_user.id, "settings.update", "settings", "version_cleanup",
+        cleanup,
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+    return VersionCleanupSettingsResponse(**cleanup)
+
+
 @router.put("/{key}")
 async def update_setting(
     key: str,

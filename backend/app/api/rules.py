@@ -1322,6 +1322,119 @@ async def undeploy_linked_correlations(
     return undeployed_names
 
 
+async def snooze_linked_correlations(
+    db: AsyncSession,
+    rule_id: UUID,
+    user_id: UUID,
+    change_reason: str,
+    snooze_until: datetime | None,
+    snooze_indefinite: bool,
+    request: Request,
+) -> list[str]:
+    """
+    Snooze any deployed correlation rules that depend on this rule.
+
+    Returns list of snoozed correlation rule names.
+    """
+    from sqlalchemy import or_
+
+    # Find deployed correlation rules that reference this rule (and not already snoozed)
+    result = await db.execute(
+        select(CorrelationRule).where(
+            or_(
+                CorrelationRule.rule_a_id == rule_id,
+                CorrelationRule.rule_b_id == rule_id,
+            ),
+            CorrelationRule.deployed_at.isnot(None),
+            CorrelationRule.snooze_indefinite == False,  # noqa: E712
+            or_(
+                CorrelationRule.snooze_until.is_(None),
+                CorrelationRule.snooze_until < datetime.now(UTC),
+            ),
+        )
+    )
+    correlations = result.scalars().all()
+
+    snoozed_names = []
+    for corr in correlations:
+        corr.snooze_until = snooze_until
+        corr.snooze_indefinite = snooze_indefinite
+        snoozed_names.append(corr.name)
+
+        # Log audit event for each correlation
+        await audit_log(
+            db,
+            user_id,
+            "correlation_rule.snooze",
+            "correlation_rule",
+            str(corr.id),
+            {
+                "name": corr.name,
+                "snooze_until": snooze_until.isoformat() if snooze_until else None,
+                "snooze_indefinite": snooze_indefinite,
+                "change_reason": f"Auto-snoozed: underlying rule snoozed. {change_reason}",
+                "triggered_by_rule_id": str(rule_id),
+            },
+            ip_address=get_client_ip(request),
+        )
+
+    return snoozed_names
+
+
+async def unsnooze_linked_correlations(
+    db: AsyncSession,
+    rule_id: UUID,
+    user_id: UUID,
+    change_reason: str,
+    request: Request,
+) -> list[str]:
+    """
+    Unsnooze any snoozed correlation rules that depend on this rule.
+
+    Returns list of unsnoozed correlation rule names.
+    """
+    from sqlalchemy import or_
+
+    # Find snoozed correlation rules that reference this rule
+    result = await db.execute(
+        select(CorrelationRule).where(
+            or_(
+                CorrelationRule.rule_a_id == rule_id,
+                CorrelationRule.rule_b_id == rule_id,
+            ),
+            CorrelationRule.deployed_at.isnot(None),
+            or_(
+                CorrelationRule.snooze_indefinite == True,  # noqa: E712
+                CorrelationRule.snooze_until > datetime.now(UTC),
+            ),
+        )
+    )
+    correlations = result.scalars().all()
+
+    unsnoozed_names = []
+    for corr in correlations:
+        corr.snooze_until = None
+        corr.snooze_indefinite = False
+        unsnoozed_names.append(corr.name)
+
+        # Log audit event for each correlation
+        await audit_log(
+            db,
+            user_id,
+            "correlation_rule.unsnooze",
+            "correlation_rule",
+            str(corr.id),
+            {
+                "name": corr.name,
+                "change_reason": f"Auto-unsnoozed: underlying rule unsnoozed. {change_reason}",
+                "triggered_by_rule_id": str(rule_id),
+            },
+            ip_address=get_client_ip(request),
+        )
+
+    return unsnoozed_names
+
+
 @router.post("/{rule_id}/undeploy", response_model=RuleUndeployResponse)
 async def undeploy_rule(
     rule_id: UUID,
@@ -1474,6 +1587,13 @@ async def bulk_snooze_rules(
 
     success = []
     failed = []
+    all_snoozed_correlations = []
+
+    # Calculate snooze_until once for all rules
+    if data.indefinite:
+        snooze_until = None
+    else:
+        snooze_until = datetime.now(UTC) + timedelta(hours=data.hours)
 
     for rule_id in data.rule_ids:
         try:
@@ -1489,12 +1609,8 @@ async def bulk_snooze_rules(
                     failed.append({"id": rule_id, "error": "Cannot snooze an undeployed rule"})
                     continue
 
-                if data.indefinite:
-                    rule.snooze_until = None
-                    rule.snooze_indefinite = True
-                else:
-                    rule.snooze_until = datetime.now(UTC) + timedelta(hours=data.hours)
-                    rule.snooze_indefinite = False
+                rule.snooze_until = snooze_until
+                rule.snooze_indefinite = data.indefinite
                 rule.status = RuleStatus.SNOOZED
 
                 # Remove from percolator when snoozing (prevents alert generation)
@@ -1502,6 +1618,13 @@ async def bulk_snooze_rules(
                     percolator = PercolatorService(os_client)
                     percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
                     percolator.undeploy_rule(percolator_index, str(rule.id))
+
+                # Auto-snooze any linked correlation rules
+                snoozed_correlations = await snooze_linked_correlations(
+                    db, rule_id, current_user.id, data.change_reason,
+                    snooze_until, data.indefinite, request
+                )
+                all_snoozed_correlations.extend(snoozed_correlations)
 
                 success.append(rule_id)
             else:
@@ -1512,7 +1635,14 @@ async def bulk_snooze_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_snooze", "rule", None,
-        {"count": len(success), "rule_ids": success, "hours": data.hours, "indefinite": data.indefinite, "change_reason": data.change_reason},
+        {
+            "count": len(success),
+            "rule_ids": success,
+            "hours": data.hours,
+            "indefinite": data.indefinite,
+            "change_reason": data.change_reason,
+            "snoozed_correlations": all_snoozed_correlations,
+        },
         ip_address=get_client_ip(request)
     )
     await db.commit()
@@ -1531,6 +1661,7 @@ async def bulk_unsnooze_rules(
     """Unsnooze multiple rules (clears snooze and sets status to DEPLOYED)."""
     success = []
     failed = []
+    all_unsnoozed_correlations = []
 
     for rule_id in data.rule_ids:
         try:
@@ -1552,6 +1683,12 @@ async def bulk_unsnooze_rules(
                     percolator = PercolatorService(os_client)
                     percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
                     percolator.update_rule_status(percolator_index, str(rule.id), enabled=True)
+
+                # Auto-unsnooze any linked correlation rules
+                unsnoozed_correlations = await unsnooze_linked_correlations(
+                    db, rule_id, current_user.id, data.change_reason, request
+                )
+                all_unsnoozed_correlations.extend(unsnoozed_correlations)
             else:
                 failed.append({"id": rule_id, "error": "Rule not found"})
         except Exception as e:
@@ -1560,7 +1697,12 @@ async def bulk_unsnooze_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_unsnooze", "rule", None,
-        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason},
+        {
+            "count": len(success),
+            "rule_ids": success,
+            "change_reason": data.change_reason,
+            "unsnoozed_correlations": all_unsnoozed_correlations,
+        },
         ip_address=get_client_ip(request)
     )
     await db.commit()
@@ -1616,19 +1758,37 @@ async def snooze_rule(
         percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
         percolator.undeploy_rule(percolator_index, str(rule.id))
 
+    # Auto-snooze any linked correlation rules
+    snoozed_correlations = await snooze_linked_correlations(
+        db, rule_id, current_user.id, snooze_request.change_reason,
+        snooze_until, snooze_request.indefinite, http_request
+    )
+
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.snooze", "rule", str(rule.id),
-        {"title": rule.title, "hours": snooze_request.hours, "indefinite": snooze_request.indefinite, "change_reason": snooze_request.change_reason},
+        {
+            "title": rule.title,
+            "hours": snooze_request.hours,
+            "indefinite": snooze_request.indefinite,
+            "change_reason": snooze_request.change_reason,
+            "snoozed_correlations": snoozed_correlations,
+        },
         ip_address=get_client_ip(http_request)
     )
     await db.commit()
 
+    message = "Rule snoozed"
+    if snoozed_correlations:
+        message += f". Also snoozed {len(snoozed_correlations)} correlation rule(s): {', '.join(snoozed_correlations)}"
+
     return {
         "success": True,
+        "message": message,
         "snooze_until": snooze_until.isoformat() if snooze_until else None,
         "snooze_indefinite": snooze_request.indefinite,
         "status": "snoozed",
+        "snoozed_correlations": snoozed_correlations,
     }
 
 
@@ -1698,11 +1858,28 @@ async def unsnooze_rule(
                 tags=tags,
             )
 
+    # Auto-unsnooze any linked correlation rules
+    unsnoozed_correlations = await unsnooze_linked_correlations(
+        db, rule_id, current_user.id, change_reason, request
+    )
+
     await db.commit()
-    await audit_log(db, current_user.id, "rule.unsnooze", "rule", str(rule.id), {"title": rule.title, "change_reason": change_reason}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "rule.unsnooze", "rule", str(rule.id),
+        {
+            "title": rule.title,
+            "change_reason": change_reason,
+            "unsnoozed_correlations": unsnoozed_correlations,
+        },
+        ip_address=get_client_ip(request)
+    )
     await db.commit()
 
-    return {"success": True, "status": "enabled"}
+    message = "Rule unsnoozed"
+    if unsnoozed_correlations:
+        message += f". Also unsnoozed {len(unsnoozed_correlations)} correlation rule(s)"
+
+    return {"success": True, "status": "deployed", "message": message}
 
 
 @router.patch("/{rule_id}/threshold")
@@ -1799,6 +1976,8 @@ async def create_rule_exception(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Rule not found")
 
+    # If group_id is provided, add to existing group (AND logic)
+    # Otherwise, a new group_id is auto-generated (new OR condition)
     exception = RuleException(
         rule_id=rule_id,
         field=exception_data.field,
@@ -1806,6 +1985,7 @@ async def create_rule_exception(
         value=exception_data.value,
         reason=exception_data.reason,
         created_by=current_user.id,
+        **({"group_id": exception_data.group_id} if exception_data.group_id else {}),
     )
     db.add(exception)
     await db.commit()

@@ -14,6 +14,9 @@ class RuleExceptionCreate(BaseModel):
     value: str
     reason: str | None = None
     change_reason: str = Field(..., min_length=1, max_length=10000)
+    # Optional group_id - if not provided, a new group is created
+    # If provided, this exception is added to an existing group (AND logic)
+    group_id: UUID | None = None
 
 
 class RuleExceptionUpdate(BaseModel):
@@ -28,6 +31,7 @@ class RuleExceptionUpdate(BaseModel):
 class RuleExceptionResponse(BaseModel):
     id: UUID
     rule_id: UUID
+    group_id: UUID
     field: str
     operator: ExceptionOperator
     value: str

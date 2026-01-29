@@ -32,6 +32,7 @@ from app.api.logs import router as logs_router
 from app.api.ti import router as ti_router
 from app.api.notifications import router as notifications_router
 from app.api.permissions import router as permissions_router
+from app.api.reports import router as reports_router
 from app.api.rules import router as rules_router
 from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
@@ -338,6 +339,7 @@ app.include_router(notifications_router, prefix="/api")
 app.include_router(jira_router, prefix="/api")
 app.include_router(ti_router, prefix="/api")
 app.include_router(correlation_rules_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
 
 # WebSocket router (no /api prefix - WebSocket has its own protocol)
 app.include_router(websocket_router)
