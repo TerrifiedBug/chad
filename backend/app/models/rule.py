@@ -39,7 +39,7 @@ class SigmaHQType(str, Enum):
 class Rule(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "rules"
 
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     yaml_content: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String(50), default="medium")
