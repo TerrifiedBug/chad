@@ -102,6 +102,8 @@ export default function RuleEditorPage() {
   const [isLoading, setIsLoading] = useState(!isNew)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
+  const [titleError, setTitleError] = useState('')
+  const [isCheckingTitle, setIsCheckingTitle] = useState(false)
 
   // Validation state
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
@@ -553,6 +555,7 @@ export default function RuleEditorPage() {
 
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle)
+    setTitleError('') // Clear error while typing
     // Update YAML
     const updatedYaml = yamlContent.replace(
       /^title:\s*.+$/m,
@@ -562,6 +565,32 @@ export default function RuleEditorPage() {
       setYamlContent(updatedYaml)
     }
   }
+
+  // Debounced title uniqueness check
+  useEffect(() => {
+    if (!title.trim()) {
+      setTitleError('')
+      return
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setIsCheckingTitle(true)
+      try {
+        const result = await rulesApi.checkTitle(title, isNew ? undefined : id)
+        if (!result.available) {
+          setTitleError(result.message || 'This title is already in use')
+        } else {
+          setTitleError('')
+        }
+      } catch {
+        // Don't show error if check fails - backend validation will catch it
+      } finally {
+        setIsCheckingTitle(false)
+      }
+    }, 500) // 500ms debounce
+
+    return () => clearTimeout(timeoutId)
+  }, [title, isNew, id])
 
   const handleSeverityChange = (newSeverity: string) => {
     setSeverity(newSeverity)
@@ -1294,7 +1323,7 @@ export default function RuleEditorPage() {
               </Button>
             )
           )}
-          <Button onClick={handleSave} disabled={isSaving || !isValid || (!isNew && !hasChanges()) || !canManageRules}>
+          <Button onClick={handleSave} disabled={isSaving || !isValid || (!isNew && !hasChanges()) || !canManageRules || !!titleError}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </div>
@@ -1335,13 +1364,24 @@ export default function RuleEditorPage() {
         <div className="lg:col-span-2 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="title">Title</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              placeholder="Detection rule title"
-              disabled={!canManageRules}
-            />
+            <div className="relative">
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="Detection rule title"
+                disabled={!canManageRules}
+                className={titleError ? 'border-destructive focus-visible:ring-destructive' : ''}
+              />
+              {isCheckingTitle && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+                </div>
+              )}
+            </div>
+            {titleError && (
+              <p className="text-sm text-destructive">{titleError}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

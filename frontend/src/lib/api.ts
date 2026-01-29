@@ -458,6 +458,11 @@ export const rulesApi = {
     const query = searchParams.toString()
     return api.get<Rule[]>(`/rules${query ? `?${query}` : ''}`)
   },
+  checkTitle: (title: string, excludeId?: string) =>
+    api.post<{ available: boolean; message?: string }>('/rules/check-title', {
+      title,
+      exclude_id: excludeId,
+    }),
   get: (id: string) =>
     api.get<RuleDetail>(`/rules/${id}`),
   create: (data: RuleCreate) =>

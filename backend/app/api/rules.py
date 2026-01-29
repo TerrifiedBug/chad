@@ -242,6 +242,41 @@ async def get_index_pattern_fields(
         )
 
 
+class TitleCheckRequest(BaseModel):
+    title: str
+    exclude_id: str | None = None  # Exclude this rule ID when checking (for updates)
+
+
+class TitleCheckResponse(BaseModel):
+    available: bool
+    message: str | None = None
+
+
+@router.post("/check-title", response_model=TitleCheckResponse)
+async def check_title_availability(
+    data: TitleCheckRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Check if a rule title is available (not already in use)."""
+    query = select(Rule).where(Rule.title == data.title)
+
+    # If editing an existing rule, exclude it from the check
+    if data.exclude_id:
+        query = query.where(Rule.id != UUID(data.exclude_id))
+
+    result = await db.execute(query)
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        return TitleCheckResponse(
+            available=False,
+            message=f"A rule with the title '{data.title}' already exists."
+        )
+
+    return TitleCheckResponse(available=True)
+
+
 @router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule(
     request: Request,
