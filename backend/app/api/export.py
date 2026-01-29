@@ -658,7 +658,15 @@ async def _import_rules(
             result = await db.execute(
                 select(Rule).where(Rule.title == r["title"])
             )
-            existing = result.scalar_one_or_none()
+            rows = result.scalars().all()
+            if len(rows) > 1:
+                errors.append(
+                    f"Rule '{r['title']}': Multiple rules exist with this title, "
+                    "cannot determine which to update. Skipping."
+                )
+                skipped += 1
+                continue
+            existing = rows[0] if rows else None
 
             if existing:
                 if mode == ImportMode.SKIP:
@@ -782,7 +790,15 @@ async def _import_correlation_rules(
             result = await db.execute(
                 select(CorrelationRule).where(CorrelationRule.name == c["name"])
             )
-            existing = result.scalar_one_or_none()
+            rows = result.scalars().all()
+            if len(rows) > 1:
+                errors.append(
+                    f"Correlation rule '{c['name']}': Multiple rules exist with this name, "
+                    "cannot determine which to update. Skipping."
+                )
+                skipped += 1
+                continue
+            existing = rows[0] if rows else None
 
             # Validate rule_a and rule_b exist
             rule_a = await db.execute(
@@ -945,11 +961,21 @@ async def _import_notification_settings(
         existing = result.scalar_one_or_none()
 
         if existing:
-            if not dry_run:
-                for key, value in settings.items():
-                    if hasattr(existing, key):
-                        setattr(existing, key, value)
-            updated = 1
+            # Check if any values actually differ
+            has_changes = False
+            for key, value in settings.items():
+                if hasattr(existing, key) and getattr(existing, key) != value:
+                    has_changes = True
+                    break
+
+            if has_changes:
+                if not dry_run:
+                    for key, value in settings.items():
+                        if hasattr(existing, key):
+                            setattr(existing, key, value)
+                updated = 1
+            else:
+                skipped = 1
         else:
             if not dry_run:
                 new_settings = NotificationSettings(**settings)
