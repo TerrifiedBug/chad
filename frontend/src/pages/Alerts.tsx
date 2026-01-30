@@ -732,9 +732,15 @@ export default function AlertsPage() {
                             {hasMultiple ? (
                               <span className="text-xs">
                                 {cluster.time_range[0] && cluster.time_range[1] ? (
-                                  <>
-                                    <RelativeTime date={cluster.time_range[0]} /> - <RelativeTime date={cluster.time_range[1]} />
-                                  </>
+                                  // Only show range if timestamps differ by more than a minute
+                                  cluster.time_range[0] !== cluster.time_range[1] &&
+                                  Math.abs(new Date(cluster.time_range[0]).getTime() - new Date(cluster.time_range[1]).getTime()) > 60000 ? (
+                                    <>
+                                      <RelativeTime date={cluster.time_range[0]} /> - <RelativeTime date={cluster.time_range[1]} />
+                                    </>
+                                  ) : (
+                                    <RelativeTime date={cluster.time_range[1]} />
+                                  )
                                 ) : (
                                   <RelativeTime date={alert.created_at} />
                                 )}

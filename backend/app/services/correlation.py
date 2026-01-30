@@ -183,6 +183,12 @@ async def check_correlation(
     )
     correlation_rules = result.scalars().all()
 
+    if not correlation_rules:
+        logger.debug(f"No deployed correlation rules found involving rule {rule_id}")
+        return triggered
+
+    logger.info(f"Checking {len(correlation_rules)} correlation rule(s) for rule {rule_id}")
+
     # Fetch deployed version data for each correlation rule
     # Create list of (corr_rule, deployed_data) tuples
     # Filter out snoozed rules
@@ -215,8 +221,10 @@ async def check_correlation(
         # Resolve the Sigma field to an entity value for this rule
         entity_value = await resolve_entity_field(db, rule_id, sigma_field, log_document)
         if not entity_value:
-            logger.debug(f"Could not resolve entity field {sigma_field} for rule {rule_id}")
+            logger.info(f"Correlation check: Could not resolve entity field '{sigma_field}' for rule {rule_id}")
             continue
+
+        logger.info(f"Correlation check: Resolved '{sigma_field}' to value '{entity_value}' for rule {rule_id}")
 
         now = datetime.utcnow()
 
@@ -284,10 +292,10 @@ async def check_correlation(
                     expires_at=expires_at,
                 )
                 db.add(state)
-                # Log only IDs, not user-controlled content to prevent log injection
-                logger.debug(
-                    "Stored correlation state for rule_id=%s",
-                    corr_rule.id,
+                # Log state storage at INFO level for debugging correlation issues
+                logger.info(
+                    f"Correlation state stored: rule={corr_rule.name}, waiting for paired rule, "
+                    f"entity={entity_value}, expires in {deployed_data.time_window_minutes}m"
                 )
 
     return triggered
