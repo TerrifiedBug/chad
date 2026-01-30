@@ -8,11 +8,15 @@ import signal
 import sys
 import time
 
+from sqlalchemy import select
+
 from app.core.redis import get_redis, close_redis
 from app.services.log_processor import LogProcessor
 from app.services.queue_settings import get_queue_settings
 from app.services.opensearch import get_client_from_settings
 from app.db.session import async_session_maker
+from app.models.index_pattern import IndexPattern
+from app.models.health_metrics import IndexHealthMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -103,14 +107,17 @@ class Worker:
                     logs_by_index[index_suffix] = []
                 logs_by_index[index_suffix].append((stream, msg_id, log_data))
 
-        # Process each index's logs as a batch
+        # Process each index's logs as a batch and record health metrics
         for index_suffix, log_entries in logs_by_index.items():
             logs = [entry[2] for entry in log_entries]
+            result = None
+            logs_errored = 0
 
             try:
-                await processor.process_batch(index_suffix, logs)
+                result = await processor.process_batch(index_suffix, logs)
             except Exception as e:
                 logger.error(f"Failed to process batch for {index_suffix}: {e}")
+                logs_errored = len(logs)
                 # Still acknowledge to prevent reprocessing
                 # In production, might want to move to dead letter instead
 
@@ -118,7 +125,66 @@ class Worker:
             for stream, msg_id, _ in log_entries:
                 processed.append((stream, msg_id))
 
+            # Record health metrics for this batch
+            try:
+                await self._record_health_metrics(
+                    db_session,
+                    index_suffix,
+                    logs_received=len(logs),
+                    logs_errored=logs_errored,
+                    alerts_created=result.get("alerts_created", 0) if result else 0,
+                    matches=result.get("matches", 0) if result else 0,
+                    elapsed_seconds=result.get("elapsed_seconds", 0) if result else 0,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record health metrics for {index_suffix}: {e}")
+
         return processed
+
+    async def _record_health_metrics(
+        self,
+        db_session,
+        index_suffix: str,
+        logs_received: int,
+        logs_errored: int,
+        alerts_created: int,
+        matches: int,
+        elapsed_seconds: float,
+    ):
+        """Record health metrics for an index pattern."""
+        # Look up index pattern by suffix
+        result = await db_session.execute(
+            select(IndexPattern).where(IndexPattern.name == index_suffix)
+        )
+        index_pattern = result.scalar_one_or_none()
+
+        if not index_pattern:
+            logger.debug(f"No index pattern found for suffix '{index_suffix}', skipping metrics")
+            return
+
+        # Calculate average latency in ms (per log)
+        avg_latency_ms = int((elapsed_seconds * 1000) / logs_received) if logs_received > 0 else 0
+
+        # Get current queue depth
+        redis = await get_redis()
+        stream_key = f"chad:logs:{index_suffix}"
+        try:
+            queue_depth = await redis.xlen(stream_key)
+        except Exception:
+            queue_depth = 0
+
+        metric = IndexHealthMetrics(
+            index_pattern_id=index_pattern.id,
+            logs_received=logs_received,
+            logs_processed=logs_received - logs_errored,
+            logs_errored=logs_errored,
+            alerts_generated=alerts_created,
+            rules_triggered=matches,
+            queue_depth=queue_depth,
+            avg_detection_latency_ms=avg_latency_ms,
+        )
+        db_session.add(metric)
+        await db_session.commit()
 
     async def claim_pending_messages(self, redis, streams: list[str]) -> list:
         """
