@@ -111,12 +111,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       ws.onmessage = (event) => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
-          console.log('WebSocket message received:', message.type)
 
           if (message.type === 'alert') {
             const alertData = message.data as AlertData
-            // Log only the alert ID, not user-controlled content to prevent log injection
-            console.log('Alert received via WebSocket, id:', alertData.alert_id)
             setAlerts((prev) => [alertData, ...prev])
 
             // Show browser notification if enabled and severity matches

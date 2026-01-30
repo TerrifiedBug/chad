@@ -276,9 +276,10 @@ async def check_correlation(
                     expires_at=expires_at,
                 )
                 db.add(state)
+                # Log only IDs, not user-controlled content to prevent log injection
                 logger.debug(
-                    f"Stored correlation state for {corr_rule.name}, "
-                    f"sigma_field={sigma_field}, entity={entity_value}"
+                    "Stored correlation state for rule_id=%s",
+                    corr_rule.id,
                 )
 
     return triggered
