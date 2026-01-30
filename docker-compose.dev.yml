@@ -18,6 +18,20 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -29,6 +43,8 @@ services:
       - POSTGRES_USER=chad
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpassword}
       - POSTGRES_DB=chad
+      # Redis
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       # Security (CHANGE IN PRODUCTION)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-prod}
       - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}
@@ -43,6 +59,8 @@ services:
       - "8000:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -65,3 +83,4 @@ services:
 volumes:
   pgdata:
   chad_data:
+  redis_data:
