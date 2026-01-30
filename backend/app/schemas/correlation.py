@@ -158,3 +158,17 @@ class CommonLogFieldsResponse(BaseModel):
 
     common_fields: list[str]  # Fields with same name in both index patterns
     mapped_fields: list[dict]  # Fields bridged via field mappings
+
+
+class SigmaFieldMappingInfo(BaseModel):
+    """Info about a Sigma field mapping for both rules."""
+
+    sigma_field: str
+    rule_a_target: str
+    rule_b_target: str
+
+
+class CommonSigmaFieldsResponse(BaseModel):
+    """Response schema for common Sigma fields between two rules."""
+
+    fields: list[SigmaFieldMappingInfo]  # Sigma fields with valid mappings for both rules

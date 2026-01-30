@@ -15,12 +15,14 @@ from app.api.deps import get_current_user, get_db, get_opensearch_client, requir
 from app.models.audit_log import AuditLog
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_rule_comment import CorrelationRuleComment
+from app.models.field_mapping import FieldMapping
 from app.models.rule import Rule
 from app.models.user import User
 from app.schemas.bulk import BulkOperationResult
 from app.schemas.correlation import (
     BulkCorrelationSnoozeRequest,
     CommonLogFieldsResponse,
+    CommonSigmaFieldsResponse,
     CorrelationActivityItem,
     CorrelationRuleCommentCreate,
     CorrelationRuleCommentResponse,
@@ -32,6 +34,7 @@ from app.schemas.correlation import (
     CorrelationRuleUpdate,
     CorrelationRuleVersionResponse,
     CorrelationSnoozeRequest,
+    SigmaFieldMappingInfo,
 )
 from app.services.audit import audit_log
 from app.services.opensearch import get_index_fields
@@ -160,6 +163,79 @@ async def get_common_log_fields(
         common_fields=common_fields,
         mapped_fields=mapped_fields,
     )
+
+
+@router.get("/common-sigma-fields", response_model=CommonSigmaFieldsResponse)
+async def get_common_sigma_fields(
+    rule_a_id: str = Query(..., description="ID of the first rule"),
+    rule_b_id: str = Query(..., description="ID of the second rule"),
+    db: AsyncSession = Depends(get_db),
+    opensearch: OpenSearch = Depends(get_opensearch_client),
+    _: User = Depends(get_current_user),
+):
+    """
+    Get Sigma fields that have valid mappings for both rules' index patterns.
+
+    Returns Sigma fields where:
+    1. A field mapping exists for both rules' index patterns
+    2. The target_field actually exists in the corresponding OpenSearch index
+    """
+    # Load both rules with their index patterns
+    rule_a_result = await db.execute(
+        select(Rule).options(selectinload(Rule.index_pattern)).where(Rule.id == UUID(rule_a_id))
+    )
+    rule_a = rule_a_result.scalar_one_or_none()
+    if not rule_a:
+        raise HTTPException(404, f"Rule A (ID: {rule_a_id}) not found")
+    if not rule_a.index_pattern:
+        raise HTTPException(400, "Rule A has no index pattern")
+
+    rule_b_result = await db.execute(
+        select(Rule).options(selectinload(Rule.index_pattern)).where(Rule.id == UUID(rule_b_id))
+    )
+    rule_b = rule_b_result.scalar_one_or_none()
+    if not rule_b:
+        raise HTTPException(404, f"Rule B (ID: {rule_b_id}) not found")
+    if not rule_b.index_pattern:
+        raise HTTPException(400, "Rule B has no index pattern")
+
+    # Get field mappings for both index patterns
+    mappings_a_result = await db.execute(
+        select(FieldMapping).where(FieldMapping.index_pattern_id == rule_a.index_pattern_id)
+    )
+    mappings_a = {m.sigma_field: m.target_field for m in mappings_a_result.scalars().all()}
+
+    mappings_b_result = await db.execute(
+        select(FieldMapping).where(FieldMapping.index_pattern_id == rule_b.index_pattern_id)
+    )
+    mappings_b = {m.sigma_field: m.target_field for m in mappings_b_result.scalars().all()}
+
+    # Find Sigma fields that have mappings in BOTH index patterns
+    common_sigma_fields = set(mappings_a.keys()) & set(mappings_b.keys())
+
+    # Get actual fields from both OpenSearch indexes to verify mappings are valid
+    fields_a = get_index_fields(opensearch, rule_a.index_pattern.pattern, include_multi_fields=True)
+    fields_b = get_index_fields(opensearch, rule_b.index_pattern.pattern, include_multi_fields=True)
+
+    # Build result - only include fields where target exists in the index
+    result_fields: list[SigmaFieldMappingInfo] = []
+    for sigma_field in sorted(common_sigma_fields):
+        target_a = mappings_a[sigma_field]
+        target_b = mappings_b[sigma_field]
+
+        # Check if target fields exist in their respective indexes
+        # Also check with .keyword suffix since that's commonly used
+        a_exists = target_a in fields_a or f"{target_a}.keyword" in fields_a
+        b_exists = target_b in fields_b or f"{target_b}.keyword" in fields_b
+
+        if a_exists and b_exists:
+            result_fields.append(SigmaFieldMappingInfo(
+                sigma_field=sigma_field,
+                rule_a_target=target_a,
+                rule_b_target=target_b,
+            ))
+
+    return CommonSigmaFieldsResponse(fields=result_fields)
 
 
 @router.get("", response_model=CorrelationRuleListResponse)

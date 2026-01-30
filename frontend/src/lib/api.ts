@@ -1855,6 +1855,16 @@ export type CommonLogFieldsResponse = {
   mapped_fields: Record<string, string>[]
 }
 
+export type SigmaFieldMappingInfo = {
+  sigma_field: string
+  rule_a_target: string
+  rule_b_target: string
+}
+
+export type CommonSigmaFieldsResponse = {
+  fields: SigmaFieldMappingInfo[]
+}
+
 // Correlation Rules API
 export const correlationRulesApi = {
   list: (includeUndeployed = true) => {
@@ -1865,6 +1875,8 @@ export const correlationRulesApi = {
   get: (id: string) => api.get<CorrelationRule>(`/correlation-rules/${id}`),
   getCommonLogFields: (ruleAId: string, ruleBId: string) =>
     api.get<CommonLogFieldsResponse>(`/correlation-rules/common-log-fields?rule_a_id=${ruleAId}&rule_b_id=${ruleBId}`),
+  getCommonSigmaFields: (ruleAId: string, ruleBId: string) =>
+    api.get<CommonSigmaFieldsResponse>(`/correlation-rules/common-sigma-fields?rule_a_id=${ruleAId}&rule_b_id=${ruleBId}`),
   create: (data: CorrelationRuleCreate) => api.post<CorrelationRule>(`/correlation-rules`, data),
   update: (id: string, data: CorrelationRuleUpdate) => api.patch<CorrelationRule>(`/correlation-rules/${id}`, data),
   delete: (id: string) => api.delete(`/correlation-rules/${id}`),
