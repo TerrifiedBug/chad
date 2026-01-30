@@ -348,9 +348,11 @@ async def bulk_delete_alerts(
                                   ip_address=get_client_ip(request))
                     success.append(alert_id_str)
                 except Exception as e:
-                    failed.append({"id": alert_id_str, "error": str(e)})
+                    logger.warning(f"Failed to delete alert {alert_id_str}: {e}")
+                    failed.append({"id": alert_id_str, "error": "Failed to delete alert"})
         except Exception as e:
-            failed.append({"id": alert_id_str, "error": str(e)})
+            logger.warning(f"Failed to delete alert {alert_id_str}: {e}")
+            failed.append({"id": alert_id_str, "error": "Failed to delete alert"})
 
     await db.commit()
 

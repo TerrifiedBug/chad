@@ -95,6 +95,7 @@ export default function HealthPage() {
   }, [])
 
   const loadHealth = async () => {
+    setIsLoading(true)
     try {
       const data = await healthApi.listIndices()
       setHealth(data)
