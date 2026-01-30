@@ -218,6 +218,8 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
     entity_value?: string
     rule_a_id?: string
     rule_b_id?: string
+    rule_a_title?: string
+    rule_b_title?: string
     first_alert_id?: string
     second_alert_id?: string
   }
@@ -270,7 +272,7 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
                   className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
                 >
                   <FileText className="h-3 w-3" />
-                  Rule A
+                  {correlationData.rule_a_title || 'Rule A'}
                 </Link>
               )}
               {correlationData.rule_b_id && (
@@ -279,7 +281,7 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
                   className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
                 >
                   <FileText className="h-3 w-3" />
-                  Rule B
+                  {correlationData.rule_b_title || 'Rule B'}
                 </Link>
               )}
             </div>
