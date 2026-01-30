@@ -12,6 +12,7 @@ class CorrelationRuleBase(BaseModel):
     rule_a_id: str
     rule_b_id: str
     entity_field: str = Field(..., max_length=100)
+    entity_field_type: str = Field(default="sigma", pattern="^(sigma|direct)$")
     time_window_minutes: int = Field(..., ge=1, le=1440)
     severity: str = Field(..., pattern="^(critical|high|medium|low|informational)$")
 
@@ -27,6 +28,7 @@ class CorrelationRuleUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=255)
     entity_field: str | None = Field(None, max_length=100)
+    entity_field_type: str | None = Field(None, pattern="^(sigma|direct)$")
     time_window_minutes: int | None = Field(None, ge=1, le=1440)
     severity: str | None = Field(None, pattern="^(critical|high|medium|low|informational)$")
     change_reason: str | None = None
@@ -85,6 +87,7 @@ class CorrelationRuleVersionResponse(BaseModel):
     rule_a_id: str
     rule_b_id: str
     entity_field: str
+    entity_field_type: str = "sigma"
     time_window_minutes: int
     severity: str
     changed_by: str
@@ -148,3 +151,10 @@ class BulkCorrelationSnoozeRequest(BaseModel):
     hours: int | None = Field(default=None, ge=1, le=168)  # None allowed if indefinite
     indefinite: bool = False
     change_reason: str = Field(..., min_length=1, max_length=10000)
+
+
+class CommonLogFieldsResponse(BaseModel):
+    """Response schema for common log fields between two rules."""
+
+    common_fields: list[str]  # Fields with same name in both index patterns
+    mapped_fields: list[dict]  # Fields bridged via field mappings

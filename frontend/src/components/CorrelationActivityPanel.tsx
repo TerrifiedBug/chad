@@ -17,6 +17,7 @@ interface CorrelationActivityPanelProps {
     rule_a_id: string
     rule_b_id: string
     entity_field: string
+    entity_field_type: string
     time_window_minutes: number
     severity: string
   }

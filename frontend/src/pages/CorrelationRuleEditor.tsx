@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo, CorrelationRule } from '@/lib/api'
+import { rulesApi, correlationRulesApi, Rule, FieldMappingInfo, CorrelationRule, EntityFieldType } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import type { Severity } from '@/types/api'
 import { Button } from '@/components/ui/button'
@@ -47,7 +47,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw, AlertCircle, Copy, Trash2, Clock } from 'lucide-react'
+import { ChevronLeft, Loader2, Check, ChevronDown, History, Rocket, RotateCcw, AlertCircle, Copy, Trash2, Clock, HelpCircle, Search } from 'lucide-react'
 
 const TIME_WINDOW_OPTIONS = [
   { value: 1, label: '1 minute' },
@@ -187,6 +187,7 @@ interface CloneFromState {
   rule_a_id: string
   rule_b_id: string
   entity_field: string
+  entity_field_type: EntityFieldType
   time_window_minutes: number
   severity: Severity
 }
@@ -203,7 +204,10 @@ export default function CorrelationRuleEditorPage() {
 
   const [rules, setRules] = useState<Rule[]>([])
   const [availableFields, setAvailableFields] = useState<string[]>([])
+  const [availableLogFields, setAvailableLogFields] = useState<string[]>([])
   const [isLoadingFields, setIsLoadingFields] = useState(false)
+  const [isLoadingLogFields, setIsLoadingLogFields] = useState(false)
+  const [logFieldSearch, setLogFieldSearch] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isDeploying, setIsDeploying] = useState(false)
@@ -238,6 +242,7 @@ export default function CorrelationRuleEditorPage() {
     rule_a_id: string
     rule_b_id: string
     entity_field: string
+    entity_field_type: EntityFieldType
     time_window_minutes: number
     severity: Severity
   }>(cloneFrom ?? {
@@ -245,6 +250,7 @@ export default function CorrelationRuleEditorPage() {
     rule_a_id: '',
     rule_b_id: '',
     entity_field: '',
+    entity_field_type: 'sigma',
     time_window_minutes: 5,
     severity: 'high',
   })
@@ -257,6 +263,7 @@ export default function CorrelationRuleEditorPage() {
       formData.rule_a_id !== originalData.rule_a_id ||
       formData.rule_b_id !== originalData.rule_b_id ||
       formData.entity_field !== originalData.entity_field ||
+      formData.entity_field_type !== originalData.entity_field_type ||
       formData.time_window_minutes !== originalData.time_window_minutes ||
       formData.severity !== originalData.severity
     )
@@ -322,7 +329,7 @@ export default function CorrelationRuleEditorPage() {
       if (currentEntityField && commonFields.includes(currentEntityField) && !formData.entity_field) {
         setFormData((prev) => ({ ...prev, entity_field: currentEntityField }))
       }
-      if (formData.entity_field && !commonFields.includes(formData.entity_field)) {
+      if (formData.entity_field && !commonFields.includes(formData.entity_field) && formData.entity_field_type === 'sigma') {
         setFormData((prev) => ({ ...prev, entity_field: '' }))
       }
     } catch (err) {
@@ -331,7 +338,27 @@ export default function CorrelationRuleEditorPage() {
     } finally {
       setIsLoadingFields(false)
     }
-  }, [formData.rule_a_id, formData.rule_b_id, formData.entity_field])
+  }, [formData.rule_a_id, formData.rule_b_id, formData.entity_field, formData.entity_field_type])
+
+  const loadCommonLogFields = useCallback(async (ruleAId?: string, ruleBId?: string) => {
+    const actualRuleAId = ruleAId || formData.rule_a_id
+    const actualRuleBId = ruleBId || formData.rule_b_id
+
+    if (!actualRuleAId || !actualRuleBId) {
+      return
+    }
+
+    setIsLoadingLogFields(true)
+    try {
+      const result = await correlationRulesApi.getCommonLogFields(actualRuleAId, actualRuleBId)
+      setAvailableLogFields(result.common_fields)
+    } catch (err) {
+      console.error('Failed to load common log fields:', err)
+      setAvailableLogFields([])
+    } finally {
+      setIsLoadingLogFields(false)
+    }
+  }, [formData.rule_a_id, formData.rule_b_id])
 
   const loadRules = async () => {
     setIsLoading(true)
@@ -357,20 +384,25 @@ export default function CorrelationRuleEditorPage() {
         rule_a_id: rule.rule_a_id,
         rule_b_id: rule.rule_b_id,
         entity_field: rule.entity_field,
+        entity_field_type: rule.entity_field_type || 'sigma',
         time_window_minutes: rule.time_window_minutes,
         severity: rule.severity,
       }
       setFormData(data)
       setOriginalData(data)
       setCorrelationRule(rule)
-      await loadCommonFields(rule.entity_field, rule.rule_a_id, rule.rule_b_id)
+      if (data.entity_field_type === 'sigma') {
+        await loadCommonFields(rule.entity_field, rule.rule_a_id, rule.rule_b_id)
+      } else {
+        await loadCommonLogFields(rule.rule_a_id, rule.rule_b_id)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load correlation rule')
     } finally {
       setIsLoadingEditData(false)
       setIsLoading(false)
     }
-  }, [loadCommonFields])
+  }, [loadCommonFields, loadCommonLogFields])
 
   useEffect(() => {
     loadRules()
@@ -380,10 +412,14 @@ export default function CorrelationRuleEditorPage() {
   useEffect(() => {
     if (id || isLoadingEditData) return
     if (formData.rule_a_id && formData.rule_b_id) {
-      loadCommonFields(formData.entity_field)
+      if (formData.entity_field_type === 'sigma') {
+        loadCommonFields(formData.entity_field)
+      } else {
+        loadCommonLogFields()
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.rule_a_id, formData.rule_b_id, id, isLoadingEditData, formData.entity_field])
+  }, [formData.rule_a_id, formData.rule_b_id, id, isLoadingEditData, formData.entity_field, formData.entity_field_type])
 
   useEffect(() => {
     if (!id && !isLoadingEditData) {
@@ -508,6 +544,7 @@ export default function CorrelationRuleEditorPage() {
         rule_a_id: updated.rule_a_id,
         rule_b_id: updated.rule_b_id,
         entity_field: updated.entity_field,
+        entity_field_type: updated.entity_field_type || 'sigma',
         time_window_minutes: updated.time_window_minutes,
         severity: updated.severity,
       })
@@ -516,6 +553,7 @@ export default function CorrelationRuleEditorPage() {
         rule_a_id: updated.rule_a_id,
         rule_b_id: updated.rule_b_id,
         entity_field: updated.entity_field,
+        entity_field_type: updated.entity_field_type || 'sigma',
         time_window_minutes: updated.time_window_minutes,
         severity: updated.severity,
       })
@@ -610,6 +648,7 @@ export default function CorrelationRuleEditorPage() {
           rule_a_id: formData.rule_a_id,
           rule_b_id: formData.rule_b_id,
           entity_field: formData.entity_field,
+          entity_field_type: formData.entity_field_type,
           time_window_minutes: formData.time_window_minutes,
           severity: formData.severity,
         }
@@ -894,42 +933,161 @@ export default function CorrelationRuleEditorPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="entity_field">Entity Field to Correlate</Label>
-            <Select
-              value={formData.entity_field}
-              onValueChange={(value) => setFormData({ ...formData, entity_field: value })}
-              disabled={isSaving || isLoadingFields || !formData.rule_a_id}
-            >
-              <SelectTrigger data-protonpass-ignore="true" data-lpignore="true" data-1p-ignore="true">
-                <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select entity field"} />
-              </SelectTrigger>
-              <SelectContent className="z-50 bg-popover max-h-[300px]">
-                {availableFields.length === 0 ? (
-                  <div className="p-2 text-sm text-muted-foreground">
-                    {formData.rule_a_id
-                      ? "No common fields found between the two rules."
-                      : "Select both rules to load common fields"}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="entity_field">Entity Field to Correlate</Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="text-muted-foreground hover:text-foreground">
+                      <HelpCircle className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p className="text-sm">
+                      <strong>Sigma Field:</strong> Correlate on fields used in rule detection logic (e.g., Image, CommandLine).
+                      <br /><br />
+                      <strong>Log Field:</strong> Correlate on any field in the log document (e.g., user.name, source.ip) - useful when you need to correlate on context fields not in the detection logic.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+
+            {/* Field Type Toggle */}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={formData.entity_field_type === 'sigma' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFormData({ ...formData, entity_field_type: 'sigma', entity_field: '' })}
+                disabled={isSaving}
+              >
+                Sigma Field
+              </Button>
+              <Button
+                type="button"
+                variant={formData.entity_field_type === 'direct' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setFormData({ ...formData, entity_field_type: 'direct', entity_field: '' })
+                  if (formData.rule_a_id && formData.rule_b_id) {
+                    loadCommonLogFields()
+                  }
+                }}
+                disabled={isSaving}
+              >
+                Log Field
+              </Button>
+            </div>
+
+            {/* Sigma Field Mode */}
+            {formData.entity_field_type === 'sigma' && (
+              <>
+                <Select
+                  value={formData.entity_field}
+                  onValueChange={(value) => setFormData({ ...formData, entity_field: value })}
+                  disabled={isSaving || isLoadingFields || !formData.rule_a_id}
+                >
+                  <SelectTrigger data-protonpass-ignore="true" data-lpignore="true" data-1p-ignore="true">
+                    <SelectValue placeholder={isLoadingFields ? "Loading fields..." : "Select Sigma field"} />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover max-h-[300px]">
+                    {availableFields.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground">
+                        {formData.rule_a_id
+                          ? "No common Sigma fields found between the two rules."
+                          : "Select both rules to load common fields"}
+                      </div>
+                    ) : (
+                      availableFields.map((field) => (
+                        <SelectItem key={field} value={field}>
+                          {field}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {formData.entity_field && (
+                  <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                    <div className="font-medium mb-1">Field Mappings:</div>
+                    <div>Rule A: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleAFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
+                    <div>Rule B: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleBFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
                   </div>
-                ) : (
-                  availableFields.map((field) => (
-                    <SelectItem key={field} value={field}>
-                      {field}
-                    </SelectItem>
-                  ))
                 )}
-              </SelectContent>
-            </Select>
-            {formData.entity_field && (
-              <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                <div className="font-medium mb-1">Field Mappings:</div>
-                <div>Rule A: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleAFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
-                <div>Rule B: <span className="font-mono">{formData.entity_field}</span> → <span className="font-mono">{getTargetField(formData.entity_field, ruleBFieldMappings) || <span className="text-destructive">Not mapped</span>}</span></div>
-              </div>
+                <p className="text-xs text-muted-foreground">
+                  Correlate on fields used in rule detection logic. This field must be detected by both rules.
+                </p>
+              </>
             )}
-            <p className="text-xs text-muted-foreground">
-              The Sigma field name from both rules used to correlate events. This field must be detected by both rules.
-            </p>
+
+            {/* Log Field Mode (Direct) */}
+            {formData.entity_field_type === 'direct' && (
+              <>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      disabled={isSaving || isLoadingLogFields || !formData.rule_a_id || !formData.rule_b_id}
+                      className="w-full justify-between"
+                    >
+                      <span className={formData.entity_field ? '' : 'text-muted-foreground'}>
+                        {formData.entity_field || (isLoadingLogFields ? "Loading fields..." : "Select log field")}
+                      </span>
+                      <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[400px] p-0">
+                    <div className="p-2">
+                      <Input
+                        placeholder="Search fields..."
+                        value={logFieldSearch}
+                        onChange={(e) => setLogFieldSearch(e.target.value)}
+                        className="h-9"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-[300px] overflow-y-auto">
+                      {availableLogFields.length === 0 ? (
+                        <div className="p-2 text-sm text-muted-foreground text-center">
+                          {!formData.rule_a_id || !formData.rule_b_id
+                            ? "Select both rules first"
+                            : "No common log fields found"}
+                        </div>
+                      ) : (
+                        availableLogFields
+                          .filter((field) => field.toLowerCase().includes(logFieldSearch.toLowerCase()))
+                          .slice(0, 100)
+                          .map((field) => (
+                            <button
+                              key={field}
+                              onClick={() => {
+                                setFormData({ ...formData, entity_field: field })
+                                setLogFieldSearch('')
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                            >
+                              <Check
+                                className={`h-4 w-4 shrink-0 ${formData.entity_field === field ? 'opacity-100' : 'opacity-0'}`}
+                              />
+                              <span className="flex-1 text-left font-mono text-xs">{field}</span>
+                            </button>
+                          ))
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {formData.entity_field && (
+                  <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                    <span className="font-mono">{formData.entity_field}</span> will be used directly from both log documents
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Correlate on any field that exists in both rules' log documents (e.g., user.name, source.ip).
+                </p>
+              </>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -991,6 +1149,7 @@ export default function CorrelationRuleEditorPage() {
             rule_a_id: formData.rule_a_id,
             rule_b_id: formData.rule_b_id,
             entity_field: formData.entity_field,
+            entity_field_type: formData.entity_field_type,
             time_window_minutes: formData.time_window_minutes,
             severity: formData.severity,
           }}

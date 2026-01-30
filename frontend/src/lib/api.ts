@@ -1763,6 +1763,8 @@ export const tiApi = {
 }
 
 // Correlation Rules types
+export type EntityFieldType = 'sigma' | 'direct'
+
 export type CorrelationRule = {
   id: string
   name: string
@@ -1771,6 +1773,7 @@ export type CorrelationRule = {
   rule_a_title?: string
   rule_b_title?: string
   entity_field: string
+  entity_field_type: EntityFieldType
   time_window_minutes: number
   severity: 'critical' | 'high' | 'medium' | 'low' | 'informational'
   created_at: string
@@ -1795,6 +1798,7 @@ export type CorrelationRuleCreate = {
   rule_a_id: string
   rule_b_id: string
   entity_field: string
+  entity_field_type?: EntityFieldType
   time_window_minutes: number
   severity: string
   change_reason: string
@@ -1803,6 +1807,7 @@ export type CorrelationRuleCreate = {
 export type CorrelationRuleUpdate = {
   name?: string
   entity_field?: string
+  entity_field_type?: EntityFieldType
   time_window_minutes?: number
   severity?: string
   change_reason: string
@@ -1815,6 +1820,7 @@ export type CorrelationRuleVersion = {
   rule_a_id: string
   rule_b_id: string
   entity_field: string
+  entity_field_type: EntityFieldType
   time_window_minutes: number
   severity: string
   changed_by: string
@@ -1844,6 +1850,11 @@ export type CorrelationRuleListResponse = {
   total: number
 }
 
+export type CommonLogFieldsResponse = {
+  common_fields: string[]
+  mapped_fields: Record<string, string>[]
+}
+
 // Correlation Rules API
 export const correlationRulesApi = {
   list: (includeUndeployed = true) => {
@@ -1852,6 +1863,8 @@ export const correlationRulesApi = {
     return api.get<CorrelationRuleListResponse>(`/correlation-rules?${params}`)
   },
   get: (id: string) => api.get<CorrelationRule>(`/correlation-rules/${id}`),
+  getCommonLogFields: (ruleAId: string, ruleBId: string) =>
+    api.get<CommonLogFieldsResponse>(`/correlation-rules/common-log-fields?rule_a_id=${ruleAId}&rule_b_id=${ruleBId}`),
   create: (data: CorrelationRuleCreate) => api.post<CorrelationRule>(`/correlation-rules`, data),
   update: (id: string, data: CorrelationRuleUpdate) => api.patch<CorrelationRule>(`/correlation-rules/${id}`, data),
   delete: (id: string) => api.delete(`/correlation-rules/${id}`),

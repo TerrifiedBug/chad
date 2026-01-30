@@ -9,7 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_db, require_permission_dep
+from opensearchpy import OpenSearch
+
+from app.api.deps import get_current_user, get_db, get_opensearch_client, require_permission_dep
 from app.models.audit_log import AuditLog
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_rule_comment import CorrelationRuleComment
@@ -18,6 +20,7 @@ from app.models.user import User
 from app.schemas.bulk import BulkOperationResult
 from app.schemas.correlation import (
     BulkCorrelationSnoozeRequest,
+    CommonLogFieldsResponse,
     CorrelationActivityItem,
     CorrelationRuleCommentCreate,
     CorrelationRuleCommentResponse,
@@ -31,6 +34,7 @@ from app.schemas.correlation import (
     CorrelationSnoozeRequest,
 )
 from app.services.audit import audit_log
+from app.services.opensearch import get_index_fields
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/correlation-rules", tags=["correlation"])
@@ -48,6 +52,7 @@ def build_correlation_response(
     return CorrelationRuleResponse(
         id=str(rule.id),
         name=rule.name,
+        entity_field_type=rule.entity_field_type,
         rule_a_id=str(rule.rule_a_id),
         rule_b_id=str(rule.rule_b_id),
         entity_field=rule.entity_field,
@@ -105,6 +110,56 @@ async def get_last_edited_by(db: AsyncSession, rule_id: str) -> str | None:
     if audit_entry and audit_entry.User:
         return audit_entry.User.email
     return None
+
+
+@router.get("/common-log-fields", response_model=CommonLogFieldsResponse)
+async def get_common_log_fields(
+    rule_a_id: str = Query(..., description="ID of the first rule"),
+    rule_b_id: str = Query(..., description="ID of the second rule"),
+    db: AsyncSession = Depends(get_db),
+    opensearch: OpenSearch = Depends(get_opensearch_client),
+    _: User = Depends(get_current_user),
+):
+    """
+    Get common log fields that can be used for correlation between two rules.
+
+    Returns fields that exist in both rules' index patterns, suitable for
+    direct log field correlation.
+    """
+    # Load both rules with their index patterns
+    rule_a_result = await db.execute(
+        select(Rule).options(selectinload(Rule.index_pattern)).where(Rule.id == UUID(rule_a_id))
+    )
+    rule_a = rule_a_result.scalar_one_or_none()
+    if not rule_a:
+        raise HTTPException(404, f"Rule A (ID: {rule_a_id}) not found")
+    if not rule_a.index_pattern:
+        raise HTTPException(400, f"Rule A has no index pattern")
+
+    rule_b_result = await db.execute(
+        select(Rule).options(selectinload(Rule.index_pattern)).where(Rule.id == UUID(rule_b_id))
+    )
+    rule_b = rule_b_result.scalar_one_or_none()
+    if not rule_b:
+        raise HTTPException(404, f"Rule B (ID: {rule_b_id}) not found")
+    if not rule_b.index_pattern:
+        raise HTTPException(400, f"Rule B has no index pattern")
+
+    # Get fields from both index patterns (exclude multi-fields like .keyword)
+    fields_a = get_index_fields(opensearch, rule_a.index_pattern.pattern, include_multi_fields=False)
+    fields_b = get_index_fields(opensearch, rule_b.index_pattern.pattern, include_multi_fields=False)
+
+    # Find common fields (fields that exist in both with the same name)
+    common_fields = sorted(fields_a & fields_b)
+
+    # For now, mapped_fields is empty - could be extended to check field_mappings table
+    # to find fields that are bridged via Sigma field mappings
+    mapped_fields: list[dict] = []
+
+    return CommonLogFieldsResponse(
+        common_fields=common_fields,
+        mapped_fields=mapped_fields,
+    )
 
 
 @router.get("", response_model=CorrelationRuleListResponse)
@@ -205,6 +260,7 @@ async def list_correlation_rule_versions(
             rule_a_id=str(v.rule_a_id),
             rule_b_id=str(v.rule_b_id),
             entity_field=v.entity_field,
+            entity_field_type=getattr(v, 'entity_field_type', 'sigma'),
             time_window_minutes=v.time_window_minutes,
             severity=v.severity,
             changed_by=str(v.changed_by),
@@ -258,6 +314,7 @@ async def create_correlation_rule(
         rule_a_id=UUID(data.rule_a_id),
         rule_b_id=UUID(data.rule_b_id),
         entity_field=data.entity_field,
+        entity_field_type=data.entity_field_type,
         time_window_minutes=data.time_window_minutes,
         severity=data.severity,
         created_by=current_user.id,
@@ -274,6 +331,7 @@ async def create_correlation_rule(
         rule_a_id=rule.rule_a_id,
         rule_b_id=rule.rule_b_id,
         entity_field=rule.entity_field,
+        entity_field_type=rule.entity_field_type,
         time_window_minutes=rule.time_window_minutes,
         severity=rule.severity,
         changed_by=current_user.id,
@@ -296,6 +354,7 @@ async def create_correlation_rule(
             "rule_a_id": str(rule.rule_a_id),
             "rule_b_id": str(rule.rule_b_id),
             "entity_field": rule.entity_field,
+            "entity_field_type": rule.entity_field_type,
             "time_window_minutes": rule.time_window_minutes,
             "severity": rule.severity,
             "change_reason": data.change_reason,
@@ -334,6 +393,9 @@ async def update_correlation_rule(
     if data.entity_field is not None and data.entity_field != rule.entity_field:
         changes["entity_field"] = {"old": rule.entity_field, "new": data.entity_field}
         has_versioned_changes = True
+    if data.entity_field_type is not None and data.entity_field_type != rule.entity_field_type:
+        changes["entity_field_type"] = {"old": rule.entity_field_type, "new": data.entity_field_type}
+        has_versioned_changes = True
     if data.time_window_minutes is not None and data.time_window_minutes != rule.time_window_minutes:
         changes["time_window_minutes"] = {"old": rule.time_window_minutes, "new": data.time_window_minutes}
         has_versioned_changes = True
@@ -346,6 +408,8 @@ async def update_correlation_rule(
         rule.name = data.name
     if data.entity_field is not None:
         rule.entity_field = data.entity_field
+    if data.entity_field_type is not None:
+        rule.entity_field_type = data.entity_field_type
     if data.time_window_minutes is not None:
         rule.time_window_minutes = data.time_window_minutes
     if data.severity is not None:
@@ -361,6 +425,7 @@ async def update_correlation_rule(
             rule_a_id=rule.rule_a_id,
             rule_b_id=rule.rule_b_id,
             entity_field=rule.entity_field,
+            entity_field_type=rule.entity_field_type,
             time_window_minutes=rule.time_window_minutes,
             severity=rule.severity,
             changed_by=current_user.id,
@@ -449,6 +514,7 @@ async def deploy_correlation_rule(
             rule_a_id=rule.rule_a_id,
             rule_b_id=rule.rule_b_id,
             entity_field=rule.entity_field,
+            entity_field_type=rule.entity_field_type,
             time_window_minutes=rule.time_window_minutes,
             severity=rule.severity,
             changed_by=current_user.id,
@@ -592,6 +658,7 @@ async def rollback_correlation_rule(
         rule_a_id=target_version.rule_a_id,
         rule_b_id=target_version.rule_b_id,
         entity_field=target_version.entity_field,
+        entity_field_type=getattr(target_version, 'entity_field_type', 'sigma'),
         time_window_minutes=target_version.time_window_minutes,
         severity=target_version.severity,
         changed_by=current_user.id,
@@ -604,6 +671,7 @@ async def rollback_correlation_rule(
     rule.rule_a_id = target_version.rule_a_id
     rule.rule_b_id = target_version.rule_b_id
     rule.entity_field = target_version.entity_field
+    rule.entity_field_type = getattr(target_version, 'entity_field_type', 'sigma')
     rule.time_window_minutes = target_version.time_window_minutes
     rule.severity = target_version.severity
     rule.current_version = new_version_number
