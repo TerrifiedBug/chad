@@ -1372,6 +1372,7 @@ export type AlertCluster = {
   representative: Alert
   count: number
   alert_ids: string[]
+  alerts: Alert[]  // All alerts in the cluster for expanded view
   time_range: [string | null, string | null]
 }
 

@@ -114,6 +114,7 @@ async def list_alerts(
                         representative=AlertResponse(**c["representative"]),
                         count=c["count"],
                         alert_ids=c["alert_ids"],
+                        alerts=[AlertResponse(**a) for a in c["alerts"]],
                         time_range=c["time_range"],
                     )
                 )

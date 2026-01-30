@@ -71,6 +71,9 @@ class TestClusterAlertsSameRule:
         assert len(clusters) == 1
         assert clusters[0]["count"] == 3
         assert set(clusters[0]["alert_ids"]) == {"a1", "a2", "a3"}
+        # Verify full alerts are included for expanded view
+        assert "alerts" in clusters[0]
+        assert len(clusters[0]["alerts"]) == 3
 
     def test_splits_clusters_outside_window(self):
         alerts = [

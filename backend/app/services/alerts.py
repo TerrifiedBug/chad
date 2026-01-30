@@ -256,6 +256,7 @@ def _create_cluster(alerts: list[dict]) -> dict:
         "representative": representative,
         "count": len(alerts),
         "alert_ids": [a.get("alert_id", a.get("id")) for a in alerts],
+        "alerts": alerts,  # Include all alerts for expanded view
         "time_range": (first_ts, last_ts),
     }
 

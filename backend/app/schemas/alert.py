@@ -49,6 +49,7 @@ class AlertCluster(BaseModel):
     representative: AlertResponse
     count: int
     alert_ids: list[str]
+    alerts: list[AlertResponse]  # All alerts in the cluster for expanded view
     time_range: tuple[str | None, str | None]
 
 
