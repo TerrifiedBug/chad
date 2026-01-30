@@ -28,9 +28,24 @@ POSTGRES_URL = (
 TEST_DATABASE_URL = f"{POSTGRES_URL}/{TEST_DB_NAME}"
 
 
+def _should_skip_db_setup(config):
+    """Check if all collected tests are in tests/core (unit tests without DB)."""
+    # Check if we're running a subset of tests
+    if hasattr(config, 'args') and config.args:
+        # If any arg contains 'tests/core', skip DB setup
+        for arg in config.args:
+            if 'tests/core' in arg:
+                return True
+    return False
+
+
 @pytest.fixture(scope="session", autouse=True)
-def create_test_database():
+def create_test_database(request):
     """Create the test database if it doesn't exist."""
+    # Skip DB setup for unit tests in tests/core
+    if _should_skip_db_setup(request.config):
+        return
+
     import asyncio
     from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy.pool import NullPool
