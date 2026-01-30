@@ -298,7 +298,8 @@ class AlertService:
         if rule_id:
             must.append({"term": {"rule_id": rule_id}})
         if owner_id:
-            must.append({"term": {"owner_id": owner_id}})
+            # Use .keyword suffix for exact matching (dynamic mapping creates text + keyword multifield)
+            must.append({"term": {"owner_id.keyword": owner_id}})
 
         query = {
             "query": {"bool": {"must": must}} if must else {"match_all": {}},
