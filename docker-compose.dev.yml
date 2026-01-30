@@ -65,6 +65,7 @@ services:
     volumes:
       - ./backend:/app
       - chad_data:/data
+    # Note: --reload is incompatible with --workers, dev stays single-worker
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
 
   frontend:
