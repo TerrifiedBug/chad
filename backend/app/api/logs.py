@@ -493,7 +493,7 @@ async def receive_logs(
             alerts_generated=len(alerts_created),
             rules_triggered=total_matches,
             queue_depth=0,  # TODO: Track actual queue depth from BackgroundTasks
-            avg_latency_ms=avg_latency,
+            avg_detection_latency_ms=avg_latency,
         )
         db.add(metric)
         await db.commit()
