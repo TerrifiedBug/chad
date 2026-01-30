@@ -71,9 +71,11 @@ jobs:
             git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" >> changelog.md
           fi
 
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          # Use unique delimiter to avoid conflicts with commit messages containing EOF
+          DELIMITER="CHANGELOG_END_$(date +%s)"
+          echo "changelog<<${DELIMITER}" >> $GITHUB_OUTPUT
           cat changelog.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "${DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
