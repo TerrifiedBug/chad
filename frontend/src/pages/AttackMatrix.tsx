@@ -15,8 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { RefreshCw, ExternalLink, X, ChevronRight, Shield, Target } from 'lucide-react'
+import { RefreshCw, ExternalLink, X, ChevronRight, Shield, Target, Download, Loader2 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
+import { useToast } from '@/components/ui/toast-provider'
 
 type CoverageLevel = 'none' | 'low' | 'medium' | 'high'
 
@@ -44,12 +45,14 @@ const coverageTextColors: Record<CoverageLevel, string> = {
 export default function AttackMatrixPage() {
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
+  const { showToast } = useToast()
   const [matrix, setMatrix] = useState<AttackMatrixResponse | null>(null)
   const [coverage, setCoverage] = useState<AttackCoverageResponse | null>(null)
   const [selectedTechnique, setSelectedTechnique] = useState<TechniqueDetailResponse | null>(null)
   const [indexPatterns, setIndexPatterns] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState('')
 
   // Filters
@@ -137,6 +140,40 @@ export default function AttackMatrixPage() {
     )
   }
 
+  const handleExportPDF = async () => {
+    setIsExporting(true)
+    try {
+      const token = localStorage.getItem('chad-token')
+      const response = await fetch('/api/reports/attack-coverage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ format: 'pdf' }),
+      })
+      if (!response.ok) {
+        throw new Error('Export failed')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `attack-coverage-${new Date().toISOString().split('T')[0]}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      showToast('Coverage report downloaded successfully', 'success')
+    } catch (error) {
+      console.error('Export failed:', error)
+      showToast('Failed to export PDF', 'error')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   // Calculate stats
   const stats = useMemo(() => {
     if (!matrix || !coverage) return { total: 0, covered: 0, uncovered: 0, deployed: 0 }
@@ -206,10 +243,25 @@ export default function AttackMatrixPage() {
           </h1>
           <p className="text-muted-foreground">Visualize detection coverage across the ATT&CK Enterprise Matrix</p>
         </div>
-        <Button onClick={handleSync} disabled={isSyncing || !hasPermission('manage_settings')} variant="outline">
-          <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-          Sync
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleExportPDF} disabled={isExporting} variant="outline">
+            {isExporting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                Export PDF
+              </>
+            )}
+          </Button>
+          <Button onClick={handleSync} disabled={isSyncing || !hasPermission('manage_settings')} variant="outline">
+            <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+            Sync
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
