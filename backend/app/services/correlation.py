@@ -299,8 +299,12 @@ async def check_correlation(
             if existing_state:
                 # Correlation triggered! Both rules fired within time window
                 logger.info(
-                    f"Correlation triggered: {corr_rule.name} "
-                    f"(entity_field={entity_field}, type={field_type}, entity={entity_value}, paired_alert={existing_state.alert_id})"
+                    "Correlation triggered: %s (entity_field=%s, type=%s, entity=%s, paired_alert=%s)",
+                    sanitize_log_value(corr_rule.name),
+                    sanitize_log_value(entity_field),
+                    field_type,
+                    sanitize_log_value(entity_value),
+                    existing_state.alert_id,
                 )
 
                 # Create a correlation alert (this will be stored/processed elsewhere)
