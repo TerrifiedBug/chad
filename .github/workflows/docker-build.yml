@@ -10,17 +10,24 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_FRONTEND: ${{ github.repository }}/chad-frontend
-  IMAGE_NAME_BACKEND: ${{ github.repository }}/chad-backend
 
 jobs:
-  # Detect which files changed to determine if build is needed
+  # Detect which files changed and set image names (lowercase required for Docker)
   changes:
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.filter.outputs.code }}
+      image_frontend: ${{ steps.image-names.outputs.frontend }}
+      image_backend: ${{ steps.image-names.outputs.backend }}
     steps:
       - uses: actions/checkout@v4
+      - name: Set image names (lowercase required for Docker)
+        id: image-names
+        run: |
+          # Docker tags must be lowercase - github.repository may have uppercase
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "frontend=${REPO_LOWER}/chad-frontend" >> $GITHUB_OUTPUT
+          echo "backend=${REPO_LOWER}/chad-backend" >> $GITHUB_OUTPUT
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -99,7 +106,7 @@ jobs:
           context: ./frontend
           push: true
           platforms: linux/amd64
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}-amd64
+          tags: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_frontend }}:${{ github.sha }}-amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -109,7 +116,7 @@ jobs:
           context: ./backend
           push: true
           platforms: linux/amd64
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}-amd64
+          tags: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_backend }}:${{ github.sha }}-amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -141,7 +148,7 @@ jobs:
           context: ./frontend
           push: true
           platforms: linux/arm64
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}-arm64
+          tags: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_frontend }}:${{ github.sha }}-arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -151,7 +158,7 @@ jobs:
           context: ./backend
           push: true
           platforms: linux/arm64
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}-arm64
+          tags: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_backend }}:${{ github.sha }}-arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -176,7 +183,7 @@ jobs:
         id: meta-frontend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}
+          images: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_frontend }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -188,7 +195,7 @@ jobs:
         id: meta-backend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}
+          images: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_backend }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -199,8 +206,8 @@ jobs:
       - name: Create and push frontend multi-arch manifest
         env:
           FRONTEND_TAGS: ${{ steps.meta-frontend.outputs.tags }}
-          FRONTEND_AMD64: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}-amd64
-          FRONTEND_ARM64: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}-arm64
+          FRONTEND_AMD64: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_frontend }}:${{ github.sha }}-amd64
+          FRONTEND_ARM64: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_frontend }}:${{ github.sha }}-arm64
         run: |
           echo "$FRONTEND_TAGS" | while read -r TAG; do
             echo "Creating manifest for: $TAG"
@@ -210,8 +217,8 @@ jobs:
       - name: Create and push backend multi-arch manifest
         env:
           BACKEND_TAGS: ${{ steps.meta-backend.outputs.tags }}
-          BACKEND_AMD64: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}-amd64
-          BACKEND_ARM64: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}-arm64
+          BACKEND_AMD64: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_backend }}:${{ github.sha }}-amd64
+          BACKEND_ARM64: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_backend }}:${{ github.sha }}-arm64
         run: |
           echo "$BACKEND_TAGS" | while read -r TAG; do
             echo "Creating manifest for: $TAG"
