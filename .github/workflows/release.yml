@@ -72,9 +72,11 @@ jobs:
           fi
 
           # Use unique delimiter to avoid conflicts with commit messages containing EOF
+          # Add trailing newline since git log --pretty=format doesn't include one
           DELIMITER="CHANGELOG_END_$(date +%s)"
           echo "changelog<<${DELIMITER}" >> $GITHUB_OUTPUT
           cat changelog.md >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
           echo "${DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
