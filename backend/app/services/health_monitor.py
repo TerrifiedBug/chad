@@ -205,7 +205,7 @@ async def check_index_health(db: AsyncSession) -> list[dict]:
                 pattern,
                 level,
                 "latency",
-                f"Latency {latest.avg_detection_latency_ms}ms exceeds threshold {latency_ms}ms",
+                f"Latency {latest.avg_detection_latency_ms / 1000:.1f}s exceeds threshold {latency_ms / 1000:.1f}s",
                 {"latency_ms": latest.avg_detection_latency_ms, "threshold_ms": latency_ms},
             )
             if issue:

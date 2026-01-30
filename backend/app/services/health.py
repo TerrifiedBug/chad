@@ -178,10 +178,10 @@ async def get_index_health(
 
     if latest.avg_detection_latency_ms >= LATENCY_CRITICAL_MS:
         status = HealthStatus.CRITICAL
-        issues.append(f"Detection latency critical: {latest.avg_detection_latency_ms}ms")
+        issues.append(f"Detection latency critical: {latest.avg_detection_latency_ms / 1000:.1f}s")
     elif latest.avg_detection_latency_ms >= LATENCY_WARNING_MS:
         status = _max_status(status, HealthStatus.WARNING)
-        issues.append(f"Detection latency elevated: {latest.avg_detection_latency_ms}ms")
+        issues.append(f"Detection latency elevated: {latest.avg_detection_latency_ms / 1000:.1f}s")
 
     # Get aggregated metrics for time range
     agg_result = await db.execute(
