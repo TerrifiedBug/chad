@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, QueueStatsResponse, DeadLetterMessage } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -189,11 +189,6 @@ export default function SettingsPage() {
   })
   const [queueSettingsForm, setQueueSettingsForm] = useState<QueueSettings>(queueSettings)
   const [isSavingQueueSettings, setIsSavingQueueSettings] = useState(false)
-  const [queueStats, setQueueStats] = useState<QueueStatsResponse | null>(null)
-  const [deadLetterMessages, setDeadLetterMessages] = useState<DeadLetterMessage[]>([])
-  const [deadLetterCount, setDeadLetterCount] = useState(0)
-  const [isLoadingQueueStats, setIsLoadingQueueStats] = useState(false)
-  const [isClearingDeadLetter, setIsClearingDeadLetter] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -271,23 +266,6 @@ export default function SettingsPage() {
     }
   }
 
-  const loadQueueStats = async () => {
-    setIsLoadingQueueStats(true)
-    try {
-      const [stats, deadLetter] = await Promise.all([
-        queueApi.getStats(),
-        queueApi.getDeadLetter(50),
-      ])
-      setQueueStats(stats)
-      setDeadLetterMessages(deadLetter.messages)
-      setDeadLetterCount(deadLetter.count)
-    } catch (err) {
-      console.error('Failed to load queue stats:', err)
-    } finally {
-      setIsLoadingQueueStats(false)
-    }
-  }
-
   const saveQueueSettings = async () => {
     setIsSavingQueueSettings(true)
     try {
@@ -300,41 +278,6 @@ export default function SettingsPage() {
       setIsSavingQueueSettings(false)
     }
   }
-
-  const clearDeadLetterQueue = async () => {
-    if (!confirm('Are you sure you want to permanently delete all messages in the dead letter queue? This action cannot be undone.')) {
-      return
-    }
-    setIsClearingDeadLetter(true)
-    try {
-      await queueApi.clearDeadLetter()
-      setDeadLetterMessages([])
-      setDeadLetterCount(0)
-      showToast('Dead letter queue cleared')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to clear dead letter queue', 'error')
-    } finally {
-      setIsClearingDeadLetter(false)
-    }
-  }
-
-  const deleteDeadLetterMessage = async (messageId: string) => {
-    try {
-      await queueApi.deleteDeadLetterMessage(messageId)
-      setDeadLetterMessages(prev => prev.filter(m => m.id !== messageId))
-      setDeadLetterCount(prev => prev - 1)
-      showToast('Message deleted')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to delete message', 'error')
-    }
-  }
-
-  // Load queue stats when queue tab is selected
-  useEffect(() => {
-    if (activeTab === 'queue') {
-      loadQueueStats()
-    }
-  }, [activeTab])
 
   // Check OpenSearch connection when the tab is selected
   useEffect(() => {
@@ -1925,108 +1868,9 @@ export default function SettingsPage() {
                 {isSavingQueueSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Settings
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div>
-                <CardTitle>Queue Statistics</CardTitle>
-                <CardDescription>Current queue depths and processing status</CardDescription>
-              </div>
-              <Button variant="outline" size="sm" onClick={loadQueueStats} disabled={isLoadingQueueStats}>
-                {isLoadingQueueStats ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Refresh
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {queueStats ? (
-                <div className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="p-4 border rounded-lg">
-                      <div className="text-2xl font-bold">{queueStats.total_depth.toLocaleString()}</div>
-                      <div className="text-sm text-muted-foreground">Total Queue Depth</div>
-                    </div>
-                    <div className="p-4 border rounded-lg">
-                      <div className="text-2xl font-bold">{Object.keys(queueStats.queues).length}</div>
-                      <div className="text-sm text-muted-foreground">Active Streams</div>
-                    </div>
-                    <div className="p-4 border rounded-lg">
-                      <div className={`text-2xl font-bold ${queueStats.dead_letter_count > 0 ? 'text-red-500' : ''}`}>
-                        {queueStats.dead_letter_count.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Dead Letter Count</div>
-                    </div>
-                  </div>
-                  {Object.keys(queueStats.queues).length > 0 && (
-                    <div className="pt-4 border-t">
-                      <h4 className="font-medium mb-2">Queue Depths by Index</h4>
-                      <div className="space-y-2">
-                        {Object.entries(queueStats.queues).map(([index, depth]) => (
-                          <div key={index} className="flex justify-between items-center text-sm">
-                            <span className="font-mono">{index}</span>
-                            <span className={depth > queueSettings.warning_threshold ? 'text-yellow-500 font-medium' : ''}>{depth.toLocaleString()}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  {isLoadingQueueStats ? 'Loading...' : 'No queue statistics available. Redis may not be configured.'}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div>
-                <CardTitle>Dead Letter Queue</CardTitle>
-                <CardDescription>Messages that could not be processed ({deadLetterCount} total)</CardDescription>
-              </div>
-              {deadLetterCount > 0 && (
-                <Button variant="destructive" size="sm" onClick={clearDeadLetterQueue} disabled={isClearingDeadLetter}>
-                  {isClearingDeadLetter ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
-                  Clear All
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              {deadLetterMessages.length > 0 ? (
-                <div className="space-y-2">
-                  {deadLetterMessages.map((message) => (
-                    <div key={message.id} className="p-3 border rounded-lg text-sm">
-                      <div className="flex justify-between items-start">
-                        <div className="space-y-1">
-                          <div className="font-mono text-xs text-muted-foreground">{message.id}</div>
-                          <div className="text-red-500">{message.reason}</div>
-                          <div className="text-muted-foreground">
-                            From: <span className="font-mono">{message.original_stream}</span>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteDeadLetterMessage(message.id)}
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {deadLetterCount > deadLetterMessages.length && (
-                    <div className="text-center text-sm text-muted-foreground pt-2">
-                      Showing {deadLetterMessages.length} of {deadLetterCount} messages
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  No messages in dead letter queue
-                </div>
-              )}
+              <p className="text-sm text-muted-foreground mt-4">
+                Queue statistics and dead letter management are available on the <a href="/health" className="text-primary underline">Health</a> page.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

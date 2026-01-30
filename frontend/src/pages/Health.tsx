@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse } from '@/lib/api'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse, DeadLetterMessage } from '@/lib/api'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers } from 'lucide-react'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers, XCircle, Loader2, ChevronUp } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useToast } from '@/components/ui/toast-provider'
 import {
   Popover,
   PopoverContent,
@@ -72,6 +73,7 @@ function formatNumber(n: number): string {
 
 export default function HealthPage() {
   const { hasPermission } = useAuth()
+  const { showToast } = useToast()
   const [health, setHealth] = useState<IndexHealth[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -82,6 +84,16 @@ export default function HealthPage() {
 
   // Queue health state
   const [queueStats, setQueueStats] = useState<QueueStatsResponse | null>(null)
+  const [isLoadingQueueStats, setIsLoadingQueueStats] = useState(false)
+
+  // Dead letter state
+  const [deadLetterMessages, setDeadLetterMessages] = useState<DeadLetterMessage[]>([])
+  const [deadLetterCount, setDeadLetterCount] = useState(0)
+  const [isClearingDeadLetter, setIsClearingDeadLetter] = useState(false)
+
+  // Collapsible sections state
+  const [queueDetailsOpen, setQueueDetailsOpen] = useState(false)
+  const [deadLetterOpen, setDeadLetterOpen] = useState(false)
 
   // Status popover state
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false)
@@ -125,12 +137,54 @@ export default function HealthPage() {
   }
 
   const loadQueueStats = async () => {
+    setIsLoadingQueueStats(true)
     try {
-      const stats = await queueApi.getStats()
+      const [stats, deadLetter] = await Promise.all([
+        queueApi.getStats(),
+        queueApi.getDeadLetter(50),
+      ])
       setQueueStats(stats)
+      setDeadLetterMessages(deadLetter.messages)
+      setDeadLetterCount(deadLetter.count)
     } catch (err) {
       // Queue stats may not be available if Redis isn't configured
       console.error('Failed to load queue stats:', err)
+    } finally {
+      setIsLoadingQueueStats(false)
+    }
+  }
+
+  const clearDeadLetterQueue = async () => {
+    if (!confirm('Are you sure you want to permanently delete all messages in the dead letter queue? This action cannot be undone.')) {
+      return
+    }
+    setIsClearingDeadLetter(true)
+    try {
+      await queueApi.clearDeadLetter()
+      setDeadLetterMessages([])
+      setDeadLetterCount(0)
+      if (queueStats) {
+        setQueueStats({ ...queueStats, dead_letter_count: 0 })
+      }
+      showToast('Dead letter queue cleared')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to clear dead letter queue', 'error')
+    } finally {
+      setIsClearingDeadLetter(false)
+    }
+  }
+
+  const deleteDeadLetterMessage = async (messageId: string) => {
+    try {
+      await queueApi.deleteDeadLetterMessage(messageId)
+      setDeadLetterMessages(prev => prev.filter(m => m.id !== messageId))
+      setDeadLetterCount(prev => prev - 1)
+      if (queueStats) {
+        setQueueStats({ ...queueStats, dead_letter_count: queueStats.dead_letter_count - 1 })
+      }
+      showToast('Message deleted')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete message', 'error')
     }
   }
 
@@ -406,6 +460,155 @@ export default function HealthPage() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Queue Health Section */}
+      {hasPermission('manage_settings') && (
+        <div className="space-y-4">
+          {/* Queue Statistics Card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setQueueDetailsOpen(!queueDetailsOpen)}
+              >
+                <div className="flex items-center gap-2">
+                  <Layers className="h-5 w-5" />
+                  <CardTitle className="text-lg">Queue Health</CardTitle>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      loadQueueStats()
+                    }}
+                    disabled={isLoadingQueueStats}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isLoadingQueueStats ? 'animate-spin' : ''}`} />
+                  </Button>
+                  {queueDetailsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </div>
+              </div>
+              <CardDescription>Current queue depths and processing status</CardDescription>
+            </CardHeader>
+            {queueDetailsOpen && (
+              <CardContent>
+                {queueStats ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="p-4 border rounded-lg">
+                        <div className="text-2xl font-bold">{queueStats.total_depth.toLocaleString()}</div>
+                        <div className="text-sm text-muted-foreground">Total Queue Depth</div>
+                      </div>
+                      <div className="p-4 border rounded-lg">
+                        <div className="text-2xl font-bold">{Object.keys(queueStats.queues).length}</div>
+                        <div className="text-sm text-muted-foreground">Active Streams</div>
+                      </div>
+                      <div className="p-4 border rounded-lg">
+                        <div className={`text-2xl font-bold ${queueStats.dead_letter_count > 0 ? 'text-red-500' : ''}`}>
+                          {queueStats.dead_letter_count.toLocaleString()}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Dead Letter Count</div>
+                      </div>
+                    </div>
+                    {Object.keys(queueStats.queues).length > 0 && (
+                      <div className="pt-4 border-t">
+                        <h4 className="font-medium mb-2">Queue Depths by Index</h4>
+                        <div className="space-y-2">
+                          {Object.entries(queueStats.queues).map(([index, depth]) => (
+                            <div key={index} className="flex justify-between items-center text-sm">
+                              <span className="font-mono">{index}</span>
+                              <span className={depth > 10000 ? 'text-yellow-500 font-medium' : ''}>{depth.toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    {isLoadingQueueStats ? 'Loading...' : 'No queue statistics available. Redis may not be configured.'}
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+
+          {/* Dead Letter Queue Card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setDeadLetterOpen(!deadLetterOpen)}
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className={`h-5 w-5 ${deadLetterCount > 0 ? 'text-orange-500' : 'text-muted-foreground'}`} />
+                  <CardTitle className="text-lg">Dead Letter Queue</CardTitle>
+                  {deadLetterCount > 0 && (
+                    <span className="text-sm text-orange-500 font-medium">({deadLetterCount})</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {deadLetterCount > 0 && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        clearDeadLetterQueue()
+                      }}
+                      disabled={isClearingDeadLetter}
+                    >
+                      {isClearingDeadLetter ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                      Clear All
+                    </Button>
+                  )}
+                  {deadLetterOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </div>
+              </div>
+              <CardDescription>Messages that could not be processed</CardDescription>
+            </CardHeader>
+            {deadLetterOpen && (
+              <CardContent>
+                {deadLetterMessages.length > 0 ? (
+                  <div className="space-y-2">
+                    {deadLetterMessages.map((message) => (
+                      <div key={message.id} className="p-3 border rounded-lg text-sm">
+                        <div className="flex justify-between items-start">
+                          <div className="space-y-1">
+                            <div className="font-mono text-xs text-muted-foreground">{message.id}</div>
+                            <div className="text-red-500">{message.reason}</div>
+                            <div className="text-muted-foreground">
+                              From: <span className="font-mono">{message.original_stream}</span>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteDeadLetterMessage(message.id)}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {deadLetterCount > deadLetterMessages.length && (
+                      <div className="text-center text-sm text-muted-foreground pt-2">
+                        Showing {deadLetterMessages.length} of {deadLetterCount} messages
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No messages in dead letter queue
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        </div>
       )}
 
       {/* Index Pattern Health Cards */}

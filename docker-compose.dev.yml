@@ -59,6 +59,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
       - "8000:8000"
+      - "8001:8001"  # Direct log ingestion (bypass nginx)
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,8 +68,13 @@ services:
     volumes:
       - ./backend:/app
       - chad_data:/data
-    # Note: --reload is incompatible with --workers, dev stays single-worker
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+    # Note: --reload is incompatible with --workers, dev uses single-worker per port
+    command: >
+      sh -c "
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info &
+      uvicorn app.main:app --host 0.0.0.0 --port 8001 --log-level info &
+      wait
+      "
 
   worker:
     build:
