@@ -43,6 +43,7 @@ def _should_skip_db_setup(config):
             'test_logs_queue.py',         # Unit tests with mocking
             'test_batch_percolate.py',    # Unit tests with mocking
             'test_bulk_alerts.py',        # Unit tests with mocking
+            'test_worker.py',             # Unit tests with mocking
         ]
         for arg in config.args:
             for skip_pattern in skip_patterns:
