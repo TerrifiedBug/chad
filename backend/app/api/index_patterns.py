@@ -39,7 +39,7 @@ async def list_index_patterns(
 async def create_index_pattern(
     pattern_data: IndexPatternCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
+    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     # Check for duplicate name
     result = await db.execute(
@@ -100,7 +100,7 @@ async def update_index_pattern(
     pattern_id: UUID,
     pattern_data: IndexPatternUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
+    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
@@ -167,7 +167,7 @@ async def update_index_pattern(
 async def delete_index_pattern(
     pattern_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
+    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
@@ -199,7 +199,7 @@ async def regenerate_auth_token(
     pattern_id: UUID,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     """
     Regenerate the auth token for an index pattern.

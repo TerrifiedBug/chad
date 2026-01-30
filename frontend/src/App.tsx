@@ -149,14 +149,14 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/index-patterns" element={
-        <AuthRoute>
+        <ProtectedRoute permission="manage_index_config">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <IndexPatternsPage />
             </main>
           </div>
-        </AuthRoute>
+        </ProtectedRoute>
       } />
       <Route path="/alerts" element={
         <AuthRoute>
@@ -259,17 +259,17 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/health" element={
-        <ProtectedRoute permission="manage_settings">
+        <AuthRoute>
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">
               <HealthPage />
             </main>
           </div>
-        </ProtectedRoute>
+        </AuthRoute>
       } />
       <Route path="/field-mappings" element={
-        <ProtectedRoute permission="manage_settings">
+        <ProtectedRoute permission="manage_index_config">
           <div className="min-h-screen bg-background">
             <Header />
             <main className="px-6 py-8">

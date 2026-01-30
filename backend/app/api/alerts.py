@@ -1,5 +1,6 @@
 """Alerts API - view and manage alerts."""
 
+import logging
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
@@ -23,11 +24,13 @@ from app.schemas.alert import (
     AlertStatusUpdate,
     ClusteredAlertListResponse,
 )
-from app.schemas.alert_comment import AlertCommentCreate, AlertCommentResponse
+from app.schemas.alert_comment import AlertCommentCreate, AlertCommentResponse, AlertCommentUpdate
 from app.services.alerts import AlertService, cluster_alerts
 from app.services.audit import audit_log
 from app.services.settings import get_setting
 from app.utils.request import get_client_ip
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -95,13 +98,19 @@ async def list_alerts(
     if cluster:
         clustering_settings = await get_setting(db, "alert_clustering")
 
-    # When clustering is enabled, fetch more alerts for better clustering results
-    # (pagination doesn't make sense with clustering - we need to see the full picture)
+    # Determine fetch strategy based on filters
+    # When clustering is enabled or filtering by owner, fetch more alerts
+    # (pagination doesn't make sense with these filters - we need to see the full picture)
     fetch_limit = limit
     fetch_offset = offset
     if clustering_settings and clustering_settings.get("enabled", False):
         fetch_limit = 1000  # Fetch more alerts when clustering
         fetch_offset = 0    # Always start from the beginning for clustering
+    elif owner_id:
+        # "Assigned to me" filter - fetch all assigned alerts for the user
+        # Users typically want to see all their assigned alerts at once
+        fetch_limit = 1000
+        fetch_offset = 0
 
     result = alert_service.get_alerts(
         index_pattern=index_pattern,
@@ -383,6 +392,7 @@ async def list_alert_comments(
             username=c.user.email if c.user else "Unknown",
             content=c.content,
             created_at=c.created_at,
+            updated_at=c.updated_at,
             is_deleted=c.deleted_at is not None,
         )
         for c in comments
@@ -393,16 +403,21 @@ async def list_alert_comments(
 async def create_alert_comment(
     alert_id: str,
     comment_data: AlertCommentCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
-    """Add a comment to an alert."""
+    """Add a comment to an alert. Requires manage_alerts permission (viewers cannot comment)."""
     comment = AlertComment(
         alert_id=alert_id,
         user_id=current_user.id,
         content=comment_data.content,
     )
     db.add(comment)
+    await audit_log(
+        db, current_user.id, "alert.comment_add", "alert_comment",
+        str(comment.id), {"alert_id": alert_id}, ip_address=get_client_ip(request)
+    )
     await db.commit()
     await db.refresh(comment)
 
@@ -417,10 +432,61 @@ async def create_alert_comment(
     )
 
 
+@router.patch("/{alert_id}/comments/{comment_id}", response_model=AlertCommentResponse)
+async def update_alert_comment(
+    alert_id: str,
+    comment_id: UUID,
+    comment_data: AlertCommentUpdate,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+):
+    """Update own comment. Users can only edit their own comments."""
+    result = await db.execute(
+        select(AlertComment).where(
+            AlertComment.id == comment_id,
+            AlertComment.alert_id == alert_id,
+            AlertComment.deleted_at.is_(None),
+        )
+    )
+    comment = result.scalar_one_or_none()
+
+    if not comment:
+        raise not_found("Comment")
+
+    # Only allow editing own comments
+    if comment.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only edit your own comments"
+        )
+
+    comment.content = comment_data.content
+    comment.updated_at = datetime.now(UTC)
+    await audit_log(
+        db, current_user.id, "alert.comment_edit", "alert_comment",
+        str(comment_id), {"alert_id": alert_id}, ip_address=get_client_ip(request)
+    )
+    await db.commit()
+    await db.refresh(comment)
+
+    return AlertCommentResponse(
+        id=comment.id,
+        alert_id=comment.alert_id,
+        user_id=comment.user_id,
+        username=current_user.email,
+        content=comment.content,
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
+        is_deleted=False,
+    )
+
+
 @router.delete("/{alert_id}/comments/{comment_id}")
 async def delete_alert_comment(
     alert_id: str,
     comment_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("admin"))],
 ):
@@ -438,6 +504,10 @@ async def delete_alert_comment(
 
     comment.deleted_at = datetime.now(UTC)
     comment.deleted_by_id = current_user.id
+    await audit_log(
+        db, current_user.id, "alert.comment_delete", "alert_comment",
+        str(comment_id), {"alert_id": alert_id}, ip_address=get_client_ip(request)
+    )
     await db.commit()
 
     return {"message": "Comment deleted"}
@@ -449,10 +519,12 @@ async def delete_alert_comment(
 @router.post("/{alert_id}/assign")
 async def assign_alert(
     alert_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
-    """Assign alert to current user."""
+    """Assign alert to current user. Requires manage_alerts permission (viewers cannot take ownership)."""
     try:
         # First find the alert to get its index and document ID
         result = os_client.search(
@@ -479,6 +551,11 @@ async def assign_alert(
             },
             refresh=True,
         )
+        await audit_log(
+            db, current_user.id, "alert.assign", "alert",
+            alert_id, {"owner": current_user.email}, ip_address=get_client_ip(request)
+        )
+        await db.commit()
         return {"message": "Alert assigned", "owner": current_user.email}
     except HTTPException:
         raise
@@ -489,10 +566,12 @@ async def assign_alert(
 @router.post("/{alert_id}/unassign")
 async def unassign_alert(
     alert_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
-    """Release ownership of alert."""
+    """Release ownership of alert. Requires manage_alerts permission."""
     try:
         # First find the alert to get its index and document ID
         result = os_client.search(
@@ -519,6 +598,11 @@ async def unassign_alert(
             },
             refresh=True,
         )
+        await audit_log(
+            db, current_user.id, "alert.unassign", "alert",
+            alert_id, {}, ip_address=get_client_ip(request)
+        )
+        await db.commit()
         return {"message": "Alert unassigned"}
     except HTTPException:
         raise

@@ -30,7 +30,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 
@@ -214,7 +214,12 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
     correlation_name?: string
     source_alerts?: Array<{ alert_id: string; rule_title: string; timestamp: string }>
     entity_field?: string
+    entity_field_type?: string
     entity_value?: string
+    rule_a_id?: string
+    rule_b_id?: string
+    first_alert_id?: string
+    second_alert_id?: string
   }
 
   if (!correlationData) {
@@ -230,6 +235,19 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
+        {/* Link to correlation rule */}
+        {correlationData.correlation_rule_id && (
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">Correlation Rule:</span>
+            <Link
+              to={`/correlation/${correlationData.correlation_rule_id}`}
+              className="text-primary hover:underline font-medium"
+            >
+              {correlationData.correlation_name || 'View Rule'}
+            </Link>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <span className="text-muted-foreground">Entity Field:</span>
@@ -241,6 +259,59 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
           </div>
         </div>
 
+        {/* Links to source sigma rules */}
+        {(correlationData.rule_a_id || correlationData.rule_b_id) && (
+          <div>
+            <div className="text-muted-foreground mb-2">Linked Sigma Rules:</div>
+            <div className="flex gap-2 flex-wrap">
+              {correlationData.rule_a_id && (
+                <Link
+                  to={`/rules/${correlationData.rule_a_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
+                >
+                  <FileText className="h-3 w-3" />
+                  Rule A
+                </Link>
+              )}
+              {correlationData.rule_b_id && (
+                <Link
+                  to={`/rules/${correlationData.rule_b_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
+                >
+                  <FileText className="h-3 w-3" />
+                  Rule B
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Links to source alerts */}
+        {(correlationData.first_alert_id || correlationData.second_alert_id) && (
+          <div>
+            <div className="text-muted-foreground mb-2">Source Alerts:</div>
+            <div className="flex gap-2 flex-wrap">
+              {correlationData.first_alert_id && (
+                <Link
+                  to={`/alerts/${correlationData.first_alert_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
+                >
+                  First Alert
+                </Link>
+              )}
+              {correlationData.second_alert_id && (
+                <Link
+                  to={`/alerts/${correlationData.second_alert_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
+                >
+                  Second Alert
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Legacy source_alerts format */}
         {correlationData.source_alerts && correlationData.source_alerts.length > 0 && (
           <div>
             <div className="text-muted-foreground mb-2">Source Alerts:</div>
@@ -436,7 +507,7 @@ function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): stri
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
-  const { hasPermission, user } = useAuth()
+  const { hasPermission, user, isAdmin } = useAuth()
   const [alert, setAlert] = useState<Alert | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -458,6 +529,8 @@ export default function AlertDetailPage() {
   const [comments, setComments] = useState<AlertComment[]>([])
   const [newComment, setNewComment] = useState('')
   const [isSubmittingComment, setIsSubmittingComment] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editingCommentContent, setEditingCommentContent] = useState('')
   const { showToast } = useToast()
 
   // Ownership state
@@ -547,10 +620,37 @@ export default function AlertDetailPage() {
       const comment = await alertCommentsApi.create(alert.alert_id, newComment)
       setComments([...comments, comment])
       setNewComment('')
-    } catch (err) {
+    } catch {
       showToast('Failed to add comment', 'error')
     } finally {
       setIsSubmittingComment(false)
+    }
+  }
+
+  const handleEditComment = async (commentId: string) => {
+    if (!editingCommentContent.trim() || !alert?.alert_id) return
+    setIsSubmittingComment(true)
+    try {
+      const updated = await alertCommentsApi.update(alert.alert_id, commentId, editingCommentContent)
+      setComments(comments.map(c => c.id === commentId ? updated : c))
+      setEditingCommentId(null)
+      setEditingCommentContent('')
+      showToast('Comment updated', 'success')
+    } catch {
+      showToast('Failed to update comment', 'error')
+    } finally {
+      setIsSubmittingComment(false)
+    }
+  }
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!alert?.alert_id) return
+    try {
+      await alertCommentsApi.delete(alert.alert_id, commentId)
+      setComments(comments.filter(c => c.id !== commentId))
+      showToast('Comment deleted', 'success')
+    } catch {
+      showToast('Failed to delete comment', 'error')
     }
   }
 
@@ -566,7 +666,7 @@ export default function AlertDetailPage() {
         const result = await alertsApi.assign(id)
         setAlert({ ...alert, owner_id: user?.id, owner_username: result.owner, owned_at: new Date().toISOString() })
       }
-    } catch (err) {
+    } catch {
       showToast('Failed to update ownership', 'error')
     } finally {
       setIsAssigning(false)
@@ -832,7 +932,8 @@ export default function AlertDetailPage() {
             variant={alert.owner_id === user?.id ? 'destructive' : 'outline'}
             size="sm"
             onClick={handleToggleOwnership}
-            disabled={isAssigning}
+            disabled={isAssigning || !hasPermission('manage_alerts')}
+            title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
           >
             {isAssigning ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -949,34 +1050,37 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Rule
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Link
-                to={`/rules/${alert.rule_id}`}
-                className="text-sm text-primary hover:underline"
-              >
-                View Rule
-              </Link>
-              {alert.tags.length > 0 && (
-                <div className="flex gap-1 flex-wrap mt-2">
-                  {alert.tags.map((tag, i) => (
-                    <span
-                      key={i}
-                      className="px-1.5 py-0.5 bg-muted rounded text-xs"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Rule card - only show for non-correlation alerts */}
+          {!(alert.log_document as Record<string, unknown>)?.correlation && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Rule
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Link
+                  to={`/rules/${alert.rule_id}`}
+                  className="text-sm text-primary hover:underline"
+                >
+                  View Rule
+                </Link>
+                {alert.tags.length > 0 && (
+                  <div className="flex gap-1 flex-wrap mt-2">
+                    {alert.tags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* GeoIP Data - shown if enrichment data exists */}
           {(() => {
@@ -1051,40 +1155,110 @@ export default function AlertDetailPage() {
             {comments.map((comment) => (
               <div key={comment.id} className="border-b pb-3 last:border-0">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{comment.username}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(comment.created_at).toLocaleString()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">{comment.username}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(comment.created_at).toLocaleString()}
+                      {comment.updated_at && (
+                        <span className="ml-1">(edited)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {/* Edit button - only for own comments */}
+                    {user?.id === comment.user_id && hasPermission('manage_alerts') && editingCommentId !== comment.id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => {
+                          setEditingCommentId(comment.id)
+                          setEditingCommentContent(comment.content)
+                        }}
+                        title="Edit comment"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {/* Delete button - only for admins */}
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteComment(comment.id)}
+                        title="Delete comment (admin only)"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+                {editingCommentId === comment.id ? (
+                  <div className="mt-2 flex gap-2">
+                    <Textarea
+                      value={editingCommentContent}
+                      onChange={(e) => setEditingCommentContent(e.target.value)}
+                      className="min-h-[60px]"
+                    />
+                    <div className="flex flex-col gap-1">
+                      <Button
+                        size="sm"
+                        onClick={() => handleEditComment(comment.id)}
+                        disabled={isSubmittingComment || !editingCommentContent.trim()}
+                      >
+                        <Check className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingCommentId(null)
+                          setEditingCommentContent('')
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+                )}
               </div>
             ))}
             {comments.length === 0 && (
-              <p className="text-sm text-muted-foreground">No comments yet. Add investigation notes to track your analysis.</p>
+              <p className="text-sm text-muted-foreground">
+                {hasPermission('manage_alerts')
+                  ? 'No comments yet. Add investigation notes to track your analysis.'
+                  : 'No comments yet.'}
+              </p>
             )}
           </div>
-          <div className="mt-4 flex gap-2">
-            <Textarea
-              placeholder="Add investigation notes..."
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              className="min-h-[80px]"
-            />
-            <Button
-              onClick={handleAddComment}
-              disabled={isSubmittingComment || !newComment.trim()}
-              className="self-end"
-            >
-              {isSubmittingComment ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                'Add'
-              )}
-            </Button>
-          </div>
+          {/* Add comment section - only for users with manage_alerts permission */}
+          {hasPermission('manage_alerts') && (
+            <div className="mt-4 flex gap-2">
+              <Textarea
+                placeholder="Add investigation notes..."
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                className="min-h-[80px]"
+              />
+              <Button
+                onClick={handleAddComment}
+                disabled={isSubmittingComment || !newComment.trim()}
+                className="self-end"
+              >
+                {isSubmittingComment ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  'Add'
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

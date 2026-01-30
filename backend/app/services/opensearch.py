@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 # Suppress urllib3 InsecureRequestWarning when verify_certs=False
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
+# Suppress opensearch-py ssl_context warning (we already log our own security warning)
+warnings.filterwarnings("ignore", message="When using `ssl_context`")
+
 # Track whether SSL warning has been logged to avoid repeated warnings
 _ssl_warning_logged = False
 
