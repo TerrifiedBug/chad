@@ -21,6 +21,15 @@ from app.services.field_mapping import resolve_mappings
 logger = logging.getLogger(__name__)
 
 
+def sanitize_log_value(value: any) -> str:
+    """Sanitize a value for safe logging to prevent log injection attacks."""
+    if value is None:
+        return "None"
+    s = str(value)
+    # Remove newlines and control characters that could forge log entries
+    return s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+
+
 def is_rule_snoozed(corr_rule: CorrelationRule) -> bool:
     """Check if a correlation rule is currently snoozed."""
     if corr_rule.snooze_indefinite:
@@ -89,7 +98,11 @@ async def resolve_entity_field(
             logger.debug(f"Direct field '{entity_field}' not found in log document")
             return None
 
-        logger.info(f"Correlation check: Resolved '{entity_field}' (direct) to value '{entity_value}'")
+        logger.info(
+            "Correlation check: Resolved '%s' (direct) to value '%s'",
+            sanitize_log_value(entity_field),
+            sanitize_log_value(entity_value),
+        )
         return str(entity_value)
 
     # Sigma field mode - resolve through field mappings
@@ -249,7 +262,13 @@ async def check_correlation(
             logger.info(f"Correlation check: Could not resolve entity field '{entity_field}' (type={field_type}) for rule {rule_id}")
             continue
 
-        logger.info(f"Correlation check: Resolved '{entity_field}' (type={field_type}) to value '{entity_value}' for rule {rule_id}")
+        logger.info(
+            "Correlation check: Resolved '%s' (type=%s) to value '%s' for rule %s",
+            sanitize_log_value(entity_field),
+            field_type,
+            sanitize_log_value(entity_value),
+            rule_id,
+        )
 
         now = datetime.utcnow()
 
@@ -320,8 +339,10 @@ async def check_correlation(
                 db.add(state)
                 # Log state storage at INFO level for debugging correlation issues
                 logger.info(
-                    f"Correlation state stored: rule={corr_rule.name}, waiting for paired rule, "
-                    f"entity={entity_value}, expires in {deployed_data.time_window_minutes}m"
+                    "Correlation state stored: rule=%s, waiting for paired rule, entity=%s, expires in %sm",
+                    sanitize_log_value(corr_rule.name),
+                    sanitize_log_value(entity_value),
+                    deployed_data.time_window_minutes,
                 )
 
     return triggered
