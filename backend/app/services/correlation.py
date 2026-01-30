@@ -95,7 +95,15 @@ async def resolve_entity_field(
         return None
 
     # Extract the entity value from the log document
-    entity_value = get_nested_value(log_document, target_field)
+    # Strip OpenSearch field type suffixes (.keyword, .text) - these are query hints,
+    # not actual document paths
+    doc_field = target_field
+    if doc_field.endswith('.keyword'):
+        doc_field = doc_field[:-8]
+    elif doc_field.endswith('.text'):
+        doc_field = doc_field[:-5]
+
+    entity_value = get_nested_value(log_document, doc_field)
     if entity_value is None:
         logger.debug(
             f"Field {target_field} (resolved from {sigma_field}) not found in log document"
@@ -234,7 +242,7 @@ async def check_correlation(
                     )
                 )
             )
-            existing_state = state_result.first()
+            existing_state = state_result.scalars().first()
 
             if existing_state:
                 # Correlation triggered! Both rules fired within time window
