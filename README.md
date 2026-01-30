@@ -1,150 +1,290 @@
 # CHAD - Cyber Hunting And Detection
 
-A web-based Sigma rule management and alerting platform for OpenSearch. Replaces OpenSearch's built-in Security Analytics with a modern, feature-rich interface for security teams.
+**CHAD** is a lightweight, Sigma-first detection engine designed for teams who store logs in **OpenSearch** but don't want the cost, complexity, or lock-in of a traditional SIEM.
 
-## Features
+It focuses on one thing and does it well:
 
-### Rule Management
-- **YAML Editor** - Monaco-based editor with Sigma schema validation, syntax highlighting, and autocomplete
-- **Field Validation** - Strict validation against OpenSearch index mappings before deployment
-- **Version Control** - Full version history with diff view and one-click rollback
-- **Testing** - Test rules against sample logs or historical data before deployment
-- **SigmaHQ Integration** - Browse, search, and bulk import rules from SigmaHQ repository
+> **Turn log events into high-quality security alerts using Sigma rules.**
 
-### Alerting
-- **Real-time Matching** - OpenSearch percolators match incoming logs against thousands of rules
-- **Threshold Alerting** - Count-based aggregation (e.g., 10 failed logins in 5 minutes)
-- **Webhook Notifications** - Global webhook with per-rule disable toggle
-- **Jira Integration** - Automatically create tickets for alerts
+CHAD is *not* a full SIEM. It intentionally fills the gap between cheap log storage and expensive, heavyweight SIEM platforms.
 
-### Enrichment
-- **Threat Intelligence** - Enrich alerts with CrowdStrike, MISP, and open source APIs
-- **IOC Extraction** - Automatic extraction of IPs, domains, hashes, and URLs
+---
 
-### Visibility
-- **Dashboard** - Stats, recent alerts, system health at a glance
-- **Alert Investigation** - Full log context with TI enrichment
-- **MITRE ATT&CK Map** - Visualize detection coverage
-- **Audit Log** - Complete history of all user actions
+## Why CHAD Exists
 
-### Operations
-- **Exception Rules** - Tune out false positives without disabling rules
-- **Rule Snooze** - Temporarily disable rules during maintenance
-- **Bulk Operations** - Enable/disable/delete multiple rules at once
-- **Export/Backup** - Export rules as Sigma YAML, full config backup
+Many security teams today:
+
+- Already ship logs to OpenSearch or Elasticsearch
+- Use it as a data lake because it's cheaper and more flexible
+- Still need real detections, not just dashboards
+
+Existing options usually fall into one of these traps:
+
+| Approach | Problem |
+|----------|---------|
+| Full SIEMs (Splunk, Sentinel) | High cost, vendor lock-in |
+| Scheduled query alerting | Noisy, hard to manage, delayed |
+| Built-in "Security Analytics" | Immature, inflexible, limited Sigma support |
+
+CHAD bridges that gap by providing a **dedicated detection engine** that sits on top of OpenSearch.
+
+---
+
+## What CHAD Is (and Isn't)
+
+### CHAD **is**:
+
+- A Sigma-native detection engine
+- Designed for OpenSearch users
+- Event-driven and near real-time
+- API-first and automation-friendly
+- Focused on alert quality and rule hygiene
+
+### CHAD **is not**:
+
+- A full SIEM
+- A log storage platform
+- A UEBA or SOAR system
+- A replacement for dashboards or investigations
+
+CHAD assumes your logs already exist in OpenSearch and focuses purely on detection.
+
+---
+
+## Core Concepts
+
+### Sigma as the Source of Truth
+
+All detections are authored in **Sigma** - the open, vendor-neutral detection format.
+
+Sigma rules are:
+- Portable across platforms
+- Widely understood by security engineers
+- Version-controlled like code
+
+CHAD converts Sigma rules into OpenSearch query DSL using [pySigma](https://github.com/SigmaHQ/pySigma) and stores them as percolators.
+
+### Percolator-Based Detection
+
+CHAD uses **OpenSearch percolators** for detection - a reversal of normal search:
+
+| Normal Search | Percolation |
+|---------------|-------------|
+| Store documents | Store queries (rules) |
+| Run queries against them | Send a document (event) |
+| Get matching documents | Get matching rules |
+
+This is a natural fit for security detections.
+
+**Why percolators?**
+- No custom query engine to maintain
+- Matching semantics identical to OpenSearch searches
+- OpenSearch efficiently pre-filters candidate rules
+- Rules are centrally stored and searchable
+- CHAD remains stateless and easy to operate
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Frontend (React + shadcn/ui)                 │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-┌─────────────────────────────────────────────────────────────────┐
-│                    Backend (FastAPI + pySigma)                  │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        ▼                       ▼                       ▼
-┌───────────────┐      ┌───────────────┐      ┌───────────────┐
-│  PostgreSQL   │      │  OpenSearch   │      │   External    │
-│  (Config)     │      │  (Percolators │      │   Services    │
-│               │      │   & Alerts)   │      │               │
-└───────────────┘      └───────────────┘      └───────────────┘
+                    ┌─────────────┐
+                    │   Fluentd   │
+                    └──────┬──────┘
+                           │
+           ┌───────────────┼───────────────┐
+           │               │               │
+           ▼               ▼               │
+    ┌─────────────┐  ┌─────────────┐       │
+    │  OpenSearch │  │    CHAD     │       │
+    │  (storage)  │  │  (detect)   │       │
+    └─────────────┘  └──────┬──────┘       │
+                            │              │
+                    ┌───────▼────────┐     │
+                    │ Percolate API  │     │
+                    └───────┬────────┘     │
+                            │              │
+                    ┌───────▼────────┐     │
+                    │    Alerts      │◄────┘
+                    │  (OpenSearch)  │
+                    └───────┬────────┘
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+         ┌────────┐   ┌─────────┐   ┌─────────┐
+         │Webhooks│   │  Jira   │   │  Email  │
+         └────────┘   └─────────┘   └─────────┘
 ```
+
+### Detection Flow
+
+1. **Fluentd ships logs** to both OpenSearch (storage) and CHAD (detection)
+2. **CHAD authenticates** the request using per-index-pattern auth tokens
+3. **CHAD percolates** each event against deployed rules
+4. **Matching rules** generate alerts with full log context
+5. **Alerts are enriched** with threat intelligence and GeoIP
+6. **Notifications fire** via webhooks, Jira, or other integrations
+
+---
+
+## Features
+
+### Rule Management
+- **Monaco YAML Editor** with Sigma schema validation and autocomplete
+- **Field Validation** against actual OpenSearch index mappings
+- **Version History** with diff view and one-click rollback
+- **SigmaHQ Integration** - browse, search, and bulk import community rules
+- **Rule Testing** against sample logs before deployment
+
+### Detection
+- **Real-time Matching** via OpenSearch percolators
+- **Threshold Alerting** - count-based aggregation (e.g., 10 failed logins in 5 minutes)
+- **Correlation Rules** - multi-event detection patterns
+- **Exception Rules** - tune out false positives without disabling rules
+
+### Enrichment
+- **Threat Intelligence** - CrowdStrike, MISP, VirusTotal, AbuseIPDB
+- **IOC Extraction** - automatic extraction of IPs, domains, hashes, URLs
+- **GeoIP Enrichment** - geographic context for IP addresses
+
+### Operations
+- **MITRE ATT&CK Coverage Map** - visualize detection gaps
+- **Health Monitoring** - per-index-pattern latency and error tracking
+- **Audit Log** - complete history of all user actions
+- **Bulk Operations** - enable, disable, delete multiple rules at once
+
+### Security
+- **Role-Based Access Control** - Admin, Analyst, Viewer roles
+- **SSO Support** - OIDC and SAML integration
+- **Per-Index Auth Tokens** - secure log shipping authentication
+- **IP Allowlists** - restrict which sources can send logs
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- OpenSearch cluster (existing)
-- Fluentd configured to send logs
+- An existing OpenSearch cluster
+- A log shipper (Fluentd, Logstash, etc.)
 
-### Deployment
+### 1. Clone and Configure
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/your-org/chad.git
+git clone https://github.com/terrifiedbug/chad.git
 cd chad
-```
-
-2. Create environment file:
-```bash
 cp .env.example .env
-# Edit .env with your PostgreSQL password and JWT secret
 ```
 
-3. Start the platform:
+Edit `.env` with secure values:
+
+```bash
+POSTGRES_PASSWORD=your-secure-password
+JWT_SECRET_KEY=$(openssl rand -base64 32)
+SESSION_SECRET_KEY=$(openssl rand -base64 32)
+CHAD_ENCRYPTION_KEY=$(openssl rand -base64 32)
+APP_URL=https://chad.example.com
+```
+
+### 2. Start CHAD
+
 ```bash
 docker compose up -d
 ```
 
-4. Access the UI at `http://localhost:3000`
+### 3. Complete Setup Wizard
 
-5. Complete the setup wizard:
-   - Create admin account
-   - Configure OpenSearch connection
-   - Set up first index pattern
+Open `http://localhost` and complete:
+1. **Create Admin Account**
+2. **Configure OpenSearch Connection**
+3. **Create First Index Pattern**
 
-### Configure Fluentd
+### 4. Configure Log Shipping
 
-Add a store to your Fluentd match to send logs to the platform:
+Logs must be sent to **both** CHAD (for detection) and OpenSearch (for storage).
+
+**Fluentd Example:**
 
 ```xml
-<match auditbeat.**>
+<match winlogbeat.**>
   @type copy
 
-  <!-- Your existing OpenSearch store -->
-  <store>
-    @type opensearch
-    ...
-  </store>
-
-  <!-- Add this to send to CHAD -->
+  <!-- Send to CHAD for real-time detection -->
   <store>
     @type http
-    endpoint http://chad:8000/logs/auditbeat
-    serializer json
+    endpoint https://chad.example.com/api/logs/winlogbeat
+    headers {"Authorization": "Bearer YOUR_INDEX_PATTERN_AUTH_TOKEN"}
+    json_array true
     <buffer>
-      flush_interval 60s
-      chunk_limit_records 1000
+      @type memory
+      flush_interval 1s
     </buffer>
+  </store>
+
+  <!-- Send to OpenSearch for storage -->
+  <store>
+    @type opensearch
+    host opensearch.example.com
+    port 9200
+    index_name winlogbeat-%Y.%m.%d
   </store>
 </match>
 ```
 
+Get your auth token from: **Index Patterns → [Your Pattern] → Settings → Auth Token**
+
+---
+
+## Who CHAD Is For
+
+| Good Fit | Not Ideal |
+|----------|-----------|
+| Security teams using OpenSearch | Teams wanting an all-in-one SIEM |
+| Organizations priced out of traditional SIEMs | Environments without a log data lake |
+| Engineers who want detection-as-code | Purely GUI-driven security operations |
+| Teams that value Sigma portability | Teams needing built-in UEBA |
+
+---
+
+## Design Philosophy
+
+- **Detection first** - one job, done well
+- **Simple over clever** - easy to understand and operate
+- **Sigma everywhere** - portable, vendor-neutral rules
+- **OpenSearch as a partner** - leverage what it does best
+- **Make the common case easy** - and the complex case possible
+
+---
+
 ## Configuration
 
-All configuration is managed through the web UI after initial setup. Environment variables are minimal:
+Most settings are managed through the web UI after initial setup.
 
-```env
-# Database (required)
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_USER=chad
-POSTGRES_PASSWORD=<secure-password>
-POSTGRES_DB=chad
+### Environment Variables
 
-# App secret (required)
-JWT_SECRET_KEY=<random-secret>
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `POSTGRES_PASSWORD` | Yes | Database password |
+| `JWT_SECRET_KEY` | Yes | JWT signing key |
+| `SESSION_SECRET_KEY` | Yes | Session encryption key |
+| `CHAD_ENCRYPTION_KEY` | Yes | Credential encryption key |
+| `APP_URL` | Yes | Public URL for CSRF, SSO redirects |
+| `CHAD_SSO_ONLY` | No | Set `true` to disable local login |
+| `LOG_LEVEL` | No | Logging verbosity (default: `warning`) |
 
 ### GUI-Configurable Settings
 
-- **OpenSearch** - Host, port, credentials, SSL settings
-- **Authentication** - Local auth enable/disable, SSO (OIDC/SAML) configuration
-- **Index Patterns** - Define log sources and percolator indices
-- **ECS Mappings** - Field translation from Sigma to ECS format
-- **Webhooks** - Global notification endpoint
-- **Jira** - Cloud instance URL and API token
-- **Threat Intel** - CrowdStrike, MISP, AbuseIPDB, VirusTotal API keys
-- **AI Mapping** - Local (Ollama) or cloud (OpenAI/Anthropic) for ECS suggestions
-- **Processing** - Batch size, queue thresholds, index prefixes
+- **OpenSearch** - connection, credentials, SSL
+- **Index Patterns** - log sources, field mappings, auth tokens
+- **Notifications** - webhooks, Jira integration
+- **Threat Intelligence** - API keys for TI providers
+- **Authentication** - SSO (OIDC/SAML) configuration
+- **AI Mapping** - Ollama, OpenAI, or Anthropic for field mapping suggestions
+
+---
 
 ## Development
-
-Development uses Docker for all commands to avoid polluting local environments:
 
 ```bash
 # Start development environment
@@ -156,51 +296,28 @@ docker compose -f docker-compose.dev.yml run --rm backend pytest
 # Run frontend tests
 docker compose -f docker-compose.dev.yml run --rm frontend npm test
 
-# Run linting
+# Linting
 docker compose -f docker-compose.dev.yml run --rm backend ruff check .
 docker compose -f docker-compose.dev.yml run --rm frontend npm run lint
-
-# Interactive shell
-docker compose -f docker-compose.dev.yml exec backend bash
-docker compose -f docker-compose.dev.yml exec frontend sh
 ```
 
-## Roadmap
+---
 
-### v1.0 - Core Platform
-- [ ] Rule CRUD with YAML editor
-- [ ] Field validation
-- [ ] Sample log testing
-- [ ] Basic dashboard
-- [ ] Local auth + SSO
-- [ ] Webhook notifications
-- [ ] Rule versioning
-- [ ] Dark mode
+## Documentation
 
-### v1.1 - Rule Management
-- [ ] SigmaHQ sync + bulk import
-- [ ] Exception rules
-- [ ] Bulk operations
-- [ ] Rule comments
-- [ ] Export/backup
-- [ ] Audit log
+Full documentation available at: **[docs.chad.terrifiedbug.com](https://docs.chad.terrifiedbug.com)**
 
-### v1.2 - Detection Quality
-- [ ] Historical dry-run testing
-- [ ] Threshold alerting
-- [ ] MITRE ATT&CK coverage map
-- [ ] Per-index health monitoring
+- [Quick Start Guide](https://docs.chad.terrifiedbug.com/quickstart)
+- [Architecture Overview](https://docs.chad.terrifiedbug.com/architecture)
+- [Rule Management](https://docs.chad.terrifiedbug.com/guide/rules)
+- [Field Mappings](https://docs.chad.terrifiedbug.com/guide/field-mappings)
 
-### v1.3 - Integrations
-- [ ] Jira Cloud
-- [ ] Threat intel enrichment
-- [ ] Read-only REST API (user-scoped API keys)
+---
 
-### v2.0 - Scale & Intelligence
-- [ ] AI-assisted ECS mapping
-- [ ] Horizontal scaling (Celery + Redis)
-- [ ] Time-based correlation rules
+## Status
+
+CHAD is under active development. Contributions, feedback, and design discussions are welcome.
 
 ## License
 
-[License details here]
+MIT License - see [LICENSE](LICENSE) for details.
