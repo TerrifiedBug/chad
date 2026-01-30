@@ -1,4 +1,5 @@
 from app.models.alert import Alert
+from app.models.alert_comment import AlertComment
 from app.models.api_key import APIKey
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.audit_log import AuditLog
@@ -29,6 +30,7 @@ from app.models.user import User, UserRole
 
 __all__ = [
     "Alert",
+    "AlertComment",
     "AlertNotificationSetting",
     "APIKey",
     "AttackTechnique",

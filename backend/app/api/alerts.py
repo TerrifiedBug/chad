@@ -1,26 +1,30 @@
 """Alerts API - view and manage alerts."""
 
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
 from app.core.errors import not_found
 from app.db.session import get_db
-from app.utils.request import get_client_ip
+from app.models.alert_comment import AlertComment
 from app.models.user import User
-from app.services.audit import audit_log
 from app.schemas.alert import (
     AlertCountsResponse,
     AlertListResponse,
     AlertResponse,
     AlertStatusUpdate,
 )
+from app.schemas.alert_comment import AlertCommentCreate, AlertCommentResponse
 from app.services.alerts import AlertService
+from app.services.audit import audit_log
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -294,3 +298,87 @@ async def bulk_delete_alerts(
     await db.commit()
 
     return {"success": success, "failed": failed}
+
+
+# ----- Alert Comments Endpoints -----
+
+
+@router.get("/{alert_id}/comments", response_model=list[AlertCommentResponse])
+async def list_alert_comments(
+    alert_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """List comments for an alert."""
+    result = await db.execute(
+        select(AlertComment)
+        .where(AlertComment.alert_id == alert_id, AlertComment.deleted_at.is_(None))
+        .order_by(AlertComment.created_at.asc())
+    )
+    comments = result.scalars().all()
+    return [
+        AlertCommentResponse(
+            id=c.id,
+            alert_id=c.alert_id,
+            user_id=c.user_id,
+            username=c.user.email if c.user else "Unknown",
+            content=c.content,
+            created_at=c.created_at,
+            is_deleted=c.deleted_at is not None,
+        )
+        for c in comments
+    ]
+
+
+@router.post("/{alert_id}/comments", response_model=AlertCommentResponse, status_code=status.HTTP_201_CREATED)
+async def create_alert_comment(
+    alert_id: str,
+    comment_data: AlertCommentCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Add a comment to an alert."""
+    comment = AlertComment(
+        alert_id=alert_id,
+        user_id=current_user.id,
+        content=comment_data.content,
+    )
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment)
+
+    return AlertCommentResponse(
+        id=comment.id,
+        alert_id=comment.alert_id,
+        user_id=comment.user_id,
+        username=current_user.email,
+        content=comment.content,
+        created_at=comment.created_at,
+        is_deleted=False,
+    )
+
+
+@router.delete("/{alert_id}/comments/{comment_id}")
+async def delete_alert_comment(
+    alert_id: str,
+    comment_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("admin"))],
+):
+    """Soft delete a comment (admin only)."""
+    result = await db.execute(
+        select(AlertComment).where(
+            AlertComment.id == comment_id,
+            AlertComment.alert_id == alert_id,
+        )
+    )
+    comment = result.scalar_one_or_none()
+
+    if not comment:
+        raise not_found("Comment")
+
+    comment.deleted_at = datetime.now(UTC)
+    comment.deleted_by_id = current_user.id
+    await db.commit()
+
+    return {"message": "Comment deleted"}

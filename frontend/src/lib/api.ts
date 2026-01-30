@@ -830,6 +830,30 @@ export const alertsApi = {
     }),
 }
 
+// Alert Comments types
+export interface AlertComment {
+  id: string
+  alert_id: string
+  user_id: string
+  username: string
+  content: string
+  created_at: string
+  is_deleted: boolean
+}
+
+// Alert Comments API
+export const alertCommentsApi = {
+  list: async (alertId: string): Promise<AlertComment[]> => {
+    return api.get(`/alerts/${alertId}/comments`)
+  },
+  create: async (alertId: string, content: string): Promise<AlertComment> => {
+    return api.post(`/alerts/${alertId}/comments`, { content })
+  },
+  delete: async (alertId: string, commentId: string): Promise<void> => {
+    await api.delete(`/alerts/${alertId}/comments/${commentId}`)
+  },
+}
+
 // Dashboard stats types
 export type RecentAlert = {
   alert_id: string

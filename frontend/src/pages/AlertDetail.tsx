@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, correlationRulesApi, rulesApi, Alert, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator } from '@/lib/api'
+import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator } from '@/lib/api'
+import { useToast } from '@/components/ui/toast-provider'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -453,6 +454,12 @@ export default function AlertDetailPage() {
   const [exceptionReason, setExceptionReason] = useState('')
   const [isCreating, setIsCreating] = useState(false)
 
+  // Comments state
+  const [comments, setComments] = useState<AlertComment[]>([])
+  const [newComment, setNewComment] = useState('')
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false)
+  const { showToast } = useToast()
+
   // Helper to generate unique condition IDs
   const generateConditionId = () => `cond-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
@@ -500,6 +507,10 @@ export default function AlertDetailPage() {
       if (data.rule_id) {
         loadCorrelations(data.rule_id)
       }
+      // Load comments for this alert
+      if (data.alert_id) {
+        alertCommentsApi.list(data.alert_id).then(setComments).catch(console.error)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load alert')
     } finally {
@@ -523,6 +534,20 @@ export default function AlertDetailPage() {
       setCorrelations(relatedRules)
     } catch (err) {
       console.error('Failed to load correlation rules:', err)
+    }
+  }
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !alert?.alert_id) return
+    setIsSubmittingComment(true)
+    try {
+      const comment = await alertCommentsApi.create(alert.alert_id, newComment)
+      setComments([...comments, comment])
+      setNewComment('')
+    } catch (err) {
+      showToast('Failed to add comment', 'error')
+    } finally {
+      setIsSubmittingComment(false)
     }
   }
 
@@ -971,6 +996,56 @@ export default function AlertDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Comments Section */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <User className="h-4 w-4" />
+            Investigation Notes
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {comments.map((comment) => (
+              <div key={comment.id} className="border-b pb-3 last:border-0">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">{comment.username}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(comment.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+              </div>
+            ))}
+            {comments.length === 0 && (
+              <p className="text-sm text-muted-foreground">No comments yet. Add investigation notes to track your analysis.</p>
+            )}
+          </div>
+          <div className="mt-4 flex gap-2">
+            <Textarea
+              placeholder="Add investigation notes..."
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              className="min-h-[80px]"
+            />
+            <Button
+              onClick={handleAddComment}
+              disabled={isSubmittingComment || !newComment.trim()}
+              className="self-end"
+            >
+              {isSubmittingComment ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                'Add'
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Create Exception Dialog */}
       <Dialog open={showExceptionDialog} onOpenChange={setShowExceptionDialog}>
