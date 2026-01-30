@@ -19,7 +19,7 @@ class ExceptionCreatedInfo(BaseModel):
 class AlertResponse(BaseModel):
     alert_id: str
     rule_id: str
-    rule_title: str
+    rule_title: str | None = None  # Can be None if rule was deleted
     severity: str
     tags: list[str]
     status: str
