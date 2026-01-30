@@ -68,6 +68,40 @@ services:
     # Note: --reload is incompatible with --workers, dev stays single-worker
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
 
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      # Database
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=chad
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpassword}
+      - POSTGRES_DB=chad
+      # Redis
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      # Security (CHANGE IN PRODUCTION)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-prod}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}
+      # Development mode
+      - DEBUG=true
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    # Worker runs without entrypoint (no migrations needed)
+    entrypoint: []
+    command: python -m app.worker
+    # Single worker in dev for easier debugging
+    profiles:
+      - worker  # Only starts with: docker compose --profile worker up
+
   frontend:
     build:
       context: ./frontend
