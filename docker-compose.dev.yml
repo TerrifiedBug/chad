@@ -43,6 +43,8 @@ services:
       - POSTGRES_USER=chad
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpassword}
       - POSTGRES_DB=chad
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-20}
+      - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
       # Redis
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       # Security (CHANGE IN PRODUCTION)
@@ -79,6 +81,8 @@ services:
       - POSTGRES_USER=chad
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpassword}
       - POSTGRES_DB=chad
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-20}
+      - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
       # Redis
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       # Security (CHANGE IN PRODUCTION)
@@ -98,9 +102,7 @@ services:
     # Worker runs without entrypoint (no migrations needed)
     entrypoint: []
     command: python -m app.worker
-    # Single worker in dev for easier debugging
-    profiles:
-      - worker  # Only starts with: docker compose --profile worker up
+    # Worker starts by default in dev for testing queue processing
 
   frontend:
     build:

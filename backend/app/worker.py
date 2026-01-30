@@ -11,7 +11,7 @@ import time
 from app.core.redis import get_redis, close_redis
 from app.services.log_processor import LogProcessor
 from app.services.queue_settings import get_queue_settings
-from app.api.deps import get_opensearch_client
+from app.services.opensearch import get_client_from_settings
 from app.db.session import async_session_maker
 
 logger = logging.getLogger(__name__)
@@ -33,20 +33,28 @@ class Worker:
         logger.info("Shutdown signal received")
         self.running = False
 
-    async def ensure_consumer_group(self, redis, stream_pattern: str):
-        """Create consumer group if it doesn't exist."""
+    async def get_log_streams(self, redis) -> list[str]:
+        """Get all log streams (excluding dead-letter)."""
+        streams = []
         cursor = 0
         while True:
-            cursor, keys = await redis.scan(cursor, match=stream_pattern, count=100)
+            cursor, keys = await redis.scan(cursor, match="chad:logs:*", count=100)
             for key in keys:
-                try:
-                    await redis.xgroup_create(key, CONSUMER_GROUP, id="0", mkstream=True)
-                    logger.info(f"Created consumer group for {key}")
-                except Exception as e:
-                    if "BUSYGROUP" not in str(e):
-                        logger.warning(f"Failed to create group for {key}: {e}")
+                if "dead-letter" not in key:
+                    streams.append(key)
             if cursor == 0:
                 break
+        return streams
+
+    async def ensure_consumer_group(self, redis, streams: list[str]):
+        """Create consumer group for given streams if it doesn't exist."""
+        for stream in streams:
+            try:
+                await redis.xgroup_create(stream, CONSUMER_GROUP, id="0", mkstream=True)
+                logger.info(f"Created consumer group for {stream}")
+            except Exception as e:
+                if "BUSYGROUP" not in str(e):
+                    logger.warning(f"Failed to create group for {stream}: {e}")
 
     async def process_batch(
         self,
@@ -117,7 +125,10 @@ class Worker:
         logger.info(f"Worker {self.consumer_name} starting")
 
         redis = await get_redis()
-        os_client = get_opensearch_client()
+
+        # Get OpenSearch client from database settings
+        async with async_session_maker() as db_session:
+            os_client = await get_client_from_settings(db_session)
 
         if os_client is None:
             logger.error("OpenSearch not configured, worker exiting")
@@ -125,16 +136,29 @@ class Worker:
 
         processor = LogProcessor(os_client, async_session_maker)
 
-        # Ensure consumer groups exist
-        await self.ensure_consumer_group(redis, "chad:logs:*")
+        logger.info(f"Worker {self.consumer_name} ready, waiting for messages")
 
         while self.running:
             try:
+                # Get current streams
+                streams = await self.get_log_streams(redis)
+
+                if not streams:
+                    # No streams yet, wait and retry
+                    await asyncio.sleep(5)
+                    continue
+
+                # Ensure consumer groups exist for all streams
+                await self.ensure_consumer_group(redis, streams)
+
+                # Build stream dict for xreadgroup
+                stream_dict = {stream: ">" for stream in streams}
+
                 # Read from all streams
                 messages = await redis.xreadgroup(
                     CONSUMER_GROUP,
                     self.consumer_name,
-                    {"chad:logs:*": ">"},
+                    stream_dict,
                     count=500,  # Batch size - will be configurable
                     block=5000,  # 5 second timeout
                 )
