@@ -89,41 +89,53 @@ async def list_alerts(
         owner_id = owner
 
     alert_service = AlertService(os_client)
+
+    # Check if clustering is enabled first to determine fetch strategy
+    clustering_settings = None
+    if cluster:
+        clustering_settings = await get_setting(db, "alert_clustering")
+
+    # When clustering is enabled, fetch more alerts for better clustering results
+    # (pagination doesn't make sense with clustering - we need to see the full picture)
+    fetch_limit = limit
+    fetch_offset = offset
+    if clustering_settings and clustering_settings.get("enabled", False):
+        fetch_limit = 1000  # Fetch more alerts when clustering
+        fetch_offset = 0    # Always start from the beginning for clustering
+
     result = alert_service.get_alerts(
         index_pattern=index_pattern,
         status=status,
         severity=severity,
         rule_id=rule_id,
         owner_id=owner_id,
-        limit=limit,
-        offset=offset,
+        limit=fetch_limit,
+        offset=fetch_offset,
     )
 
-    # Check if clustering is enabled and requested
-    if cluster:
-        clustering_settings = await get_setting(db, "alert_clustering")
-        if clustering_settings and clustering_settings.get("enabled", False):
-            # Apply clustering to the results
-            clusters = cluster_alerts(result["alerts"], clustering_settings)
+    # Apply clustering if enabled
+    if clustering_settings and clustering_settings.get("enabled", False):
+        # Apply clustering to the results
+        clusters = cluster_alerts(result["alerts"], clustering_settings)
 
-            # Convert clusters to response format
-            cluster_responses = []
-            for c in clusters:
-                cluster_responses.append(
-                    AlertCluster(
-                        representative=AlertResponse(**c["representative"]),
-                        count=c["count"],
-                        alert_ids=c["alert_ids"],
-                        alerts=[AlertResponse(**a) for a in c["alerts"]],
-                        time_range=c["time_range"],
-                    )
+        # Convert clusters to response format
+        cluster_responses = []
+        for c in clusters:
+            cluster_responses.append(
+                AlertCluster(
+                    representative=AlertResponse(**c["representative"]),
+                    count=c["count"],
+                    alert_ids=c["alert_ids"],
+                    alerts=[AlertResponse(**a) for a in c["alerts"]],
+                    time_range=c["time_range"],
                 )
-
-            return ClusteredAlertListResponse(
-                total=result["total"],
-                total_clusters=len(cluster_responses),
-                clusters=cluster_responses,
             )
+
+        return ClusteredAlertListResponse(
+            total=result["total"],
+            total_clusters=len(cluster_responses),
+            clusters=cluster_responses,
+        )
 
     # Return non-clustered response
     return result
