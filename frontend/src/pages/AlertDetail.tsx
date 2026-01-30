@@ -28,8 +28,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X } from 'lucide-react'
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 
@@ -651,6 +651,7 @@ export default function AlertDetailPage() {
       const groupId = crypto.randomUUID()
 
       // Create first exception (creates the group)
+      // Pass alert_id to auto-mark alert as false_positive
       const firstCond = exceptionConditions[0]
       await rulesApi.createException(alert.rule_id, {
         field: firstCond.field,
@@ -659,9 +660,11 @@ export default function AlertDetailPage() {
         reason: exceptionReason,
         change_reason: exceptionReason,
         group_id: groupId,
+        alert_id: alert.alert_id,
       })
 
       // Create additional conditions in the same group
+      // Don't pass alert_id for subsequent conditions as alert is already updated
       for (let i = 1; i < exceptionConditions.length; i++) {
         const cond = exceptionConditions[i]
         await rulesApi.createException(alert.rule_id, {
@@ -679,6 +682,9 @@ export default function AlertDetailPage() {
       // Reset form
       setExceptionConditions([])
       setExceptionReason('')
+
+      // Reload alert to show updated status and exception badge
+      await loadAlert()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create exception')
     } finally {
@@ -751,6 +757,25 @@ export default function AlertDetailPage() {
           >
             {capitalize(alert.severity)}
           </span>
+          {alert.exception_created && (
+            <Tooltip>
+              <TooltipTrigger>
+                <Badge variant="outline" className="gap-1">
+                  <ShieldX className="h-3 w-3" />
+                  Exception
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="font-medium">Exception created</p>
+                <p className="text-sm text-muted-foreground">
+                  {alert.exception_created.field} = {alert.exception_created.value}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(alert.exception_created.created_at).toLocaleString()}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Select
             value={alert.status}
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}

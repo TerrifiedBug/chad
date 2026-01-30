@@ -278,6 +278,7 @@ export type RuleExceptionCreate = {
   reason?: string
   change_reason: string
   group_id?: string  // If provided, adds to existing group (AND logic)
+  alert_id?: string  // If created from an alert, auto-mark as false positive
 }
 
 export type RuleExceptionUpdate = {
@@ -767,6 +768,13 @@ export type Alert = {
   updated_at: string
   acknowledged_by: string | null
   acknowledged_at: string | null
+  exception_created?: {
+    exception_id: string
+    field: string
+    value: string
+    match_type: string
+    created_at: string
+  }
 }
 
 export type AlertListResponse = {

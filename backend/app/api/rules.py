@@ -2035,6 +2035,7 @@ async def create_rule_exception(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_rules"))],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
 ):
     """Create a new exception for a rule."""
     # Verify rule exists
@@ -2086,6 +2087,31 @@ async def create_rule_exception(
     await db.refresh(exception)
     await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field, "change_reason": exception_data.change_reason}, ip_address=get_client_ip(request))
     await db.commit()
+
+    # If created from an alert, update alert status and record exception reference
+    if exception_data.alert_id and os_client:
+        try:
+            os_client.update(
+                index="chad-alerts-*",
+                id=exception_data.alert_id,
+                body={
+                    "doc": {
+                        "status": "false_positive",
+                        "exception_created": {
+                            "exception_id": str(exception.id),
+                            "field": exception.field,
+                            "value": exception.value,
+                            "match_type": exception.operator.value,
+                            "created_at": datetime.now(UTC).isoformat(),
+                        }
+                    }
+                },
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Failed to update alert status for exception: %s", str(e)
+            )
 
     # Return response with optional warning
     response = RuleExceptionResponse.model_validate(exception)
