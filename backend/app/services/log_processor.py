@@ -64,7 +64,7 @@ class LogProcessor:
             for rule in rule_matches:
                 alert_data = {
                     "rule_id": rule.get("rule_id"),
-                    "rule_title": rule.get("title"),
+                    "rule_title": rule.get("rule_title"),
                     "severity": rule.get("severity", "medium"),
                     "tags": rule.get("tags", []),
                     "log_document": log,
