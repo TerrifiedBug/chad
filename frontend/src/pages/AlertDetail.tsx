@@ -235,6 +235,19 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
+        {/* Link to correlation rule */}
+        {correlationData.correlation_rule_id && (
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">Correlation Rule:</span>
+            <Link
+              to={`/correlation/${correlationData.correlation_rule_id}`}
+              className="text-primary hover:underline font-medium"
+            >
+              {correlationData.correlation_name || 'View Rule'}
+            </Link>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <span className="text-muted-foreground">Entity Field:</span>
@@ -1037,34 +1050,37 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Rule
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Link
-                to={`/rules/${alert.rule_id}`}
-                className="text-sm text-primary hover:underline"
-              >
-                View Rule
-              </Link>
-              {alert.tags.length > 0 && (
-                <div className="flex gap-1 flex-wrap mt-2">
-                  {alert.tags.map((tag, i) => (
-                    <span
-                      key={i}
-                      className="px-1.5 py-0.5 bg-muted rounded text-xs"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Rule card - only show for non-correlation alerts */}
+          {!(alert.log_document as Record<string, unknown>)?.correlation && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Rule
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Link
+                  to={`/rules/${alert.rule_id}`}
+                  className="text-sm text-primary hover:underline"
+                >
+                  View Rule
+                </Link>
+                {alert.tags.length > 0 && (
+                  <div className="flex gap-1 flex-wrap mt-2">
+                    {alert.tags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* GeoIP Data - shown if enrichment data exists */}
           {(() => {
