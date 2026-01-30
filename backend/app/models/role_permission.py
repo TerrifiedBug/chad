@@ -42,7 +42,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_rules": True,
         "manage_alerts": True,
         "deploy_rules": True,
-        "manage_settings": False,
+        "manage_settings": True,  # Allows editing Index Patterns, Field Mappings, Health
         "manage_api_keys": True,
         "view_audit": True,
         "manage_sigmahq": True,

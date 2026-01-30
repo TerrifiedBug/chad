@@ -44,6 +44,7 @@ import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { DateRange } from 'react-day-picker'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/hooks/use-auth'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
@@ -78,6 +79,7 @@ function isClusteredResponse(response: AlertListResponse | ClusteredAlertListRes
 
 export default function AlertsPage() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [clusters, setClusters] = useState<AlertCluster[]>([])
@@ -521,7 +523,8 @@ export default function AlertsPage() {
               variant="outline"
               size="sm"
               onClick={() => handleBulkStatusUpdate('acknowledged')}
-              disabled={isBulkUpdating}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
+              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
             >
               Acknowledge
             </Button>
@@ -529,7 +532,8 @@ export default function AlertsPage() {
               variant="outline"
               size="sm"
               onClick={() => handleBulkStatusUpdate('resolved')}
-              disabled={isBulkUpdating}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
+              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
             >
               Resolve
             </Button>
@@ -537,7 +541,8 @@ export default function AlertsPage() {
               variant="outline"
               size="sm"
               onClick={() => handleBulkStatusUpdate('false_positive')}
-              disabled={isBulkUpdating}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
+              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
             >
               False Positive
             </Button>
@@ -545,7 +550,8 @@ export default function AlertsPage() {
               variant="outline"
               size="sm"
               onClick={handleBulkTakeOwnership}
-              disabled={isBulkUpdating}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
+              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
             >
               <UserPlus className="h-4 w-4 mr-1" />
               Take Ownership
@@ -554,7 +560,8 @@ export default function AlertsPage() {
               variant="destructive"
               size="sm"
               onClick={handleBulkDelete}
-              disabled={isBulkUpdating}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
+              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
             >
               <Trash2 className="h-4 w-4 mr-1" />
               Delete

@@ -849,6 +849,7 @@ export interface AlertComment {
   username: string
   content: string
   created_at: string
+  updated_at?: string
   is_deleted: boolean
 }
 
@@ -859,6 +860,9 @@ export const alertCommentsApi = {
   },
   create: async (alertId: string, content: string): Promise<AlertComment> => {
     return api.post(`/alerts/${alertId}/comments`, { content })
+  },
+  update: async (alertId: string, commentId: string, content: string): Promise<AlertComment> => {
+    return api.patch(`/alerts/${alertId}/comments/${commentId}`, { content })
   },
   delete: async (alertId: string, commentId: string): Promise<void> => {
     await api.delete(`/alerts/${alertId}/comments/${commentId}`)

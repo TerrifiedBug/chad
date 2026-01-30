@@ -30,7 +30,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 
@@ -458,6 +458,8 @@ export default function AlertDetailPage() {
   const [comments, setComments] = useState<AlertComment[]>([])
   const [newComment, setNewComment] = useState('')
   const [isSubmittingComment, setIsSubmittingComment] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editingCommentContent, setEditingCommentContent] = useState('')
   const { showToast } = useToast()
 
   // Ownership state
@@ -547,10 +549,37 @@ export default function AlertDetailPage() {
       const comment = await alertCommentsApi.create(alert.alert_id, newComment)
       setComments([...comments, comment])
       setNewComment('')
-    } catch (err) {
+    } catch {
       showToast('Failed to add comment', 'error')
     } finally {
       setIsSubmittingComment(false)
+    }
+  }
+
+  const handleEditComment = async (commentId: string) => {
+    if (!editingCommentContent.trim() || !alert?.alert_id) return
+    setIsSubmittingComment(true)
+    try {
+      const updated = await alertCommentsApi.update(alert.alert_id, commentId, editingCommentContent)
+      setComments(comments.map(c => c.id === commentId ? updated : c))
+      setEditingCommentId(null)
+      setEditingCommentContent('')
+      showToast('Comment updated', 'success')
+    } catch {
+      showToast('Failed to update comment', 'error')
+    } finally {
+      setIsSubmittingComment(false)
+    }
+  }
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!alert?.alert_id) return
+    try {
+      await alertCommentsApi.delete(alert.alert_id, commentId)
+      setComments(comments.filter(c => c.id !== commentId))
+      showToast('Comment deleted', 'success')
+    } catch {
+      showToast('Failed to delete comment', 'error')
     }
   }
 
@@ -566,7 +595,7 @@ export default function AlertDetailPage() {
         const result = await alertsApi.assign(id)
         setAlert({ ...alert, owner_id: user?.id, owner_username: result.owner, owned_at: new Date().toISOString() })
       }
-    } catch (err) {
+    } catch {
       showToast('Failed to update ownership', 'error')
     } finally {
       setIsAssigning(false)
@@ -832,7 +861,8 @@ export default function AlertDetailPage() {
             variant={alert.owner_id === user?.id ? 'destructive' : 'outline'}
             size="sm"
             onClick={handleToggleOwnership}
-            disabled={isAssigning}
+            disabled={isAssigning || !hasPermission('manage_alerts')}
+            title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
           >
             {isAssigning ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1051,40 +1081,110 @@ export default function AlertDetailPage() {
             {comments.map((comment) => (
               <div key={comment.id} className="border-b pb-3 last:border-0">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{comment.username}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(comment.created_at).toLocaleString()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">{comment.username}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(comment.created_at).toLocaleString()}
+                      {comment.updated_at && (
+                        <span className="ml-1">(edited)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {/* Edit button - only for own comments */}
+                    {user?.id === comment.user_id && hasPermission('manage_alerts') && editingCommentId !== comment.id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => {
+                          setEditingCommentId(comment.id)
+                          setEditingCommentContent(comment.content)
+                        }}
+                        title="Edit comment"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {/* Delete button - only for admins */}
+                    {hasPermission('admin') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteComment(comment.id)}
+                        title="Delete comment (admin only)"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+                {editingCommentId === comment.id ? (
+                  <div className="mt-2 flex gap-2">
+                    <Textarea
+                      value={editingCommentContent}
+                      onChange={(e) => setEditingCommentContent(e.target.value)}
+                      className="min-h-[60px]"
+                    />
+                    <div className="flex flex-col gap-1">
+                      <Button
+                        size="sm"
+                        onClick={() => handleEditComment(comment.id)}
+                        disabled={isSubmittingComment || !editingCommentContent.trim()}
+                      >
+                        <Check className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingCommentId(null)
+                          setEditingCommentContent('')
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+                )}
               </div>
             ))}
             {comments.length === 0 && (
-              <p className="text-sm text-muted-foreground">No comments yet. Add investigation notes to track your analysis.</p>
+              <p className="text-sm text-muted-foreground">
+                {hasPermission('manage_alerts')
+                  ? 'No comments yet. Add investigation notes to track your analysis.'
+                  : 'No comments yet.'}
+              </p>
             )}
           </div>
-          <div className="mt-4 flex gap-2">
-            <Textarea
-              placeholder="Add investigation notes..."
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              className="min-h-[80px]"
-            />
-            <Button
-              onClick={handleAddComment}
-              disabled={isSubmittingComment || !newComment.trim()}
-              className="self-end"
-            >
-              {isSubmittingComment ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                'Add'
-              )}
-            </Button>
-          </div>
+          {/* Add comment section - only for users with manage_alerts permission */}
+          {hasPermission('manage_alerts') && (
+            <div className="mt-4 flex gap-2">
+              <Textarea
+                placeholder="Add investigation notes..."
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                className="min-h-[80px]"
+              />
+              <Button
+                onClick={handleAddComment}
+                disabled={isSubmittingComment || !newComment.trim()}
+                className="self-end"
+              >
+                {isSubmittingComment ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  'Add'
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
