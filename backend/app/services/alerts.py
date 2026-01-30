@@ -142,39 +142,15 @@ def should_suppress_alert(
     return False  # No group fully matched
 
 
-def extract_entity_value(alert: dict, entity_fields: list[str]) -> str | None:
-    """
-    Extract entity value from alert using configured entity fields.
-
-    Checks both top-level alert fields and nested log_document fields.
-    Returns the first non-None value found, or None if no match.
-    """
-    for field in entity_fields:
-        # Try top-level alert fields first
-        value = get_nested_value(alert, field)
-        if value is not None:
-            return str(value)
-
-        # Try within log_document
-        log_doc = alert.get("log_document", {})
-        if log_doc:
-            value = get_nested_value(log_doc, field)
-            if value is not None:
-                return str(value)
-
-    return None
-
-
 def cluster_alerts(alerts: list[dict], settings: dict) -> list[dict]:
     """
-    Cluster alerts by rule + entity within time window.
+    Cluster alerts by rule_id within time window.
 
     Args:
         alerts: List of alert dictionaries
         settings: Clustering settings with:
             - enabled: bool - whether clustering is enabled
             - window_minutes: int - time window for clustering
-            - entity_fields: list[str] - fields to use for entity extraction
 
     Returns:
         List of cluster dicts with:
@@ -196,21 +172,18 @@ def cluster_alerts(alerts: list[dict], settings: dict) -> list[dict]:
         ]
 
     window_minutes = settings.get("window_minutes", 60)
-    entity_fields = settings.get("entity_fields", ["host.name", "user.name", "source.ip"])
 
-    # Group alerts by rule_id + entity
-    groups: dict[tuple[str, str | None], list[dict]] = defaultdict(list)
+    # Group alerts by rule_id only
+    groups: dict[str, list[dict]] = defaultdict(list)
 
     for alert in alerts:
         rule_id = alert.get("rule_id", "")
-        entity = extract_entity_value(alert, entity_fields)
-        key = (rule_id, entity)
-        groups[key].append(alert)
+        groups[rule_id].append(alert)
 
     clusters = []
     window_delta = timedelta(minutes=window_minutes)
 
-    for (rule_id, entity), group_alerts in groups.items():
+    for rule_id, group_alerts in groups.items():
         # Sort alerts by timestamp
         def get_timestamp(a: dict) -> datetime:
             ts = a.get("created_at")

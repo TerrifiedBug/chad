@@ -4,53 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.services.alerts import (
-    cluster_alerts,
-    extract_entity_value,
-)
-
-
-class TestExtractEntityValue:
-    """Tests for extract_entity_value helper function."""
-
-    def test_top_level_field(self):
-        alert = {"host": {"name": "server01"}}
-        fields = ["host.name"]
-        assert extract_entity_value(alert, fields) == "server01"
-
-    def test_log_document_field(self):
-        alert = {
-            "rule_id": "rule1",
-            "log_document": {"host": {"name": "server01"}}
-        }
-        fields = ["host.name"]
-        assert extract_entity_value(alert, fields) == "server01"
-
-    def test_first_match_wins(self):
-        alert = {
-            "host": {"name": "top-level"},
-            "log_document": {"host": {"name": "log-doc"}}
-        }
-        fields = ["host.name", "user.name"]
-        # Top-level should be found first
-        assert extract_entity_value(alert, fields) == "top-level"
-
-    def test_fallback_to_second_field(self):
-        alert = {
-            "log_document": {"user": {"name": "admin"}}
-        }
-        fields = ["host.name", "user.name"]
-        assert extract_entity_value(alert, fields) == "admin"
-
-    def test_no_matching_field(self):
-        alert = {"rule_id": "rule1"}
-        fields = ["host.name", "user.name"]
-        assert extract_entity_value(alert, fields) is None
-
-    def test_numeric_value_converted_to_string(self):
-        alert = {"source": {"ip": 12345}}
-        fields = ["source.ip"]
-        assert extract_entity_value(alert, fields) == "12345"
+from app.services.alerts import cluster_alerts
 
 
 class TestClusterAlertsDisabled:
@@ -83,8 +37,8 @@ class TestClusterAlertsDisabled:
         assert clusters[0]["count"] == 1
 
 
-class TestClusterAlertsSameRuleSameEntity:
-    """Tests for clustering alerts with same rule and same entity."""
+class TestClusterAlertsSameRule:
+    """Tests for clustering alerts with the same rule."""
 
     def test_clusters_within_window(self):
         alerts = [
@@ -110,7 +64,6 @@ class TestClusterAlertsSameRuleSameEntity:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         clusters = cluster_alerts(alerts, settings)
@@ -137,7 +90,6 @@ class TestClusterAlertsSameRuleSameEntity:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         clusters = cluster_alerts(alerts, settings)
@@ -146,11 +98,8 @@ class TestClusterAlertsSameRuleSameEntity:
         assert clusters[0]["count"] == 1
         assert clusters[1]["count"] == 1
 
-
-class TestClusterAlertsDifferentEntities:
-    """Tests for clustering alerts with different entities."""
-
-    def test_different_entities_separate_clusters(self):
+    def test_different_log_documents_same_rule_cluster_together(self):
+        """Alerts with the same rule but different log contents should cluster."""
         alerts = [
             {
                 "alert_id": "a1",
@@ -168,15 +117,14 @@ class TestClusterAlertsDifferentEntities:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         clusters = cluster_alerts(alerts, settings)
 
-        assert len(clusters) == 2
-        # Both should have count 1 since different entities
-        counts = [c["count"] for c in clusters]
-        assert sorted(counts) == [1, 1]
+        # Same rule within time window should cluster regardless of log content
+        assert len(clusters) == 1
+        assert clusters[0]["count"] == 2
+        assert set(clusters[0]["alert_ids"]) == {"a1", "a2"}
 
 
 class TestClusterAlertsDifferentRules:
@@ -200,7 +148,6 @@ class TestClusterAlertsDifferentRules:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         clusters = cluster_alerts(alerts, settings)
@@ -235,7 +182,6 @@ class TestClusterAlertsTimeRange:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         clusters = cluster_alerts(alerts, settings)
@@ -273,7 +219,6 @@ class TestClusterAlertsRepresentative:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         clusters = cluster_alerts(alerts, settings)
@@ -287,7 +232,7 @@ class TestClusterAlertsEdgeCases:
     """Tests for edge cases in alert clustering."""
 
     def test_empty_alerts(self):
-        settings = {"enabled": True, "window_minutes": 60, "entity_fields": ["host.name"]}
+        settings = {"enabled": True, "window_minutes": 60}
         clusters = cluster_alerts([], settings)
         assert clusters == []
 
@@ -303,69 +248,12 @@ class TestClusterAlertsEdgeCases:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         clusters = cluster_alerts(alerts, settings)
 
         assert len(clusters) == 1
         assert clusters[0]["count"] == 1
-
-    def test_no_entity_field_match(self):
-        """Alerts without matching entity fields should still cluster by rule."""
-        alerts = [
-            {
-                "alert_id": "a1",
-                "rule_id": "r1",
-                "log_document": {},
-                "created_at": "2026-01-30T10:00:00Z"
-            },
-            {
-                "alert_id": "a2",
-                "rule_id": "r1",
-                "log_document": {},
-                "created_at": "2026-01-30T10:05:00Z"
-            },
-        ]
-        settings = {
-            "enabled": True,
-            "window_minutes": 60,
-            "entity_fields": ["host.name"]
-        }
-
-        clusters = cluster_alerts(alerts, settings)
-
-        # Both alerts have None entity, same rule, within window - should cluster
-        assert len(clusters) == 1
-        assert clusters[0]["count"] == 2
-
-    def test_default_entity_fields(self):
-        """Test that default entity fields are used when not specified."""
-        alerts = [
-            {
-                "alert_id": "a1",
-                "rule_id": "r1",
-                "log_document": {"host": {"name": "server01"}},
-                "created_at": "2026-01-30T10:00:00Z"
-            },
-            {
-                "alert_id": "a2",
-                "rule_id": "r1",
-                "log_document": {"host": {"name": "server01"}},
-                "created_at": "2026-01-30T10:05:00Z"
-            },
-        ]
-        settings = {
-            "enabled": True,
-            "window_minutes": 60,
-            # No entity_fields specified - should use defaults
-        }
-
-        clusters = cluster_alerts(alerts, settings)
-
-        # Should cluster since host.name is in default entity_fields
-        assert len(clusters) == 1
-        assert clusters[0]["count"] == 2
 
     def test_missing_timestamp_handled(self):
         """Alerts with missing timestamps should still be handled."""
@@ -385,7 +273,6 @@ class TestClusterAlertsEdgeCases:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         # Should not raise an error
@@ -406,7 +293,7 @@ class TestClusterAlertsSorting:
             },
             {
                 "alert_id": "late1",
-                "rule_id": "r1",
+                "rule_id": "r2",
                 "log_document": {"host": {"name": "server02"}},
                 "created_at": "2026-01-30T12:00:00Z"
             },
@@ -414,7 +301,6 @@ class TestClusterAlertsSorting:
         settings = {
             "enabled": True,
             "window_minutes": 60,
-            "entity_fields": ["host.name"]
         }
 
         clusters = cluster_alerts(alerts, settings)

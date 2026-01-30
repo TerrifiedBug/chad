@@ -1366,7 +1366,6 @@ export type HealthIntervals = {
 export type AlertClusteringSettings = {
   enabled: boolean
   window_minutes: number
-  entity_fields: string[]
 }
 
 export type AlertCluster = {
