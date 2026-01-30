@@ -207,8 +207,8 @@ export default function AlertsPage() {
 
   // Filter alerts (works for non-clustered mode)
   const filteredAlerts = alerts.filter((alert) => {
-    // Search filter
-    if (!alert.rule_title.toLowerCase().includes(search.toLowerCase())) {
+    // Search filter (handle null rule_title for deleted rules)
+    if (!(alert.rule_title || '').toLowerCase().includes(search.toLowerCase())) {
       return false
     }
     // Severity filter (client-side when multiple selected)
@@ -220,8 +220,8 @@ export default function AlertsPage() {
 
   // Filter clusters (client-side search/filter for clustered mode)
   const filteredClusters = clusters.filter((cluster) => {
-    // Search filter
-    if (!cluster.representative.rule_title.toLowerCase().includes(search.toLowerCase())) {
+    // Search filter (handle null rule_title for deleted rules)
+    if (!(cluster.representative.rule_title || '').toLowerCase().includes(search.toLowerCase())) {
       return false
     }
     // Severity filter

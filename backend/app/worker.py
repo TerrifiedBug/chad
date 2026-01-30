@@ -120,6 +120,59 @@ class Worker:
 
         return processed
 
+    async def claim_pending_messages(self, redis, streams: list[str]) -> list:
+        """
+        Claim pending messages that have been idle too long.
+
+        This handles messages that were delivered to crashed/restarted workers.
+        """
+        claimed_messages = []
+        min_idle_time = 30000  # 30 seconds - reclaim if idle this long
+
+        for stream in streams:
+            try:
+                # XAUTOCLAIM: claim messages idle > min_idle_time
+                # Returns: [next_start_id, [[msg_id, {fields}], ...], [deleted_ids]]
+                result = await redis.xautoclaim(
+                    stream,
+                    CONSUMER_GROUP,
+                    self.consumer_name,
+                    min_idle_time,
+                    start_id="0-0",
+                    count=100,
+                )
+
+                if result and len(result) > 1 and result[1]:
+                    # result[1] contains the claimed messages
+                    messages = result[1]
+                    if messages:
+                        claimed_messages.append((stream, messages))
+                        logger.info(f"Claimed {len(messages)} pending messages from {stream}")
+
+            except Exception as e:
+                # XAUTOCLAIM may not exist in older Redis versions
+                if "unknown command" in str(e).lower():
+                    logger.debug(f"XAUTOCLAIM not available, skipping pending claim")
+                else:
+                    logger.warning(f"Failed to claim pending from {stream}: {e}")
+
+        return claimed_messages
+
+    async def trim_processed_messages(self, redis, stream: str, last_id: str):
+        """
+        Trim messages from stream that have been fully processed.
+
+        This removes ACKed messages to prevent unbounded stream growth.
+        """
+        try:
+            # XTRIM with MINID removes all messages with ID < minid
+            # This is safe because we only call this after successful ACK
+            deleted = await redis.xtrim(stream, minid=last_id, approximate=False)
+            if deleted > 0:
+                logger.debug(f"Trimmed {deleted} processed messages from {stream}")
+        except Exception as e:
+            logger.warning(f"Failed to trim {stream}: {e}")
+
     async def run(self):
         """Main worker loop."""
         logger.info(f"Worker {self.consumer_name} starting")
@@ -138,6 +191,8 @@ class Worker:
 
         logger.info(f"Worker {self.consumer_name} ready, waiting for messages")
 
+        claim_interval = 0  # Counter for periodic pending claim
+
         while self.running:
             try:
                 # Get current streams
@@ -151,29 +206,51 @@ class Worker:
                 # Ensure consumer groups exist for all streams
                 await self.ensure_consumer_group(redis, streams)
 
-                # Build stream dict for xreadgroup
-                stream_dict = {stream: ">" for stream in streams}
+                messages = []
 
-                # Read from all streams
-                messages = await redis.xreadgroup(
-                    CONSUMER_GROUP,
-                    self.consumer_name,
-                    stream_dict,
-                    count=500,  # Batch size - will be configurable
-                    block=5000,  # 5 second timeout
-                )
+                # Periodically check for and claim pending messages (every 10 iterations)
+                claim_interval += 1
+                if claim_interval >= 10:
+                    claim_interval = 0
+                    claimed = await self.claim_pending_messages(redis, streams)
+                    if claimed:
+                        messages = claimed
+
+                # If no claimed messages, read new ones
+                if not messages:
+                    # Build stream dict for xreadgroup
+                    stream_dict = {stream: ">" for stream in streams}
+
+                    # Read from all streams
+                    messages = await redis.xreadgroup(
+                        CONSUMER_GROUP,
+                        self.consumer_name,
+                        stream_dict,
+                        count=500,  # Batch size
+                        block=5000,  # 5 second timeout
+                    )
 
                 if not messages:
                     continue
 
                 self.processing = True
 
+                # Track the highest processed message ID per stream for trimming
+                max_ids_per_stream: dict[str, str] = {}
+
                 async with async_session_maker() as db_session:
                     processed = await self.process_batch(processor, messages, db_session)
 
-                # Acknowledge processed messages
+                # Acknowledge and track max IDs for trimming
                 for stream, msg_id in processed:
                     await redis.xack(stream, CONSUMER_GROUP, msg_id)
+                    # Track highest ID per stream
+                    if stream not in max_ids_per_stream or msg_id > max_ids_per_stream[stream]:
+                        max_ids_per_stream[stream] = msg_id
+
+                # Trim processed messages from each stream
+                for stream, max_id in max_ids_per_stream.items():
+                    await self.trim_processed_messages(redis, stream, max_id)
 
                 self.processing = False
 
