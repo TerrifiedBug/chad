@@ -38,6 +38,7 @@ from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
 from app.api.stats import router as stats_router
 from app.api.users import router as users_router
+from app.api.queue import router as queue_router
 from app.api.webhooks import router as webhooks_router
 from app.api.websocket import router as websocket_router
 from app.core.config import settings
@@ -340,6 +341,7 @@ app.include_router(field_mappings_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(attack_router, prefix="/api")
 app.include_router(webhooks_router, prefix="/api")
+app.include_router(queue_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(jira_router, prefix="/api")
 app.include_router(ti_router, prefix="/api")
