@@ -196,17 +196,17 @@ async def check_index_health(db: AsyncSession) -> list[dict]:
 
         # Check latency
         latency_healthy = True
-        if latest.avg_latency_ms and latest.avg_latency_ms > latency_ms:
+        if latest.avg_detection_latency_ms and latest.avg_detection_latency_ms > latency_ms:
             latency_healthy = False
             conditions_with_issues.add("latency")
-            level = "critical" if latest.avg_latency_ms > latency_ms * 2 else "warning"
+            level = "critical" if latest.avg_detection_latency_ms > latency_ms * 2 else "warning"
             issue = await _handle_issue(
                 db,
                 pattern,
                 level,
                 "latency",
-                f"Latency {latest.avg_latency_ms}ms exceeds threshold {latency_ms}ms",
-                {"latency_ms": latest.avg_latency_ms, "threshold_ms": latency_ms},
+                f"Latency {latest.avg_detection_latency_ms}ms exceeds threshold {latency_ms}ms",
+                {"latency_ms": latest.avg_detection_latency_ms, "threshold_ms": latency_ms},
             )
             if issue:
                 issues.append(issue)
