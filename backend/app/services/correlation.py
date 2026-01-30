@@ -21,6 +21,15 @@ from app.services.field_mapping import resolve_mappings
 logger = logging.getLogger(__name__)
 
 
+def sanitize_log_value(value: any) -> str:
+    """Sanitize a value for safe logging to prevent log injection attacks."""
+    if value is None:
+        return "None"
+    s = str(value)
+    # Remove newlines and control characters that could forge log entries
+    return s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+
+
 def is_rule_snoozed(corr_rule: CorrelationRule) -> bool:
     """Check if a correlation rule is currently snoozed."""
     if corr_rule.snooze_indefinite:
@@ -50,46 +59,73 @@ def get_nested_value(obj: dict, path: str) -> any:
 async def resolve_entity_field(
     db: AsyncSession,
     rule_id: UUID,
-    sigma_field: str,
+    entity_field: str,
     log_document: dict,
+    field_type: str = "sigma",
 ) -> str | None:
     """
-    Resolve a Sigma field to an entity value from the log document.
+    Resolve an entity field to a value from the log document.
 
-    This function:
+    For "sigma" field_type:
     1. Loads the rule to get its index pattern
     2. Resolves the Sigma field to the actual log field using field mappings
     3. Extracts the entity value from the log document
 
+    For "direct" field_type:
+    - Uses the field path directly without field mapping resolution
+
     Args:
         db: Database session
         rule_id: The rule ID
-        sigma_field: The Sigma field name (e.g., "UserName")
+        entity_field: The field name (Sigma field name if type="sigma", log field path if type="direct")
         log_document: The log document to extract from
+        field_type: "sigma" (default) or "direct"
 
     Returns:
         The entity value, or None if not found
     """
+    if field_type == "direct":
+        # Direct field mode - use the field path directly
+        doc_field = entity_field
+        # Strip OpenSearch field type suffixes
+        if doc_field.endswith('.keyword'):
+            doc_field = doc_field[:-8]
+        elif doc_field.endswith('.text'):
+            doc_field = doc_field[:-5]
+
+        entity_value = get_nested_value(log_document, doc_field)
+        if entity_value is None:
+            logger.debug(f"Direct field '{entity_field}' not found in log document")
+            return None
+
+        logger.info(
+            "Correlation check: Resolved '%s' (direct) to value '%s'",
+            sanitize_log_value(entity_field),
+            sanitize_log_value(entity_value),
+        )
+        return str(entity_value)
+
+    # Sigma field mode - resolve through field mappings
     # Load the rule with its index pattern
     result = await db.execute(
         select(Rule).options(selectinload(Rule.index_pattern)).where(Rule.id == rule_id)
     )
     rule = result.scalar_one_or_none()
     if not rule or not rule.index_pattern:
-        logger.warning(f"Rule {rule_id} has no index pattern, cannot resolve field {sigma_field}")
+        logger.warning(f"Rule {rule_id} has no index pattern, cannot resolve field {entity_field}")
         return None
 
     # Resolve the Sigma field to the actual log field
     mappings = await resolve_mappings(
         db,
-        sigma_fields=[sigma_field],
+        sigma_fields=[entity_field],
         index_pattern_id=rule.index_pattern_id,
     )
-    target_field = mappings.get(sigma_field)
+    target_field = mappings.get(entity_field)
 
     if not target_field:
         logger.warning(
-            f"Sigma field {sigma_field} has no mapping for rule {rule_id} "
+            f"Sigma field {entity_field} has no mapping for rule {rule_id} "
             f"(index pattern {rule.index_pattern_id})"
         )
         return None
@@ -106,7 +142,7 @@ async def resolve_entity_field(
     entity_value = get_nested_value(log_document, doc_field)
     if entity_value is None:
         logger.debug(
-            f"Field {target_field} (resolved from {sigma_field}) not found in log document"
+            f"Field {target_field} (resolved from {entity_field}) not found in log document"
         )
         return None
 
@@ -183,6 +219,12 @@ async def check_correlation(
     )
     correlation_rules = result.scalars().all()
 
+    if not correlation_rules:
+        logger.debug(f"No deployed correlation rules found involving rule {rule_id}")
+        return triggered
+
+    logger.info(f"Checking {len(correlation_rules)} correlation rule(s) for rule {rule_id}")
+
     # Fetch deployed version data for each correlation rule
     # Create list of (corr_rule, deployed_data) tuples
     # Filter out snoozed rules
@@ -201,22 +243,32 @@ async def check_correlation(
             continue
         rules_with_deployed_data.append((corr_rule, deployed_data))
 
-    # Group correlation rules by sigma_field (from deployed data) to avoid redundant resolution
-    # Store as dict: sigma_field -> list of (corr_rule, deployed_data) tuples
-    corr_rules_by_field: dict[str, list[tuple[CorrelationRule, CorrelationRuleVersion]]] = {}
+    # Group correlation rules by (entity_field, entity_field_type) to avoid redundant resolution
+    # Store as dict: (entity_field, field_type) -> list of (corr_rule, deployed_data) tuples
+    corr_rules_by_field: dict[tuple[str, str], list[tuple[CorrelationRule, CorrelationRuleVersion]]] = {}
     for corr_rule, deployed_data in rules_with_deployed_data:
-        sigma_field = deployed_data.entity_field
-        if sigma_field not in corr_rules_by_field:
-            corr_rules_by_field[sigma_field] = []
-        corr_rules_by_field[sigma_field].append((corr_rule, deployed_data))
+        entity_field = deployed_data.entity_field
+        field_type = getattr(deployed_data, 'entity_field_type', 'sigma')
+        key = (entity_field, field_type)
+        if key not in corr_rules_by_field:
+            corr_rules_by_field[key] = []
+        corr_rules_by_field[key].append((corr_rule, deployed_data))
 
-    # For each unique sigma_field, resolve the entity value and check correlations
-    for sigma_field, corr_rules_data in corr_rules_by_field.items():
-        # Resolve the Sigma field to an entity value for this rule
-        entity_value = await resolve_entity_field(db, rule_id, sigma_field, log_document)
+    # For each unique (entity_field, field_type), resolve the entity value and check correlations
+    for (entity_field, field_type), corr_rules_data in corr_rules_by_field.items():
+        # Resolve the entity field to a value for this rule
+        entity_value = await resolve_entity_field(db, rule_id, entity_field, log_document, field_type)
         if not entity_value:
-            logger.debug(f"Could not resolve entity field {sigma_field} for rule {rule_id}")
+            logger.info(f"Correlation check: Could not resolve entity field '{entity_field}' (type={field_type}) for rule {rule_id}")
             continue
+
+        logger.info(
+            "Correlation check: Resolved '%s' (type=%s) to value '%s' for rule %s",
+            sanitize_log_value(entity_field),
+            field_type,
+            sanitize_log_value(entity_value),
+            rule_id,
+        )
 
         now = datetime.utcnow()
 
@@ -248,7 +300,7 @@ async def check_correlation(
                 # Correlation triggered! Both rules fired within time window
                 logger.info(
                     f"Correlation triggered: {corr_rule.name} "
-                    f"(sigma_field={sigma_field}, entity={entity_value}, paired_alert={existing_state.alert_id})"
+                    f"(entity_field={entity_field}, type={field_type}, entity={entity_value}, paired_alert={existing_state.alert_id})"
                 )
 
                 # Create a correlation alert (this will be stored/processed elsewhere)
@@ -260,7 +312,8 @@ async def check_correlation(
                         "severity": deployed_data.severity,
                         "rule_a_id": str(deployed_data.rule_a_id),
                         "rule_b_id": str(deployed_data.rule_b_id),
-                        "sigma_field": sigma_field,
+                        "entity_field": entity_field,
+                        "entity_field_type": field_type,
                         "entity_value": entity_value,
                         "first_alert_id": existing_state.alert_id,
                         "second_alert_id": alert_id,
@@ -284,10 +337,12 @@ async def check_correlation(
                     expires_at=expires_at,
                 )
                 db.add(state)
-                # Log only IDs, not user-controlled content to prevent log injection
-                logger.debug(
-                    "Stored correlation state for rule_id=%s",
-                    corr_rule.id,
+                # Log state storage at INFO level for debugging correlation issues
+                logger.info(
+                    "Correlation state stored: rule=%s, waiting for paired rule, entity=%s, expires in %sm",
+                    sanitize_log_value(corr_rule.name),
+                    sanitize_log_value(entity_value),
+                    deployed_data.time_window_minutes,
                 )
 
     return triggered

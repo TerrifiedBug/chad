@@ -25,6 +25,7 @@ class CorrelationRule(Base, UUIDMixin, TimestampMixin):
     rule_a_id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.id"), nullable=False)
     rule_b_id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.id"), nullable=False)
     entity_field: Mapped[str] = mapped_column(String(100), nullable=False)
+    entity_field_type: Mapped[str] = mapped_column(String(10), nullable=False, default="sigma")
     time_window_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     created_by: Mapped[PyUUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
@@ -75,6 +76,7 @@ class CorrelationRuleVersion(Base, UUIDMixin):
     rule_a_id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     rule_b_id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     entity_field: Mapped[str] = mapped_column(String(100), nullable=False)
+    entity_field_type: Mapped[str] = mapped_column(String(10), nullable=False, default="sigma")
     time_window_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
 

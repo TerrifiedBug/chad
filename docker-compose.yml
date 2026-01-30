@@ -5,8 +5,9 @@ services:
       POSTGRES_USER: chad
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: chad
-    # Log level: warning (default, quiet) or log (verbose, shows checkpoints)
-    command: ["postgres", "-c", "log_min_messages=${POSTGRES_LOG_LEVEL:-warning}"]
+    # Log level: warning (default, quiet) or log (verbose)
+    # Checkpoint logs disabled by default (set POSTGRES_LOG_CHECKPOINTS=on to enable)
+    command: ["postgres", "-c", "log_min_messages=${POSTGRES_LOG_LEVEL:-warning}", "-c", "log_checkpoints=${POSTGRES_LOG_CHECKPOINTS:-off}"]
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

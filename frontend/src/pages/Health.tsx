@@ -95,6 +95,7 @@ export default function HealthPage() {
   }, [])
 
   const loadHealth = async () => {
+    setIsLoading(true)
     try {
       const data = await healthApi.listIndices()
       setHealth(data)
@@ -422,14 +423,14 @@ export default function HealthPage() {
                         <Clock className="h-4 w-4 text-muted-foreground" />
                         <div>
                           <p className="text-muted-foreground">Detection Latency</p>
-                          <p className="font-medium">{(h.latest.avg_detection_latency_ms || 0)}ms</p>
+                          <p className="font-medium">{((h.latest.avg_detection_latency_ms || 0) / 1000).toFixed(1)}s</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-muted-foreground" />
                         <div>
                           <p className="text-muted-foreground">OpenSearch Query</p>
-                          <p className="font-medium">{(h.latest.avg_opensearch_query_latency_ms || 0)}ms</p>
+                          <p className="font-medium">{((h.latest.avg_opensearch_query_latency_ms || 0) / 1000).toFixed(1)}s</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
