@@ -403,7 +403,7 @@ async def assign_alert(
 ):
     """Assign alert to current user."""
     try:
-        # First find the alert to get its index
+        # First find the alert to get its index and document ID
         result = os_client.search(
             index="chad-alerts-*",
             body={"query": {"term": {"alert_id": alert_id}}},
@@ -412,11 +412,13 @@ async def assign_alert(
         if not hits:
             raise not_found("Alert", details={"alert_id": alert_id})
 
-        alert_index = hits[0]["_index"]
+        hit = hits[0]
+        alert_index = hit["_index"]
+        doc_id = hit["_id"]
 
         os_client.update(
             index=alert_index,
-            id=alert_id,
+            id=doc_id,
             body={
                 "doc": {
                     "owner_id": str(current_user.id),
@@ -441,7 +443,7 @@ async def unassign_alert(
 ):
     """Release ownership of alert."""
     try:
-        # First find the alert to get its index
+        # First find the alert to get its index and document ID
         result = os_client.search(
             index="chad-alerts-*",
             body={"query": {"term": {"alert_id": alert_id}}},
@@ -450,11 +452,13 @@ async def unassign_alert(
         if not hits:
             raise not_found("Alert", details={"alert_id": alert_id})
 
-        alert_index = hits[0]["_index"]
+        hit = hits[0]
+        alert_index = hit["_index"]
+        doc_id = hit["_id"]
 
         os_client.update(
             index=alert_index,
-            id=alert_id,
+            id=doc_id,
             body={
                 "doc": {
                     "owner_id": None,

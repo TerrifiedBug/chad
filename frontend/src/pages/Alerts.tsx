@@ -476,6 +476,7 @@ export default function AlertsPage() {
                   <TableHead>Rule</TableHead>
                   <TableHead>Severity</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Owner</TableHead>
                   <TableHead>Tags</TableHead>
                   <TableHead>Created</TableHead>
                 </TableRow>
@@ -526,6 +527,13 @@ export default function AlertsPage() {
                       >
                         {statusLabels[alert.status]}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      {alert.owner_username ? (
+                        <span className="text-sm">{alert.owner_username}</span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Unassigned</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1 flex-wrap">

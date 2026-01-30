@@ -6,6 +6,16 @@ from typing import Any
 from pydantic import BaseModel
 
 
+class ExceptionCreatedInfo(BaseModel):
+    """Info about an exception that was created from this alert."""
+
+    exception_id: str
+    field: str
+    value: str
+    match_type: str
+    created_at: str
+
+
 class AlertResponse(BaseModel):
     alert_id: str
     rule_id: str
@@ -18,6 +28,14 @@ class AlertResponse(BaseModel):
     updated_at: datetime
     acknowledged_by: str | None = None
     acknowledged_at: datetime | None = None
+    # Ownership fields
+    owner_id: str | None = None
+    owner_username: str | None = None
+    owned_at: datetime | None = None
+    # Exception tracking
+    exception_created: ExceptionCreatedInfo | None = None
+    # TI enrichment (optional, may be large)
+    ti_enrichment: dict[str, Any] | None = None
 
 
 class AlertListResponse(BaseModel):

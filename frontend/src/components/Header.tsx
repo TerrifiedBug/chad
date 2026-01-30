@@ -13,20 +13,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, LogOut, Settings, Key, Lock, User, UserCheck, LucideIcon } from 'lucide-react'
+import { ChevronDown, LogOut, Settings, Key, Lock, User } from 'lucide-react'
 
 type NavItem = {
   href: string
   label: string
   exact?: boolean
   permission?: string
-  icon?: LucideIcon
 }
 
 const navItems: NavItem[] = [
   { href: '/', label: 'Dashboard', exact: true },
-  { href: '/alerts', label: 'Alerts', exact: true },
-  { href: '/alerts?owner=me', label: 'My Alerts', icon: UserCheck, exact: true },
+  { href: '/alerts', label: 'Alerts' },
   { href: '/live', label: 'Live' },
   { href: '/rules', label: 'Rules' },
   { href: '/correlation', label: 'Correlation' },
@@ -65,25 +63,18 @@ export function Header() {
           {isAuthenticated && (
             <nav className="flex items-center gap-6">
               {visibleNavItems.map((item) => {
-                // Handle query params in href for matching
-                const [itemPath, itemQuery] = item.href.split('?')
-                const currentQuery = location.search.slice(1) // remove leading ?
-                const isActive = 'exact' in item && item.exact
-                  ? itemQuery
-                    ? location.pathname === itemPath && currentQuery === itemQuery
-                    : location.pathname === itemPath && !currentQuery
-                  : location.pathname.startsWith(itemPath)
-                const Icon = item.icon
+                const isActive = item.exact
+                  ? location.pathname === item.href
+                  : location.pathname.startsWith(item.href)
                 return (
                   <Link
                     key={item.href}
                     to={item.href}
                     className={cn(
-                      'text-sm font-medium transition-colors hover:text-primary flex items-center gap-1',
+                      'text-sm font-medium transition-colors hover:text-primary',
                       isActive ? 'text-foreground' : 'text-muted-foreground'
                     )}
                   >
-                    {Icon && <Icon className="h-3.5 w-3.5" />}
                     {item.label}
                     {item.href === '/settings' && updateAvailable && (
                       <span className="ml-1 h-2 w-2 rounded-full bg-red-500" />
