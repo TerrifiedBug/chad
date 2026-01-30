@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat } from '@/lib/api'
+import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat, AlertCluster, ClusteredAlertListResponse, AlertListResponse } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,7 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -71,12 +71,20 @@ const statusLabels: Record<AlertStatus, string> = {
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
+// Type guard to check if response is clustered
+function isClusteredResponse(response: AlertListResponse | ClusteredAlertListResponse): response is ClusteredAlertListResponse {
+  return 'clusters' in response
+}
+
 export default function AlertsPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [alerts, setAlerts] = useState<Alert[]>([])
+  const [clusters, setClusters] = useState<AlertCluster[]>([])
+  const [isClustered, setIsClustered] = useState(false)
   const [counts, setCounts] = useState<AlertCountsResponse | null>(null)
   const [total, setTotal] = useState(0)
+  const [totalClusters, setTotalClusters] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -88,6 +96,9 @@ export default function AlertsPage() {
   const [ownerFilter, setOwnerFilter] = useState<string | null>(
     searchParams.get('owner')
   )
+
+  // Expanded clusters state
+  const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set())
 
   const toggleSeverityFilter = (severity: string) => {
     setSeverityFilter(prev =>
@@ -110,6 +121,19 @@ export default function AlertsPage() {
   const [exportDateRange, setExportDateRange] = useState<DateRange | undefined>()
   const [isExporting, setIsExporting] = useState(false)
 
+  // Toggle cluster expansion
+  const toggleCluster = (clusterId: string) => {
+    setExpandedClusters(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(clusterId)) {
+        newSet.delete(clusterId)
+      } else {
+        newSet.add(clusterId)
+      }
+      return newSet
+    })
+  }
+
   // Load data function - must be declared before useEffect that uses it
   const loadData = useCallback(async () => {
     setIsLoading(true)
@@ -124,11 +148,24 @@ export default function AlertsPage() {
           owner: ownerFilter,
           limit: pageSize,
           offset,
-        }),
+        }) as Promise<AlertListResponse | ClusteredAlertListResponse>,
         alertsApi.getCounts(),
       ])
-      setAlerts(alertsResponse.alerts)
-      setTotal(alertsResponse.total)
+
+      // Handle clustered or non-clustered response
+      if (isClusteredResponse(alertsResponse)) {
+        setIsClustered(true)
+        setClusters(alertsResponse.clusters)
+        setAlerts([])
+        setTotal(alertsResponse.total)
+        setTotalClusters(alertsResponse.total_clusters)
+      } else {
+        setIsClustered(false)
+        setClusters([])
+        setAlerts(alertsResponse.alerts)
+        setTotal(alertsResponse.total)
+        setTotalClusters(0)
+      }
       setCounts(countsResponse)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load alerts')
@@ -160,6 +197,7 @@ export default function AlertsPage() {
   const canGoPrevious = page > 1
   const canGoNext = page < totalPages
 
+  // Filter alerts (works for non-clustered mode)
   const filteredAlerts = alerts.filter((alert) => {
     // Search filter
     if (!alert.rule_title.toLowerCase().includes(search.toLowerCase())) {
@@ -172,11 +210,32 @@ export default function AlertsPage() {
     return true
   })
 
+  // Filter clusters (client-side search/filter for clustered mode)
+  const filteredClusters = clusters.filter((cluster) => {
+    // Search filter
+    if (!cluster.representative.rule_title.toLowerCase().includes(search.toLowerCase())) {
+      return false
+    }
+    // Severity filter
+    if (severityFilter.length > 1 && !severityFilter.includes(cluster.representative.severity)) {
+      return false
+    }
+    return true
+  })
+
+  // Get all alert IDs for selection (from clusters or alerts)
+  const getAllSelectableAlertIds = (): string[] => {
+    if (isClustered) {
+      return filteredClusters.flatMap(c => c.alert_ids)
+    }
+    return filteredAlerts.map(a => a.alert_id)
+  }
+
   // Bulk operation handlers
   const handleSelectAll = (checked: boolean) => {
     setSelectAll(checked)
     if (checked) {
-      setSelectedAlerts(new Set(filteredAlerts.map(a => a.alert_id)))
+      setSelectedAlerts(new Set(getAllSelectableAlertIds()))
     } else {
       setSelectedAlerts(new Set())
     }
@@ -190,7 +249,32 @@ export default function AlertsPage() {
       newSelected.delete(alertId)
     }
     setSelectedAlerts(newSelected)
-    setSelectAll(newSelected.size === filteredAlerts.length && filteredAlerts.length > 0)
+    const allIds = getAllSelectableAlertIds()
+    setSelectAll(newSelected.size === allIds.length && allIds.length > 0)
+  }
+
+  // Handle selecting/deselecting all alerts in a cluster
+  const handleSelectCluster = (cluster: AlertCluster, checked: boolean) => {
+    const newSelected = new Set(selectedAlerts)
+    if (checked) {
+      cluster.alert_ids.forEach(id => newSelected.add(id))
+    } else {
+      cluster.alert_ids.forEach(id => newSelected.delete(id))
+    }
+    setSelectedAlerts(newSelected)
+    const allIds = getAllSelectableAlertIds()
+    setSelectAll(newSelected.size === allIds.length && allIds.length > 0)
+  }
+
+  // Check if all alerts in a cluster are selected
+  const isClusterSelected = (cluster: AlertCluster): boolean => {
+    return cluster.alert_ids.every(id => selectedAlerts.has(id))
+  }
+
+  // Check if some alerts in a cluster are selected
+  const isClusterPartiallySelected = (cluster: AlertCluster): boolean => {
+    const selectedCount = cluster.alert_ids.filter(id => selectedAlerts.has(id)).length
+    return selectedCount > 0 && selectedCount < cluster.alert_ids.length
   }
 
   const handleBulkStatusUpdate = async (newStatus: AlertStatus) => {
@@ -452,9 +536,19 @@ export default function AlertsPage() {
         </div>
       )}
 
+      {/* Clustering indicator */}
+      {isClustered && totalClusters > 0 && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-3 py-2 rounded-md">
+          <Layers className="h-4 w-4" />
+          <span>
+            Alert clustering is enabled. Showing {totalClusters} cluster{totalClusters !== 1 ? 's' : ''} from {total} alert{total !== 1 ? 's' : ''}.
+          </span>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="text-center py-8 text-muted-foreground">Loading...</div>
-      ) : filteredAlerts.length === 0 ? (
+      ) : (isClustered ? filteredClusters.length === 0 : filteredAlerts.length === 0) ? (
         <div className="text-center py-8 text-muted-foreground">
           {search || statusFilter !== 'all' || severityFilter.length > 0
             ? 'No alerts match your filters'
@@ -473,6 +567,7 @@ export default function AlertsPage() {
                       aria-label="Select all alerts"
                     />
                   </TableHead>
+                  {isClustered && <TableHead className="w-10"></TableHead>}
                   <TableHead>Rule</TableHead>
                   <TableHead>Severity</TableHead>
                   <TableHead>Status</TableHead>
@@ -482,84 +577,247 @@ export default function AlertsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAlerts.map((alert) => (
-                  <TableRow
-                    key={alert.alert_id}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={(e) => {
-                      // Don't navigate if clicking checkbox
-                      if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
-                        return
-                      }
-                      navigate(`/alerts/${alert.alert_id}`)
-                    }}
-                  >
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedAlerts.has(alert.alert_id)}
-                        onCheckedChange={(checked) => handleSelectAlert(alert.alert_id, checked as boolean)}
-                        aria-label={`Select alert ${alert.alert_id}`}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {alert.tags.includes('correlation') && (
-                          <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
-                            <Link2 className="h-3 w-3" />
-                            <span>Correlation</span>
-                          </div>
-                        )}
-                        <span>{alert.rule_title}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          severityColors[alert.severity] || 'bg-gray-500 text-white'
-                        }`}
-                      >
-                        {capitalize(alert.severity)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
-                      >
-                        {statusLabels[alert.status]}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {alert.owner_username ? (
-                        <span className="text-sm">{alert.owner_username}</span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">Unassigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1 flex-wrap">
-                        {alert.tags
-                          .filter(tag => tag !== 'correlation')
-                          .slice(0, 3)
-                          .map((tag, i) => (
+                {isClustered ? (
+                  // Clustered view
+                  filteredClusters.map((cluster) => {
+                    const alert = cluster.representative
+                    const clusterId = cluster.alert_ids[0]
+                    const isExpanded = expandedClusters.has(clusterId)
+                    const hasMultiple = cluster.count > 1
+
+                    return (
+                      <>
+                        {/* Cluster header row */}
+                        <TableRow
+                          key={clusterId}
+                          className={cn(
+                            "cursor-pointer hover:bg-muted/50",
+                            hasMultiple && "border-l-2 border-l-primary"
+                          )}
+                          onClick={(e) => {
+                            // Don't navigate if clicking checkbox or expand button
+                            if ((e.target as HTMLElement).closest('input[type="checkbox"]') ||
+                                (e.target as HTMLElement).closest('button')) {
+                              return
+                            }
+                            if (hasMultiple) {
+                              toggleCluster(clusterId)
+                            } else {
+                              navigate(`/alerts/${alert.alert_id}`)
+                            }
+                          }}
+                        >
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={isClusterSelected(cluster)}
+                              ref={(el) => {
+                                if (el) {
+                                  (el as unknown as HTMLInputElement).indeterminate = isClusterPartiallySelected(cluster)
+                                }
+                              }}
+                              onCheckedChange={(checked) => handleSelectCluster(cluster, checked as boolean)}
+                              aria-label={`Select cluster of ${cluster.count} alerts`}
+                            />
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            {hasMultiple && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => toggleCluster(clusterId)}
+                              >
+                                {isExpanded ? (
+                                  <ChevronUp className="h-4 w-4" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4" />
+                                )}
+                              </Button>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {hasMultiple && (
+                                <Badge variant="secondary" className="font-mono">
+                                  x{cluster.count}
+                                </Badge>
+                              )}
+                              {alert.tags.includes('correlation') && (
+                                <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                                  <Link2 className="h-3 w-3" />
+                                  <span>Correlation</span>
+                                </div>
+                              )}
+                              <span>{alert.rule_title}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
                             <span
-                              key={i}
-                              className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                severityColors[alert.severity] || 'bg-gray-500 text-white'
+                              }`}
                             >
-                              {tag}
+                              {capitalize(alert.severity)}
                             </span>
-                          ))}
-                        {alert.tags.filter(tag => tag !== 'correlation').length > 3 && (
-                          <span className="text-xs text-muted-foreground">
-                            +{alert.tags.filter(tag => tag !== 'correlation').length - 3}
-                          </span>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
+                            >
+                              {statusLabels[alert.status]}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {alert.owner_username ? (
+                              <span className="text-sm">{alert.owner_username}</span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">Unassigned</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1 flex-wrap">
+                              {alert.tags
+                                .filter(tag => tag !== 'correlation')
+                                .slice(0, 3)
+                                .map((tag, i) => (
+                                  <span
+                                    key={i}
+                                    className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              {alert.tags.filter(tag => tag !== 'correlation').length > 3 && (
+                                <span className="text-xs text-muted-foreground">
+                                  +{alert.tags.filter(tag => tag !== 'correlation').length - 3}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {hasMultiple ? (
+                              <span className="text-xs">
+                                {cluster.time_range[0] && cluster.time_range[1] ? (
+                                  <>
+                                    <RelativeTime date={cluster.time_range[0]} /> - <RelativeTime date={cluster.time_range[1]} />
+                                  </>
+                                ) : (
+                                  <RelativeTime date={alert.created_at} />
+                                )}
+                              </span>
+                            ) : (
+                              <RelativeTime date={alert.created_at} />
+                            )}
+                          </TableCell>
+                        </TableRow>
+
+                        {/* Expanded cluster rows - show all alert IDs with link to details */}
+                        {isExpanded && hasMultiple && cluster.alert_ids.map((alertId, idx) => (
+                          <TableRow
+                            key={`${clusterId}-${alertId}`}
+                            className="bg-muted/30 cursor-pointer hover:bg-muted/50"
+                            onClick={() => navigate(`/alerts/${alertId}`)}
+                          >
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                checked={selectedAlerts.has(alertId)}
+                                onCheckedChange={(checked) => handleSelectAlert(alertId, checked as boolean)}
+                                aria-label={`Select alert ${alertId}`}
+                              />
+                            </TableCell>
+                            <TableCell></TableCell>
+                            <TableCell colSpan={6} className="pl-8">
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <span className="font-mono text-xs">{alertId.substring(0, 8)}...</span>
+                                <span>({idx === 0 ? 'First in cluster' : `Alert ${idx + 1} of ${cluster.count}`})</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </>
+                    )
+                  })
+                ) : (
+                  // Non-clustered view
+                  filteredAlerts.map((alert) => (
+                    <TableRow
+                      key={alert.alert_id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={(e) => {
+                        // Don't navigate if clicking checkbox
+                        if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
+                          return
+                        }
+                        navigate(`/alerts/${alert.alert_id}`)
+                      }}
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedAlerts.has(alert.alert_id)}
+                          onCheckedChange={(checked) => handleSelectAlert(alert.alert_id, checked as boolean)}
+                          aria-label={`Select alert ${alert.alert_id}`}
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {alert.tags.includes('correlation') && (
+                            <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                              <Link2 className="h-3 w-3" />
+                              <span>Correlation</span>
+                            </div>
+                          )}
+                          <span>{alert.rule_title}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            severityColors[alert.severity] || 'bg-gray-500 text-white'
+                          }`}
+                        >
+                          {capitalize(alert.severity)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
+                        >
+                          {statusLabels[alert.status]}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {alert.owner_username ? (
+                          <span className="text-sm">{alert.owner_username}</span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Unassigned</span>
                         )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <RelativeTime date={alert.created_at} />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 flex-wrap">
+                          {alert.tags
+                            .filter(tag => tag !== 'correlation')
+                            .slice(0, 3)
+                            .map((tag, i) => (
+                              <span
+                                key={i}
+                                className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          {alert.tags.filter(tag => tag !== 'correlation').length > 3 && (
+                            <span className="text-xs text-muted-foreground">
+                              +{alert.tags.filter(tag => tag !== 'correlation').length - 3}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <RelativeTime date={alert.created_at} />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>

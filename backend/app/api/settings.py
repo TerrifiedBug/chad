@@ -1,9 +1,9 @@
+import re
 from datetime import UTC, datetime
 from typing import Annotated
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -986,3 +986,68 @@ def _encrypt_sensitive(key: str, value: dict) -> dict:
             result[k] = v
 
     return result
+
+
+# Alert Clustering Settings
+class AlertClusteringSettings(BaseModel):
+    """Alert clustering configuration settings."""
+
+    enabled: bool = False
+    window_minutes: int = Field(default=60, ge=1, le=1440)
+    entity_fields: list[str] = ["host.name", "user.name", "source.ip"]
+
+
+class AlertClusteringSettingsResponse(BaseModel):
+    """Response model for alert clustering settings."""
+
+    enabled: bool
+    window_minutes: int
+    entity_fields: list[str]
+
+
+@router.get("/alert-clustering", response_model=AlertClusteringSettingsResponse)
+async def get_alert_clustering_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Get alert clustering settings."""
+    settings_data = await get_setting(db, "alert_clustering")
+    if not settings_data:
+        # Return defaults
+        return AlertClusteringSettingsResponse(
+            enabled=False,
+            window_minutes=60,
+            entity_fields=["host.name", "user.name", "source.ip"],
+        )
+    return AlertClusteringSettingsResponse(
+        enabled=settings_data.get("enabled", False),
+        window_minutes=settings_data.get("window_minutes", 60),
+        entity_fields=settings_data.get("entity_fields", ["host.name", "user.name", "source.ip"]),
+    )
+
+
+@router.put("/alert-clustering", response_model=AlertClusteringSettingsResponse)
+async def update_alert_clustering_settings(
+    data: AlertClusteringSettings,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_settings"))],
+):
+    """Update alert clustering settings (admin only)."""
+    settings_value = {
+        "enabled": data.enabled,
+        "window_minutes": data.window_minutes,
+        "entity_fields": data.entity_fields,
+    }
+    await set_setting(db, "alert_clustering", settings_value)
+    await audit_log(
+        db,
+        current_user.id,
+        "settings.update",
+        "settings",
+        "alert_clustering",
+        settings_value,
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    return AlertClusteringSettingsResponse(**settings_value)

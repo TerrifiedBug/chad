@@ -1362,6 +1362,34 @@ export type HealthIntervals = {
   ti_interval_seconds: number
 }
 
+// Alert Clustering types
+export type AlertClusteringSettings = {
+  enabled: boolean
+  window_minutes: number
+  entity_fields: string[]
+}
+
+export type AlertCluster = {
+  representative: Alert
+  count: number
+  alert_ids: string[]
+  time_range: [string | null, string | null]
+}
+
+export type ClusteredAlertListResponse = {
+  total: number
+  total_clusters: number
+  clusters: AlertCluster[]
+}
+
+// Alert Clustering API
+export const alertClusteringApi = {
+  getSettings: () =>
+    api.get<AlertClusteringSettings>('/settings/alert-clustering'),
+  updateSettings: (data: AlertClusteringSettings) =>
+    api.put<AlertClusteringSettings>('/settings/alert-clustering', data),
+}
+
 // Health API
 export const healthApi = {
   listIndices: () =>

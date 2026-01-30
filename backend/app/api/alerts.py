@@ -16,14 +16,17 @@ from app.db.session import get_db
 from app.models.alert_comment import AlertComment
 from app.models.user import User
 from app.schemas.alert import (
+    AlertCluster,
     AlertCountsResponse,
     AlertListResponse,
     AlertResponse,
     AlertStatusUpdate,
+    ClusteredAlertListResponse,
 )
 from app.schemas.alert_comment import AlertCommentCreate, AlertCommentResponse
-from app.services.alerts import AlertService
+from app.services.alerts import AlertService, cluster_alerts
 from app.services.audit import audit_log
+from app.services.settings import get_setting
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -64,9 +67,10 @@ class BulkAlertDelete(BaseModel):
         return v
 
 
-@router.get("", response_model=AlertListResponse)
+@router.get("", response_model=AlertListResponse | ClusteredAlertListResponse)
 async def list_alerts(
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     status: str | None = Query(None, description="Filter by status"),
     severity: str | None = Query(None, description="Filter by severity"),
@@ -75,8 +79,9 @@ async def list_alerts(
     index_pattern: str = Query("chad-alerts-*", description="Alerts index pattern"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    cluster: bool = Query(True, description="Apply alert clustering when enabled globally"),
 ):
-    """List alerts with optional filters."""
+    """List alerts with optional filters and clustering."""
     owner_id = None
     if owner == "me":
         owner_id = str(current_user.id)
@@ -84,7 +89,7 @@ async def list_alerts(
         owner_id = owner
 
     alert_service = AlertService(os_client)
-    return alert_service.get_alerts(
+    result = alert_service.get_alerts(
         index_pattern=index_pattern,
         status=status,
         severity=severity,
@@ -93,6 +98,34 @@ async def list_alerts(
         limit=limit,
         offset=offset,
     )
+
+    # Check if clustering is enabled and requested
+    if cluster:
+        clustering_settings = await get_setting(db, "alert_clustering")
+        if clustering_settings and clustering_settings.get("enabled", False):
+            # Apply clustering to the results
+            clusters = cluster_alerts(result["alerts"], clustering_settings)
+
+            # Convert clusters to response format
+            cluster_responses = []
+            for c in clusters:
+                cluster_responses.append(
+                    AlertCluster(
+                        representative=AlertResponse(**c["representative"]),
+                        count=c["count"],
+                        alert_ids=c["alert_ids"],
+                        time_range=c["time_range"],
+                    )
+                )
+
+            return ClusteredAlertListResponse(
+                total=result["total"],
+                total_clusters=len(cluster_responses),
+                clusters=cluster_responses,
+            )
+
+    # Return non-clustered response
+    return result
 
 
 @router.get("/counts", response_model=AlertCountsResponse)
@@ -197,8 +230,9 @@ async def bulk_update_alert_status(
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
     """Update status for multiple alerts."""
-    from app.models.alert import Alert
     from sqlalchemy import select
+
+    from app.models.alert import Alert
 
     success = []
     failed = []
@@ -240,8 +274,10 @@ async def bulk_delete_alerts(
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Delete multiple alerts."""
+    from sqlalchemy import delete as sql_delete
+    from sqlalchemy import select
+
     from app.models.alert import Alert
-    from sqlalchemy import select, delete as sql_delete
 
     success = []
     failed = []

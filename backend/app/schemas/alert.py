@@ -43,6 +43,23 @@ class AlertListResponse(BaseModel):
     alerts: list[AlertResponse]
 
 
+class AlertCluster(BaseModel):
+    """A cluster of related alerts."""
+
+    representative: AlertResponse
+    count: int
+    alert_ids: list[str]
+    time_range: tuple[str | None, str | None]
+
+
+class ClusteredAlertListResponse(BaseModel):
+    """Response for alerts list when clustering is enabled."""
+
+    total: int
+    total_clusters: int
+    clusters: list[AlertCluster]
+
+
 class AlertStatusUpdate(BaseModel):
     status: str  # new, acknowledged, resolved, false_positive
 
