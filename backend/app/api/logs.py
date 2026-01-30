@@ -20,6 +20,8 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
+import yaml
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from opensearchpy import OpenSearch
 from pydantic import BaseModel
@@ -407,9 +409,12 @@ async def receive_logs(
                                         select(Rule).where(Rule.id == UUID(rule_a_id))
                                     )
                                     rule_a = rule_a_result.scalar_one_or_none()
-                                    if rule_a and rule_a.tags:
-                                        correlation_tags.extend(rule_a.tags)
-                                except (ValueError, Exception):
+                                    if rule_a and rule_a.yaml_content:
+                                        parsed = yaml.safe_load(rule_a.yaml_content)
+                                        if parsed and isinstance(parsed, dict):
+                                            tags = parsed.get("tags", []) or []
+                                            correlation_tags.extend(tags)
+                                except (ValueError, yaml.YAMLError, Exception):
                                     pass
 
                             if rule_b_id:
@@ -418,9 +423,12 @@ async def receive_logs(
                                         select(Rule).where(Rule.id == UUID(rule_b_id))
                                     )
                                     rule_b = rule_b_result.scalar_one_or_none()
-                                    if rule_b and rule_b.tags:
-                                        correlation_tags.extend(rule_b.tags)
-                                except (ValueError, Exception):
+                                    if rule_b and rule_b.yaml_content:
+                                        parsed = yaml.safe_load(rule_b.yaml_content)
+                                        if parsed and isinstance(parsed, dict):
+                                            tags = parsed.get("tags", []) or []
+                                            correlation_tags.extend(tags)
+                                except (ValueError, yaml.YAMLError, Exception):
                                     pass
 
                             # Deduplicate tags while preserving order
