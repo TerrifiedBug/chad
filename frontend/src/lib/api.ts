@@ -768,6 +768,9 @@ export type Alert = {
   updated_at: string
   acknowledged_by: string | null
   acknowledged_at: string | null
+  owner_id?: string
+  owner_username?: string
+  owned_at?: string
   exception_created?: {
     exception_id: string
     field: string
@@ -798,6 +801,7 @@ export const alertsApi = {
     status?: AlertStatus
     severity?: string
     rule_id?: string
+    owner?: string | null
     limit?: number
     offset?: number
   }) => {
@@ -805,6 +809,7 @@ export const alertsApi = {
     if (params?.status) searchParams.set('status', params.status)
     if (params?.severity) searchParams.set('severity', params.severity)
     if (params?.rule_id) searchParams.set('rule_id', params.rule_id)
+    if (params?.owner) searchParams.set('owner', params.owner)
     if (params?.limit) searchParams.set('limit', params.limit.toString())
     if (params?.offset) searchParams.set('offset', params.offset.toString())
     const query = searchParams.toString()
@@ -828,6 +833,12 @@ export const alertsApi = {
     api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data).then(() => {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
     }),
+  assign: async (alertId: string): Promise<{ message: string; owner: string }> => {
+    return api.post(`/alerts/${alertId}/assign`)
+  },
+  unassign: async (alertId: string): Promise<{ message: string }> => {
+    return api.post(`/alerts/${alertId}/unassign`)
+  },
 }
 
 // Alert Comments types

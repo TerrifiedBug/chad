@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -73,6 +73,7 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 export default function AlertsPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [counts, setCounts] = useState<AlertCountsResponse | null>(null)
   const [total, setTotal] = useState(0)
@@ -82,6 +83,11 @@ export default function AlertsPage() {
   const [statusFilter, setStatusFilter] = useState<AlertStatus | 'all'>('all')
   const [severityFilter, setSeverityFilter] = useState<string[]>([])
   const [page, setPage] = useState(1)
+
+  // Owner filter - initialize from URL query param
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(
+    searchParams.get('owner')
+  )
 
   const toggleSeverityFilter = (severity: string) => {
     setSeverityFilter(prev =>
@@ -115,6 +121,7 @@ export default function AlertsPage() {
           status: statusFilter === 'all' ? undefined : statusFilter,
           // Pass single severity if exactly one selected, otherwise filter client-side
           severity: severityFilter.length === 1 ? severityFilter[0] : undefined,
+          owner: ownerFilter,
           limit: pageSize,
           offset,
         }),
@@ -128,16 +135,26 @@ export default function AlertsPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [statusFilter, severityFilter, page, pageSize])
+  }, [statusFilter, severityFilter, ownerFilter, page, pageSize])
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1)
-  }, [statusFilter, severityFilter])
+  }, [statusFilter, severityFilter, ownerFilter])
+
+  // Sync ownerFilter with URL
+  useEffect(() => {
+    if (ownerFilter) {
+      searchParams.set('owner', ownerFilter)
+    } else {
+      searchParams.delete('owner')
+    }
+    setSearchParams(searchParams, { replace: true })
+  }, [ownerFilter, searchParams, setSearchParams])
 
   useEffect(() => {
     loadData()
-  }, [statusFilter, severityFilter, page, pageSize, loadData])
+  }, [statusFilter, severityFilter, ownerFilter, page, pageSize, loadData])
 
   const totalPages = Math.ceil(total / pageSize)
   const canGoPrevious = page > 1
@@ -371,6 +388,14 @@ export default function AlertsPage() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="my-alerts"
+            checked={ownerFilter === 'me'}
+            onCheckedChange={(checked) => setOwnerFilter(checked ? 'me' : null)}
+          />
+          <Label htmlFor="my-alerts" className="text-sm cursor-pointer">Assigned to me</Label>
+        </div>
         <Button variant="outline" onClick={loadData}>
           Refresh
         </Button>

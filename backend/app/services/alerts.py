@@ -284,6 +284,7 @@ class AlertService:
         status: str | None = None,
         severity: str | None = None,
         rule_id: str | None = None,
+        owner_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -296,6 +297,8 @@ class AlertService:
             must.append({"term": {"severity": severity}})
         if rule_id:
             must.append({"term": {"rule_id": rule_id}})
+        if owner_id:
+            must.append({"term": {"owner_id": owner_id}})
 
         query = {
             "query": {"bool": {"must": must}} if must else {"match_all": {}},

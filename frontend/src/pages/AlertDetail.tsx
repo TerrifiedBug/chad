@@ -436,7 +436,7 @@ function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): stri
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
   const [alert, setAlert] = useState<Alert | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -459,6 +459,9 @@ export default function AlertDetailPage() {
   const [newComment, setNewComment] = useState('')
   const [isSubmittingComment, setIsSubmittingComment] = useState(false)
   const { showToast } = useToast()
+
+  // Ownership state
+  const [isAssigning, setIsAssigning] = useState(false)
 
   // Helper to generate unique condition IDs
   const generateConditionId = () => `cond-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -548,6 +551,25 @@ export default function AlertDetailPage() {
       showToast('Failed to add comment', 'error')
     } finally {
       setIsSubmittingComment(false)
+    }
+  }
+
+  const handleToggleOwnership = async () => {
+    if (!id || !alert) return
+    setIsAssigning(true)
+    try {
+      const isOwner = alert.owner_id === user?.id
+      if (isOwner) {
+        await alertsApi.unassign(id)
+        setAlert({ ...alert, owner_id: undefined, owner_username: undefined, owned_at: undefined })
+      } else {
+        const result = await alertsApi.assign(id)
+        setAlert({ ...alert, owner_id: user?.id, owner_username: result.owner, owned_at: new Date().toISOString() })
+      }
+    } catch (err) {
+      showToast('Failed to update ownership', 'error')
+    } finally {
+      setIsAssigning(false)
     }
   }
 
@@ -801,6 +823,25 @@ export default function AlertDetailPage() {
               </TooltipContent>
             </Tooltip>
           )}
+          {alert.owner_username && (
+            <Badge variant="secondary">
+              Owner: {alert.owner_username}
+            </Badge>
+          )}
+          <Button
+            variant={alert.owner_id === user?.id ? 'destructive' : 'outline'}
+            size="sm"
+            onClick={handleToggleOwnership}
+            disabled={isAssigning}
+          >
+            {isAssigning ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : alert.owner_id === user?.id ? (
+              'Release'
+            ) : (
+              'Take Ownership'
+            )}
+          </Button>
           <Select
             value={alert.status}
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}

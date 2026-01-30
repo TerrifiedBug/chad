@@ -67,21 +67,29 @@ class BulkAlertDelete(BaseModel):
 @router.get("", response_model=AlertListResponse)
 async def list_alerts(
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
     status: str | None = Query(None, description="Filter by status"),
     severity: str | None = Query(None, description="Filter by severity"),
     rule_id: str | None = Query(None, description="Filter by rule ID"),
+    owner: str | None = Query(None, description="Filter by owner (use 'me' for current user)"),
     index_pattern: str = Query("chad-alerts-*", description="Alerts index pattern"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ):
     """List alerts with optional filters."""
+    owner_id = None
+    if owner == "me":
+        owner_id = str(current_user.id)
+    elif owner:
+        owner_id = owner
+
     alert_service = AlertService(os_client)
     return alert_service.get_alerts(
         index_pattern=index_pattern,
         status=status,
         severity=severity,
         rule_id=rule_id,
+        owner_id=owner_id,
         limit=limit,
         offset=offset,
     )
@@ -382,3 +390,82 @@ async def delete_alert_comment(
     await db.commit()
 
     return {"message": "Comment deleted"}
+
+
+# ----- Alert Ownership Endpoints -----
+
+
+@router.post("/{alert_id}/assign")
+async def assign_alert(
+    alert_id: str,
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Assign alert to current user."""
+    try:
+        # First find the alert to get its index
+        result = os_client.search(
+            index="chad-alerts-*",
+            body={"query": {"term": {"alert_id": alert_id}}},
+        )
+        hits = result.get("hits", {}).get("hits", [])
+        if not hits:
+            raise not_found("Alert", details={"alert_id": alert_id})
+
+        alert_index = hits[0]["_index"]
+
+        os_client.update(
+            index=alert_index,
+            id=alert_id,
+            body={
+                "doc": {
+                    "owner_id": str(current_user.id),
+                    "owner_username": current_user.email,
+                    "owned_at": datetime.now(UTC).isoformat(),
+                }
+            },
+            refresh=True,
+        )
+        return {"message": "Alert assigned", "owner": current_user.email}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{alert_id}/unassign")
+async def unassign_alert(
+    alert_id: str,
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Release ownership of alert."""
+    try:
+        # First find the alert to get its index
+        result = os_client.search(
+            index="chad-alerts-*",
+            body={"query": {"term": {"alert_id": alert_id}}},
+        )
+        hits = result.get("hits", {}).get("hits", [])
+        if not hits:
+            raise not_found("Alert", details={"alert_id": alert_id})
+
+        alert_index = hits[0]["_index"]
+
+        os_client.update(
+            index=alert_index,
+            id=alert_id,
+            body={
+                "doc": {
+                    "owner_id": None,
+                    "owner_username": None,
+                    "owned_at": None,
+                }
+            },
+            refresh=True,
+        )
+        return {"message": "Alert unassigned"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
