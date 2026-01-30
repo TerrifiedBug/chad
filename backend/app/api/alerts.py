@@ -98,13 +98,19 @@ async def list_alerts(
     if cluster:
         clustering_settings = await get_setting(db, "alert_clustering")
 
-    # When clustering is enabled, fetch more alerts for better clustering results
-    # (pagination doesn't make sense with clustering - we need to see the full picture)
+    # Determine fetch strategy based on filters
+    # When clustering is enabled or filtering by owner, fetch more alerts
+    # (pagination doesn't make sense with these filters - we need to see the full picture)
     fetch_limit = limit
     fetch_offset = offset
     if clustering_settings and clustering_settings.get("enabled", False):
         fetch_limit = 1000  # Fetch more alerts when clustering
         fetch_offset = 0    # Always start from the beginning for clustering
+    elif owner_id:
+        # "Assigned to me" filter - fetch all assigned alerts for the user
+        # Users typically want to see all their assigned alerts at once
+        fetch_limit = 1000
+        fetch_offset = 0
 
     result = alert_service.get_alerts(
         index_pattern=index_pattern,

@@ -30,9 +30,9 @@ const navItems: NavItem[] = [
   { href: '/correlation', label: 'Correlation' },
   { href: '/sigmahq', label: 'SigmaHQ', permission: 'manage_sigmahq' },
   { href: '/attack', label: 'ATT&CK' },
-  { href: '/index-patterns', label: 'Index Patterns', permission: 'manage_settings' },
-  { href: '/field-mappings', label: 'Field Mappings', permission: 'manage_settings' },
-  { href: '/health', label: 'Health', permission: 'manage_settings' },
+  { href: '/index-patterns', label: 'Index Patterns', permission: 'manage_index_config' },
+  { href: '/field-mappings', label: 'Field Mappings', permission: 'manage_index_config' },
+  { href: '/health', label: 'Health' },
   { href: '/settings', label: 'Settings', permission: 'manage_settings' },
 ]
 

@@ -214,7 +214,12 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
     correlation_name?: string
     source_alerts?: Array<{ alert_id: string; rule_title: string; timestamp: string }>
     entity_field?: string
+    entity_field_type?: string
     entity_value?: string
+    rule_a_id?: string
+    rule_b_id?: string
+    first_alert_id?: string
+    second_alert_id?: string
   }
 
   if (!correlationData) {
@@ -241,6 +246,59 @@ function CorrelationAlertDetails({ logDocument }: { logDocument: Record<string, 
           </div>
         </div>
 
+        {/* Links to source sigma rules */}
+        {(correlationData.rule_a_id || correlationData.rule_b_id) && (
+          <div>
+            <div className="text-muted-foreground mb-2">Linked Sigma Rules:</div>
+            <div className="flex gap-2 flex-wrap">
+              {correlationData.rule_a_id && (
+                <Link
+                  to={`/rules/${correlationData.rule_a_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
+                >
+                  <FileText className="h-3 w-3" />
+                  Rule A
+                </Link>
+              )}
+              {correlationData.rule_b_id && (
+                <Link
+                  to={`/rules/${correlationData.rule_b_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
+                >
+                  <FileText className="h-3 w-3" />
+                  Rule B
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Links to source alerts */}
+        {(correlationData.first_alert_id || correlationData.second_alert_id) && (
+          <div>
+            <div className="text-muted-foreground mb-2">Source Alerts:</div>
+            <div className="flex gap-2 flex-wrap">
+              {correlationData.first_alert_id && (
+                <Link
+                  to={`/alerts/${correlationData.first_alert_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
+                >
+                  First Alert
+                </Link>
+              )}
+              {correlationData.second_alert_id && (
+                <Link
+                  to={`/alerts/${correlationData.second_alert_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs hover:bg-muted/80"
+                >
+                  Second Alert
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Legacy source_alerts format */}
         {correlationData.source_alerts && correlationData.source_alerts.length > 0 && (
           <div>
             <div className="text-muted-foreground mb-2">Source Alerts:</div>
@@ -436,7 +494,7 @@ function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): stri
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
-  const { hasPermission, user } = useAuth()
+  const { hasPermission, user, isAdmin } = useAuth()
   const [alert, setAlert] = useState<Alert | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -1107,7 +1165,7 @@ export default function AlertDetailPage() {
                       </Button>
                     )}
                     {/* Delete button - only for admins */}
-                    {hasPermission('admin') && (
+                    {isAdmin && (
                       <Button
                         variant="ghost"
                         size="sm"

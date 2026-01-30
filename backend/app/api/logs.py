@@ -30,6 +30,7 @@ from app.api.deps import get_opensearch_client_optional
 from app.db.session import get_db
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
+from app.models.rule import Rule
 from app.models.rule_exception import RuleException
 from app.services.alerts import AlertService, should_suppress_alert
 from app.services.correlation import check_correlation
@@ -395,12 +396,47 @@ async def receive_logs(
                         logger = logging.getLogger(__name__)
 
                         for corr in triggered_correlations:
+                            # Fetch MITRE tags from both linked sigma rules
+                            correlation_tags = ["correlation"]
+                            rule_a_id = corr.get("rule_a_id")
+                            rule_b_id = corr.get("rule_b_id")
+
+                            if rule_a_id:
+                                try:
+                                    rule_a_result = await db.execute(
+                                        select(Rule).where(Rule.id == UUID(rule_a_id))
+                                    )
+                                    rule_a = rule_a_result.scalar_one_or_none()
+                                    if rule_a and rule_a.tags:
+                                        correlation_tags.extend(rule_a.tags)
+                                except (ValueError, Exception):
+                                    pass
+
+                            if rule_b_id:
+                                try:
+                                    rule_b_result = await db.execute(
+                                        select(Rule).where(Rule.id == UUID(rule_b_id))
+                                    )
+                                    rule_b = rule_b_result.scalar_one_or_none()
+                                    if rule_b and rule_b.tags:
+                                        correlation_tags.extend(rule_b.tags)
+                                except (ValueError, Exception):
+                                    pass
+
+                            # Deduplicate tags while preserving order
+                            seen = set()
+                            unique_tags = []
+                            for tag in correlation_tags:
+                                if tag not in seen:
+                                    seen.add(tag)
+                                    unique_tags.append(tag)
+
                             correlation_alert = alert_service.create_alert(
                                 alerts_index=alerts_index,
                                 rule_id=corr["correlation_rule_id"],
                                 rule_title=corr["correlation_name"],
                                 severity=corr.get("severity", "high"),
-                                tags=["correlation"],
+                                tags=unique_tags,
                                 log_document={
                                     "correlation": {
                                         "correlation_rule_id": corr["correlation_rule_id"],
