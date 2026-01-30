@@ -34,6 +34,9 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
+          config: |
+            paths-ignore:
+              - backend/alembic/versions/**
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4

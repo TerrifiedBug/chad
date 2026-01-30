@@ -403,6 +403,7 @@ async def list_alert_comments(
 async def create_alert_comment(
     alert_id: str,
     comment_data: AlertCommentCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
@@ -413,6 +414,10 @@ async def create_alert_comment(
         content=comment_data.content,
     )
     db.add(comment)
+    await audit_log(
+        db, current_user.id, "alert.comment_add", "alert_comment",
+        str(comment.id), {"alert_id": alert_id}, ip_address=get_client_ip(request)
+    )
     await db.commit()
     await db.refresh(comment)
 
@@ -432,6 +437,7 @@ async def update_alert_comment(
     alert_id: str,
     comment_id: UUID,
     comment_data: AlertCommentUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
@@ -457,6 +463,10 @@ async def update_alert_comment(
 
     comment.content = comment_data.content
     comment.updated_at = datetime.now(UTC)
+    await audit_log(
+        db, current_user.id, "alert.comment_edit", "alert_comment",
+        str(comment_id), {"alert_id": alert_id}, ip_address=get_client_ip(request)
+    )
     await db.commit()
     await db.refresh(comment)
 
@@ -476,6 +486,7 @@ async def update_alert_comment(
 async def delete_alert_comment(
     alert_id: str,
     comment_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("admin"))],
 ):
@@ -493,6 +504,10 @@ async def delete_alert_comment(
 
     comment.deleted_at = datetime.now(UTC)
     comment.deleted_by_id = current_user.id
+    await audit_log(
+        db, current_user.id, "alert.comment_delete", "alert_comment",
+        str(comment_id), {"alert_id": alert_id}, ip_address=get_client_ip(request)
+    )
     await db.commit()
 
     return {"message": "Comment deleted"}
@@ -504,6 +519,8 @@ async def delete_alert_comment(
 @router.post("/{alert_id}/assign")
 async def assign_alert(
     alert_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
@@ -534,6 +551,11 @@ async def assign_alert(
             },
             refresh=True,
         )
+        await audit_log(
+            db, current_user.id, "alert.assign", "alert",
+            alert_id, {"owner": current_user.email}, ip_address=get_client_ip(request)
+        )
+        await db.commit()
         return {"message": "Alert assigned", "owner": current_user.email}
     except HTTPException:
         raise
@@ -544,8 +566,10 @@ async def assign_alert(
 @router.post("/{alert_id}/unassign")
 async def unassign_alert(
     alert_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    _: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
 ):
     """Release ownership of alert. Requires manage_alerts permission."""
     try:
@@ -574,6 +598,11 @@ async def unassign_alert(
             },
             refresh=True,
         )
+        await audit_log(
+            db, current_user.id, "alert.unassign", "alert",
+            alert_id, {}, ip_address=get_client_ip(request)
+        )
+        await db.commit()
         return {"message": "Alert unassigned"}
     except HTTPException:
         raise
