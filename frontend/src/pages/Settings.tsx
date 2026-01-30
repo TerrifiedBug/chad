@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, QueueStatsResponse, DeadLetterMessage } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -177,6 +177,24 @@ export default function SettingsPage() {
   const [alertClusteringForm, setAlertClusteringForm] = useState<AlertClusteringSettings>(alertClusteringSettings)
   const [isSavingAlertClustering, setIsSavingAlertClustering] = useState(false)
 
+  // Queue settings
+  const [queueSettings, setQueueSettings] = useState<QueueSettings>({
+    max_queue_size: 100000,
+    warning_threshold: 10000,
+    critical_threshold: 50000,
+    backpressure_mode: 'drop',
+    batch_size: 500,
+    batch_timeout_seconds: 5,
+    message_ttl_seconds: 1800,
+  })
+  const [queueSettingsForm, setQueueSettingsForm] = useState<QueueSettings>(queueSettings)
+  const [isSavingQueueSettings, setIsSavingQueueSettings] = useState(false)
+  const [queueStats, setQueueStats] = useState<QueueStatsResponse | null>(null)
+  const [deadLetterMessages, setDeadLetterMessages] = useState<DeadLetterMessage[]>([])
+  const [deadLetterCount, setDeadLetterCount] = useState(0)
+  const [isLoadingQueueStats, setIsLoadingQueueStats] = useState(false)
+  const [isClearingDeadLetter, setIsClearingDeadLetter] = useState(false)
+
   useEffect(() => {
     loadSettings()
     loadOpenSearchStatus()
@@ -184,6 +202,7 @@ export default function SettingsPage() {
     loadSecuritySettings()
     loadHealthSettings()
     loadAlertClusteringSettings()
+    loadQueueSettings()
   }, [])
 
   const loadSecuritySettings = async () => {
@@ -240,6 +259,82 @@ export default function SettingsPage() {
       setIsSavingAlertClustering(false)
     }
   }
+
+  const loadQueueSettings = async () => {
+    try {
+      const settings = await queueApi.getSettings()
+      setQueueSettings(settings)
+      setQueueSettingsForm(settings)
+    } catch (err) {
+      // Queue settings may not be available if Redis is not configured
+      console.error('Failed to load queue settings:', err)
+    }
+  }
+
+  const loadQueueStats = async () => {
+    setIsLoadingQueueStats(true)
+    try {
+      const [stats, deadLetter] = await Promise.all([
+        queueApi.getStats(),
+        queueApi.getDeadLetter(50),
+      ])
+      setQueueStats(stats)
+      setDeadLetterMessages(deadLetter.messages)
+      setDeadLetterCount(deadLetter.count)
+    } catch (err) {
+      console.error('Failed to load queue stats:', err)
+    } finally {
+      setIsLoadingQueueStats(false)
+    }
+  }
+
+  const saveQueueSettings = async () => {
+    setIsSavingQueueSettings(true)
+    try {
+      const updated = await queueApi.updateSettings(queueSettingsForm)
+      setQueueSettings(updated)
+      showToast('Queue settings saved')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save queue settings', 'error')
+    } finally {
+      setIsSavingQueueSettings(false)
+    }
+  }
+
+  const clearDeadLetterQueue = async () => {
+    if (!confirm('Are you sure you want to permanently delete all messages in the dead letter queue? This action cannot be undone.')) {
+      return
+    }
+    setIsClearingDeadLetter(true)
+    try {
+      await queueApi.clearDeadLetter()
+      setDeadLetterMessages([])
+      setDeadLetterCount(0)
+      showToast('Dead letter queue cleared')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to clear dead letter queue', 'error')
+    } finally {
+      setIsClearingDeadLetter(false)
+    }
+  }
+
+  const deleteDeadLetterMessage = async (messageId: string) => {
+    try {
+      await queueApi.deleteDeadLetterMessage(messageId)
+      setDeadLetterMessages(prev => prev.filter(m => m.id !== messageId))
+      setDeadLetterCount(prev => prev - 1)
+      showToast('Message deleted')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete message', 'error')
+    }
+  }
+
+  // Load queue stats when queue tab is selected
+  useEffect(() => {
+    if (activeTab === 'queue') {
+      loadQueueStats()
+    }
+  }, [activeTab])
 
   // Check OpenSearch connection when the tab is selected
   useEffect(() => {
@@ -629,6 +724,7 @@ export default function SettingsPage() {
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="health">Health Monitoring</TabsTrigger>
+          <TabsTrigger value="queue">Queue</TabsTrigger>
           <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
           <TabsTrigger value="export">Backup & Restore</TabsTrigger>
           <TabsTrigger value="about" className="flex items-center gap-1">
@@ -1721,6 +1817,216 @@ export default function SettingsPage() {
                   {isSavingHealthCheckIntervals ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="queue" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Queue Configuration</CardTitle>
+              <CardDescription>
+                Configure log queue processing and backpressure settings.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="max_queue_size">Max Queue Size</Label>
+                  <Input
+                    id="max_queue_size"
+                    type="number"
+                    min={1000}
+                    value={queueSettingsForm.max_queue_size}
+                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, max_queue_size: parseInt(e.target.value) || 100000 }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Maximum number of messages in queue</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="warning_threshold">Warning Threshold</Label>
+                  <Input
+                    id="warning_threshold"
+                    type="number"
+                    min={100}
+                    value={queueSettingsForm.warning_threshold}
+                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, warning_threshold: parseInt(e.target.value) || 10000 }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Queue depth warning threshold</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="critical_threshold">Critical Threshold</Label>
+                  <Input
+                    id="critical_threshold"
+                    type="number"
+                    min={1000}
+                    value={queueSettingsForm.critical_threshold}
+                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, critical_threshold: parseInt(e.target.value) || 50000 }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Queue depth critical threshold (triggers backpressure)</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="backpressure_mode">Backpressure Mode</Label>
+                  <Select
+                    value={queueSettingsForm.backpressure_mode}
+                    onValueChange={value => setQueueSettingsForm(prev => ({ ...prev, backpressure_mode: value as 'reject' | 'drop' }))}
+                  >
+                    <SelectTrigger id="backpressure_mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="reject">Reject (503 - shipper retries)</SelectItem>
+                      <SelectItem value="drop">Drop (202 - oldest messages evicted)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Behavior when critical threshold exceeded</p>
+                </div>
+              </div>
+              <div className="pt-4 border-t">
+                <h4 className="font-medium mb-4">Worker Settings</h4>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="batch_size">Batch Size</Label>
+                    <Input
+                      id="batch_size"
+                      type="number"
+                      min={10}
+                      max={5000}
+                      value={queueSettingsForm.batch_size}
+                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, batch_size: parseInt(e.target.value) || 500 }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Logs per batch</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="batch_timeout">Batch Timeout (seconds)</Label>
+                    <Input
+                      id="batch_timeout"
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={queueSettingsForm.batch_timeout_seconds}
+                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, batch_timeout_seconds: parseInt(e.target.value) || 5 }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Max wait for batch to fill</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="message_ttl">Message TTL (seconds)</Label>
+                    <Input
+                      id="message_ttl"
+                      type="number"
+                      min={60}
+                      value={queueSettingsForm.message_ttl_seconds}
+                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, message_ttl_seconds: parseInt(e.target.value) || 1800 }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Message TTL before dead-letter ({Math.round(queueSettingsForm.message_ttl_seconds / 60)} min)</p>
+                  </div>
+                </div>
+              </div>
+              <Button onClick={saveQueueSettings} disabled={isSavingQueueSettings}>
+                {isSavingQueueSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Settings
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div>
+                <CardTitle>Queue Statistics</CardTitle>
+                <CardDescription>Current queue depths and processing status</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={loadQueueStats} disabled={isLoadingQueueStats}>
+                {isLoadingQueueStats ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Refresh
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {queueStats ? (
+                <div className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-2xl font-bold">{queueStats.total_depth.toLocaleString()}</div>
+                      <div className="text-sm text-muted-foreground">Total Queue Depth</div>
+                    </div>
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-2xl font-bold">{Object.keys(queueStats.queues).length}</div>
+                      <div className="text-sm text-muted-foreground">Active Streams</div>
+                    </div>
+                    <div className="p-4 border rounded-lg">
+                      <div className={`text-2xl font-bold ${queueStats.dead_letter_count > 0 ? 'text-red-500' : ''}`}>
+                        {queueStats.dead_letter_count.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Dead Letter Count</div>
+                    </div>
+                  </div>
+                  {Object.keys(queueStats.queues).length > 0 && (
+                    <div className="pt-4 border-t">
+                      <h4 className="font-medium mb-2">Queue Depths by Index</h4>
+                      <div className="space-y-2">
+                        {Object.entries(queueStats.queues).map(([index, depth]) => (
+                          <div key={index} className="flex justify-between items-center text-sm">
+                            <span className="font-mono">{index}</span>
+                            <span className={depth > queueSettings.warning_threshold ? 'text-yellow-500 font-medium' : ''}>{depth.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  {isLoadingQueueStats ? 'Loading...' : 'No queue statistics available. Redis may not be configured.'}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div>
+                <CardTitle>Dead Letter Queue</CardTitle>
+                <CardDescription>Messages that could not be processed ({deadLetterCount} total)</CardDescription>
+              </div>
+              {deadLetterCount > 0 && (
+                <Button variant="destructive" size="sm" onClick={clearDeadLetterQueue} disabled={isClearingDeadLetter}>
+                  {isClearingDeadLetter ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                  Clear All
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {deadLetterMessages.length > 0 ? (
+                <div className="space-y-2">
+                  {deadLetterMessages.map((message) => (
+                    <div key={message.id} className="p-3 border rounded-lg text-sm">
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-1">
+                          <div className="font-mono text-xs text-muted-foreground">{message.id}</div>
+                          <div className="text-red-500">{message.reason}</div>
+                          <div className="text-muted-foreground">
+                            From: <span className="font-mono">{message.original_stream}</span>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteDeadLetterMessage(message.id)}
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {deadLetterCount > deadLetterMessages.length && (
+                    <div className="text-center text-sm text-muted-foreground pt-2">
+                      Showing {deadLetterMessages.length} of {deadLetterCount} messages
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  No messages in dead letter queue
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

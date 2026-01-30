@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { healthApi, IndexHealth, HealthStatus } from '@/lib/api'
+import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database } from 'lucide-react'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   Popover,
@@ -80,16 +80,21 @@ export default function HealthPage() {
   const [serviceHealth, setServiceHealth] = useState<ServiceHealthResponse | null>(null)
   const [serviceHealthLoading, setServiceHealthLoading] = useState(true)
 
+  // Queue health state
+  const [queueStats, setQueueStats] = useState<QueueStatsResponse | null>(null)
+
   // Status popover state
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false)
 
   useEffect(() => {
     loadHealth()
     loadServiceHealth()
+    loadQueueStats()
     // Refresh every 30 seconds
     const interval = setInterval(() => {
       loadHealth()
       loadServiceHealth()
+      loadQueueStats()
     }, 30000)
     return () => clearInterval(interval)
   }, [])
@@ -116,6 +121,16 @@ export default function HealthPage() {
       console.error('Failed to load service health:', err)
     } finally {
       setServiceHealthLoading(false)
+    }
+  }
+
+  const loadQueueStats = async () => {
+    try {
+      const stats = await queueApi.getStats()
+      setQueueStats(stats)
+    } catch (err) {
+      // Queue stats may not be available if Redis isn't configured
+      console.error('Failed to load queue stats:', err)
     }
   }
 
@@ -245,7 +260,7 @@ export default function HealthPage() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
@@ -297,6 +312,36 @@ export default function HealthPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Index Patterns</p>
                 <p className="text-2xl font-bold">{health.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                <Layers className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Queue Depth</p>
+                <p className="text-2xl font-bold">{queueStats ? formatNumber(queueStats.total_depth) : '-'}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className={`p-2 rounded-lg ${queueStats && queueStats.dead_letter_count > 0 ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                <AlertTriangle className={`h-5 w-5 ${queueStats && queueStats.dead_letter_count > 0 ? 'text-orange-600' : 'text-gray-400'}`} />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Dead Letter</p>
+                <p className={`text-2xl font-bold ${queueStats && queueStats.dead_letter_count > 0 ? 'text-orange-600' : ''}`}>
+                  {queueStats ? formatNumber(queueStats.dead_letter_count) : '-'}
+                </p>
               </div>
             </div>
           </CardContent>

@@ -2018,3 +2018,51 @@ export const configApi = {
   },
 }
 
+// Queue Settings types
+export type QueueSettings = {
+  max_queue_size: number
+  warning_threshold: number
+  critical_threshold: number
+  backpressure_mode: 'reject' | 'drop'
+  batch_size: number
+  batch_timeout_seconds: number
+  message_ttl_seconds: number
+}
+
+export type QueueSettingsUpdate = Partial<QueueSettings>
+
+export type QueueStatsResponse = {
+  total_depth: number
+  queues: Record<string, number>
+  dead_letter_count: number
+}
+
+export type DeadLetterMessage = {
+  id: string
+  original_stream: string
+  original_id: string
+  data: Record<string, unknown>
+  reason: string
+}
+
+export type DeadLetterResponse = {
+  count: number
+  messages: DeadLetterMessage[]
+}
+
+// Queue API
+export const queueApi = {
+  getSettings: () =>
+    api.get<QueueSettings>('/queue/settings'),
+  updateSettings: (data: QueueSettingsUpdate) =>
+    api.put<QueueSettings>('/queue/settings', data),
+  getStats: () =>
+    api.get<QueueStatsResponse>('/queue/stats'),
+  getDeadLetter: (limit = 100) =>
+    api.get<DeadLetterResponse>(`/queue/dead-letter?limit=${limit}`),
+  clearDeadLetter: () =>
+    api.delete('/queue/dead-letter'),
+  deleteDeadLetterMessage: (messageId: string) =>
+    api.delete(`/queue/dead-letter/${messageId}`),
+}
+
