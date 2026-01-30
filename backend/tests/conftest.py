@@ -29,13 +29,15 @@ TEST_DATABASE_URL = f"{POSTGRES_URL}/{TEST_DB_NAME}"
 
 
 def _should_skip_db_setup(config):
-    """Check if all collected tests are in tests/core (unit tests without DB)."""
+    """Check if all collected tests are unit tests without DB requirements."""
     # Check if we're running a subset of tests
     if hasattr(config, 'args') and config.args:
-        # If any arg contains 'tests/core', skip DB setup
+        # Skip DB setup for unit test directories
+        skip_dirs = ['tests/core', 'tests/db']
         for arg in config.args:
-            if 'tests/core' in arg:
-                return True
+            for skip_dir in skip_dirs:
+                if skip_dir in arg:
+                    return True
     return False
 
 
