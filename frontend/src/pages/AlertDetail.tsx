@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, correlationRulesApi, rulesApi, Alert, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator } from '@/lib/api'
+import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator } from '@/lib/api'
+import { useToast } from '@/components/ui/toast-provider'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,8 +29,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X } from 'lucide-react'
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 
@@ -435,7 +436,7 @@ function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): stri
 export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
   const [alert, setAlert] = useState<Alert | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -452,6 +453,15 @@ export default function AlertDetailPage() {
   const [exceptionConditions, setExceptionConditions] = useState<ExceptionCondition[]>([])
   const [exceptionReason, setExceptionReason] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+
+  // Comments state
+  const [comments, setComments] = useState<AlertComment[]>([])
+  const [newComment, setNewComment] = useState('')
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false)
+  const { showToast } = useToast()
+
+  // Ownership state
+  const [isAssigning, setIsAssigning] = useState(false)
 
   // Helper to generate unique condition IDs
   const generateConditionId = () => `cond-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -500,6 +510,10 @@ export default function AlertDetailPage() {
       if (data.rule_id) {
         loadCorrelations(data.rule_id)
       }
+      // Load comments for this alert
+      if (data.alert_id) {
+        alertCommentsApi.list(data.alert_id).then(setComments).catch(console.error)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load alert')
     } finally {
@@ -523,6 +537,39 @@ export default function AlertDetailPage() {
       setCorrelations(relatedRules)
     } catch (err) {
       console.error('Failed to load correlation rules:', err)
+    }
+  }
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !alert?.alert_id) return
+    setIsSubmittingComment(true)
+    try {
+      const comment = await alertCommentsApi.create(alert.alert_id, newComment)
+      setComments([...comments, comment])
+      setNewComment('')
+    } catch (err) {
+      showToast('Failed to add comment', 'error')
+    } finally {
+      setIsSubmittingComment(false)
+    }
+  }
+
+  const handleToggleOwnership = async () => {
+    if (!id || !alert) return
+    setIsAssigning(true)
+    try {
+      const isOwner = alert.owner_id === user?.id
+      if (isOwner) {
+        await alertsApi.unassign(id)
+        setAlert({ ...alert, owner_id: undefined, owner_username: undefined, owned_at: undefined })
+      } else {
+        const result = await alertsApi.assign(id)
+        setAlert({ ...alert, owner_id: user?.id, owner_username: result.owner, owned_at: new Date().toISOString() })
+      }
+    } catch (err) {
+      showToast('Failed to update ownership', 'error')
+    } finally {
+      setIsAssigning(false)
     }
   }
 
@@ -651,6 +698,7 @@ export default function AlertDetailPage() {
       const groupId = crypto.randomUUID()
 
       // Create first exception (creates the group)
+      // Pass alert_id to auto-mark alert as false_positive
       const firstCond = exceptionConditions[0]
       await rulesApi.createException(alert.rule_id, {
         field: firstCond.field,
@@ -659,9 +707,11 @@ export default function AlertDetailPage() {
         reason: exceptionReason,
         change_reason: exceptionReason,
         group_id: groupId,
+        alert_id: alert.alert_id,
       })
 
       // Create additional conditions in the same group
+      // Don't pass alert_id for subsequent conditions as alert is already updated
       for (let i = 1; i < exceptionConditions.length; i++) {
         const cond = exceptionConditions[i]
         await rulesApi.createException(alert.rule_id, {
@@ -679,6 +729,9 @@ export default function AlertDetailPage() {
       // Reset form
       setExceptionConditions([])
       setExceptionReason('')
+
+      // Reload alert to show updated status and exception badge
+      await loadAlert()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create exception')
     } finally {
@@ -751,6 +804,44 @@ export default function AlertDetailPage() {
           >
             {capitalize(alert.severity)}
           </span>
+          {alert.exception_created && (
+            <Tooltip>
+              <TooltipTrigger>
+                <Badge variant="outline" className="gap-1">
+                  <ShieldX className="h-3 w-3" />
+                  Exception
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="font-medium">Exception created</p>
+                <p className="text-sm text-muted-foreground">
+                  {alert.exception_created.field} = {alert.exception_created.value}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(alert.exception_created.created_at).toLocaleString()}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {alert.owner_username && (
+            <Badge variant="secondary">
+              Owner: {alert.owner_username}
+            </Badge>
+          )}
+          <Button
+            variant={alert.owner_id === user?.id ? 'destructive' : 'outline'}
+            size="sm"
+            onClick={handleToggleOwnership}
+            disabled={isAssigning}
+          >
+            {isAssigning ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : alert.owner_id === user?.id ? (
+              'Release'
+            ) : (
+              'Take Ownership'
+            )}
+          </Button>
           <Select
             value={alert.status}
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}
@@ -946,6 +1037,56 @@ export default function AlertDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Comments Section */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <User className="h-4 w-4" />
+            Investigation Notes
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {comments.map((comment) => (
+              <div key={comment.id} className="border-b pb-3 last:border-0">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">{comment.username}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(comment.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+              </div>
+            ))}
+            {comments.length === 0 && (
+              <p className="text-sm text-muted-foreground">No comments yet. Add investigation notes to track your analysis.</p>
+            )}
+          </div>
+          <div className="mt-4 flex gap-2">
+            <Textarea
+              placeholder="Add investigation notes..."
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              className="min-h-[80px]"
+            />
+            <Button
+              onClick={handleAddComment}
+              disabled={isSubmittingComment || !newComment.trim()}
+              className="self-end"
+            >
+              {isSubmittingComment ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                'Add'
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Create Exception Dialog */}
       <Dialog open={showExceptionDialog} onOpenChange={setShowExceptionDialog}>

@@ -4,6 +4,7 @@ import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.setting import Setting
 
@@ -31,6 +32,8 @@ async def set_setting(db: AsyncSession, key: str, value: dict) -> Setting:
 
     if setting:
         setting.value = value
+        # Explicitly mark JSONB column as modified for SQLAlchemy to detect the change
+        flag_modified(setting, "value")
     else:
         setting = Setting(key=key, value=value)
         db.add(setting)

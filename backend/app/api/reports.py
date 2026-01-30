@@ -4,6 +4,7 @@ Reports API - generates PDF and CSV reports for alerts and rules.
 Provides:
 - Alert Summary Report: alerts by severity, top rules, trends
 - Rule Coverage Report: rules by status, ATT&CK coverage
+- ATT&CK Coverage Report: MITRE ATT&CK coverage PDF export
 """
 
 import csv
@@ -18,12 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from opensearchpy import OpenSearch
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client_optional
 from app.db.session import get_db
-from app.models.rule import Rule
+from app.models.attack_technique import AttackTechnique, RuleAttackMapping
+from app.models.rule import Rule, RuleStatus
 from app.models.user import User
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -558,3 +560,322 @@ async def generate_rule_coverage_report(
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="rule-coverage-{timestamp}.csv"'},
         )
+
+
+class AttackExportRequest(BaseModel):
+    """Request for ATT&CK coverage export."""
+
+    format: str = "pdf"
+
+
+def generate_attack_coverage_pdf(data: dict[str, Any]) -> io.BytesIO:
+    """Generate PDF for ATT&CK coverage report."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), topMargin=0.5 * inch)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # Title
+    title_style = ParagraphStyle(
+        "Title",
+        parent=styles["Heading1"],
+        fontSize=20,
+        spaceAfter=12,
+    )
+    elements.append(Paragraph("MITRE ATT&CK Coverage Report", title_style))
+    elements.append(
+        Paragraph(f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}", styles["Normal"])
+    )
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Summary statistics
+    elements.append(Paragraph("Summary Statistics", styles["Heading2"]))
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total Techniques", str(data["total_techniques"])],
+        ["Covered Techniques", str(data["covered_techniques"])],
+        ["Coverage Percentage", f"{data['coverage_percentage']:.1f}%"],
+        ["Total Rules Mapped", str(data["total_rules_mapped"])],
+        ["Deployed Rules Mapped", str(data["deployed_rules_mapped"])],
+    ]
+
+    summary_table = Table(summary_data, colWidths=[3 * inch, 2 * inch])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a365d")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7fafc")]),
+            ]
+        )
+    )
+    elements.append(summary_table)
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Coverage by Tactic
+    elements.append(Paragraph("Coverage by Tactic", styles["Heading2"]))
+    if data["by_tactic"]:
+        tactic_data = [["Tactic ID", "Tactic Name", "Techniques", "Covered", "Coverage %"]]
+        for tactic in data["by_tactic"]:
+            coverage_pct = (
+                (tactic["covered"] / tactic["total"] * 100) if tactic["total"] > 0 else 0
+            )
+            tactic_data.append(
+                [
+                    tactic["id"],
+                    tactic["name"][:30],
+                    str(tactic["total"]),
+                    str(tactic["covered"]),
+                    f"{coverage_pct:.1f}%",
+                ]
+            )
+
+        tactic_table = Table(
+            tactic_data, colWidths=[1.2 * inch, 2.5 * inch, 1.2 * inch, 1.2 * inch, 1.2 * inch]
+        )
+        tactic_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a365d")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("ALIGN", (2, 1), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7fafc")]),
+                ]
+            )
+        )
+        elements.append(tactic_table)
+    else:
+        elements.append(Paragraph("No tactics found.", styles["Normal"]))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Top 10 Detection Gaps
+    elements.append(Paragraph("Top 10 Detection Gaps (Uncovered Techniques)", styles["Heading2"]))
+    if data["detection_gaps"]:
+        gaps_data = [["Technique ID", "Technique Name", "Tactic", "Platforms"]]
+        for gap in data["detection_gaps"][:10]:
+            platforms = ", ".join(gap["platforms"][:3]) if gap["platforms"] else "N/A"
+            if gap["platforms"] and len(gap["platforms"]) > 3:
+                platforms += "..."
+            gaps_data.append(
+                [
+                    gap["id"],
+                    gap["name"][:40],
+                    gap["tactic_name"][:20],
+                    platforms,
+                ]
+            )
+
+        gaps_table = Table(
+            gaps_data, colWidths=[1.3 * inch, 3.5 * inch, 2 * inch, 2 * inch]
+        )
+        gaps_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#c53030")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fff5f5")]),
+                ]
+            )
+        )
+        elements.append(gaps_table)
+    else:
+        elements.append(Paragraph("All techniques have coverage!", styles["Normal"]))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Top 10 Best Covered Techniques
+    elements.append(Paragraph("Top 10 Best Covered Techniques", styles["Heading2"]))
+    if data["best_covered"]:
+        covered_data = [["Technique ID", "Technique Name", "Tactic", "Rules", "Deployed"]]
+        for tech in data["best_covered"][:10]:
+            covered_data.append(
+                [
+                    tech["id"],
+                    tech["name"][:40],
+                    tech["tactic_name"][:20],
+                    str(tech["total_rules"]),
+                    str(tech["deployed_rules"]),
+                ]
+            )
+
+        covered_table = Table(
+            covered_data, colWidths=[1.3 * inch, 3.5 * inch, 2 * inch, 1 * inch, 1 * inch]
+        )
+        covered_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#276749")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("ALIGN", (3, 1), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f0fff4")]),
+                ]
+            )
+        )
+        elements.append(covered_table)
+    else:
+        elements.append(Paragraph("No covered techniques found.", styles["Normal"]))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+@router.post("/attack-coverage")
+async def export_attack_coverage(
+    request: AttackExportRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Export ATT&CK coverage report as PDF.
+
+    Returns PDF containing:
+    - Summary statistics (total techniques, coverage %)
+    - Coverage by tactic
+    - Top 10 detection gaps (uncovered techniques)
+    - Top 10 best covered techniques
+    """
+    # Get all techniques (excluding sub-techniques for main stats)
+    all_techniques_result = await db.execute(
+        select(AttackTechnique).where(AttackTechnique.is_subtechnique == False)  # noqa: E712
+    )
+    all_techniques = all_techniques_result.scalars().all()
+    total_techniques = len(all_techniques)
+
+    # Get coverage counts per technique
+    coverage_query = (
+        select(
+            RuleAttackMapping.technique_id,
+            func.count(RuleAttackMapping.rule_id.distinct()).label("total"),
+        )
+        .join(Rule, Rule.id == RuleAttackMapping.rule_id)
+        .group_by(RuleAttackMapping.technique_id)
+    )
+    coverage_result = await db.execute(coverage_query)
+    coverage_counts = {row.technique_id: row.total for row in coverage_result.all()}
+
+    # Get deployed coverage counts
+    deployed_query = (
+        select(
+            RuleAttackMapping.technique_id,
+            func.count(RuleAttackMapping.rule_id.distinct()).label("deployed"),
+        )
+        .join(Rule, Rule.id == RuleAttackMapping.rule_id)
+        .where(Rule.status == RuleStatus.DEPLOYED)
+        .group_by(RuleAttackMapping.technique_id)
+    )
+    deployed_result = await db.execute(deployed_query)
+    deployed_counts = {row.technique_id: row.deployed for row in deployed_result.all()}
+
+    # Calculate summary stats
+    covered_technique_ids = set(coverage_counts.keys())
+    covered_techniques = sum(
+        1 for t in all_techniques if t.id in covered_technique_ids
+    )
+    coverage_percentage = (
+        (covered_techniques / total_techniques * 100) if total_techniques > 0 else 0
+    )
+    total_rules_mapped = sum(coverage_counts.values())
+    deployed_rules_mapped = sum(deployed_counts.values())
+
+    # Group by tactic
+    tactic_stats: dict[str, dict] = {}
+    for tech in all_techniques:
+        if tech.tactic_id not in tactic_stats:
+            tactic_stats[tech.tactic_id] = {
+                "id": tech.tactic_id,
+                "name": tech.tactic_name,
+                "total": 0,
+                "covered": 0,
+            }
+        tactic_stats[tech.tactic_id]["total"] += 1
+        if tech.id in covered_technique_ids:
+            tactic_stats[tech.tactic_id]["covered"] += 1
+
+    by_tactic = sorted(tactic_stats.values(), key=lambda x: x["id"])
+
+    # Detection gaps (uncovered techniques)
+    detection_gaps = [
+        {
+            "id": tech.id,
+            "name": tech.name,
+            "tactic_id": tech.tactic_id,
+            "tactic_name": tech.tactic_name,
+            "platforms": tech.platforms or [],
+        }
+        for tech in all_techniques
+        if tech.id not in covered_technique_ids
+    ]
+    # Sort gaps by tactic for logical grouping
+    detection_gaps.sort(key=lambda x: (x["tactic_id"], x["id"]))
+
+    # Best covered techniques
+    best_covered = [
+        {
+            "id": tech.id,
+            "name": tech.name,
+            "tactic_id": tech.tactic_id,
+            "tactic_name": tech.tactic_name,
+            "total_rules": coverage_counts.get(tech.id, 0),
+            "deployed_rules": deployed_counts.get(tech.id, 0),
+        }
+        for tech in all_techniques
+        if tech.id in covered_technique_ids
+    ]
+    # Sort by total rules descending
+    best_covered.sort(key=lambda x: (-x["total_rules"], x["id"]))
+
+    # Build report data
+    report_data = {
+        "total_techniques": total_techniques,
+        "covered_techniques": covered_techniques,
+        "coverage_percentage": coverage_percentage,
+        "total_rules_mapped": total_rules_mapped,
+        "deployed_rules_mapped": deployed_rules_mapped,
+        "by_tactic": by_tactic,
+        "detection_gaps": detection_gaps,
+        "best_covered": best_covered,
+    }
+
+    # Generate PDF
+    pdf_buffer = generate_attack_coverage_pdf(report_data)
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="attack-coverage-{today}.pdf"'
+        },
+    )

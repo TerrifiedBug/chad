@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { healthApi, IndexHealth, HealthStatus } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight } from 'lucide-react'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   Popover,
@@ -363,87 +363,107 @@ export default function HealthPage() {
       )}
 
       {/* Index Pattern Health Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {health.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-muted-foreground">
-            No index patterns configured. Add index patterns to see health data.
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Database className="h-5 w-5" />
+              Indexes
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={loadHealth}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
-        ) : (
-          health.map((h) => (
-            <Card key={h.index_pattern_id} className={statusBgColors[h.status]}>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">{h.index_pattern_name}</CardTitle>
-                  <StatusIcon status={h.status} />
-                </div>
-                <p className="text-sm text-muted-foreground font-mono">{h.pattern}</p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Issues */}
-                {h.issues.length > 0 && (
-                  <div className="space-y-1">
-                    {h.issues.map((issue, i) => (
-                      <p key={i} className="text-sm text-destructive flex items-center gap-1">
-                        <AlertCircle className="h-3 w-3" />
-                        {issue}
-                      </p>
-                    ))}
-                  </div>
-                )}
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {health.length === 0 ? (
+              <div className="col-span-full text-center py-12 text-muted-foreground">
+                No index patterns configured. Add index patterns to see health data.
+              </div>
+            ) : (
+              health.map((h) => (
+                <Card key={h.index_pattern_id} className={statusBgColors[h.status]}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{h.index_pattern_name}</CardTitle>
+                      <StatusIcon status={h.status} />
+                    </div>
+                    <p className="text-sm text-muted-foreground font-mono">{h.pattern}</p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Issues */}
+                    {h.issues.length > 0 && (
+                      <div className="space-y-1">
+                        {h.issues.map((issue, i) => (
+                          <p key={i} className="text-sm text-destructive flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            {issue}
+                          </p>
+                        ))}
+                      </div>
+                    )}
 
-                {/* Metrics Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-muted-foreground">Logs/min</p>
-                      <p className="font-medium">{formatNumber(h.latest.logs_per_minute)}</p>
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-muted-foreground">Logs/min</p>
+                          <p className="font-medium">{formatNumber(h.latest.logs_per_minute)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-muted-foreground">Detection Latency</p>
+                          <p className="font-medium">{(h.latest.avg_detection_latency_ms || 0)}ms</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-muted-foreground">OpenSearch Query</p>
+                          <p className="font-medium">{(h.latest.avg_opensearch_query_latency_ms || 0)}ms</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Bell className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-muted-foreground">Alerts/hr</p>
+                          <p className="font-medium">{formatNumber(h.latest.alerts_per_hour)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-muted-foreground">Queue</p>
+                          <p className="font-medium">{formatNumber(h.latest.queue_depth)}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-muted-foreground">Detection Latency</p>
-                      <p className="font-medium">{(h.latest.avg_detection_latency_ms || 0)}ms</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-muted-foreground">OpenSearch Query</p>
-                      <p className="font-medium">{(h.latest.avg_opensearch_query_latency_ms || 0)}ms</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-muted-foreground">Alerts/hr</p>
-                      <p className="font-medium">{formatNumber(h.latest.alerts_per_hour)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-muted-foreground">Queue</p>
-                      <p className="font-medium">{formatNumber(h.latest.queue_depth)}</p>
-                    </div>
-                  </div>
-                </div>
 
-                {/* 24h Totals */}
-                <div className="pt-2 border-t text-xs text-muted-foreground">
-                  <span>24h: </span>
-                  <span>{formatNumber(h.totals_24h.logs_received)} logs</span>
-                  <span className="mx-1">|</span>
-                  <span>{formatNumber(h.totals_24h.logs_errored)} errors</span>
-                  <span className="mx-1">|</span>
-                  <span>{formatNumber(h.totals_24h.alerts_generated)} alerts</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
+                    {/* 24h Totals */}
+                    <div className="pt-2 border-t text-xs text-muted-foreground">
+                      <span>24h: </span>
+                      <span>{formatNumber(h.totals_24h.logs_received)} logs</span>
+                      <span className="mx-1">|</span>
+                      <span>{formatNumber(h.totals_24h.logs_errored)} errors</span>
+                      <span className="mx-1">|</span>
+                      <span>{formatNumber(h.totals_24h.alerts_generated)} alerts</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
     </TooltipProvider>
   )

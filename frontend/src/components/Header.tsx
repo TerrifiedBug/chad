@@ -15,7 +15,14 @@ import {
 import { cn } from '@/lib/utils'
 import { ChevronDown, LogOut, Settings, Key, Lock, User } from 'lucide-react'
 
-const navItems = [
+type NavItem = {
+  href: string
+  label: string
+  exact?: boolean
+  permission?: string
+}
+
+const navItems: NavItem[] = [
   { href: '/', label: 'Dashboard', exact: true },
   { href: '/alerts', label: 'Alerts' },
   { href: '/live', label: 'Live' },
@@ -56,7 +63,7 @@ export function Header() {
           {isAuthenticated && (
             <nav className="flex items-center gap-6">
               {visibleNavItems.map((item) => {
-                const isActive = 'exact' in item && item.exact
+                const isActive = item.exact
                   ? location.pathname === item.href
                   : location.pathname.startsWith(item.href)
                 return (
@@ -64,7 +71,7 @@ export function Header() {
                     key={item.href}
                     to={item.href}
                     className={cn(
-                      'text-sm font-medium transition-colors hover:text-primary flex items-center',
+                      'text-sm font-medium transition-colors hover:text-primary',
                       isActive ? 'text-foreground' : 'text-muted-foreground'
                     )}
                   >

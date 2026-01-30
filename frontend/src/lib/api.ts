@@ -278,6 +278,7 @@ export type RuleExceptionCreate = {
   reason?: string
   change_reason: string
   group_id?: string  // If provided, adds to existing group (AND logic)
+  alert_id?: string  // If created from an alert, auto-mark as false positive
 }
 
 export type RuleExceptionUpdate = {
@@ -767,6 +768,16 @@ export type Alert = {
   updated_at: string
   acknowledged_by: string | null
   acknowledged_at: string | null
+  owner_id?: string
+  owner_username?: string
+  owned_at?: string
+  exception_created?: {
+    exception_id: string
+    field: string
+    value: string
+    match_type: string
+    created_at: string
+  }
 }
 
 export type AlertListResponse = {
@@ -790,6 +801,7 @@ export const alertsApi = {
     status?: AlertStatus
     severity?: string
     rule_id?: string
+    owner?: string | null
     limit?: number
     offset?: number
   }) => {
@@ -797,6 +809,7 @@ export const alertsApi = {
     if (params?.status) searchParams.set('status', params.status)
     if (params?.severity) searchParams.set('severity', params.severity)
     if (params?.rule_id) searchParams.set('rule_id', params.rule_id)
+    if (params?.owner) searchParams.set('owner', params.owner)
     if (params?.limit) searchParams.set('limit', params.limit.toString())
     if (params?.offset) searchParams.set('offset', params.offset.toString())
     const query = searchParams.toString()
@@ -820,6 +833,36 @@ export const alertsApi = {
     api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data).then(() => {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
     }),
+  assign: async (alertId: string): Promise<{ message: string; owner: string }> => {
+    return api.post(`/alerts/${alertId}/assign`)
+  },
+  unassign: async (alertId: string): Promise<{ message: string }> => {
+    return api.post(`/alerts/${alertId}/unassign`)
+  },
+}
+
+// Alert Comments types
+export interface AlertComment {
+  id: string
+  alert_id: string
+  user_id: string
+  username: string
+  content: string
+  created_at: string
+  is_deleted: boolean
+}
+
+// Alert Comments API
+export const alertCommentsApi = {
+  list: async (alertId: string): Promise<AlertComment[]> => {
+    return api.get(`/alerts/${alertId}/comments`)
+  },
+  create: async (alertId: string, content: string): Promise<AlertComment> => {
+    return api.post(`/alerts/${alertId}/comments`, { content })
+  },
+  delete: async (alertId: string, commentId: string): Promise<void> => {
+    await api.delete(`/alerts/${alertId}/comments/${commentId}`)
+  },
 }
 
 // Dashboard stats types
@@ -1317,6 +1360,34 @@ export type HealthIntervals = {
   mitre_attack_interval_seconds: number
   opensearch_interval_seconds: number
   ti_interval_seconds: number
+}
+
+// Alert Clustering types
+export type AlertClusteringSettings = {
+  enabled: boolean
+  window_minutes: number
+}
+
+export type AlertCluster = {
+  representative: Alert
+  count: number
+  alert_ids: string[]
+  alerts: Alert[]  // All alerts in the cluster for expanded view
+  time_range: [string | null, string | null]
+}
+
+export type ClusteredAlertListResponse = {
+  total: number
+  total_clusters: number
+  clusters: AlertCluster[]
+}
+
+// Alert Clustering API
+export const alertClusteringApi = {
+  getSettings: () =>
+    api.get<AlertClusteringSettings>('/settings/alert-clustering'),
+  updateSettings: (data: AlertClusteringSettings) =>
+    api.put<AlertClusteringSettings>('/settings/alert-clustering', data),
 }
 
 // Health API

@@ -9,12 +9,12 @@ Alerts are stored in OpenSearch with the following structure:
 import hashlib
 import json
 import re
-import uuid
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from dateutil import parser as date_parser
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -140,6 +140,126 @@ def should_suppress_alert(
             return True  # This group fully matches, suppress the alert
 
     return False  # No group fully matched
+
+
+def cluster_alerts(alerts: list[dict], settings: dict) -> list[dict]:
+    """
+    Cluster alerts by rule_id within time window.
+
+    Args:
+        alerts: List of alert dictionaries
+        settings: Clustering settings with:
+            - enabled: bool - whether clustering is enabled
+            - window_minutes: int - time window for clustering
+
+    Returns:
+        List of cluster dicts with:
+        - representative: first alert in cluster (by timestamp)
+        - count: number of alerts in cluster
+        - alert_ids: list of all alert IDs in cluster
+        - time_range: tuple of (first_timestamp, last_timestamp)
+    """
+    if not settings.get("enabled", False):
+        # When disabled, return each alert as its own cluster
+        return [
+            {
+                "representative": alert,
+                "count": 1,
+                "alert_ids": [alert.get("alert_id", alert.get("id"))],
+                "time_range": (alert.get("created_at"), alert.get("created_at")),
+            }
+            for alert in alerts
+        ]
+
+    window_minutes = settings.get("window_minutes", 60)
+
+    # Group alerts by rule_id only
+    groups: dict[str, list[dict]] = defaultdict(list)
+
+    for alert in alerts:
+        rule_id = alert.get("rule_id", "")
+        groups[rule_id].append(alert)
+
+    clusters = []
+    window_delta = timedelta(minutes=window_minutes)
+
+    for rule_id, group_alerts in groups.items():
+        # Sort alerts by timestamp
+        def get_timestamp(a: dict) -> datetime:
+            ts = a.get("created_at")
+            if ts is None:
+                return datetime.min.replace(tzinfo=UTC)
+            if isinstance(ts, str):
+                try:
+                    return date_parser.isoparse(ts)
+                except (ValueError, TypeError):
+                    return datetime.min.replace(tzinfo=UTC)
+            return ts
+
+        sorted_alerts = sorted(group_alerts, key=get_timestamp)
+
+        # Cluster by time window
+        current_cluster: list[dict] = []
+        cluster_start: datetime | None = None
+
+        for alert in sorted_alerts:
+            alert_time = get_timestamp(alert)
+
+            if not current_cluster:
+                current_cluster = [alert]
+                cluster_start = alert_time
+            elif cluster_start and alert_time - cluster_start <= window_delta:
+                current_cluster.append(alert)
+            else:
+                # Finalize current cluster and start new one
+                clusters.append(_create_cluster(current_cluster))
+                current_cluster = [alert]
+                cluster_start = alert_time
+
+        # Don't forget the last cluster
+        if current_cluster:
+            clusters.append(_create_cluster(current_cluster))
+
+    # Sort clusters by representative's timestamp (most recent first)
+    def get_cluster_time(c: dict) -> datetime:
+        ts = c["time_range"][0]
+        if ts is None:
+            return datetime.min.replace(tzinfo=UTC)
+        if isinstance(ts, str):
+            try:
+                return date_parser.isoparse(ts)
+            except (ValueError, TypeError):
+                return datetime.min.replace(tzinfo=UTC)
+        return ts
+
+    clusters.sort(key=get_cluster_time, reverse=True)
+
+    return clusters
+
+
+def _create_cluster(alerts: list[dict]) -> dict:
+    """Create a cluster dict from a list of alerts."""
+    # Representative is the first (oldest) alert
+    representative = alerts[0]
+
+    # Get timestamps
+    timestamps = []
+    for alert in alerts:
+        ts = alert.get("created_at")
+        if ts:
+            timestamps.append(ts)
+
+    first_ts = min(timestamps) if timestamps else None
+    last_ts = max(timestamps) if timestamps else None
+
+    return {
+        "representative": representative,
+        "count": len(alerts),
+        "alert_ids": [a.get("alert_id", a.get("id")) for a in alerts],
+        "alerts": alerts,  # Include all alerts for expanded view
+        "time_range": (first_ts, last_ts),
+    }
+
 
 ALERTS_MAPPING = {
     "settings": {
@@ -284,6 +404,7 @@ class AlertService:
         status: str | None = None,
         severity: str | None = None,
         rule_id: str | None = None,
+        owner_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -296,6 +417,9 @@ class AlertService:
             must.append({"term": {"severity": severity}})
         if rule_id:
             must.append({"term": {"rule_id": rule_id}})
+        if owner_id:
+            # Use .keyword suffix for exact matching (dynamic mapping creates text + keyword multifield)
+            must.append({"term": {"owner_id.keyword": owner_id}})
 
         query = {
             "query": {"bool": {"must": must}} if must else {"match_all": {}},
@@ -427,7 +551,8 @@ class AlertService:
         Returns:
             True if deleted, False if not found
         """
-        from sqlalchemy import select, delete as sql_delete
+        from sqlalchemy import delete as sql_delete
+        from sqlalchemy import select
 
         # Get alert from database by alert_id (OpenSearch document ID)
         result = await db.execute(select(Alert).where(Alert.alert_id == str(alert_id)))

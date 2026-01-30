@@ -17,6 +17,8 @@ class RuleExceptionCreate(BaseModel):
     # Optional group_id - if not provided, a new group is created
     # If provided, this exception is added to an existing group (AND logic)
     group_id: UUID | None = None
+    # If created from an alert, auto-mark alert as false positive
+    alert_id: str | None = None
 
 
 class RuleExceptionUpdate(BaseModel):
@@ -39,6 +41,7 @@ class RuleExceptionResponse(BaseModel):
     is_active: bool
     created_by: UUID
     created_at: datetime
+    warning: str | None = None  # Overlap warning if applicable
 
     class Config:
         from_attributes = True

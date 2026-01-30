@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -169,12 +169,21 @@ export default function SettingsPage() {
   const [importPreview, setImportPreview] = useState<ImportSummary | null>(null)
   const [importResult, setImportResult] = useState<ImportSummary | null>(null)
 
+  // Alert Clustering settings
+  const [alertClusteringSettings, setAlertClusteringSettings] = useState<AlertClusteringSettings>({
+    enabled: false,
+    window_minutes: 60,
+  })
+  const [alertClusteringForm, setAlertClusteringForm] = useState<AlertClusteringSettings>(alertClusteringSettings)
+  const [isSavingAlertClustering, setIsSavingAlertClustering] = useState(false)
+
   useEffect(() => {
     loadSettings()
     loadOpenSearchStatus()
     loadPermissions()
     loadSecuritySettings()
     loadHealthSettings()
+    loadAlertClusteringSettings()
   }, [])
 
   const loadSecuritySettings = async () => {
@@ -206,6 +215,29 @@ export default function SettingsPage() {
       setHealthCheckIntervalsForm(intervals as typeof healthCheckIntervals)
     } catch (err) {
       console.error('Failed to load health settings:', err)
+    }
+  }
+
+  const loadAlertClusteringSettings = async () => {
+    try {
+      const settings = await alertClusteringApi.getSettings()
+      setAlertClusteringSettings(settings)
+      setAlertClusteringForm(settings)
+    } catch (err) {
+      console.error('Failed to load alert clustering settings:', err)
+    }
+  }
+
+  const saveAlertClusteringSettings = async () => {
+    setIsSavingAlertClustering(true)
+    try {
+      await alertClusteringApi.updateSettings(alertClusteringForm)
+      setAlertClusteringSettings(alertClusteringForm)
+      showToast('Alert clustering settings saved')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save alert clustering settings', 'error')
+    } finally {
+      setIsSavingAlertClustering(false)
     }
   }
 
@@ -594,6 +626,7 @@ export default function SettingsPage() {
           <TabsTrigger value="sso">SSO</TabsTrigger>
           <TabsTrigger value="ai">AI</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="health">Health Monitoring</TabsTrigger>
           <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
@@ -1264,6 +1297,85 @@ export default function SettingsPage() {
             <GeoIPSettings />
             <TISettings />
           </div>
+        </TabsContent>
+
+        <TabsContent value="alerts" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Alert Clustering</CardTitle>
+              <CardDescription>
+                Group alerts from the same detection rule within a time window to reduce noise.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Enable Alert Clustering</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Group alerts from the same rule together
+                  </p>
+                </div>
+                <Switch
+                  checked={alertClusteringForm.enabled}
+                  onCheckedChange={(checked) =>
+                    setAlertClusteringForm({ ...alertClusteringForm, enabled: checked })
+                  }
+                />
+              </div>
+
+              {alertClusteringForm.enabled && (
+                <div className="space-y-4 pl-4 border-l-2 border-muted">
+                  <div className="space-y-2">
+                    <Label htmlFor="cluster-window">Time Window (minutes)</Label>
+                    <Input
+                      id="cluster-window"
+                      type="number"
+                      min={1}
+                      max={1440}
+                      className="w-32"
+                      value={alertClusteringForm.window_minutes}
+                      onChange={(e) =>
+                        setAlertClusteringForm({
+                          ...alertClusteringForm,
+                          window_minutes: parseInt(e.target.value) || 60,
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Alerts from the same rule within this time window will be grouped (1-1440 minutes)
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-muted rounded-md">
+                    <p className="text-sm">
+                      <strong>How it works:</strong> Alerts from the same detection rule within the time window
+                      are grouped together. The cluster shows a representative alert with a count badge.
+                      Click to expand and see all alerts in the cluster.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  onClick={saveAlertClusteringSettings}
+                  disabled={isSavingAlertClustering}
+                >
+                  {isSavingAlertClustering ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="opensearch" className="mt-4">

@@ -433,11 +433,12 @@ export default function CorrelationRuleEditorPage() {
         setShowChangeReason(false)
         setTimeout(() => setSaveSuccess(false), 3000)
       } else {
-        await correlationRulesApi.create({
+        const created = await correlationRulesApi.create({
           ...formData,
           change_reason: changeReason || 'Initial creation',
         })
-        navigate('/correlation')
+        // Stay on page - navigate to edit mode for the new rule
+        navigate(`/correlation/${created.id}`, { replace: true })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save correlation rule')
