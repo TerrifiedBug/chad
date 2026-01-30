@@ -389,11 +389,13 @@ class AlertService:
 
         # Use the deterministic alert_id as the document ID
         # This makes retries overwrite instead of creating duplicates
+        # Use refresh=False for eventual consistency (~1 second delay)
+        # This significantly improves write performance at scale
         self.client.index(
             index=alerts_index,
             id=alert_id,
             body=alert,
-            refresh=True,
+            refresh=False,
         )
 
         return alert
