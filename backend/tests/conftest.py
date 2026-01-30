@@ -32,11 +32,15 @@ def _should_skip_db_setup(config):
     """Check if all collected tests are unit tests without DB requirements."""
     # Check if we're running a subset of tests
     if hasattr(config, 'args') and config.args:
-        # Skip DB setup for unit test directories
-        skip_dirs = ['tests/core', 'tests/db']
+        # Skip DB setup for unit test directories and specific test files
+        skip_patterns = [
+            'tests/core',
+            'tests/db',
+            'test_scheduler_locking.py',  # Unit tests with mocking
+        ]
         for arg in config.args:
-            for skip_dir in skip_dirs:
-                if skip_dir in arg:
+            for skip_pattern in skip_patterns:
+                if skip_pattern in arg:
                     return True
     return False
 
