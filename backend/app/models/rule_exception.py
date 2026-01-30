@@ -31,6 +31,11 @@ class RuleException(Base):
     rule_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("rules.id", ondelete="CASCADE"), nullable=False
     )
+    # Exceptions with the same group_id are ANDed together
+    # Different groups are ORed (if any group fully matches, suppress the alert)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), default=uuid.uuid4, nullable=False
+    )
     field: Mapped[str] = mapped_column(String(255), nullable=False)
     operator: Mapped[ExceptionOperator] = mapped_column(
         default=ExceptionOperator.EQUALS

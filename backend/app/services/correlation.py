@@ -6,10 +6,10 @@ related entities within a specified time window.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select, and_, or_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,20 @@ from app.models.rule import Rule
 from app.services.field_mapping import resolve_mappings
 
 logger = logging.getLogger(__name__)
+
+
+def is_rule_snoozed(corr_rule: CorrelationRule) -> bool:
+    """Check if a correlation rule is currently snoozed."""
+    if corr_rule.snooze_indefinite:
+        return True
+    if corr_rule.snooze_until:
+        now = datetime.now(UTC)
+        # Handle both timezone-aware and timezone-naive datetimes
+        snooze_until = corr_rule.snooze_until
+        if snooze_until.tzinfo is None:
+            snooze_until = snooze_until.replace(tzinfo=UTC)
+        return now < snooze_until
+    return False
 
 
 def get_nested_value(obj: dict, path: str) -> any:
@@ -163,8 +177,14 @@ async def check_correlation(
 
     # Fetch deployed version data for each correlation rule
     # Create list of (corr_rule, deployed_data) tuples
+    # Filter out snoozed rules
     rules_with_deployed_data: list[tuple[CorrelationRule, CorrelationRuleVersion]] = []
     for corr_rule in correlation_rules:
+        # Skip snoozed rules
+        if is_rule_snoozed(corr_rule):
+            logger.debug(f"Correlation rule {corr_rule.id} is snoozed, skipping")
+            continue
+
         deployed_data = await get_deployed_version_data(db, corr_rule)
         if deployed_data is None:
             logger.warning(
@@ -256,7 +276,11 @@ async def check_correlation(
                     expires_at=expires_at,
                 )
                 db.add(state)
-                logger.debug(f"Stored correlation state for {corr_rule.name}, sigma_field={sigma_field}, entity={entity_value}")
+                # Log only IDs, not user-controlled content to prevent log injection
+                logger.debug(
+                    "Stored correlation state for rule_id=%s",
+                    corr_rule.id,
+                )
 
     return triggered
 

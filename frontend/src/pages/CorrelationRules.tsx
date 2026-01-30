@@ -16,6 +16,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -31,7 +32,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronDown, ChevronLeft, CircleOff, Plus, Rocket, Search, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, CircleOff, Clock, Plus, Rocket, RotateCcw, Search, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 import { RelativeTime } from '@/components/RelativeTime'
@@ -51,7 +52,7 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
 // Status options
-const STATUSES = ['deployed', 'undeployed', 'needs_redeploy'] as const
+const STATUSES = ['deployed', 'undeployed', 'snoozed', 'needs_redeploy'] as const
 
 // Filter types
 type Filters = {
@@ -86,6 +87,11 @@ export default function CorrelationRulesPage() {
   const [showBulkDeployReason, setShowBulkDeployReason] = useState(false)
   const [showBulkUndeployReason, setShowBulkUndeployReason] = useState(false)
   const [showBulkDeleteReason, setShowBulkDeleteReason] = useState(false)
+  const [showBulkSnooze, setShowBulkSnooze] = useState(false)
+  const [showBulkSnoozeReason, setShowBulkSnoozeReason] = useState(false)
+  const [showBulkUnsnoozeReason, setShowBulkUnsnoozeReason] = useState(false)
+  const [pendingBulkSnoozeHours, setPendingBulkSnoozeHours] = useState<number | undefined>(undefined)
+  const [pendingBulkSnoozeIndefinite, setPendingBulkSnoozeIndefinite] = useState(false)
 
   useEffect(() => {
     loadRules()
@@ -113,7 +119,17 @@ export default function CorrelationRulesPage() {
       }
       // Status filter
       if (filters.status.length > 0) {
-        const ruleStatus = rule.needs_redeploy ? 'needs_redeploy' : (rule.deployed_at ? 'deployed' : 'undeployed')
+        const isSnoozed = rule.snooze_indefinite || (rule.snooze_until && new Date(rule.snooze_until) > new Date())
+        let ruleStatus: string
+        if (isSnoozed) {
+          ruleStatus = 'snoozed'
+        } else if (rule.needs_redeploy) {
+          ruleStatus = 'needs_redeploy'
+        } else if (rule.deployed_at) {
+          ruleStatus = 'deployed'
+        } else {
+          ruleStatus = 'undeployed'
+        }
         if (!filters.status.includes(ruleStatus)) {
           return false
         }
@@ -219,8 +235,23 @@ export default function CorrelationRulesPage() {
     return selectedRulesData.filter(r => !r.rule_a_deployed || !r.rule_b_deployed)
   }, [selectedRulesData])
 
+  // Check if any selected rules are snoozed
+  const hasSnoozedRules = useMemo(() => {
+    return selectedRulesData.some(r =>
+      r.snooze_indefinite || (r.snooze_until && new Date(r.snooze_until) > new Date())
+    )
+  }, [selectedRulesData])
+
+  // Check if any selected rules can be snoozed (deployed but not snoozed)
+  const hasSnoozeableRules = useMemo(() => {
+    return selectedRulesData.some(r => {
+      const isSnoozed = r.snooze_indefinite || (r.snooze_until && new Date(r.snooze_until) > new Date())
+      return r.deployed_at && !isSnoozed
+    })
+  }, [selectedRulesData])
+
   // Bulk action handler
-  const handleBulkAction = (action: 'deploy' | 'undeploy' | 'delete') => {
+  const handleBulkAction = (action: 'deploy' | 'undeploy' | 'unsnooze' | 'delete') => {
     if (selectedRules.size === 0) return
     setBulkOperationReason('')
 
@@ -230,6 +261,9 @@ export default function CorrelationRulesPage() {
         break
       case 'undeploy':
         setShowBulkUndeployReason(true)
+        break
+      case 'unsnooze':
+        setShowBulkUnsnoozeReason(true)
         break
       case 'delete':
         setShowBulkDeleteReason(true)
@@ -326,7 +360,73 @@ export default function CorrelationRulesPage() {
     }
   }
 
+  // Bulk snooze handler - shows snooze duration dropdown
+  const handleBulkSnooze = (hours?: number, indefinite?: boolean) => {
+    if (selectedRules.size === 0) return
+    setShowBulkSnooze(false)
+    setPendingBulkSnoozeHours(hours)
+    setPendingBulkSnoozeIndefinite(indefinite ?? false)
+    setBulkOperationReason('')
+    setShowBulkSnoozeReason(true)
+  }
+
+  // Execute bulk snooze after change reason provided
+  const handleBulkSnoozeConfirm = async () => {
+    if (selectedRules.size === 0 || !bulkOperationReason.trim()) return
+    setShowBulkSnoozeReason(false)
+    setIsBulkOperating(true)
+    try {
+      const ruleIds = Array.from(selectedRules)
+      const result = await correlationRulesApi.bulkSnooze(
+        ruleIds,
+        pendingBulkSnoozeHours ?? null,
+        pendingBulkSnoozeIndefinite,
+        bulkOperationReason
+      )
+      if (result.failed.length > 0) {
+        setError(`${result.success.length} snoozed, ${result.failed.length} failed`)
+      }
+      clearSelection()
+      setBulkOperationReason('')
+      loadRules()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk snooze failed')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
+  // Execute bulk unsnooze after change reason provided
+  const handleBulkUnsnoozeConfirm = async () => {
+    if (selectedRules.size === 0 || !bulkOperationReason.trim()) return
+    setShowBulkUnsnoozeReason(false)
+    setIsBulkOperating(true)
+    try {
+      const ruleIds = Array.from(selectedRules)
+      const result = await correlationRulesApi.bulkUnsnooze(ruleIds, bulkOperationReason)
+      if (result.failed.length > 0) {
+        setError(`${result.success.length} unsnoozed, ${result.failed.length} failed`)
+      }
+      clearSelection()
+      setBulkOperationReason('')
+      loadRules()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk unsnooze failed')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
   const getStatusBadge = (rule: CorrelationRule) => {
+    // Check if rule is snoozed
+    const isSnoozed = rule.snooze_indefinite || (rule.snooze_until && new Date(rule.snooze_until) > new Date())
+    if (isSnoozed) {
+      return (
+        <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-600 text-white">
+          Snoozed
+        </span>
+      )
+    }
     if (rule.deployed_at) {
       return (
         <div className="flex items-center gap-1.5">
@@ -649,6 +749,43 @@ export default function CorrelationRulesPage() {
                 )}
               </Tooltip>
 
+              <Tooltip open={!hasSnoozeableRules ? undefined : false}>
+                <TooltipTrigger asChild>
+                  <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isBulkOperating || !hasSnoozeableRules || !canDeployRules()}
+                      >
+                        <Clock className="mr-2 h-4 w-4" /> Snooze
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="z-[60]">
+                      <DropdownMenuLabel>Snooze Duration</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(1)}>1 hour</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(4)}>4 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(24)}>24 hours</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(168)}>1 week</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkSnooze(undefined, true)}>Indefinitely</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TooltipTrigger>
+                {!hasSnoozeableRules && (
+                  <TooltipContent>No deployed rules to snooze</TooltipContent>
+                )}
+              </Tooltip>
+
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleBulkAction('unsnooze')}
+                disabled={isBulkOperating || !hasSnoozedRules || !canDeployRules()}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" /> Unsnooze
+              </Button>
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span>
@@ -735,6 +872,75 @@ export default function CorrelationRulesPage() {
             </Button>
             <Button variant="destructive" onClick={handleBulkUndeployConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
               {isBulkOperating ? 'Undeploying...' : 'Undeploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Snooze Reason Dialog */}
+      <Dialog open={showBulkSnoozeReason} onOpenChange={setShowBulkSnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Snooze Correlation Rules</DialogTitle>
+            <DialogDescription>
+              Please explain why you're snoozing {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="text-sm text-muted-foreground">
+              Duration: {pendingBulkSnoozeIndefinite ? 'Indefinitely' : `${pendingBulkSnoozeHours} hour${pendingBulkSnoozeHours !== 1 ? 's' : ''}`}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bulk-snooze-reason">Reason *</Label>
+              <Textarea
+                id="bulk-snooze-reason"
+                placeholder="e.g., Investigating false positives, scheduled maintenance..."
+                value={bulkOperationReason}
+                onChange={(e) => setBulkOperationReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowBulkSnoozeReason(false); setBulkOperationReason('') }}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkSnoozeConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
+              {isBulkOperating ? 'Snoozing...' : 'Snooze'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Unsnooze Reason Dialog */}
+      <Dialog open={showBulkUnsnoozeReason} onOpenChange={setShowBulkUnsnoozeReason}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsnooze Correlation Rules</DialogTitle>
+            <DialogDescription>
+              Please explain why you're unsnoozing {selectedRules.size} rule{selectedRules.size > 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-unsnooze-reason">Reason *</Label>
+              <Textarea
+                id="bulk-unsnooze-reason"
+                placeholder="e.g., Issue resolved, ready to re-enable..."
+                value={bulkOperationReason}
+                onChange={(e) => setBulkOperationReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowBulkUnsnoozeReason(false); setBulkOperationReason('') }}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkUnsnoozeConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
+              {isBulkOperating ? 'Unsnoozing...' : 'Unsnooze'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -50,6 +50,9 @@ ruff==0.14.14
 # Security
 nh3>=0.2.17  # Fast HTML sanitization (binding to Rust ammonia)
 
+# Reporting
+reportlab>=4.2.0  # PDF generation
+
 # Logging
 structlog>=24.1.0  # Structured logging
 python-json-logger>=2.0.7  # JSON logging fallback

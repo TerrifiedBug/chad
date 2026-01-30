@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/use-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -12,10 +14,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Shield, ShieldCheck, ShieldOff, User, Loader2 } from 'lucide-react'
+import { Shield, ShieldCheck, ShieldOff, User, Loader2, Bell } from 'lucide-react'
 import { TwoFactorSetup } from '@/components/TwoFactorSetup'
 import { authApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
+
+const SEVERITY_OPTIONS = [
+  { value: 'critical', label: 'Critical', color: 'bg-red-500' },
+  { value: 'high', label: 'High', color: 'bg-orange-500' },
+  { value: 'medium', label: 'Medium', color: 'bg-yellow-500' },
+  { value: 'low', label: 'Low', color: 'bg-blue-500' },
+  { value: 'informational', label: 'Informational', color: 'bg-gray-500' },
+]
 
 export default function AccountPage() {
   const { user, refreshUser } = useAuth()
@@ -24,6 +34,77 @@ export default function AccountPage() {
   const [showDisable, setShowDisable] = useState(false)
   const [disableCode, setDisableCode] = useState('')
   const [disabling, setDisabling] = useState(false)
+
+  // Notification preferences
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
+  const [notificationSeverities, setNotificationSeverities] = useState<string[]>([])
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default')
+  const [savingNotifications, setSavingNotifications] = useState(false)
+
+  // Initialize notification state from user preferences
+  useEffect(() => {
+    if (user?.notification_preferences) {
+      setNotificationsEnabled(user.notification_preferences.browser_notifications)
+      setNotificationSeverities(user.notification_preferences.severities)
+    }
+    // Check browser notification permission
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission)
+    }
+  }, [user])
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      showToast('Browser notifications are not supported', 'error')
+      return false
+    }
+    const permission = await Notification.requestPermission()
+    setNotificationPermission(permission)
+    return permission === 'granted'
+  }
+
+  const handleNotificationToggle = async (enabled: boolean) => {
+    if (enabled && notificationPermission !== 'granted') {
+      const granted = await requestNotificationPermission()
+      if (!granted) {
+        showToast('Browser notification permission denied', 'error')
+        return
+      }
+    }
+
+    setSavingNotifications(true)
+    try {
+      await authApi.updateNotificationPreferences({ browser_notifications: enabled })
+      setNotificationsEnabled(enabled)
+      await refreshUser()
+      showToast(enabled ? 'Browser notifications enabled' : 'Browser notifications disabled', 'success')
+    } catch {
+      showToast('Failed to update notification preferences', 'error')
+    } finally {
+      setSavingNotifications(false)
+    }
+  }
+
+  const handleSeverityToggle = async (severity: string) => {
+    const oldSeverities = notificationSeverities
+    const newSeverities = notificationSeverities.includes(severity)
+      ? notificationSeverities.filter(s => s !== severity)
+      : [...notificationSeverities, severity]
+
+    // Optimistic update - set state immediately
+    setNotificationSeverities(newSeverities)
+    setSavingNotifications(true)
+    try {
+      await authApi.updateNotificationPreferences({ severities: newSeverities })
+      await refreshUser()
+    } catch {
+      // Revert on failure
+      setNotificationSeverities(oldSeverities)
+      showToast('Failed to update notification preferences', 'error')
+    } finally {
+      setSavingNotifications(false)
+    }
+  }
 
   const handle2FAComplete = async () => {
     await refreshUser()
@@ -79,7 +160,7 @@ export default function AccountPage() {
 
       {/* Security - 2FA */}
       {user.auth_method === 'local' && (
-        <Card>
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
@@ -119,6 +200,61 @@ export default function AccountPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Browser Notifications */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5" />
+            Browser Notifications
+          </CardTitle>
+          <CardDescription>
+            Receive desktop notifications when new alerts are triggered
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Enable Notifications</p>
+              <p className="text-sm text-muted-foreground">
+                {notificationPermission === 'denied'
+                  ? 'Notifications are blocked. Please enable in browser settings.'
+                  : 'Get notified when alerts match the selected severities'}
+              </p>
+            </div>
+            <Switch
+              checked={notificationsEnabled}
+              onCheckedChange={handleNotificationToggle}
+              disabled={savingNotifications || notificationPermission === 'denied'}
+            />
+          </div>
+
+          {notificationsEnabled && (
+            <div className="space-y-3">
+              <Label>Notify for severities:</Label>
+              <div className="space-y-2">
+                {SEVERITY_OPTIONS.map((severity) => (
+                  <div key={severity.value} className="flex items-center space-x-3">
+                    <Checkbox
+                      id={`severity-${severity.value}`}
+                      checked={notificationSeverities.includes(severity.value)}
+                      onCheckedChange={() => handleSeverityToggle(severity.value)}
+                      disabled={savingNotifications}
+                    />
+                    <label
+                      htmlFor={`severity-${severity.value}`}
+                      className="flex items-center gap-2 text-sm font-medium cursor-pointer"
+                    >
+                      <span className={`w-2 h-2 rounded-full ${severity.color}`} />
+                      {severity.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 2FA Setup Dialog */}
       <TwoFactorSetup

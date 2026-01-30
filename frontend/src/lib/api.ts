@@ -242,9 +242,9 @@ export const settingsApi = {
     api.get<{ mandatory_rule_comments: boolean }>('/notifications/settings/public'),
   // Health settings
   getHealthSettings: () =>
-    api.get<HealthSettings>('/settings/health'),
+    api.get<HealthSettings>('/health/settings'),
   updateHealthSettings: (data: Partial<HealthSettings>) =>
-    api.put<HealthSettings>('/settings/health', data),
+    api.put<HealthSettings>('/health/settings', data),
 }
 
 // Exception types
@@ -261,6 +261,7 @@ export type ExceptionOperator =
 export type RuleException = {
   id: string
   rule_id: string
+  group_id: string  // Exceptions with same group_id are ANDed
   field: string
   operator: ExceptionOperator
   value: string
@@ -276,6 +277,7 @@ export type RuleExceptionCreate = {
   value: string
   reason?: string
   change_reason: string
+  group_id?: string  // If provided, adds to existing group (AND logic)
 }
 
 export type RuleExceptionUpdate = {
@@ -456,6 +458,11 @@ export const rulesApi = {
     const query = searchParams.toString()
     return api.get<Rule[]>(`/rules${query ? `?${query}` : ''}`)
   },
+  checkTitle: (title: string, excludeId?: string) =>
+    api.post<{ available: boolean; message?: string }>('/rules/check-title', {
+      title,
+      exclude_id: excludeId,
+    }),
   get: (id: string) =>
     api.get<RuleDetail>(`/rules/${id}`),
   create: (data: RuleCreate) =>
@@ -644,6 +651,12 @@ export type IndexPattern = {
   geoip_fields: string[]
   // TI enrichment config per source
   ti_config: TIConfig | null
+  // IP allowlist for log shipping (null = allow all)
+  allowed_ips: string[] | null
+  // Rate limiting for log shipping
+  rate_limit_enabled: boolean
+  rate_limit_requests_per_minute: number | null
+  rate_limit_events_per_minute: number | null
 }
 
 export type IndexPatternCreate = {
@@ -660,6 +673,12 @@ export type IndexPatternCreate = {
   geoip_fields?: string[]
   // TI enrichment config per source
   ti_config?: TIConfig | null
+  // IP allowlist for log shipping (null = allow all)
+  allowed_ips?: string[] | null
+  // Rate limiting for log shipping
+  rate_limit_enabled?: boolean
+  rate_limit_requests_per_minute?: number | null
+  rate_limit_events_per_minute?: number | null
 }
 
 export type IndexPatternUpdate = Partial<IndexPatternCreate>
@@ -899,6 +918,12 @@ export type LoginResponse = {
   requires_2fa_setup?: boolean
 }
 
+// Notification preferences type
+export type NotificationPreferences = {
+  browser_notifications: boolean
+  severities: string[]
+}
+
 // Current user type
 export type CurrentUser = {
   id: string
@@ -909,6 +934,7 @@ export type CurrentUser = {
   must_change_password: boolean
   totp_enabled?: boolean
   permissions?: Record<string, boolean>
+  notification_preferences?: NotificationPreferences
 }
 
 // 2FA types
@@ -947,6 +973,8 @@ export const authApi = {
     api.post<TwoFactorVerifyResponse>('/auth/2fa/verify', { code }),
   disable2FA: (code: string) =>
     api.post<void>('/auth/2fa/disable', { code }),
+  updateNotificationPreferences: (prefs: Partial<NotificationPreferences>) =>
+    api.patch<{ notification_preferences: NotificationPreferences }>('/auth/me/notifications', prefs),
 }
 
 // SigmaHQ types
@@ -1683,6 +1711,9 @@ export type CorrelationRule = {
   deployed_version?: number | null
   current_version: number
   needs_redeploy: boolean
+  // Snooze tracking
+  snooze_until?: string | null
+  snooze_indefinite: boolean
   // Linked rule deployment status
   rule_a_deployed: boolean
   rule_b_deployed: boolean
@@ -1763,5 +1794,127 @@ export const correlationRulesApi = {
       `/correlation-rules/${id}/rollback/${versionNumber}`,
       { change_reason: changeReason }
     ),
+  snooze: (id: string, hours: number | null, indefinite: boolean, changeReason: string) =>
+    api.post<{ success: boolean; snooze_until: string | null; snooze_indefinite: boolean }>(
+      `/correlation-rules/${id}/snooze`,
+      { hours, indefinite, change_reason: changeReason }
+    ),
+  unsnooze: (id: string, changeReason: string) =>
+    api.post<{ success: boolean }>(`/correlation-rules/${id}/unsnooze`, { change_reason: changeReason }),
+  bulkSnooze: (ruleIds: string[], hours: number | null, indefinite: boolean, changeReason: string) =>
+    api.post<BulkOperationResult>(`/correlation-rules/bulk/snooze`, {
+      rule_ids: ruleIds,
+      hours,
+      indefinite,
+      change_reason: changeReason,
+    }),
+  bulkUnsnooze: (ruleIds: string[], changeReason: string) =>
+    api.post<BulkOperationResult>(`/correlation-rules/bulk/unsnooze`, {
+      rule_ids: ruleIds,
+      change_reason: changeReason,
+    }),
+}
+
+// Reports API
+export type ReportFormat = 'pdf' | 'csv'
+
+export type AlertSummaryRequest = {
+  format: ReportFormat
+  date_from?: string
+  date_to?: string
+  severity?: string[]
+  index_pattern?: string
+}
+
+export type RuleCoverageRequest = {
+  format: ReportFormat
+}
+
+export const reportsApi = {
+  generateAlertSummary: async (request: AlertSummaryRequest): Promise<Blob> => {
+    const token = localStorage.getItem('chad-token')
+    const response = await fetch(`${API_BASE}/reports/alerts/summary`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(request),
+    })
+    if (!response.ok) {
+      throw new Error('Failed to generate report')
+    }
+    return response.blob()
+  },
+
+  generateRuleCoverage: async (request: RuleCoverageRequest): Promise<Blob> => {
+    const token = localStorage.getItem('chad-token')
+    const response = await fetch(`${API_BASE}/reports/rules/coverage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(request),
+    })
+    if (!response.ok) {
+      throw new Error('Failed to generate report')
+    }
+    return response.blob()
+  },
+}
+
+// Config Import/Export API
+export type ImportMode = 'skip' | 'overwrite' | 'rename'
+
+export type ImportSummary = {
+  dry_run: boolean
+  created: Record<string, number>
+  updated: Record<string, number>
+  skipped: Record<string, number>
+  errors: string[]
+}
+
+export const configApi = {
+  exportConfig: async (): Promise<Blob> => {
+    const token = localStorage.getItem('chad-token')
+    const response = await fetch(`${API_BASE}/export/config`, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+    if (!response.ok) {
+      throw new Error('Failed to export config')
+    }
+    return response.blob()
+  },
+
+  importConfig: async (
+    file: File,
+    mode: ImportMode = 'skip',
+    dryRun: boolean = false
+  ): Promise<ImportSummary> => {
+    const token = localStorage.getItem('chad-token')
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const params = new URLSearchParams()
+    params.append('mode', mode)
+    params.append('dry_run', dryRun.toString())
+
+    const response = await fetch(`${API_BASE}/export/config/import?${params}`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    })
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.detail || 'Failed to import config')
+    }
+    return response.json()
+  },
 }
 

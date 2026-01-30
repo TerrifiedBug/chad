@@ -1,7 +1,8 @@
 """Schemas for correlation rules."""
 
-from pydantic import BaseModel, Field
 from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
 class CorrelationRuleBase(BaseModel):
@@ -45,6 +46,10 @@ class CorrelationRuleResponse(CorrelationRuleBase):
     deployed_version: int | None = None
     current_version: int = 1
     needs_redeploy: bool = False
+
+    # Snooze fields
+    snooze_until: datetime | None = None
+    snooze_indefinite: bool = False
 
     # Include related rule info
     rule_a_title: str | None = None
@@ -126,3 +131,20 @@ class CorrelationRuleRollbackResponse(BaseModel):
     success: bool
     new_version_number: int
     rolled_back_from: int
+
+
+class CorrelationSnoozeRequest(BaseModel):
+    """Schema for snoozing a correlation rule."""
+
+    hours: int | None = Field(default=None, ge=1, le=168)  # None allowed if indefinite
+    indefinite: bool = False
+    change_reason: str = Field(..., min_length=1, max_length=10000)
+
+
+class BulkCorrelationSnoozeRequest(BaseModel):
+    """Request body for bulk snooze operations on correlation rules."""
+
+    rule_ids: list[str]
+    hours: int | None = Field(default=None, ge=1, le=168)  # None allowed if indefinite
+    indefinite: bool = False
+    change_reason: str = Field(..., min_length=1, max_length=10000)

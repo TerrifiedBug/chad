@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { rulesApi, indexPatternsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
+import { rulesApi, indexPatternsApi, reportsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
 import yaml from 'js-yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, Clock, FileCode, FileText, FolderTree, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
+import { ChevronDown, Clock, Download, FileCode, FileText, FolderTree, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -39,6 +39,14 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { FileSpreadsheet, Loader2 } from 'lucide-react'
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500 text-white',
@@ -103,6 +111,11 @@ export default function RulesPage() {
   const [pendingBulkSnoozeIndefinite, setPendingBulkSnoozeIndefinite] = useState(false)
   const [bulkLinkedCorrelations, setBulkLinkedCorrelations] = useState<{ id: string; name: string; deployed: boolean }[]>([])
 
+  // Export report state
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  const [exportFormat, setExportFormat] = useState<'csv' | 'pdf'>('pdf')
+  const [isExporting, setIsExporting] = useState(false)
+
   // Deployment eligibility state
   const [deploymentEligibility, setDeploymentEligibility] = useState<DeploymentEligibilityResult | null>(null)
   const [isCheckingEligibility, setIsCheckingEligibility] = useState(false)
@@ -148,16 +161,17 @@ export default function RulesPage() {
     return selectedRulesData.some(r => r.status === 'deployed')
   }, [selectedRulesData])
 
-  const hasUndeployedRules = useMemo(() => {
-    return selectedRulesData.some(r => r.status === 'undeployed')
-  }, [selectedRulesData])
-
   const allDeployed = useMemo(() => {
     return selectedRulesData.length > 0 && selectedRulesData.every(r => r.status === 'deployed')
   }, [selectedRulesData])
 
   const hasSnoozedRules = useMemo(() => {
     return selectedRulesData.some(r => r.status === 'snoozed')
+  }, [selectedRulesData])
+
+  const hasSnoozeableRules = useMemo(() => {
+    // Rules that are deployed but not snoozed can be snoozed
+    return selectedRulesData.some(r => r.status === 'deployed')
   }, [selectedRulesData])
 
   const loadData = async () => {
@@ -414,12 +428,31 @@ export default function RulesPage() {
   }
 
   // Bulk snooze handler - shows change reason dialog
-  const handleBulkSnooze = (hours?: number, indefinite?: boolean) => {
+  const handleBulkSnooze = async (hours?: number, indefinite?: boolean) => {
     if (selectedRules.size === 0) return
     setShowBulkSnooze(false)
     setPendingBulkSnoozeHours(hours)
     setPendingBulkSnoozeIndefinite(indefinite ?? false)
     setBulkOperationReason('')
+
+    // Fetch linked correlations for all selected rules
+    const allLinkedCorrelations: { id: string; name: string; deployed: boolean }[] = []
+    const seenIds = new Set<string>()
+    for (const ruleId of selectedRules) {
+      try {
+        const response = await rulesApi.getLinkedCorrelations(ruleId, false)
+        for (const corr of response.correlations) {
+          if (!seenIds.has(corr.id)) {
+            seenIds.add(corr.id)
+            allLinkedCorrelations.push(corr)
+          }
+        }
+      } catch {
+        // Continue if one fails
+      }
+    }
+    setBulkLinkedCorrelations(allLinkedCorrelations)
+
     setShowBulkSnoozeReason(true)
   }
 
@@ -437,6 +470,7 @@ export default function RulesPage() {
       }
       clearSelection()
       setBulkOperationReason('')
+      setBulkLinkedCorrelations([])
       loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bulk snooze failed')
@@ -510,14 +544,45 @@ export default function RulesPage() {
     }
   }
 
+  // Handler for Rule Coverage report export
+  const handleExportReport = async () => {
+    setIsExporting(true)
+    try {
+      const blob = await reportsApi.generateRuleCoverage({
+        format: exportFormat,
+      })
+
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const dateStr = new Date().toISOString().slice(0, 10)
+      a.download = `rule-coverage-${dateStr}.${exportFormat}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+      setShowExportDialog(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Rules</h1>
-        <Button onClick={() => navigate('/rules/new')} disabled={!canManageRules()}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Rule
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowExportDialog(true)}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Report
+          </Button>
+          <Button onClick={() => navigate('/rules/new')} disabled={!canManageRules()}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Rule
+          </Button>
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -958,14 +1023,14 @@ export default function RulesPage() {
                   </TooltipContent>
                 )}
               </Tooltip>
-              <Tooltip open={hasUndeployedRules ? undefined : false}>
+              <Tooltip open={!hasSnoozeableRules ? undefined : false}>
                 <TooltipTrigger asChild>
                   <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
                     <DropdownMenuTrigger asChild>
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={isBulkOperating || hasUndeployedRules || !canDeployRules()}
+                        disabled={isBulkOperating || !hasSnoozeableRules || !canDeployRules()}
                       >
                         <Clock className="mr-2 h-4 w-4" /> Snooze
                       </Button>
@@ -982,9 +1047,9 @@ export default function RulesPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TooltipTrigger>
-                {hasUndeployedRules && (
+                {!hasSnoozeableRules && (
                   <TooltipContent>
-                    Cannot bulk snooze: Some selected rules are not deployed
+                    Cannot bulk snooze: No deployed rules selected
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -1103,6 +1168,30 @@ export default function RulesPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* Show warning if there are deployed correlation rules */}
+            {bulkLinkedCorrelations.some(c => c.deployed) && (
+              <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
+                  Warning: Selected rules are linked to correlation rules
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
+                  Snoozing these rules will also snooze any deployed correlation rules that depend on them.
+                </p>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {bulkLinkedCorrelations.map((corr) => (
+                    <div key={corr.id} className="flex items-center justify-between py-1 px-2 bg-white dark:bg-gray-900 rounded text-sm">
+                      <span>{corr.name}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        corr.deployed ? 'bg-green-600 text-white' : 'bg-gray-500 text-white'
+                      }`}>
+                        {corr.deployed ? 'Deployed' : 'Undeployed'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="text-sm text-muted-foreground">
               Duration: {pendingBulkSnoozeIndefinite ? 'Indefinitely' : `${pendingBulkSnoozeHours} hour${pendingBulkSnoozeHours !== 1 ? 's' : ''}`}
             </div>
@@ -1119,7 +1208,7 @@ export default function RulesPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowBulkSnoozeReason(false); setBulkOperationReason('') }}>
+            <Button variant="outline" onClick={() => { setShowBulkSnoozeReason(false); setBulkOperationReason(''); setBulkLinkedCorrelations([]) }}>
               Cancel
             </Button>
             <Button onClick={handleBulkSnoozeConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
@@ -1190,6 +1279,61 @@ export default function RulesPage() {
             </Button>
             <Button variant="destructive" onClick={handleBulkDeleteConfirm} disabled={!bulkOperationReason.trim() || isBulkOperating}>
               {isBulkOperating ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Report Dialog */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export Rule Coverage Report</DialogTitle>
+            <DialogDescription>
+              Generate a report showing rule coverage by severity, status, and index pattern.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Format</Label>
+              <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as 'csv' | 'pdf')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pdf">
+                    <span className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      PDF
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="csv">
+                    <span className="flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4" />
+                      CSV
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleExportReport} disabled={isExporting}>
+              {isExporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

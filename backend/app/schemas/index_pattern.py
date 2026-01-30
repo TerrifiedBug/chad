@@ -41,6 +41,12 @@ class IndexPatternBase(BaseModel):
     health_alerting_enabled: bool = True
     geoip_fields: list[str] = []
     ti_config: dict[str, TISourceConfig] | None = None
+    # IP allowlist for log shipping (None = allow all)
+    allowed_ips: list[str] | None = None
+    # Rate limiting for log shipping
+    rate_limit_enabled: bool = False
+    rate_limit_requests_per_minute: int | None = None
+    rate_limit_events_per_minute: int | None = None
 
 
 class IndexPatternCreate(IndexPatternBase):
@@ -58,6 +64,12 @@ class IndexPatternUpdate(BaseModel):
     health_alerting_enabled: bool | None = None
     geoip_fields: list[str] | None = None
     ti_config: dict[str, TISourceConfig] | None = None
+    # IP allowlist for log shipping (None = allow all, [] = clear allowlist)
+    allowed_ips: list[str] | None = None
+    # Rate limiting for log shipping
+    rate_limit_enabled: bool | None = None
+    rate_limit_requests_per_minute: int | None = None
+    rate_limit_events_per_minute: int | None = None
 
 
 class IndexPatternResponse(IndexPatternBase):

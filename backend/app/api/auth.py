@@ -549,7 +549,64 @@ async def get_current_user_info(
         "must_change_password": current_user.must_change_password,
         "totp_enabled": current_user.totp_enabled,
         "permissions": permissions,
+        "notification_preferences": current_user.notification_preferences or {
+            "browser_notifications": False,
+            "severities": ["critical", "high"]
+        },
     }
+
+
+@router.patch("/me/notifications")
+async def update_notification_preferences(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Update current user's browser notification preferences."""
+    data = await request.json()
+
+    # Validate input
+    valid_severities = {"critical", "high", "medium", "low", "informational"}
+    browser_notifications = data.get("browser_notifications")
+    severities = data.get("severities")
+
+    if browser_notifications is not None and not isinstance(browser_notifications, bool):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="browser_notifications must be a boolean",
+        )
+
+    if severities is not None:
+        if not isinstance(severities, list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="severities must be a list",
+            )
+        invalid = set(severities) - valid_severities
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid severities: {invalid}. Must be one of: {valid_severities}",
+            )
+
+    # Get current preferences or defaults - create a NEW dict to ensure SQLAlchemy detects the change
+    # (mutating JSONB in-place won't trigger SQLAlchemy's dirty tracking)
+    existing = current_user.notification_preferences or {}
+    new_prefs = {
+        "browser_notifications": existing.get("browser_notifications", False),
+        "severities": list(existing.get("severities", ["critical", "high"])),
+    }
+
+    # Update with new values
+    if browser_notifications is not None:
+        new_prefs["browser_notifications"] = browser_notifications
+    if severities is not None:
+        new_prefs["severities"] = severities
+
+    current_user.notification_preferences = new_prefs
+    await db.commit()
+
+    return {"notification_preferences": new_prefs}
 
 
 # ============================================================================

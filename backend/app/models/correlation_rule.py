@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID as PyUUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,10 @@ class CorrelationRule(Base, UUIDMixin, TimestampMixin):
 
     # Version tracking
     current_version: Mapped[int] = mapped_column(Integer, default=1)
+
+    # Snooze fields
+    snooze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snooze_indefinite: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationships
     rule_a = relationship("Rule", foreign_keys=[rule_a_id])

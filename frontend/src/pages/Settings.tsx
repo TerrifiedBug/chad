@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -17,7 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { CheckCircle2, ChevronDown, ExternalLink, Loader2, RefreshCw, Save, Users, FileText, XCircle } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Download, ExternalLink, Loader2, RefreshCw, Save, Upload, Users, FileText, XCircle } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useVersion } from '@/hooks/use-version'
 import {
@@ -131,6 +131,12 @@ export default function SettingsPage() {
   const [healthCheckIntervalsForm, setHealthCheckIntervalsForm] = useState(healthCheckIntervals)
   const [isSavingHealthCheckIntervals, setIsSavingHealthCheckIntervals] = useState(false)
 
+  // Version cleanup settings
+  const [versionCleanupEnabled, setVersionCleanupEnabled] = useState(true)
+  const [versionCleanupMinKeep, setVersionCleanupMinKeep] = useState(10)
+  const [versionCleanupMaxAgeDays, setVersionCleanupMaxAgeDays] = useState(90)
+  const [isSavingVersionCleanup, setIsSavingVersionCleanup] = useState(false)
+
   // Audit to OpenSearch
   const [auditOpenSearchEnabled, setAuditOpenSearchEnabled] = useState(false)
 
@@ -156,6 +162,13 @@ export default function SettingsPage() {
   const [aiLastTested, setAiLastTested] = useState<string | null>(null)
   const [aiLastTestSuccess, setAiLastTestSuccess] = useState<boolean | null>(null)
 
+  // Import/Export state
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importMode, setImportMode] = useState<ImportMode>('skip')
+  const [isImporting, setIsImporting] = useState(false)
+  const [importPreview, setImportPreview] = useState<ImportSummary | null>(null)
+  const [importResult, setImportResult] = useState<ImportSummary | null>(null)
+
   useEffect(() => {
     loadSettings()
     loadOpenSearchStatus()
@@ -177,7 +190,7 @@ export default function SettingsPage() {
     try {
       const [thresholds, intervals] = await Promise.all([
         settingsApi.getHealthSettings(),
-        api.get('/health/check-intervals')
+        api.get('/health/intervals')
       ] as const)
       // Convert ms to seconds for display
       const displayThresholds = {
@@ -252,6 +265,14 @@ export default function SettingsPage() {
         setAttackSyncEnabled((attack.enabled as boolean) || false)
         setAttackSyncInterval((attack.interval_hours as number) || 168)
         setAttackLastSync((attack.last_sync as string) || null)
+      }
+
+      // Version cleanup settings
+      if (settings.version_cleanup && typeof settings.version_cleanup === 'object') {
+        const cleanup = settings.version_cleanup as Record<string, unknown>
+        setVersionCleanupEnabled(cleanup.enabled !== false)
+        setVersionCleanupMinKeep((cleanup.min_keep as number) || 10)
+        setVersionCleanupMaxAgeDays((cleanup.max_age_days as number) || 90)
       }
 
       // Audit OpenSearch settings
@@ -439,6 +460,22 @@ export default function SettingsPage() {
     }
   }
 
+  const saveVersionCleanup = async () => {
+    setIsSavingVersionCleanup(true)
+    try {
+      await settingsApiExtended.update('version_cleanup', {
+        enabled: versionCleanupEnabled,
+        min_keep: versionCleanupMinKeep,
+        max_age_days: versionCleanupMaxAgeDays,
+      })
+      showToast('Version cleanup settings saved')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
+    } finally {
+      setIsSavingVersionCleanup(false)
+    }
+  }
+
   const saveAuditOpenSearch = async () => {
     setIsSaving(true)
     try {
@@ -560,7 +597,7 @@ export default function SettingsPage() {
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="health">Health Monitoring</TabsTrigger>
           <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
-          <TabsTrigger value="export">Export</TabsTrigger>
+          <TabsTrigger value="export">Backup & Restore</TabsTrigger>
           <TabsTrigger value="about" className="flex items-center gap-1">
             About
             {updateAvailable && <span className="h-2 w-2 rounded-full bg-red-500" />}
@@ -1558,7 +1595,7 @@ export default function SettingsPage() {
                   onClick={async () => {
                     setIsSavingHealthCheckIntervals(true)
                     try {
-                      await api.put('/health/check-intervals', healthCheckIntervalsForm)
+                      await api.put('/health/intervals', healthCheckIntervalsForm)
                       setHealthCheckIntervals(healthCheckIntervalsForm)
                       showToast('Health check intervals saved successfully')
                     } catch (err) {
@@ -1719,57 +1756,352 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        <TabsContent value="export" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Export Rules</CardTitle>
+              <CardTitle>Version Cleanup</CardTitle>
               <CardDescription>
-                Download detection rules as Sigma YAML files
+                Automatically clean up old rule and correlation rule versions to save storage.
+                Runs daily at 3:00 AM.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Enable Version Cleanup</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically delete old versions beyond the retention policy
+                  </p>
+                </div>
+                <Switch
+                  checked={versionCleanupEnabled}
+                  onCheckedChange={setVersionCleanupEnabled}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="version-cleanup-min-keep">Minimum Versions to Keep</Label>
+                <Input
+                  id="version-cleanup-min-keep"
+                  type="number"
+                  min={1}
+                  max={100}
+                  className="w-32"
+                  value={versionCleanupMinKeep}
+                  onChange={(e) => setVersionCleanupMinKeep(parseInt(e.target.value) || 10)}
+                  disabled={!versionCleanupEnabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Always keep at least this many versions per rule, regardless of age
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="version-cleanup-max-age">Maximum Age (days)</Label>
+                <Input
+                  id="version-cleanup-max-age"
+                  type="number"
+                  min={1}
+                  max={365}
+                  className="w-32"
+                  value={versionCleanupMaxAgeDays}
+                  onChange={(e) => setVersionCleanupMaxAgeDays(parseInt(e.target.value) || 90)}
+                  disabled={!versionCleanupEnabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Delete versions older than this (if more than minimum kept)
+                </p>
+              </div>
+
+              <div className="pt-4 border-t">
+                <Button onClick={saveVersionCleanup} disabled={isSavingVersionCleanup}>
+                  {isSavingVersionCleanup ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="export" className="mt-4 space-y-4">
+          {/* Export Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Download className="h-5 w-5" />
+                Export Configuration
+              </CardTitle>
+              <CardDescription>
+                Download a complete backup of your CHAD configuration
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Export all rules in your library as a ZIP archive containing individual YAML files.
+                The configuration backup includes: index patterns, field mappings, rules with exceptions,
+                correlation rules, webhooks, notification settings, TI sources, and users (roles only).
+                Sensitive data like passwords, API keys, and OpenSearch credentials are excluded for security.
               </p>
-              <Button
-                onClick={async () => {
-                  try {
-                    await downloadWithAuth('/api/export/rules', `chad-rules-${new Date().toISOString().slice(0, 10)}.zip`)
-                  } catch (err) {
-                    showToast(err instanceof Error ? err.message : 'Export failed', 'error')
-                  }
-                }}
-              >
-                Export All Rules (ZIP)
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await downloadWithAuth('/api/export/config', `chad-config-${new Date().toISOString().slice(0, 10)}.json`)
+                      showToast('Configuration exported successfully', 'success')
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Export failed', 'error')
+                    }
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Configuration (JSON)
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await downloadWithAuth('/api/export/rules', `chad-rules-${new Date().toISOString().slice(0, 10)}.zip`)
+                      showToast('Rules exported successfully', 'success')
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Export failed', 'error')
+                    }
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Rules Only (ZIP)
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="mt-4">
+          {/* Import Section */}
+          <Card>
             <CardHeader>
-              <CardTitle>Configuration Backup</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Import Configuration
+              </CardTitle>
               <CardDescription>
-                Download system configuration (excludes sensitive data like passwords and tokens)
+                Restore configuration from a backup file
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                The configuration backup includes: index patterns, general settings, webhooks, and role permissions.
-                Sensitive data like OpenSearch credentials and API tokens are excluded for security.
+                Upload a previously exported configuration file to restore settings.
+                You can preview changes before applying them.
               </p>
-              <Button
-                onClick={async () => {
-                  try {
-                    await downloadWithAuth('/api/export/config', `chad-config-${new Date().toISOString().slice(0, 10)}.json`)
-                  } catch (err) {
-                    showToast(err instanceof Error ? err.message : 'Export failed', 'error')
-                  }
-                }}
-              >
-                Export Configuration (JSON)
-              </Button>
+
+              {/* File Upload */}
+              <div className="space-y-2">
+                <Label htmlFor="import-file">Configuration File</Label>
+                <div
+                  className="relative border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 hover:border-muted-foreground/50 transition-colors cursor-pointer"
+                  onClick={() => document.getElementById('import-file')?.click()}
+                >
+                  <input
+                    id="import-file"
+                    type="file"
+                    accept=".json"
+                    className="sr-only"
+                    onChange={(e) => {
+                      setImportFile(e.target.files?.[0] || null)
+                      setImportPreview(null)
+                      setImportResult(null)
+                    }}
+                  />
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <Upload className="h-8 w-8 text-muted-foreground" />
+                    {importFile ? (
+                      <div>
+                        <p className="font-medium">{importFile.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {(importFile.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-medium">Click to select a configuration file</p>
+                        <p className="text-sm text-muted-foreground">
+                          JSON files exported from CHAD
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Import Mode Selection */}
+              <div className="space-y-2">
+                <Label>Conflict Resolution</Label>
+                <Select
+                  value={importMode}
+                  onValueChange={(value) => setImportMode(value as ImportMode)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="skip">
+                      Skip existing items
+                    </SelectItem>
+                    <SelectItem value="overwrite">
+                      Overwrite existing items
+                    </SelectItem>
+                    <SelectItem value="rename">
+                      Rename duplicates (add suffix)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {importMode === 'skip' && 'Existing items will be kept unchanged. Only new items will be imported.'}
+                  {importMode === 'overwrite' && 'Existing items will be updated with values from the backup file.'}
+                  {importMode === 'rename' && 'Duplicate items will be created with "_imported" suffix.'}
+                </p>
+              </div>
+
+              {/* Import Buttons */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  disabled={!importFile || isImporting}
+                  onClick={async () => {
+                    if (!importFile) return
+                    setIsImporting(true)
+                    try {
+                      const result = await configApi.importConfig(importFile, importMode, true)
+                      setImportPreview(result)
+                      setImportResult(null)
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Preview failed', 'error')
+                    } finally {
+                      setIsImporting(false)
+                    }
+                  }}
+                >
+                  {isImporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Preview Changes
+                </Button>
+                <Button
+                  disabled={!importFile || isImporting}
+                  onClick={async () => {
+                    if (!importFile) return
+                    setIsImporting(true)
+                    try {
+                      const result = await configApi.importConfig(importFile, importMode, false)
+                      setImportResult(result)
+                      setImportPreview(null)
+                      showToast('Configuration imported successfully', 'success')
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Import failed', 'error')
+                    } finally {
+                      setIsImporting(false)
+                    }
+                  }}
+                >
+                  {isImporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                  Import Configuration
+                </Button>
+              </div>
+
+              {/* Preview Results */}
+              {importPreview && (
+                <div className="mt-4 p-4 border rounded-lg bg-muted/50">
+                  <h4 className="font-medium mb-2">Preview (Dry Run)</h4>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Will Create</p>
+                      <ul className="mt-1 space-y-1">
+                        {Object.entries(importPreview.created).map(([key, value]) => (
+                          value > 0 && <li key={key} className="text-green-600">{key}: {value}</li>
+                        ))}
+                        {Object.values(importPreview.created).every(v => v === 0) && <li className="text-muted-foreground">None</li>}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Will Update</p>
+                      <ul className="mt-1 space-y-1">
+                        {Object.entries(importPreview.updated).map(([key, value]) => (
+                          value > 0 && <li key={key} className="text-blue-600">{key}: {value}</li>
+                        ))}
+                        {Object.values(importPreview.updated).every(v => v === 0) && <li className="text-muted-foreground">None</li>}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Will Skip</p>
+                      <ul className="mt-1 space-y-1">
+                        {Object.entries(importPreview.skipped).map(([key, value]) => (
+                          value > 0 && <li key={key} className="text-yellow-600">{key}: {value}</li>
+                        ))}
+                        {Object.values(importPreview.skipped).every(v => v === 0) && <li className="text-muted-foreground">None</li>}
+                      </ul>
+                    </div>
+                  </div>
+                  {importPreview.errors.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-destructive font-medium">Errors:</p>
+                      <ul className="mt-1 text-sm text-destructive">
+                        {importPreview.errors.map((error, i) => <li key={i}>{error}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Import Results */}
+              {importResult && (
+                <div className="mt-4 p-4 border rounded-lg bg-green-50 dark:bg-green-950">
+                  <h4 className="font-medium mb-2 text-green-800 dark:text-green-200">
+                    <CheckCircle2 className="h-4 w-4 inline mr-2" />
+                    Import Complete
+                  </h4>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Created</p>
+                      <ul className="mt-1 space-y-1">
+                        {Object.entries(importResult.created).map(([key, value]) => (
+                          value > 0 && <li key={key}>{key}: {value}</li>
+                        ))}
+                        {Object.values(importResult.created).every(v => v === 0) && <li className="text-muted-foreground">None</li>}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Updated</p>
+                      <ul className="mt-1 space-y-1">
+                        {Object.entries(importResult.updated).map(([key, value]) => (
+                          value > 0 && <li key={key}>{key}: {value}</li>
+                        ))}
+                        {Object.values(importResult.updated).every(v => v === 0) && <li className="text-muted-foreground">None</li>}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Skipped</p>
+                      <ul className="mt-1 space-y-1">
+                        {Object.entries(importResult.skipped).map(([key, value]) => (
+                          value > 0 && <li key={key}>{key}: {value}</li>
+                        ))}
+                        {Object.values(importResult.skipped).every(v => v === 0) && <li className="text-muted-foreground">None</li>}
+                      </ul>
+                    </div>
+                  </div>
+                  {importResult.errors.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-destructive font-medium">Errors:</p>
+                      <ul className="mt-1 text-sm text-destructive">
+                        {importResult.errors.map((error, i) => <li key={i}>{error}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

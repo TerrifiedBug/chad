@@ -1,7 +1,7 @@
 from enum import Enum
 
 from sqlalchemy import Boolean, Integer, String
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import ENUM as SAEnum
 
@@ -36,3 +36,10 @@ class User(Base, UUIDMixin, TimestampMixin):
 
     # Token version for invalidating all tokens on password change
     token_version: Mapped[int] = mapped_column(default=0, nullable=False)
+
+    # Browser notification preferences
+    notification_preferences: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None
+    )

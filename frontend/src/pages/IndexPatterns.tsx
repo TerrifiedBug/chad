@@ -114,6 +114,17 @@ export default function IndexPatternsPage() {
   const [showHealthSettings, setShowHealthSettings] = useState(false)
   const [showGeoipSettings, setShowGeoipSettings] = useState(false)
   const [showTiSettings, setShowTiSettings] = useState(false)
+  const [showSecuritySettings, setShowSecuritySettings] = useState(false)
+
+  // IP Allowlist state
+  const [allowedIps, setAllowedIps] = useState<string[]>([])
+  const [newIpEntry, setNewIpEntry] = useState('')
+  const [ipError, setIpError] = useState('')
+
+  // Rate limiting state
+  const [rateLimitEnabled, setRateLimitEnabled] = useState(false)
+  const [rateLimitRequests, setRateLimitRequests] = useState<number | null>(100)
+  const [rateLimitEvents, setRateLimitEvents] = useState<number | null>(50000)
 
   // Validation state
   const [isValidating, setIsValidating] = useState(false)
@@ -234,6 +245,13 @@ export default function IndexPatternsPage() {
     setShowHealthSettings(false)
     setShowGeoipSettings(false)
     setShowTiSettings(false)
+    setShowSecuritySettings(false)
+    setAllowedIps([])
+    setNewIpEntry('')
+    setIpError('')
+    setRateLimitEnabled(false)
+    setRateLimitRequests(100)
+    setRateLimitEvents(50000)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(false)
     setSaveError('')
@@ -282,6 +300,16 @@ export default function IndexPatternsPage() {
     // Show TI settings if any source is enabled
     const hasTiEnabled = Object.values(patternTiConfig).some(c => c.enabled)
     setShowTiSettings(hasTiEnabled)
+    // Security settings (IP allowlist and rate limiting)
+    setAllowedIps(pattern.allowed_ips || [])
+    setNewIpEntry('')
+    setIpError('')
+    setRateLimitEnabled(pattern.rate_limit_enabled || false)
+    setRateLimitRequests(pattern.rate_limit_requests_per_minute || 100)
+    setRateLimitEvents(pattern.rate_limit_events_per_minute || 50000)
+    // Show security settings if any are configured
+    const hasSecuritySettings = (pattern.allowed_ips && pattern.allowed_ips.length > 0) || pattern.rate_limit_enabled
+    setShowSecuritySettings(hasSecuritySettings || false)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
     setSaveError('')
@@ -344,6 +372,14 @@ export default function IndexPatternsPage() {
         }
       }
 
+      // Security settings
+      const securityData = {
+        allowed_ips: allowedIps.length > 0 ? allowedIps : null,
+        rate_limit_enabled: rateLimitEnabled,
+        rate_limit_requests_per_minute: rateLimitEnabled ? rateLimitRequests : null,
+        rate_limit_events_per_minute: rateLimitEnabled ? rateLimitEvents : null,
+      }
+
       if (editingPattern) {
         await indexPatternsApi.update(editingPattern.id, {
           name: formData.name,
@@ -353,6 +389,7 @@ export default function IndexPatternsPage() {
           ...healthData,
           geoip_fields: geoipFields,
           ti_config: Object.keys(tiConfigToSave).length > 0 ? tiConfigToSave : null,
+          ...securityData,
         })
       } else {
         await indexPatternsApi.create({
@@ -363,6 +400,7 @@ export default function IndexPatternsPage() {
           ...healthData,
           geoip_fields: geoipFields,
           ti_config: Object.keys(tiConfigToSave).length > 0 ? tiConfigToSave : null,
+          ...securityData,
         })
       }
       setIsDialogOpen(false)
@@ -1189,6 +1227,153 @@ export default function IndexPatternsPage() {
                   <p className="text-xs text-muted-foreground">
                     Common fields: source.ip, destination.ip, file.hash.md5, file.hash.sha256, url.domain
                   </p>
+                </div>
+              )}
+            </div>
+
+            {/* Security Settings Section (IP Allowlist & Rate Limiting) */}
+            <div className="border rounded-lg">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                onClick={() => setShowSecuritySettings(!showSecuritySettings)}
+              >
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  <span className="font-medium text-sm">Security Settings</span>
+                  {(allowedIps.length > 0 || rateLimitEnabled) && (
+                    <Badge variant="secondary" className="text-xs">
+                      {allowedIps.length > 0 && `${allowedIps.length} IP${allowedIps.length > 1 ? 's' : ''}`}
+                      {allowedIps.length > 0 && rateLimitEnabled && ' + '}
+                      {rateLimitEnabled && 'Rate limit'}
+                    </Badge>
+                  )}
+                </div>
+                {showSecuritySettings ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
+
+              {showSecuritySettings && (
+                <div className="p-3 pt-0 space-y-6">
+                  {/* IP Allowlist Section */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">IP Allowlist</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Restrict which IP addresses can ship logs to this index. Leave empty to allow all IPs.
+                    </p>
+
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="IP or CIDR (e.g., 10.10.40.1 or 10.10.40.0/24)"
+                        value={newIpEntry}
+                        onChange={(e) => {
+                          setNewIpEntry(e.target.value)
+                          setIpError('')
+                        }}
+                        className="font-mono text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          const entry = newIpEntry.trim()
+                          if (!entry) return
+
+                          // Basic validation for IP or CIDR
+                          const ipPattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/
+                          if (!ipPattern.test(entry)) {
+                            setIpError('Invalid IP or CIDR format')
+                            return
+                          }
+
+                          if (allowedIps.includes(entry)) {
+                            setIpError('IP already in list')
+                            return
+                          }
+
+                          setAllowedIps([...allowedIps, entry])
+                          setNewIpEntry('')
+                          setIpError('')
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {ipError && (
+                      <p className="text-xs text-destructive">{ipError}</p>
+                    )}
+
+                    {allowedIps.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {allowedIps.map((ip) => (
+                          <Badge
+                            key={ip}
+                            variant="outline"
+                            className="flex items-center gap-1 pr-1 font-mono"
+                          >
+                            {ip}
+                            <button
+                              type="button"
+                              onClick={() => setAllowedIps(allowedIps.filter(i => i !== ip))}
+                              className="ml-1 hover:bg-muted rounded-full p-0.5"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rate Limiting Section */}
+                  <div className="space-y-3 pt-3 border-t">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium">Rate Limiting</h4>
+                        <p className="text-xs text-muted-foreground">
+                          Limit log shipping requests to prevent abuse
+                        </p>
+                      </div>
+                      <Switch
+                        checked={rateLimitEnabled}
+                        onCheckedChange={setRateLimitEnabled}
+                      />
+                    </div>
+
+                    {rateLimitEnabled && (
+                      <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="rate-requests">Requests per minute</Label>
+                          <Input
+                            id="rate-requests"
+                            type="number"
+                            min="1"
+                            value={rateLimitRequests || ''}
+                            onChange={(e) => setRateLimitRequests(e.target.value ? parseInt(e.target.value) : null)}
+                            placeholder="100"
+                          />
+                          <p className="text-xs text-muted-foreground">Max API calls/min</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="rate-events">Events per minute</Label>
+                          <Input
+                            id="rate-events"
+                            type="number"
+                            min="1"
+                            value={rateLimitEvents || ''}
+                            onChange={(e) => setRateLimitEvents(e.target.value ? parseInt(e.target.value) : null)}
+                            placeholder="50000"
+                          />
+                          <p className="text-xs text-muted-foreground">Max log events/min</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

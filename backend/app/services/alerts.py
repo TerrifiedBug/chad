@@ -6,9 +6,11 @@ Alerts are stored in OpenSearch with the following structure:
 - Each alert contains: rule info, matched log, timestamp, status
 """
 
+import hashlib
 import json
 import re
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -18,6 +20,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.alert import Alert
 from app.models.rule_exception import ExceptionOperator
+
+
+def generate_deterministic_alert_id(rule_id: str, log_document: dict) -> str:
+    """
+    Generate deterministic alert ID from rule + event.
+
+    This ensures:
+    - Same event + same rule + same minute = same alert ID
+    - Retries overwrite instead of creating duplicates
+    """
+    # Create a hash of the log document content
+    # Remove any fields that might change on retry (like processing timestamps)
+    doc_copy = {k: v for k, v in log_document.items() if k not in ("ti_enrichment",)}
+    event_hash = hashlib.sha256(
+        json.dumps(doc_copy, sort_keys=True, default=str).encode()
+    ).hexdigest()[:16]
+
+    # Time bucket (1 minute granularity) to allow the same event
+    # within a minute window to be deduplicated
+    time_bucket = datetime.now(UTC).strftime("%Y%m%d%H%M")
+
+    # Combine rule_id + event_hash + time_bucket
+    composite = f"{rule_id}:{event_hash}:{time_bucket}"
+    return hashlib.sha256(composite.encode()).hexdigest()[:32]
 
 
 def get_nested_value(obj: dict, path: str) -> Any:
@@ -77,20 +103,43 @@ def should_suppress_alert(
     log: dict,
     exceptions: list[dict],
 ) -> bool:
-    """Check if an alert should be suppressed based on active exceptions."""
+    """Check if an alert should be suppressed based on active exceptions.
+
+    Exceptions are grouped by group_id:
+    - Exceptions within the same group are ANDed (all must match)
+    - Different groups are ORed (if any group fully matches, suppress)
+
+    This allows complex exception rules like:
+    "Suppress when (user.name = 'admin' AND host.name = 'prod-01')"
+    """
+    # Group exceptions by group_id
+    groups: dict[str, list[dict]] = defaultdict(list)
     for exc in exceptions:
         if not exc.get("is_active", True):
             continue
+        group_id = str(exc.get("group_id", exc.get("id", "")))
+        groups[group_id].append(exc)
 
-        if check_exception_match(
-            log,
-            exc["field"],
-            ExceptionOperator(exc["operator"]),
-            exc["value"],
-        ):
-            return True
+    # Check each group - if ALL conditions in a group match, suppress
+    for group_id, conditions in groups.items():
+        if not conditions:
+            continue
 
-    return False
+        # All conditions in this group must match (AND logic)
+        all_match = all(
+            check_exception_match(
+                log,
+                cond["field"],
+                ExceptionOperator(cond["operator"]),
+                cond["value"],
+            )
+            for cond in conditions
+        )
+
+        if all_match:
+            return True  # This group fully matches, suppress the alert
+
+    return False  # No group fully matched
 
 ALERTS_MAPPING = {
     "settings": {
@@ -186,10 +235,17 @@ class AlertService:
         tags: list[str],
         log_document: dict[str, Any],
     ) -> dict[str, Any]:
-        """Create and store an alert document."""
+        """
+        Create and store an alert document.
+
+        Uses deterministic alert IDs to prevent duplicates on retry.
+        Same event + same rule + same minute = same alert ID.
+        """
         self.ensure_alerts_index(alerts_index)
 
-        alert_id = str(uuid.uuid4())
+        # Generate deterministic alert ID before modifying log_document
+        # This ensures same event + same rule + same minute = same alert ID
+        alert_id = generate_deterministic_alert_id(rule_id, log_document)
         now = datetime.now(UTC).isoformat()
 
         # Extract TI enrichment to top level for querying
@@ -211,6 +267,8 @@ class AlertService:
         if ti_enrichment:
             alert["ti_enrichment"] = ti_enrichment
 
+        # Use the deterministic alert_id as the document ID
+        # This makes retries overwrite instead of creating duplicates
         self.client.index(
             index=alerts_index,
             id=alert_id,
