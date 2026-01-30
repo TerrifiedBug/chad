@@ -18,7 +18,7 @@ from app.models.correlation_rule import CorrelationRule
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
-from app.models.rule_exception import RuleException
+from app.models.rule_exception import ExceptionOperator, RuleException
 from app.models.user import User
 from app.schemas.bulk import BulkOperationRequest, BulkOperationResult
 from app.schemas.rule import (
@@ -2042,6 +2042,34 @@ async def create_rule_exception(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Rule not found")
 
+    # Check for duplicate or overlapping exceptions
+    existing_result = await db.execute(
+        select(RuleException).where(
+            RuleException.rule_id == rule_id,
+            RuleException.field == exception_data.field,
+            RuleException.is_active == True,  # noqa: E712
+        )
+    )
+    existing_exceptions = existing_result.scalars().all()
+
+    warning = None
+    for exc in existing_exceptions:
+        # Exact duplicate - block
+        if exc.value == exception_data.value and exc.operator == exception_data.operator:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Duplicate exception already exists for {exception_data.field}={exception_data.value}",
+            )
+
+        # Check for overlap - warn but allow
+        # If new exception uses wildcard (contains/regex) and existing is exact
+        if exception_data.operator == ExceptionOperator.CONTAINS and exc.operator == ExceptionOperator.EQUALS:
+            if exception_data.value.lower() in exc.value.lower():
+                warning = f"This pattern would cover existing exception '{exc.value}'"
+        elif exc.operator == ExceptionOperator.CONTAINS and exception_data.operator == ExceptionOperator.EQUALS:
+            if exc.value.lower() in exception_data.value.lower():
+                warning = f"This value is already covered by existing pattern '{exc.value}'"
+
     # If group_id is provided, add to existing group (AND logic)
     # Otherwise, a new group_id is auto-generated (new OR condition)
     exception = RuleException(
@@ -2058,7 +2086,12 @@ async def create_rule_exception(
     await db.refresh(exception)
     await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field, "change_reason": exception_data.change_reason}, ip_address=get_client_ip(request))
     await db.commit()
-    return exception
+
+    # Return response with optional warning
+    response = RuleExceptionResponse.model_validate(exception)
+    if warning:
+        response.warning = warning
+    return response
 
 
 @router.patch(

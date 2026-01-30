@@ -39,6 +39,7 @@ class RuleExceptionResponse(BaseModel):
     is_active: bool
     created_by: UUID
     created_at: datetime
+    warning: str | None = None  # Overlap warning if applicable
 
     class Config:
         from_attributes = True

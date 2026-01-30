@@ -91,8 +91,8 @@ class TestListRuleExceptions:
     ):
         """List exceptions endpoint requires authentication."""
         response = await client.get(f"/api/rules/{test_rule.id}/exceptions")
-        # HTTPBearer returns 403 when no credentials provided
-        assert response.status_code == 403
+        # Missing credentials returns 401 Unauthorized
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_list_exceptions_empty(
@@ -465,3 +465,142 @@ class TestDeleteRuleException:
         )
         assert response.status_code == 404
         assert "Exception not found" in response.json()["detail"]
+
+
+class TestDuplicateExceptionPrevention:
+    """Tests for duplicate exception prevention."""
+
+    @pytest.mark.asyncio
+    async def test_create_duplicate_exception_blocked(
+        self,
+        authenticated_client: AsyncClient,
+        test_rule: Rule,
+    ):
+        """Test that creating an exact duplicate exception is blocked."""
+        # Create first exception
+        response1 = await authenticated_client.post(
+            f"/api/rules/{test_rule.id}/exceptions",
+            json={
+                "field": "user.name",
+                "operator": "equals",
+                "value": "admin",
+                "reason": "Test exception",
+                "change_reason": "Testing",
+            },
+        )
+        assert response1.status_code == 201
+
+        # Try to create exact duplicate
+        response2 = await authenticated_client.post(
+            f"/api/rules/{test_rule.id}/exceptions",
+            json={
+                "field": "user.name",
+                "operator": "equals",
+                "value": "admin",
+                "reason": "Duplicate",
+                "change_reason": "Testing",
+            },
+        )
+        assert response2.status_code == 409
+        assert "duplicate" in response2.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_same_field_different_value_allowed(
+        self,
+        authenticated_client: AsyncClient,
+        test_rule: Rule,
+    ):
+        """Test that same field with different value is allowed."""
+        # Create first exception
+        response1 = await authenticated_client.post(
+            f"/api/rules/{test_rule.id}/exceptions",
+            json={
+                "field": "user.name",
+                "operator": "equals",
+                "value": "admin",
+                "change_reason": "Testing",
+            },
+        )
+        assert response1.status_code == 201
+
+        # Create different value for same field - should be allowed
+        response2 = await authenticated_client.post(
+            f"/api/rules/{test_rule.id}/exceptions",
+            json={
+                "field": "user.name",
+                "operator": "equals",
+                "value": "serviceaccount",
+                "change_reason": "Testing",
+            },
+        )
+        assert response2.status_code == 201
+
+    @pytest.mark.asyncio
+    async def test_same_field_different_operator_allowed(
+        self,
+        authenticated_client: AsyncClient,
+        test_rule: Rule,
+    ):
+        """Test that same field and value with different operator is allowed."""
+        # Create first exception with equals operator
+        response1 = await authenticated_client.post(
+            f"/api/rules/{test_rule.id}/exceptions",
+            json={
+                "field": "user.name",
+                "operator": "equals",
+                "value": "admin",
+                "change_reason": "Testing",
+            },
+        )
+        assert response1.status_code == 201
+
+        # Create with contains operator - should be allowed
+        response2 = await authenticated_client.post(
+            f"/api/rules/{test_rule.id}/exceptions",
+            json={
+                "field": "user.name",
+                "operator": "contains",
+                "value": "admin",
+                "change_reason": "Testing",
+            },
+        )
+        assert response2.status_code == 201
+
+    @pytest.mark.asyncio
+    async def test_duplicate_on_inactive_exception_allowed(
+        self,
+        authenticated_client: AsyncClient,
+        test_rule: Rule,
+    ):
+        """Test that creating a duplicate of an inactive exception is allowed."""
+        # Create first exception
+        response1 = await authenticated_client.post(
+            f"/api/rules/{test_rule.id}/exceptions",
+            json={
+                "field": "user.name",
+                "operator": "equals",
+                "value": "admin",
+                "change_reason": "Testing",
+            },
+        )
+        assert response1.status_code == 201
+        exception_id = response1.json()["id"]
+
+        # Deactivate the exception
+        response2 = await authenticated_client.patch(
+            f"/api/rules/{test_rule.id}/exceptions/{exception_id}",
+            json={"is_active": False, "change_reason": "Deactivating"},
+        )
+        assert response2.status_code == 200
+
+        # Try to create duplicate - should be allowed since first is inactive
+        response3 = await authenticated_client.post(
+            f"/api/rules/{test_rule.id}/exceptions",
+            json={
+                "field": "user.name",
+                "operator": "equals",
+                "value": "admin",
+                "change_reason": "Testing",
+            },
+        )
+        assert response3.status_code == 201

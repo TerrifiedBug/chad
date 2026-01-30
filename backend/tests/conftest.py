@@ -77,6 +77,28 @@ async def test_engine():
         await conn.execute(text("DROP TYPE IF EXISTS rulesource CASCADE"))
         await conn.execute(text("DROP TYPE IF EXISTS mappingorigin CASCADE"))
         await conn.execute(text("DROP TYPE IF EXISTS authmethodenum CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS userrole CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS authmethod CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS sigmahqtype CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS exceptionoperator CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS tisourcetype CASCADE"))
+        # Create enum types before tables
+        # User model uses create_type=False with enum member NAMES (uppercase)
+        await conn.execute(text("CREATE TYPE userrole AS ENUM ('ADMIN', 'ANALYST', 'VIEWER')"))
+        await conn.execute(text("CREATE TYPE authmethodenum AS ENUM ('LOCAL', 'SSO')"))
+        # Rule model uses values_callable which maps to enum VALUES (lowercase)
+        await conn.execute(text("CREATE TYPE rulestatus AS ENUM ('deployed', 'undeployed', 'snoozed')"))
+        # RuleSource and SigmaHQType use plain String columns, not actual enums
+        # MappingOrigin uses enum member names (uppercase)
+        await conn.execute(text("CREATE TYPE mappingorigin AS ENUM ('DEFAULT', 'USER')"))
+        # ExceptionOperator uses enum member names (uppercase) per migration
+        await conn.execute(text(
+            "CREATE TYPE exceptionoperator AS ENUM "
+            "('EQUALS', 'NOT_EQUALS', 'CONTAINS', 'NOT_CONTAINS', "
+            "'STARTS_WITH', 'ENDS_WITH', 'REGEX', 'IN_LIST')"
+        ))
+        # TISourceType enum - check migration for actual values
+        await conn.execute(text("CREATE TYPE tisourcetype AS ENUM ('misp', 'csv')"))
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
@@ -90,7 +112,11 @@ async def test_engine():
         await conn.execute(text("DROP TYPE IF EXISTS rulesource CASCADE"))
         await conn.execute(text("DROP TYPE IF EXISTS mappingorigin CASCADE"))
         await conn.execute(text("DROP TYPE IF EXISTS authmethodenum CASCADE"))
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("DROP TYPE IF EXISTS userrole CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS authmethod CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS sigmahqtype CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS exceptionoperator CASCADE"))
+        await conn.execute(text("DROP TYPE IF EXISTS tisourcetype CASCADE"))
 
     await engine.dispose()
 
