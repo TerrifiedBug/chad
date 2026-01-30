@@ -398,10 +398,12 @@ async def receive_logs(
                         logger = logging.getLogger(__name__)
 
                         for corr in triggered_correlations:
-                            # Fetch MITRE tags from both linked sigma rules
+                            # Fetch MITRE tags and titles from both linked sigma rules
                             correlation_tags = ["correlation"]
                             rule_a_id = corr.get("rule_a_id")
                             rule_b_id = corr.get("rule_b_id")
+                            rule_a_title = None
+                            rule_b_title = None
 
                             if rule_a_id:
                                 try:
@@ -409,11 +411,13 @@ async def receive_logs(
                                         select(Rule).where(Rule.id == UUID(rule_a_id))
                                     )
                                     rule_a = rule_a_result.scalar_one_or_none()
-                                    if rule_a and rule_a.yaml_content:
-                                        parsed = yaml.safe_load(rule_a.yaml_content)
-                                        if parsed and isinstance(parsed, dict):
-                                            tags = parsed.get("tags", []) or []
-                                            correlation_tags.extend(tags)
+                                    if rule_a:
+                                        rule_a_title = rule_a.title
+                                        if rule_a.yaml_content:
+                                            parsed = yaml.safe_load(rule_a.yaml_content)
+                                            if parsed and isinstance(parsed, dict):
+                                                tags = parsed.get("tags", []) or []
+                                                correlation_tags.extend(tags)
                                 except (ValueError, yaml.YAMLError, Exception):
                                     pass
 
@@ -423,11 +427,13 @@ async def receive_logs(
                                         select(Rule).where(Rule.id == UUID(rule_b_id))
                                     )
                                     rule_b = rule_b_result.scalar_one_or_none()
-                                    if rule_b and rule_b.yaml_content:
-                                        parsed = yaml.safe_load(rule_b.yaml_content)
-                                        if parsed and isinstance(parsed, dict):
-                                            tags = parsed.get("tags", []) or []
-                                            correlation_tags.extend(tags)
+                                    if rule_b:
+                                        rule_b_title = rule_b.title
+                                        if rule_b.yaml_content:
+                                            parsed = yaml.safe_load(rule_b.yaml_content)
+                                            if parsed and isinstance(parsed, dict):
+                                                tags = parsed.get("tags", []) or []
+                                                correlation_tags.extend(tags)
                                 except (ValueError, yaml.YAMLError, Exception):
                                     pass
 
@@ -453,6 +459,8 @@ async def receive_logs(
                                         "second_alert_id": corr.get("second_alert_id"),
                                         "rule_a_id": corr.get("rule_a_id"),
                                         "rule_b_id": corr.get("rule_b_id"),
+                                        "rule_a_title": rule_a_title,
+                                        "rule_b_title": rule_b_title,
                                         "entity_field": corr.get("entity_field"),
                                         "entity_field_type": corr.get("entity_field_type", "sigma"),
                                         "entity_value": corr.get("entity_value"),
