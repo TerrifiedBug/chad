@@ -43,6 +43,7 @@ from app.api.websocket import router as websocket_router
 from app.core.config import settings
 from app.core.csrf import CSRFMiddleware
 from app.core.middleware import ErrorResponseMiddleware, RequestValidationMiddleware
+from app.core.redis import close_redis
 from app.services.scheduler import scheduler_service
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,10 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Stopping scheduler service")
     scheduler_service.stop()
+
+    # Close Redis connection
+    logger.info("Closing Redis connection")
+    await close_redis()
 
 
 app = FastAPI(
