@@ -38,7 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -92,10 +92,14 @@ export default function AlertsPage() {
   const [severityFilter, setSeverityFilter] = useState<string[]>([])
   const [page, setPage] = useState(1)
 
-  // Owner filter - initialize from URL query param
-  const [ownerFilter, setOwnerFilter] = useState<string | null>(
-    searchParams.get('owner')
-  )
+  // Owner filter - initialize from URL query param, fallback to localStorage
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(() => {
+    const urlParam = searchParams.get('owner')
+    if (urlParam) return urlParam
+    // Fallback to localStorage for persistent "Assigned to Me" preference
+    const stored = localStorage.getItem('alerts-assigned-to-me')
+    return stored === 'true' ? 'me' : null
+  })
 
   // Expanded clusters state
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set())
@@ -179,7 +183,7 @@ export default function AlertsPage() {
     setPage(1)
   }, [statusFilter, severityFilter, ownerFilter])
 
-  // Sync ownerFilter with URL
+  // Sync ownerFilter with URL and localStorage
   useEffect(() => {
     if (ownerFilter) {
       searchParams.set('owner', ownerFilter)
@@ -187,6 +191,8 @@ export default function AlertsPage() {
       searchParams.delete('owner')
     }
     setSearchParams(searchParams, { replace: true })
+    // Persist "Assigned to Me" preference to localStorage
+    localStorage.setItem('alerts-assigned-to-me', ownerFilter === 'me' ? 'true' : 'false')
   }, [ownerFilter, searchParams, setSearchParams])
 
   useEffect(() => {
@@ -300,6 +306,25 @@ export default function AlertsPage() {
   const handleBulkDelete = () => {
     if (selectedAlerts.size === 0) return
     setShowBulkDeleteConfirm(true)
+  }
+
+  const handleBulkTakeOwnership = async () => {
+    if (selectedAlerts.size === 0) return
+    setIsBulkUpdating(true)
+    setError('')
+    try {
+      // Assign each selected alert to current user
+      await Promise.all(
+        Array.from(selectedAlerts).map(alertId => alertsApi.assign(alertId))
+      )
+      setSelectedAlerts(new Set())
+      setSelectAll(false)
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to take ownership')
+    } finally {
+      setIsBulkUpdating(false)
+    }
   }
 
   const confirmBulkDelete = async () => {
@@ -515,6 +540,15 @@ export default function AlertsPage() {
               disabled={isBulkUpdating}
             >
               False Positive
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBulkTakeOwnership}
+              disabled={isBulkUpdating}
+            >
+              <UserPlus className="h-4 w-4 mr-1" />
+              Take Ownership
             </Button>
             <Button
               variant="destructive"

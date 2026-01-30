@@ -17,6 +17,8 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
+# Copy logging config first (loads before server config alphabetically)
+COPY nginx-logging.conf /etc/nginx/conf.d/00-logging.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

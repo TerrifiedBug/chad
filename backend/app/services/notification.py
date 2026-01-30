@@ -293,16 +293,23 @@ def _format_discord_payload(payload: dict) -> dict:
     severity = payload.get("severity", "medium")
     emoji = SEVERITY_EMOJI.get(severity, "⚪")
     color = SEVERITY_COLORS.get(severity, SEVERITY_COLORS["medium"])
+    alert_url = payload.get("alert_url")
+
+    fields = [
+        {"name": "Alert ID", "value": f"`{payload.get('alert_id', 'N/A')}`", "inline": True},
+        {"name": "Severity", "value": severity.upper(), "inline": True},
+    ]
+
+    # Add clickable link to alert if URL is available
+    if alert_url:
+        fields.append({"name": "View Alert", "value": f"[Open in CHAD]({alert_url})", "inline": False})
 
     return {
         "embeds": [{
             "title": f"{emoji} {payload.get('rule_title', 'Alert')}",
             "description": f"A **{severity.upper()}** severity alert has been triggered.",
             "color": color,
-            "fields": [
-                {"name": "Alert ID", "value": f"`{payload.get('alert_id', 'N/A')}`", "inline": True},
-                {"name": "Severity", "value": severity.upper(), "inline": True},
-            ],
+            "fields": fields,
             "timestamp": payload.get("timestamp"),
             "footer": {"text": "CHAD Alert System"}
         }]
@@ -335,26 +342,40 @@ def _format_slack_payload(payload: dict) -> dict:
     # Alert notification
     severity = payload.get("severity", "medium")
     emoji = SEVERITY_EMOJI.get(severity, "⚪")
+    alert_url = payload.get("alert_url")
 
-    return {
-        "blocks": [
-            {
-                "type": "header",
-                "text": {"type": "plain_text", "text": f"{emoji} {payload.get('rule_title', 'Alert')}", "emoji": True}
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*Severity:*\n{severity.upper()}"},
-                    {"type": "mrkdwn", "text": f"*Alert ID:*\n`{payload.get('alert_id', 'N/A')}`"},
-                ]
-            },
-            {
-                "type": "context",
-                "elements": [{"type": "mrkdwn", "text": "CHAD Alert System"}]
-            }
-        ]
-    }
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{emoji} {payload.get('rule_title', 'Alert')}", "emoji": True}
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Severity:*\n{severity.upper()}"},
+                {"type": "mrkdwn", "text": f"*Alert ID:*\n`{payload.get('alert_id', 'N/A')}`"},
+            ]
+        },
+    ]
+
+    # Add button to view alert if URL is available
+    if alert_url:
+        blocks.append({
+            "type": "actions",
+            "elements": [{
+                "type": "button",
+                "text": {"type": "plain_text", "text": "View Alert", "emoji": True},
+                "url": alert_url,
+                "style": "primary"
+            }]
+        })
+
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": "CHAD Alert System"}]
+    })
+
+    return {"blocks": blocks}
 
 
 def _build_system_description(payload: dict) -> str:
