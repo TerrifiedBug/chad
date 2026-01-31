@@ -409,8 +409,9 @@ async def suggest_field_mappings(
         raise HTTPException(status_code=404, detail="Index pattern not found")
 
     # Get available fields from index pattern
+    # Exclude .keyword multi-fields - auto_correct_field_mapping handles .keyword suffix in post-processing
     try:
-        log_fields = list(get_index_fields(os_client, index_pattern.pattern))
+        log_fields = list(get_index_fields(os_client, index_pattern.pattern, include_multi_fields=False))
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Failed to get index fields: {e}")
 
