@@ -58,9 +58,6 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours for dev
 
-    # Authentication
-    ALLOW_LOCAL_LOGIN_OVERRIDE: bool = False
-
     # SSO-only mode
     sso_only: bool = False
 
