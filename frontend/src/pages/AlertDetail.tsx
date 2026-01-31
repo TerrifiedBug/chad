@@ -1038,8 +1038,9 @@ export default function AlertDetailPage() {
               {/* Correlation alert timestamps */}
               {(() => {
                 const logDoc = alert.log_document as Record<string, unknown>
-                const firstTriggered = logDoc?.first_triggered_at as string | undefined
-                const secondTriggered = logDoc?.second_triggered_at as string | undefined
+                const correlation = logDoc?.correlation as Record<string, unknown> | undefined
+                const firstTriggered = correlation?.first_triggered_at as string | undefined
+                const secondTriggered = correlation?.second_triggered_at as string | undefined
                 if (!firstTriggered && !secondTriggered) return null
                 return (
                   <>
