@@ -71,8 +71,8 @@ services:
     # Note: --reload is incompatible with --workers, dev uses single-worker per port
     command: >
       sh -c "
-      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info &
-      uvicorn app.main:app --host 0.0.0.0 --port 8001 --log-level info &
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info --no-access-log &
+      uvicorn app.main:app --host 0.0.0.0 --port 8001 --log-level info --no-access-log &
       wait
       "
 
