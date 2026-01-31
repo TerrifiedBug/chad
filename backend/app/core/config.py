@@ -89,6 +89,18 @@ class Settings(BaseSettings):
     # Used for CSRF validation, webhook URLs, SSO redirects
     APP_URL: str | None = None
 
+    # Additional allowed hosts for CSRF validation (comma-separated)
+    # Use when backend is accessible from multiple domains
+    # Example: "chad-backend.example.com,api.example.com"
+    ALLOWED_HOSTS: str | None = None
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        """Parse ALLOWED_HOSTS into a list of hostnames."""
+        if not self.ALLOWED_HOSTS:
+            return []
+        return [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+
     # Trusted proxies (for X-Forwarded-* headers)
     TRUSTED_PROXIES: str = "*"  # Trust all proxies in production
 

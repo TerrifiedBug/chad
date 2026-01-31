@@ -55,6 +55,8 @@ services:
       - CHAD_ENCRYPTION_KEY=${CHAD_ENCRYPTION_KEY}
       # Application URL
       - APP_URL=${APP_URL:-http://localhost}
+      # Additional allowed hosts for CSRF (comma-separated, e.g., "api.example.com,backend.example.com")
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
       # Logging (production default is warning for quiet logs)
       - LOG_LEVEL=${LOG_LEVEL:-warning}
       # - CHAD_SSO_ONLY=true  # Enable SSO-only authentication (optional)
@@ -84,6 +86,8 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - SESSION_SECRET_KEY=${SESSION_SECRET_KEY}
       - CHAD_ENCRYPTION_KEY=${CHAD_ENCRYPTION_KEY}
+      # Application URL (required for webhook notification URLs)
+      - APP_URL=${APP_URL:-http://localhost}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-warning}
     depends_on:
