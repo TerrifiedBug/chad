@@ -80,6 +80,10 @@ export default function SettingsPage() {
   const [ssoProviderName, setSsoProviderName] = useState('SSO')
   const [ssoDefaultRole, setSsoDefaultRole] = useState('analyst')
 
+  // SSO Advanced settings
+  const [ssoTokenAuthMethod, setSsoTokenAuthMethod] = useState('client_secret_post')
+  const [ssoScopes, setSsoScopes] = useState('openid email profile')
+
   // SSO Role Mapping
   const [ssoRoleMappingEnabled, setSsoRoleMappingEnabled] = useState(false)
   const [ssoRoleClaim, setSsoRoleClaim] = useState('')
@@ -313,6 +317,9 @@ export default function SettingsPage() {
         // Don't load client secret - it's masked by the API
         setSsoProviderName((sso.provider_name as string) || 'SSO')
         setSsoDefaultRole((sso.default_role as string) || 'analyst')
+        // Advanced settings
+        setSsoTokenAuthMethod((sso.token_auth_method as string) || 'client_secret_post')
+        setSsoScopes((sso.scopes as string) || 'openid email profile')
         // Role mapping settings
         setSsoRoleMappingEnabled((sso.role_mapping_enabled as boolean) || false)
         setSsoRoleClaim((sso.role_claim as string) || '')
@@ -478,6 +485,9 @@ export default function SettingsPage() {
         client_id: ssoClientId,
         provider_name: ssoProviderName,
         default_role: ssoDefaultRole,
+        // Advanced settings
+        token_auth_method: ssoTokenAuthMethod,
+        scopes: ssoScopes,
         // Role mapping settings
         role_mapping_enabled: ssoRoleMappingEnabled,
         role_claim: ssoRoleClaim,
@@ -976,6 +986,39 @@ export default function SettingsPage() {
                     <p className="text-xs text-muted-foreground">
                       Role assigned to users when role mapping is disabled or no match found
                     </p>
+                  </div>
+
+                  {/* Advanced OAuth Settings */}
+                  <div className="pt-4 border-t space-y-4">
+                    <h4 className="text-sm font-medium">Advanced OAuth Settings</h4>
+
+                    <div className="space-y-2">
+                      <Label>OAuth Scopes</Label>
+                      <Input
+                        value={ssoScopes}
+                        onChange={(e) => setSsoScopes(e.target.value)}
+                        placeholder="openid email profile"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Space-separated list of scopes to request. Add "groups" or "roles" if needed for role mapping.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Token Auth Method</Label>
+                      <Select value={ssoTokenAuthMethod} onValueChange={setSsoTokenAuthMethod}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="z-50 bg-popover">
+                          <SelectItem value="client_secret_post">POST Body (Most Common)</SelectItem>
+                          <SelectItem value="client_secret_basic">HTTP Basic Auth</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        How credentials are sent to the token endpoint. Try switching if you get "Invalid client secret" errors.
+                      </p>
+                    </div>
                   </div>
 
                   {/* Role Mapping Section */}

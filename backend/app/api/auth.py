@@ -648,6 +648,20 @@ def _register_oauth_client(sso_config: dict) -> None:
     # Decrypt client secret (it's stored encrypted in DB)
     client_secret = decrypt(client_secret_encrypted) if client_secret_encrypted else None
 
+    # Token endpoint auth method - different providers have different requirements:
+    # - "client_secret_post": POST body (most common, default)
+    # - "client_secret_basic": HTTP Basic Auth (some providers)
+    token_auth_method = sso_config.get("token_auth_method", "client_secret_post")
+
+    # Scopes to request from the IdP
+    # Base scopes: openid, email, profile
+    # Additional scopes may be needed for role mapping (e.g., groups, roles)
+    # Examples:
+    #   Azure AD: "openid email profile" (groups come from token claims if configured)
+    #   Okta: "openid email profile groups"
+    #   Keycloak: "openid email profile roles"
+    scopes = sso_config.get("scopes", "openid email profile")
+
     # Re-register to ensure latest settings are used
     # authlib allows re-registration with same name
     oauth.register(
@@ -656,8 +670,8 @@ def _register_oauth_client(sso_config: dict) -> None:
         client_secret=client_secret,
         server_metadata_url=f"{issuer_url}/.well-known/openid-configuration",
         client_kwargs={
-            "scope": "openid email profile",
-            "token_endpoint_auth_method": "client_secret_post",  # Some providers need this
+            "scope": scopes,
+            "token_endpoint_auth_method": token_auth_method,
         },
         overwrite=True,
     )
