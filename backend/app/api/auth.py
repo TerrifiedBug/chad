@@ -641,6 +641,9 @@ async def get_sso_status(
 
 def _register_oauth_client(sso_config: dict) -> None:
     """Register OAuth client with settings from database."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     issuer_url = sso_config.get("issuer_url", "").rstrip("/")
     client_id = sso_config.get("client_id")
     client_secret_encrypted = sso_config.get("client_secret")
@@ -653,6 +656,14 @@ def _register_oauth_client(sso_config: dict) -> None:
     # - "client_secret_basic": HTTP Basic Auth (some providers)
     token_auth_method = sso_config.get("token_auth_method", "client_secret_post")
 
+    # Validate token_auth_method is a supported value
+    valid_methods = {"client_secret_post", "client_secret_basic", "none"}
+    if token_auth_method not in valid_methods:
+        logger.warning(
+            f"Invalid token_auth_method '{token_auth_method}', defaulting to 'client_secret_post'"
+        )
+        token_auth_method = "client_secret_post"
+
     # Scopes to request from the IdP
     # Base scopes: openid, email, profile
     # Additional scopes may be needed for role mapping (e.g., groups, roles)
@@ -662,8 +673,12 @@ def _register_oauth_client(sso_config: dict) -> None:
     #   Keycloak: "openid email profile roles"
     scopes = sso_config.get("scopes", "openid email profile")
 
+    # Clear cached client to ensure fresh settings are used
+    # Note: oauth.register with overwrite=True only updates _registry, not _clients cache
+    if "oidc" in oauth._clients:
+        del oauth._clients["oidc"]
+
     # Re-register to ensure latest settings are used
-    # authlib allows re-registration with same name
     oauth.register(
         name="oidc",
         client_id=client_id,
@@ -674,6 +689,11 @@ def _register_oauth_client(sso_config: dict) -> None:
             "token_endpoint_auth_method": token_auth_method,
         },
         overwrite=True,
+    )
+
+    logger.debug(
+        f"Registered OAuth client: issuer={issuer_url}, "
+        f"token_auth_method={token_auth_method}, scopes={scopes}"
     )
 
 
