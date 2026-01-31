@@ -1035,6 +1035,37 @@ export default function AlertDetailPage() {
                   </div>
                 </div>
               )}
+              {/* Correlation alert timestamps */}
+              {(() => {
+                const logDoc = alert.log_document as Record<string, unknown>
+                const firstTriggered = logDoc?.first_triggered_at as string | undefined
+                const secondTriggered = logDoc?.second_triggered_at as string | undefined
+                if (!firstTriggered && !secondTriggered) return null
+                return (
+                  <>
+                    {firstTriggered && (
+                      <div>
+                        <span className="text-muted-foreground">First Rule Triggered:</span>
+                        <div>
+                          <TimestampTooltip timestamp={firstTriggered}>
+                            <span>{formatDate(firstTriggered)}</span>
+                          </TimestampTooltip>
+                        </div>
+                      </div>
+                    )}
+                    {secondTriggered && (
+                      <div>
+                        <span className="text-muted-foreground">Second Rule Triggered:</span>
+                        <div>
+                          <TimestampTooltip timestamp={secondTriggered}>
+                            <span>{formatDate(secondTriggered)}</span>
+                          </TimestampTooltip>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </CardContent>
           </Card>
 
