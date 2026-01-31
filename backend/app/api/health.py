@@ -309,9 +309,17 @@ async def get_health_status(
 
                         # Determine status based on database age
                         if days_ago is not None:
-                            if days_ago <= 7:
+                            # Get configured update interval (default weekly = 7 days)
+                            update_interval = geoip_config.get("update_interval", "weekly")
+                            interval_days = 7 if update_interval == "weekly" else 30  # weekly or monthly
+
+                            # Calculate thresholds based on interval
+                            healthy_threshold = interval_days
+                            warning_threshold = interval_days + 7  # Grace period of 7 days
+
+                            if days_ago <= healthy_threshold:
                                 status = "healthy"
-                            elif days_ago <= 30:
+                            elif days_ago <= warning_threshold:
                                 status = "warning"
                             else:
                                 status = "unhealthy"
