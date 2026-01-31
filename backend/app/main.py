@@ -47,6 +47,7 @@ from app.core.csrf import CSRFMiddleware
 from app.core.middleware import ErrorResponseMiddleware, RequestValidationMiddleware
 from app.core.redis import close_redis
 from app.services.scheduler import scheduler_service
+from app.services.websocket import manager as websocket_manager
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +105,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to sync scheduler jobs on startup: {e}")
 
+    # Start WebSocket pub/sub subscriber for cross-worker broadcasts
+    logger.info("Starting WebSocket pub/sub subscriber")
+    try:
+        await websocket_manager.start_subscriber()
+    except Exception as e:
+        logger.warning(f"Failed to start WebSocket subscriber: {e}")
+
     yield
 
     # Shutdown
+    logger.info("Stopping WebSocket pub/sub subscriber")
+    await websocket_manager.stop_subscriber()
+
     logger.info("Stopping scheduler service")
     scheduler_service.stop()
 

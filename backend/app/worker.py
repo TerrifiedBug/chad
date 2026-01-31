@@ -114,7 +114,7 @@ class Worker:
             logs_errored = 0
 
             try:
-                result = await processor.process_batch(index_suffix, logs)
+                result = await processor.process_batch(db_session, index_suffix, logs)
             except Exception as e:
                 logger.error(f"Failed to process batch for {index_suffix}: {e}")
                 logs_errored = len(logs)

@@ -383,7 +383,36 @@ async def get_health_status(
     )
     recent_checks = result.scalars().all()
 
+    # Calculate overall status
+    # Critical services (opensearch, jira) affect overall as critical
+    # TI sources affect overall as degraded (warning), not critical
+    overall_status = "healthy"
+    critical_services = {"opensearch", "jira"}
+
+    for svc in services:
+        svc_status = svc.get("status", "unknown")
+        svc_type = svc.get("service_type", "")
+
+        if svc_status == "unhealthy":
+            if svc_type in critical_services:
+                overall_status = "critical"
+            elif overall_status != "critical":
+                # TI and other sources only degrade to warning
+                overall_status = "degraded"
+        elif svc_status == "warning" and overall_status == "healthy":
+            overall_status = "warning"
+
+    # Count unhealthy TI sources separately for UI display
+    unhealthy_ti_count = sum(
+        1 for svc in services
+        if svc.get("status") == "unhealthy"
+        and svc.get("service_type") not in critical_services
+        and svc.get("service_type") not in {"ai", "geoip", "sigmahq", "attack"}
+    )
+
     return {
+        "overall_status": overall_status,
+        "unhealthy_ti_sources": unhealthy_ti_count,
         "services": services,
         "recent_checks": [
             {

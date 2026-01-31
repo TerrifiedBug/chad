@@ -25,8 +25,6 @@ Flow (Async mode - queue enabled):
 
 import ipaddress
 import secrets
-import time
-from collections import defaultdict
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
@@ -47,17 +45,13 @@ from app.models.rule import Rule
 from app.models.rule_exception import RuleException
 from app.services.alerts import AlertService, should_suppress_alert
 from app.services.correlation import check_correlation
+from app.services.redis_rate_limit import check_rate_limit_redis
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url, get_setting
 from app.services.websocket import AlertBroadcast, manager
 
 router = APIRouter(prefix="/logs", tags=["logs"])
-
-# Rate limiting storage (in-memory, per-process)
-# Format: {pattern_id: {"requests": [timestamps], "events": [(timestamp, count)]}}
-rate_limits: dict[str, dict[str, list]] = defaultdict(lambda: {"requests": [], "events": []})
-
 
 def get_client_ip(request: Request) -> str:
     """
@@ -116,50 +110,6 @@ def ip_matches_allowlist(client_ip: str, allowed_ips: list[str]) -> bool:
             continue
 
     return False
-
-
-def check_rate_limit(pattern_id: str, event_count: int, max_requests: int, max_events: int) -> None:
-    """
-    Check and enforce rate limits for log shipping.
-
-    Uses a sliding window of 60 seconds.
-
-    Args:
-        pattern_id: The index pattern ID
-        event_count: Number of events in this request
-        max_requests: Maximum requests per minute
-        max_events: Maximum events per minute
-
-    Raises:
-        HTTPException: If rate limit is exceeded
-    """
-    now = time.time()
-    window = 60  # 1 minute
-
-    limits = rate_limits[pattern_id]
-
-    # Clean old entries
-    limits["requests"] = [t for t in limits["requests"] if now - t < window]
-    limits["events"] = [(t, c) for t, c in limits["events"] if now - t < window]
-
-    # Check request limit
-    if len(limits["requests"]) >= max_requests:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded: too many requests ({max_requests}/minute)"
-        )
-
-    # Check event limit
-    total_events = sum(c for _, c in limits["events"])
-    if total_events + event_count > max_events:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded: too many events ({max_events}/minute)"
-        )
-
-    # Record this request
-    limits["requests"].append(now)
-    limits["events"].append((now, event_count))
 
 
 class LogMatchResponse(BaseModel):
@@ -285,7 +235,7 @@ async def receive_logs(
     if index_pattern.rate_limit_enabled:
         max_requests = index_pattern.rate_limit_requests_per_minute or 100
         max_events = index_pattern.rate_limit_events_per_minute or 50000
-        check_rate_limit(str(index_pattern.id), len(logs), max_requests, max_events)
+        await check_rate_limit_redis(str(index_pattern.id), len(logs), max_requests, max_events)
 
     if os_client is None:
         raise HTTPException(
@@ -708,7 +658,7 @@ async def receive_logs_queue(
     if index_pattern.rate_limit_enabled:
         max_requests = index_pattern.rate_limit_requests_per_minute or 100
         max_events = index_pattern.rate_limit_events_per_minute or 50000
-        check_rate_limit(str(index_pattern.id), len(logs), max_requests, max_events)
+        await check_rate_limit_redis(str(index_pattern.id), len(logs), max_requests, max_events)
 
     # Get queue settings
     from app.services.queue_settings import get_queue_settings
