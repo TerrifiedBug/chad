@@ -21,7 +21,9 @@ from app.api.deps import get_current_user, require_admin
 from app.db.session import get_db
 from app.models.correlation_rule import CorrelationRule
 from app.models.field_mapping import FieldMapping
+from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.index_pattern import IndexPattern
+from app.models.jira_config import JiraConfig
 from app.models.notification_settings import (
     AlertNotificationSetting,
     NotificationSettings,
@@ -37,7 +39,12 @@ from app.models.user import User
 router = APIRouter(prefix="/export", tags=["export"])
 
 # Current config schema version
-CONFIG_SCHEMA_VERSION = "2.0"
+CONFIG_SCHEMA_VERSION = "3.0"
+
+# Settings to exclude from export (contain credentials)
+EXCLUDED_SETTINGS = {"opensearch"}
+EXCLUDED_SETTING_PREFIXES = ("secret_",)
+EXCLUDED_SETTING_SUFFIXES = ("_token", "_password", "_api_key")
 
 
 class BulkExportRequest(BaseModel):
@@ -186,6 +193,18 @@ async def export_config(
             "rate_limit_enabled": p.rate_limit_enabled,
             "rate_limit_requests_per_minute": p.rate_limit_requests_per_minute,
             "rate_limit_events_per_minute": p.rate_limit_events_per_minute,
+            # Health monitoring thresholds
+            "health_alerting_enabled": p.health_alerting_enabled,
+            "health_no_data_minutes": p.health_no_data_minutes,
+            "health_error_rate_percent": p.health_error_rate_percent,
+            "health_detection_latency_warning": p.health_detection_latency_warning,
+            "health_detection_latency_critical": p.health_detection_latency_critical,
+            "health_opensearch_latency_warning": p.health_opensearch_latency_warning,
+            "health_opensearch_latency_critical": p.health_opensearch_latency_critical,
+            # Enrichment configuration
+            "geoip_fields": p.geoip_fields,
+            "ti_config": p.ti_config,
+            # Field mappings
             "field_mappings": [
                 {
                     "sigma_field": fm.sigma_field,
@@ -207,6 +226,12 @@ async def export_config(
     for r in rules_result.scalars():
         # Handle source as either enum or string
         source_val = r.source.value if hasattr(r.source, "value") else (r.source or "user")
+        # Handle sigmahq_type as either enum or string
+        sigmahq_type_val = None
+        if r.sigmahq_type:
+            sigmahq_type_val = (
+                r.sigmahq_type.value if hasattr(r.sigmahq_type, "value") else r.sigmahq_type
+            )
         rule_data = {
             "id": str(r.id),
             "title": r.title,
@@ -215,6 +240,18 @@ async def export_config(
             "severity": r.severity,
             "source": source_val,
             "index_pattern_id": str(r.index_pattern_id),
+            # Threshold alerting settings
+            "threshold_enabled": r.threshold_enabled,
+            "threshold_count": r.threshold_count,
+            "threshold_window_minutes": r.threshold_window_minutes,
+            "threshold_group_by": r.threshold_group_by,
+            # Snooze settings
+            "snooze_until": r.snooze_until.isoformat() if r.snooze_until else None,
+            "snooze_indefinite": r.snooze_indefinite,
+            # SigmaHQ metadata
+            "sigmahq_path": r.sigmahq_path,
+            "sigmahq_type": sigmahq_type_val,
+            # Exceptions
             "exceptions": [
                 {
                     "field": e.field,
@@ -240,8 +277,12 @@ async def export_config(
             "rule_a_id": str(c.rule_a_id),
             "rule_b_id": str(c.rule_b_id),
             "entity_field": c.entity_field,
+            "entity_field_type": c.entity_field_type,
             "time_window_minutes": c.time_window_minutes,
             "severity": c.severity,
+            # Snooze settings
+            "snooze_until": c.snooze_until.isoformat() if c.snooze_until else None,
+            "snooze_indefinite": c.snooze_indefinite,
         }
         for c in corr_result.scalars()
     ]
@@ -323,17 +364,58 @@ async def export_config(
         for u in users_result.scalars()
     ]
 
-    # Get settings (filter out sensitive ones)
+    # Get Jira config (without API token)
+    jira_result = await db.execute(select(JiraConfig))
+    jira = jira_result.scalar_one_or_none()
+    jira_config = None
+    if jira:
+        jira_config = {
+            "jira_url": jira.jira_url,
+            "email": jira.email,
+            "default_project": jira.default_project,
+            "default_issue_type": jira.default_issue_type,
+            "is_enabled": jira.is_enabled,
+            "alert_severities": jira.alert_severities,
+            # api_token_encrypted excluded for security
+        }
+
+    # Get health alert suppression state
+    suppression_result = await db.execute(
+        select(HealthAlertSuppression).options(selectinload(HealthAlertSuppression.index_pattern))
+    )
+    health_suppressions = []
+    for s in suppression_result.scalars():
+        health_suppressions.append({
+            "index_pattern_name": s.index_pattern.name if s.index_pattern else None,
+            "alert_type": s.alert_type,
+            "suppression_level": s.suppression_level,
+            "last_alert_at": s.last_alert_at.isoformat() if s.last_alert_at else None,
+        })
+
+    # Get settings (filter out sensitive ones using explicit exclusion)
     settings_result = await db.execute(select(Setting))
-    settings = {
-        s.key: s.value
-        for s in settings_result.scalars()
-        if not s.key.startswith("secret_")
-        and not s.key.endswith("_token")
-        and "password" not in s.key.lower()
-        and "key" not in s.key.lower()
-        and s.key != "opensearch"  # Exclude OpenSearch config (contains credentials)
-    }
+    settings = {}
+    for s in settings_result.scalars():
+        # Skip excluded settings
+        if s.key in EXCLUDED_SETTINGS:
+            continue
+        if any(s.key.startswith(prefix) for prefix in EXCLUDED_SETTING_PREFIXES):
+            continue
+        if any(s.key.endswith(suffix) for suffix in EXCLUDED_SETTING_SUFFIXES):
+            continue
+
+        # Special handling for 'ai' setting - strip API key
+        if s.key == "ai" and isinstance(s.value, dict):
+            ai_config = dict(s.value)
+            ai_config.pop("api_key", None)
+            settings[s.key] = ai_config
+        # Special handling for 'sso' setting - strip client secret
+        elif s.key == "sso" and isinstance(s.value, dict):
+            sso_config = dict(s.value)
+            sso_config.pop("client_secret", None)
+            settings[s.key] = sso_config
+        else:
+            settings[s.key] = s.value
 
     config = {
         "exported_at": datetime.now().isoformat(),
@@ -344,6 +426,8 @@ async def export_config(
         "webhooks": webhooks,
         "notification_settings": notification_settings,
         "ti_sources": ti_sources,
+        "jira_config": jira_config,
+        "health_suppressions": health_suppressions,
         "users": users,
         "settings": settings,
     }
@@ -472,6 +556,26 @@ async def import_config(
         summary["skipped"]["settings"] = skipped
         summary["errors"].extend(errors)
 
+    # Import Jira config (v3.0+)
+    if "jira_config" in config and config["jira_config"]:
+        created, updated, skipped, errors = await _import_jira_config(
+            db, config["jira_config"], mode, dry_run
+        )
+        summary["created"]["jira_config"] = created
+        summary["updated"]["jira_config"] = updated
+        summary["skipped"]["jira_config"] = skipped
+        summary["errors"].extend(errors)
+
+    # Import health alert suppressions (v3.0+)
+    if "health_suppressions" in config and config["health_suppressions"]:
+        created, updated, skipped, errors = await _import_health_suppressions(
+            db, config["health_suppressions"], dry_run
+        )
+        summary["created"]["health_suppressions"] = created
+        summary["updated"]["health_suppressions"] = updated
+        summary["skipped"]["health_suppressions"] = skipped
+        summary["errors"].extend(errors)
+
     # Note: Users are not imported to prevent security issues
     # Admin must create users manually
 
@@ -523,6 +627,26 @@ async def _import_index_patterns(
                         existing.rate_limit_events_per_minute = p.get(
                             "rate_limit_events_per_minute"
                         )
+                        # Health monitoring thresholds (v3.0+)
+                        if "health_alerting_enabled" in p:
+                            existing.health_alerting_enabled = p["health_alerting_enabled"]
+                        if "health_no_data_minutes" in p:
+                            existing.health_no_data_minutes = p["health_no_data_minutes"]
+                        if "health_error_rate_percent" in p:
+                            existing.health_error_rate_percent = p["health_error_rate_percent"]
+                        if "health_detection_latency_warning" in p:
+                            existing.health_detection_latency_warning = p["health_detection_latency_warning"]
+                        if "health_detection_latency_critical" in p:
+                            existing.health_detection_latency_critical = p["health_detection_latency_critical"]
+                        if "health_opensearch_latency_warning" in p:
+                            existing.health_opensearch_latency_warning = p["health_opensearch_latency_warning"]
+                        if "health_opensearch_latency_critical" in p:
+                            existing.health_opensearch_latency_critical = p["health_opensearch_latency_critical"]
+                        # Enrichment configuration (v3.0+)
+                        if "geoip_fields" in p:
+                            existing.geoip_fields = p["geoip_fields"]
+                        if "ti_config" in p:
+                            existing.ti_config = p["ti_config"]
                     updated += 1
                     if "id" in p:
                         id_map[p["id"]] = str(existing.id)
@@ -547,6 +671,17 @@ async def _import_index_patterns(
                             rate_limit_events_per_minute=p.get(
                                 "rate_limit_events_per_minute"
                             ),
+                            # Health monitoring thresholds (v3.0+)
+                            health_alerting_enabled=p.get("health_alerting_enabled", True),
+                            health_no_data_minutes=p.get("health_no_data_minutes"),
+                            health_error_rate_percent=p.get("health_error_rate_percent"),
+                            health_detection_latency_warning=p.get("health_detection_latency_warning"),
+                            health_detection_latency_critical=p.get("health_detection_latency_critical"),
+                            health_opensearch_latency_warning=p.get("health_opensearch_latency_warning"),
+                            health_opensearch_latency_critical=p.get("health_opensearch_latency_critical"),
+                            # Enrichment configuration (v3.0+)
+                            geoip_fields=p.get("geoip_fields", []),
+                            ti_config=p.get("ti_config"),
                         )
                         db.add(new_pattern)
                         await db.flush()
@@ -572,6 +707,17 @@ async def _import_index_patterns(
                         rate_limit_events_per_minute=p.get(
                             "rate_limit_events_per_minute"
                         ),
+                        # Health monitoring thresholds (v3.0+)
+                        health_alerting_enabled=p.get("health_alerting_enabled", True),
+                        health_no_data_minutes=p.get("health_no_data_minutes"),
+                        health_error_rate_percent=p.get("health_error_rate_percent"),
+                        health_detection_latency_warning=p.get("health_detection_latency_warning"),
+                        health_detection_latency_critical=p.get("health_detection_latency_critical"),
+                        health_opensearch_latency_warning=p.get("health_opensearch_latency_warning"),
+                        health_opensearch_latency_critical=p.get("health_opensearch_latency_critical"),
+                        # Enrichment configuration (v3.0+)
+                        geoip_fields=p.get("geoip_fields", []),
+                        ti_config=p.get("ti_config"),
                     )
                     db.add(new_pattern)
                     await db.flush()
@@ -678,6 +824,25 @@ async def _import_rules(
                         existing.yaml_content = r["yaml_content"]
                         existing.severity = r.get("severity", "medium")
                         existing.index_pattern_id = uuid.UUID(ip_id)
+                        # Threshold settings (v3.0+)
+                        if "threshold_enabled" in r:
+                            existing.threshold_enabled = r["threshold_enabled"]
+                        if "threshold_count" in r:
+                            existing.threshold_count = r["threshold_count"]
+                        if "threshold_window_minutes" in r:
+                            existing.threshold_window_minutes = r["threshold_window_minutes"]
+                        if "threshold_group_by" in r:
+                            existing.threshold_group_by = r["threshold_group_by"]
+                        # Snooze settings (v3.0+)
+                        if "snooze_indefinite" in r:
+                            existing.snooze_indefinite = r["snooze_indefinite"]
+                        if "snooze_until" in r and r["snooze_until"]:
+                            existing.snooze_until = datetime.fromisoformat(r["snooze_until"])
+                        # SigmaHQ metadata (v3.0+)
+                        if "sigmahq_path" in r:
+                            existing.sigmahq_path = r["sigmahq_path"]
+                        if "sigmahq_type" in r:
+                            existing.sigmahq_type = r["sigmahq_type"]
                         # Import exceptions
                         if "exceptions" in r:
                             await _import_exceptions(
@@ -690,6 +855,10 @@ async def _import_rules(
                         source = RuleSource.USER
                         if r.get("source") == "sigmahq":
                             source = RuleSource.SIGMAHQ
+                        # Parse snooze_until from ISO format
+                        snooze_until = None
+                        if r.get("snooze_until"):
+                            snooze_until = datetime.fromisoformat(r["snooze_until"])
                         new_rule = Rule(
                             title=title,
                             description=r.get("description"),
@@ -699,7 +868,17 @@ async def _import_rules(
                             source=source,
                             index_pattern_id=uuid.UUID(ip_id),
                             created_by=current_user.id,
-                            last_edited_by=current_user.email,
+                            # Threshold settings
+                            threshold_enabled=r.get("threshold_enabled", False),
+                            threshold_count=r.get("threshold_count"),
+                            threshold_window_minutes=r.get("threshold_window_minutes"),
+                            threshold_group_by=r.get("threshold_group_by"),
+                            # Snooze settings
+                            snooze_until=snooze_until,
+                            snooze_indefinite=r.get("snooze_indefinite", False),
+                            # SigmaHQ metadata
+                            sigmahq_path=r.get("sigmahq_path"),
+                            sigmahq_type=r.get("sigmahq_type"),
                         )
                         db.add(new_rule)
                         await db.flush()
@@ -713,6 +892,10 @@ async def _import_rules(
                     source = RuleSource.USER
                     if r.get("source") == "sigmahq":
                         source = RuleSource.SIGMAHQ
+                    # Parse snooze_until from ISO format
+                    snooze_until = None
+                    if r.get("snooze_until"):
+                        snooze_until = datetime.fromisoformat(r["snooze_until"])
                     new_rule = Rule(
                         title=r["title"],
                         description=r.get("description"),
@@ -722,7 +905,17 @@ async def _import_rules(
                         source=source,
                         index_pattern_id=uuid.UUID(ip_id),
                         created_by=current_user.id,
-                        last_edited_by=current_user.email,
+                        # Threshold settings
+                        threshold_enabled=r.get("threshold_enabled", False),
+                        threshold_count=r.get("threshold_count"),
+                        threshold_window_minutes=r.get("threshold_window_minutes"),
+                        threshold_group_by=r.get("threshold_group_by"),
+                        # Snooze settings
+                        snooze_until=snooze_until,
+                        snooze_indefinite=r.get("snooze_indefinite", False),
+                        # SigmaHQ metadata
+                        sigmahq_path=r.get("sigmahq_path"),
+                        sigmahq_type=r.get("sigmahq_type"),
                     )
                     db.add(new_rule)
                     await db.flush()
@@ -825,29 +1018,48 @@ async def _import_correlation_rules(
                         existing.entity_field = c["entity_field"]
                         existing.time_window_minutes = c["time_window_minutes"]
                         existing.severity = c["severity"]
+                        # New fields (v3.0+)
+                        if "entity_field_type" in c:
+                            existing.entity_field_type = c["entity_field_type"]
+                        if "snooze_indefinite" in c:
+                            existing.snooze_indefinite = c["snooze_indefinite"]
+                        if "snooze_until" in c and c["snooze_until"]:
+                            existing.snooze_until = datetime.fromisoformat(c["snooze_until"])
                     updated += 1
                 else:  # RENAME
                     name = f"{c['name']}_imported"
                     if not dry_run:
+                        snooze_until = None
+                        if c.get("snooze_until"):
+                            snooze_until = datetime.fromisoformat(c["snooze_until"])
                         new_corr = CorrelationRule(
                             name=name,
                             rule_a_id=uuid.UUID(c["rule_a_id"]),
                             rule_b_id=uuid.UUID(c["rule_b_id"]),
                             entity_field=c["entity_field"],
+                            entity_field_type=c.get("entity_field_type", "sigma"),
                             time_window_minutes=c["time_window_minutes"],
                             severity=c["severity"],
+                            snooze_until=snooze_until,
+                            snooze_indefinite=c.get("snooze_indefinite", False),
                         )
                         db.add(new_corr)
                     created += 1
             else:
                 if not dry_run:
+                    snooze_until = None
+                    if c.get("snooze_until"):
+                        snooze_until = datetime.fromisoformat(c["snooze_until"])
                     new_corr = CorrelationRule(
                         name=c["name"],
                         rule_a_id=uuid.UUID(c["rule_a_id"]),
                         rule_b_id=uuid.UUID(c["rule_b_id"]),
                         entity_field=c["entity_field"],
+                        entity_field_type=c.get("entity_field_type", "sigma"),
                         time_window_minutes=c["time_window_minutes"],
                         severity=c["severity"],
+                        snooze_until=snooze_until,
+                        snooze_indefinite=c.get("snooze_indefinite", False),
                     )
                     db.add(new_corr)
                 created += 1
@@ -1069,5 +1281,109 @@ async def _import_settings(
                 created += 1
         except Exception as e:
             errors.append(f"Setting '{key}': {e}")
+
+    return created, updated, skipped, errors
+
+
+async def _import_jira_config(
+    db: AsyncSession,
+    jira_config: dict,
+    mode: ImportMode,
+    dry_run: bool,
+) -> tuple[int, int, int, list[str]]:
+    """Import Jira configuration (without API token)."""
+    created = updated = skipped = 0
+    errors: list[str] = []
+
+    try:
+        result = await db.execute(select(JiraConfig))
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            if mode == ImportMode.SKIP:
+                skipped = 1
+            elif mode == ImportMode.OVERWRITE:
+                if not dry_run:
+                    existing.jira_url = jira_config["jira_url"]
+                    existing.email = jira_config["email"]
+                    existing.default_project = jira_config["default_project"]
+                    existing.default_issue_type = jira_config["default_issue_type"]
+                    existing.is_enabled = jira_config.get("is_enabled", True)
+                    existing.alert_severities = jira_config.get("alert_severities", [])
+                    # Note: api_token_encrypted not imported for security
+                updated = 1
+            else:  # RENAME - not applicable for singleton
+                skipped = 1
+        else:
+            # Cannot create JiraConfig without API token
+            # Mark as skipped with informative error
+            errors.append(
+                "Jira config: Cannot create new config without API token. "
+                "Configure Jira manually after import."
+            )
+            skipped = 1
+    except Exception as e:
+        errors.append(f"Jira config: {e}")
+
+    return created, updated, skipped, errors
+
+
+async def _import_health_suppressions(
+    db: AsyncSession,
+    suppressions: list[dict],
+    dry_run: bool,
+) -> tuple[int, int, int, list[str]]:
+    """Import health alert suppression state."""
+    created = updated = skipped = 0
+    errors: list[str] = []
+
+    for s in suppressions:
+        try:
+            # Find index pattern by name
+            if not s.get("index_pattern_name"):
+                errors.append("Health suppression: missing index_pattern_name")
+                continue
+
+            ip_result = await db.execute(
+                select(IndexPattern).where(IndexPattern.name == s["index_pattern_name"])
+            )
+            index_pattern = ip_result.scalar_one_or_none()
+            if not index_pattern:
+                errors.append(
+                    f"Health suppression for '{s['index_pattern_name']}': "
+                    "index pattern not found"
+                )
+                continue
+
+            # Check if suppression exists
+            result = await db.execute(
+                select(HealthAlertSuppression).where(
+                    HealthAlertSuppression.index_pattern_id == index_pattern.id,
+                    HealthAlertSuppression.alert_type == s["alert_type"],
+                )
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                if not dry_run:
+                    existing.suppression_level = s.get("suppression_level", 0)
+                    if s.get("last_alert_at"):
+                        existing.last_alert_at = datetime.fromisoformat(s["last_alert_at"])
+                updated += 1
+            else:
+                if not dry_run:
+                    last_alert_at = None
+                    if s.get("last_alert_at"):
+                        last_alert_at = datetime.fromisoformat(s["last_alert_at"])
+                    new_suppression = HealthAlertSuppression(
+                        index_pattern_id=index_pattern.id,
+                        alert_type=s["alert_type"],
+                        suppression_level=s.get("suppression_level", 0),
+                        last_alert_at=last_alert_at,
+                    )
+                    db.add(new_suppression)
+                created += 1
+        except Exception as e:
+            errors.append(f"Health suppression: {e}")
 
     return created, updated, skipped, errors

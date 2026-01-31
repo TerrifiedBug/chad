@@ -419,9 +419,8 @@ export default function HealthPage() {
         </Card>
       </div>
 
-      {/* External Services Health */}
-      {hasPermission('manage_settings') && (
-        <Card>
+      {/* External Services Health - visible to all authenticated users */}
+      <Card>
           <CardHeader className="pb-2">
             <div
               className="flex items-center justify-between cursor-pointer"
@@ -494,11 +493,9 @@ export default function HealthPage() {
             </CardContent>
           )}
         </Card>
-      )}
 
-      {/* Queue Health Section */}
-      {hasPermission('manage_settings') && (
-        <div className="space-y-4">
+      {/* Queue Health Section - visible to all authenticated users */}
+      <div className="space-y-4">
           {/* Queue Statistics Card */}
           <Card>
             <CardHeader className="pb-2">
@@ -585,7 +582,7 @@ export default function HealthPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {deadLetterCount > 0 && (
+                  {deadLetterCount > 0 && hasPermission('manage_settings') && (
                     <Button
                       variant="destructive"
                       size="sm"
@@ -618,13 +615,15 @@ export default function HealthPage() {
                               From: <span className="font-mono">{message.original_stream}</span>
                             </div>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteDeadLetterMessage(message.id)}
-                          >
-                            <XCircle className="h-4 w-4" />
-                          </Button>
+                          {hasPermission('manage_settings') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteDeadLetterMessage(message.id)}
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -643,7 +642,6 @@ export default function HealthPage() {
             )}
           </Card>
         </div>
-      )}
 
       {/* Index Pattern Health Cards */}
       <Card>
