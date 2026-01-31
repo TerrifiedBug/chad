@@ -32,6 +32,8 @@ interface HealthCheckLog {
 interface ServiceHealthResponse {
   services: ServiceHealth[]
   recent_checks: HealthCheckLog[]
+  overall_status?: 'healthy' | 'warning' | 'degraded' | 'critical'
+  unhealthy_ti_sources?: number
 }
 
 const statusColors: Record<HealthStatus, string> = {
@@ -312,6 +314,19 @@ export default function HealthPage() {
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           {error}
+        </div>
+      )}
+
+      {/* Degraded status warning banner */}
+      {serviceHealth?.overall_status === 'degraded' && (
+        <div className="bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 text-sm p-3 rounded-md flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          <span>
+            Some services are degraded.
+            {serviceHealth.unhealthy_ti_sources && serviceHealth.unhealthy_ti_sources > 0 && (
+              <> {serviceHealth.unhealthy_ti_sources} TI source(s) unhealthy.</>
+            )}
+          </span>
         </div>
       )}
 
