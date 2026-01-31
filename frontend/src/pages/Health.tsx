@@ -451,6 +451,7 @@ export default function HealthPage() {
                 {externalServicesOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </div>
             </div>
+            <CardDescription>Status of integrated third-party services including threat intelligence, AI, and ticketing systems.</CardDescription>
           </CardHeader>
           {externalServicesOpen && (
             <CardContent>
@@ -524,7 +525,7 @@ export default function HealthPage() {
                   {queueDetailsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </div>
               </div>
-              <CardDescription>Current queue depths and processing status</CardDescription>
+              <CardDescription>Real-time metrics for the async log processing queue.</CardDescription>
             </CardHeader>
             {queueDetailsOpen && (
               <CardContent>
@@ -601,7 +602,7 @@ export default function HealthPage() {
                   {deadLetterOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </div>
               </div>
-              <CardDescription>Messages that could not be processed</CardDescription>
+              <CardDescription>Messages that failed processing and require manual review or retry.</CardDescription>
             </CardHeader>
             {deadLetterOpen && (
               <CardContent>
