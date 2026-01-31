@@ -147,11 +147,7 @@ async def check_jira_health(db: AsyncSession):
         start_time = datetime.now(UTC)
 
         # Create Jira service and test connectivity
-        jira = JiraService(
-            base_url=config.jira_url,
-            email=config.email,
-            api_token=config.api_token_encrypted
-        )
+        jira = JiraService(config)
 
         await jira.test_connection()
 

@@ -50,32 +50,9 @@ from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url, get_setting
 from app.services.websocket import AlertBroadcast, manager
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/logs", tags=["logs"])
-
-def get_client_ip(request: Request) -> str:
-    """
-    Get the client IP address from the request.
-
-    Checks X-Forwarded-For and X-Real-IP headers first (for reverse proxy setups),
-    then falls back to the direct connection IP.
-    """
-    # Check X-Forwarded-For first (may contain multiple IPs)
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # Take the first IP (original client)
-        return forwarded_for.split(",")[0].strip()
-
-    # Check X-Real-IP
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
-
-    # Fall back to direct connection
-    if request.client:
-        return request.client.host
-
-    return ""
 
 
 def ip_matches_allowlist(client_ip: str, allowed_ips: list[str]) -> bool:
