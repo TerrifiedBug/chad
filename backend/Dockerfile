@@ -13,6 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-cache MITRE ATT&CK data during build to avoid runtime network dependency
+# pySigma downloads this on first import, which can timeout in network-restricted environments
+RUN python -c "from sigma.data.mitre_attack import mitre_attack_tactics, mitre_attack_techniques; print('MITRE ATT&CK data cached')"
+
 # Copy application code
 COPY . .
 
