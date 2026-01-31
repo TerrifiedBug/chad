@@ -652,15 +652,20 @@ export default function HealthPage() {
             className="flex items-center justify-between cursor-pointer"
             onClick={() => setIndexesOpen(!indexesOpen)}
           >
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Indexes
-              {health.length > 0 && (
-                <span className="text-sm font-normal text-muted-foreground">
-                  ({health.length})
-                </span>
-              )}
-            </CardTitle>
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Indexes
+                {health.length > 0 && (
+                  <span className="text-sm font-normal text-muted-foreground">
+                    ({health.length})
+                  </span>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Health metrics and detection latency for monitored index patterns.
+              </CardDescription>
+            </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
