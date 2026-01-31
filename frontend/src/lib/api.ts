@@ -839,6 +839,12 @@ export const alertsApi = {
   unassign: async (alertId: string): Promise<{ message: string }> => {
     return api.post(`/alerts/${alertId}/unassign`)
   },
+  getRelated: (alertId: string, limit?: number) => {
+    const params = new URLSearchParams()
+    if (limit) params.set('limit', limit.toString())
+    const query = params.toString()
+    return api.get<RelatedAlertsResponse>(`/alerts/${alertId}/related${query ? `?${query}` : ''}`)
+  },
 }
 
 // Alert Comments types
@@ -1364,6 +1370,15 @@ export type HealthIntervals = {
   mitre_attack_interval_seconds: number
   opensearch_interval_seconds: number
   ti_interval_seconds: number
+}
+
+// Related Alerts response type
+export type RelatedAlertsResponse = {
+  alert_id: string
+  related_count: number
+  clustering_enabled: boolean
+  window_minutes: number | null
+  alerts: Alert[]
 }
 
 // Alert Clustering types

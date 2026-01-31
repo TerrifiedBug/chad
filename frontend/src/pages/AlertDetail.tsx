@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator } from '@/lib/api'
+import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator, RelatedAlertsResponse } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
@@ -30,7 +30,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 
@@ -515,6 +515,8 @@ export default function AlertDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [error, setError] = useState('')
   const [correlations, setCorrelations] = useState<CorrelationRule[]>([])
+  const [relatedAlerts, setRelatedAlerts] = useState<RelatedAlertsResponse | null>(null)
+  const [isRelatedOpen, setIsRelatedOpen] = useState(false)
 
   // Exception dialog state
   const [showExceptionDialog, setShowExceptionDialog] = useState(false)
@@ -588,6 +590,8 @@ export default function AlertDetailPage() {
       // Load comments for this alert
       if (data.alert_id) {
         alertCommentsApi.list(data.alert_id).then(setComments).catch(console.error)
+        // Load related alerts (clustered alerts with same rule)
+        loadRelatedAlerts(data.alert_id)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load alert')
@@ -612,6 +616,15 @@ export default function AlertDetailPage() {
       setCorrelations(relatedRules)
     } catch (err) {
       console.error('Failed to load correlation rules:', err)
+    }
+  }
+
+  const loadRelatedAlerts = async (alertId: string) => {
+    try {
+      const result = await alertsApi.getRelated(alertId)
+      setRelatedAlerts(result)
+    } catch (err) {
+      console.error('Failed to load related alerts:', err)
     }
   }
 
@@ -925,6 +938,27 @@ export default function AlertDetailPage() {
               </TooltipContent>
             </Tooltip>
           )}
+          {relatedAlerts && relatedAlerts.clustering_enabled && relatedAlerts.related_count > 0 && (
+            <Tooltip>
+              <TooltipTrigger>
+                <Badge variant="secondary" className="gap-1">
+                  <Layers className="h-3 w-3" />
+                  Cluster ({relatedAlerts.related_count + 1})
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="font-medium">Part of alert cluster</p>
+                <p className="text-sm text-muted-foreground">
+                  {relatedAlerts.related_count} related alert{relatedAlerts.related_count > 1 ? 's' : ''} from the same rule
+                </p>
+                {relatedAlerts.window_minutes && (
+                  <p className="text-xs text-muted-foreground">
+                    Within {relatedAlerts.window_minutes} minute window
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {alert.owner_username && (
             <Badge variant="secondary">
               Owner: {alert.owner_username}
@@ -1159,6 +1193,71 @@ export default function AlertDetailPage() {
 
           {/* Correlation Rules - shown if any correlation rules involve this alert's rule */}
           <CorrelationInfoCard correlations={correlations} ruleId={alert.rule_id} />
+
+          {/* Related Alerts - shown if clustering is enabled and there are related alerts */}
+          {relatedAlerts && relatedAlerts.clustering_enabled && relatedAlerts.related_count > 0 && (
+            <Card>
+              <Collapsible open={isRelatedOpen} onOpenChange={setIsRelatedOpen}>
+                <CollapsibleTrigger className="w-full">
+                  <CardHeader className="pb-3 hover:bg-muted/50 rounded-t-lg transition-colors">
+                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Layers className="h-4 w-4" />
+                        Related Alerts ({relatedAlerts.related_count})
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform ${isRelatedOpen ? 'rotate-180' : ''}`}
+                      />
+                    </CardTitle>
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="space-y-2 pt-0">
+                    {relatedAlerts.window_minutes && (
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Alerts from the same rule within {relatedAlerts.window_minutes} minutes
+                      </p>
+                    )}
+                    <div className="max-h-[300px] overflow-y-auto space-y-2">
+                      {relatedAlerts.alerts.map((relatedAlert) => (
+                        <Link
+                          key={relatedAlert.alert_id}
+                          to={`/alerts/${relatedAlert.alert_id}`}
+                          className="block p-3 border rounded-md hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Badge
+                                className={`text-xs shrink-0 ${
+                                  severityColors[relatedAlert.severity] || 'bg-gray-500 text-white'
+                                }`}
+                              >
+                                {capitalize(relatedAlert.severity)}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className={`text-xs shrink-0 ${
+                                  statusColors[relatedAlert.status]
+                                }`}
+                              >
+                                {statusLabels[relatedAlert.status]}
+                              </Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {new Date(relatedAlert.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1 truncate">
+                            ID: {relatedAlert.alert_id.slice(0, 8)}...
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Collapsible>
+            </Card>
+          )}
         </div>
 
         {/* Log Document */}

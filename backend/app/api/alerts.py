@@ -1,7 +1,7 @@
 """Alerts API - view and manage alerts."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -23,6 +23,7 @@ from app.schemas.alert import (
     AlertResponse,
     AlertStatusUpdate,
     ClusteredAlertListResponse,
+    RelatedAlertsResponse,
 )
 from app.schemas.alert_comment import AlertCommentCreate, AlertCommentResponse, AlertCommentUpdate
 from app.services.alerts import AlertService, cluster_alerts
@@ -176,6 +177,117 @@ async def get_alert(
         raise not_found("Alert", details={"alert_id": alert_id})
 
     return alert
+
+
+@router.get("/{alert_id}/related", response_model=RelatedAlertsResponse)
+async def get_related_alerts(
+    alert_id: str,
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    index_pattern: str = Query("chad-alerts-*"),
+    limit: int = Query(50, ge=1, le=100, description="Max related alerts to return"),
+):
+    """
+    Get alerts related to this one (same rule, within clustering time window).
+
+    Returns empty list if alert clustering is disabled.
+    """
+    # Check if clustering is enabled
+    clustering_settings = await get_setting(db, "alert_clustering")
+    if not clustering_settings or not clustering_settings.get("enabled", False):
+        return RelatedAlertsResponse(
+            alert_id=alert_id,
+            related_count=0,
+            clustering_enabled=False,
+            window_minutes=None,
+            alerts=[],
+        )
+
+    window_minutes = clustering_settings.get("window_minutes", 60)
+
+    # Get the current alert
+    alert_service = AlertService(os_client)
+    alert = alert_service.get_alert(index_pattern, alert_id)
+
+    if alert is None:
+        raise not_found("Alert", details={"alert_id": alert_id})
+
+    rule_id = alert.get("rule_id")
+    alert_timestamp = alert.get("created_at")
+
+    if not rule_id or not alert_timestamp:
+        return RelatedAlertsResponse(
+            alert_id=alert_id,
+            related_count=0,
+            clustering_enabled=True,
+            window_minutes=window_minutes,
+            alerts=[],
+        )
+
+    # Parse timestamp and calculate time range
+    if isinstance(alert_timestamp, str):
+        alert_time = datetime.fromisoformat(alert_timestamp.replace("Z", "+00:00"))
+    else:
+        alert_time = alert_timestamp
+
+    # Query for related alerts: same rule_id, within ±window_minutes, excluding this alert
+    query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"term": {"rule_id": rule_id}},
+                    {
+                        "range": {
+                            "created_at": {
+                                "gte": f"now-{window_minutes}m",
+                                "lte": f"now+{window_minutes}m",
+                            }
+                        }
+                    },
+                ],
+                "must_not": [
+                    {"term": {"alert_id": alert_id}}
+                ],
+            }
+        },
+        "sort": [{"created_at": {"order": "desc"}}],
+        "size": limit,
+    }
+
+    # Use time-anchored range relative to the alert's timestamp
+    query["query"]["bool"]["must"][1] = {
+        "range": {
+            "created_at": {
+                "gte": (alert_time - timedelta(minutes=window_minutes)).isoformat(),
+                "lte": (alert_time + timedelta(minutes=window_minutes)).isoformat(),
+            }
+        }
+    }
+
+    try:
+        result = os_client.search(index=index_pattern, body=query)
+        hits = result.get("hits", {}).get("hits", [])
+        total = result.get("hits", {}).get("total", {}).get("value", 0)
+
+        related_alerts = [AlertResponse(**hit["_source"]) for hit in hits]
+
+        return RelatedAlertsResponse(
+            alert_id=alert_id,
+            related_count=total,
+            clustering_enabled=True,
+            window_minutes=window_minutes,
+            alerts=related_alerts,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to get related alerts for {alert_id}: {e}")
+        return RelatedAlertsResponse(
+            alert_id=alert_id,
+            related_count=0,
+            clustering_enabled=True,
+            window_minutes=window_minutes,
+            alerts=[],
+        )
 
 
 @router.patch("/{alert_id}/status")
