@@ -1,6 +1,5 @@
 """Tests for CSRF middleware."""
 
-import pytest
 from app.core.csrf import is_safe_origin
 
 
@@ -55,8 +54,10 @@ def test_safe_origin_validates_host_header():
     # Invalid host not matching APP_URL hostname
     assert is_safe_origin(None, None, app_url, "evil.com") is False
 
-    # Host with port (common in reverse proxy scenarios)
-    assert is_safe_origin(None, None, app_url, "chad.example.com:80") is False
+    # Host with port (common in reverse proxy scenarios) - port is stripped
+    assert is_safe_origin(None, None, app_url, "chad.example.com:80") is True
+    assert is_safe_origin(None, None, app_url, "chad.example.com:443") is True
+    assert is_safe_origin(None, None, app_url, "evil.com:443") is False
 
 
 def test_safe_origin_allows_localhost_host_in_debug():

@@ -142,13 +142,13 @@ class TestSigmaHQSync:
     @pytest.mark.asyncio
     async def test_sync_requires_auth(self, client: AsyncClient):
         """Sync endpoint requires authentication."""
-        response = await client.post("/api/sigmahq/sync")
+        response = await client.post("/api/sigmahq/sync", json={})
         assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_sync_requires_admin(self, non_admin_client: AsyncClient):
         """Sync endpoint requires admin role."""
-        response = await non_admin_client.post("/api/sigmahq/sync")
+        response = await non_admin_client.post("/api/sigmahq/sync", json={})
         assert response.status_code == 403
 
     @pytest.mark.asyncio
@@ -166,7 +166,7 @@ class TestSigmaHQSync:
                 rule_count=2650,
             )
 
-            response = await authenticated_client.post("/api/sigmahq/sync")
+            response = await authenticated_client.post("/api/sigmahq/sync", json={})
 
             assert response.status_code == 200
             mock_service.clone_repo.assert_called_once()
@@ -190,7 +190,7 @@ class TestSigmaHQSync:
                 rule_count=2757,
             )
 
-            response = await authenticated_client.post("/api/sigmahq/sync")
+            response = await authenticated_client.post("/api/sigmahq/sync", json={})
 
             assert response.status_code == 200
             mock_service.pull_repo.assert_called_once()
@@ -215,7 +215,7 @@ class TestSigmaHQSync:
             )
             mock_audit.return_value = MagicMock()
 
-            response = await authenticated_client.post("/api/sigmahq/sync")
+            response = await authenticated_client.post("/api/sigmahq/sync", json={})
 
             assert response.status_code == 200
             # Verify audit log was called
@@ -244,7 +244,7 @@ class TestSigmaHQSync:
             )
             mock_audit.return_value = MagicMock()
 
-            response = await authenticated_client.post("/api/sigmahq/sync")
+            response = await authenticated_client.post("/api/sigmahq/sync", json={})
 
             assert response.status_code == 200
             # Verify new_rules notification was sent
@@ -267,7 +267,7 @@ class TestSigmaHQSync:
             )
             mock_audit.return_value = MagicMock()
 
-            response = await authenticated_client.post("/api/sigmahq/sync")
+            response = await authenticated_client.post("/api/sigmahq/sync", json={})
 
             assert response.status_code == 200  # Endpoint still returns 200
             data = response.json()

@@ -12,8 +12,8 @@ from app.db.base import Base
 
 
 class MappingOrigin(str, enum.Enum):
-    MANUAL = "manual"
-    AI_SUGGESTED = "ai_suggested"
+    MANUAL = "MANUAL"
+    AI_SUGGESTED = "AI_SUGGESTED"
 
 
 class FieldMapping(Base):

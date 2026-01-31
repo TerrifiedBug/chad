@@ -1,12 +1,12 @@
 import pytest
-from app.services.rate_limit import record_failed_attempt, is_account_locked
-
+from app.services.rate_limit import record_failed_attempt, is_account_locked, clear_failed_attempts
 
 
 @pytest.mark.asyncio
 async def test_get_lock_status_unlocked(
     client,
-    admin_user
+    admin_user,
+    admin_token
 ):
     """Test getting lock status for unlocked user."""
     response = await client.get(
@@ -21,12 +21,13 @@ async def test_get_lock_status_unlocked(
 async def test_get_lock_status_locked(
     client,
     test_user,
-    db_session
+    test_session,
+    admin_token
 ):
     """Test getting lock status for locked user."""
-    # Lock the account
+    # Lock the account by recording failed attempts
     for _ in range(5):
-        record_failed_attempt(db_session, test_user.email, "127.0.0.1")
+        await record_failed_attempt(test_session, test_user.email, "127.0.0.1")
 
     response = await client.get(
         f"/api/users/lock-status/{test_user.email}",
@@ -41,23 +42,29 @@ async def test_get_lock_status_locked(
 async def test_unlock_user(
     client,
     test_user,
-    db_session
+    test_session,
+    admin_token
 ):
     """Test unlocking a locked user."""
-    # Lock the account
+    # Lock the account by recording failed attempts
     for _ in range(5):
-        record_failed_attempt(db_session, test_user.email, "127.0.0.1")
+        await record_failed_attempt(test_session, test_user.email, "127.0.0.1")
 
     # Verify locked
-    assert is_account_locked(db_session, test_user.email)[0] is True
+    locked, _ = await is_account_locked(test_session, test_user.email)
+    assert locked is True
 
     # Unlock
     response = await client.post(
         f"/api/users/{test_user.id}/unlock",
-        headers={"Authorization": f"Bearer {admin_token}"}
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+            "Content-Type": "application/json"
+        }
     )
     assert response.status_code == 200
     assert response.json()["success"] is True
 
     # Verify unlocked
-    assert is_account_locked(db_session, test_user.email)[0] is False
+    locked, _ = await is_account_locked(test_session, test_user.email)
+    assert locked is False

@@ -7,7 +7,7 @@ the core detection pipeline works end-to-end.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -113,7 +113,6 @@ class TestFullAlertingFlow:
             title=rule_title,
             severity=rule_severity,
             tags=rule_tags,
-            enabled=True,
         )
 
         # Verify rule was indexed with all metadata
@@ -122,11 +121,10 @@ class TestFullAlertingFlow:
         assert indexed_doc["rule_title"] == rule_title
         assert indexed_doc["severity"] == rule_severity
         assert indexed_doc["tags"] == rule_tags
-        assert indexed_doc["enabled"] is True
 
         # Step 2: Create a test log that should match
         test_log = {
-            "@timestamp": datetime.now(timezone.utc).isoformat(),
+            "@timestamp": datetime.now(UTC).isoformat(),
             "source_type": "EXECVE",
             "command": "uname",
             "host": {"name": "test-server"},
@@ -164,30 +162,15 @@ class TestFullAlertingFlow:
         assert "created_at" in alert
         assert "updated_at" in alert
 
+    @pytest.mark.skip(reason="Enabled/disabled state no longer stored in percolator - managed via deploy/undeploy")
     def test_disabled_rules_not_matched(self, mock_opensearch_client):
-        """Verify that disabled rules don't generate alerts."""
-        percolator = PercolatorService(mock_opensearch_client)
-        alert_service = AlertService(mock_opensearch_client)
+        """Verify that disabled rules don't generate alerts.
 
-        # Deploy a disabled rule
-        rule_id = str(uuid.uuid4())
-        percolator_index = "chad-percolator-test"
-
-        percolator.deploy_rule(
-            percolator_index=percolator_index,
-            rule_id=rule_id,
-            query={"match_all": {}},
-            title="Disabled Rule",
-            severity="critical",
-            tags=[],
-            enabled=False,  # Rule is disabled
-        )
-
-        # Match log - should not match disabled rule
-        test_log = {"message": "test"}
-        matches = alert_service.match_log(percolator_index, test_log)
-
-        assert len(matches) == 0
+        Note: This test is skipped because the enabled/disabled state is now managed
+        at the database level through deploy/undeploy operations, not as a field in
+        the percolator document. A disabled rule is simply not deployed to the percolator.
+        """
+        pass
 
     def test_multiple_rules_match(self, mock_opensearch_client):
         """Test that multiple rules can match a single log."""
@@ -205,7 +188,6 @@ class TestFullAlertingFlow:
                 title=f"Rule {i}",
                 severity=["low", "medium", "high"][i],
                 tags=[f"tag-{i}"],
-                enabled=True,
             )
 
         # Match log - should match all rules
@@ -343,7 +325,7 @@ class TestWebhookNotificationSending:
             "severity": "high",
             "status": "new",
             "tags": ["test"],
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
     @pytest.mark.asyncio

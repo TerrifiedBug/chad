@@ -1,7 +1,8 @@
 """Tests for worker process."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestWorker:
@@ -71,11 +72,18 @@ class TestLogProcessor:
 
         mock_client = MagicMock()
         mock_session_factory = MagicMock()
+        mock_db_session = AsyncMock()
 
         # Mock batch_percolate_logs to return no matches
-        with patch("app.services.log_processor.batch_percolate_logs", return_value={}):
+        # Mock settings.get_app_url to return None
+        with patch("app.services.log_processor.batch_percolate_logs", return_value={}), \
+             patch("app.services.log_processor.get_app_url", new_callable=AsyncMock, return_value=None):
+            # Mock the index pattern lookup to return None
+            mock_db_session.execute = AsyncMock()
+            mock_db_session.execute.return_value.scalar_one_or_none.return_value = None
+
             processor = LogProcessor(mock_client, mock_session_factory)
-            result = await processor.process_batch("test", [{"message": "test"}])
+            result = await processor.process_batch(mock_db_session, "test", [{"message": "test"}])
 
         assert "logs_processed" in result
         assert "matches" in result

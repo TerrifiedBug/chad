@@ -226,7 +226,8 @@ class TestIndexPatternAuthToken:
 
         # Regenerate the token
         regen_response = await authenticated_client.post(
-            f"/api/index-patterns/{pattern_id}/regenerate-token"
+            f"/api/index-patterns/{pattern_id}/regenerate-token",
+            json={}
         )
         assert regen_response.status_code == 200
         new_token = regen_response.json()["auth_token"]
@@ -239,7 +240,8 @@ class TestIndexPatternAuthToken:
     async def test_regenerate_token_not_found(self, authenticated_client: AsyncClient):
         """Regenerate token for non-existent pattern returns 404."""
         response = await authenticated_client.post(
-            "/api/index-patterns/00000000-0000-0000-0000-000000000000/regenerate-token"
+            "/api/index-patterns/00000000-0000-0000-0000-000000000000/regenerate-token",
+            json={}
         )
         assert response.status_code == 404
 
@@ -247,7 +249,8 @@ class TestIndexPatternAuthToken:
     async def test_regenerate_token_requires_auth(self, client: AsyncClient):
         """Regenerate token requires authentication."""
         response = await client.post(
-            "/api/index-patterns/00000000-0000-0000-0000-000000000000/regenerate-token"
+            "/api/index-patterns/00000000-0000-0000-0000-000000000000/regenerate-token",
+            json={}
         )
         # HTTPBearer returns 403 when no credentials provided
         assert response.status_code == 403
@@ -271,7 +274,8 @@ class TestIndexPatternAuthToken:
 
         # Try to regenerate with non-admin user
         response = await non_admin_client.post(
-            f"/api/index-patterns/{pattern_id}/regenerate-token"
+            f"/api/index-patterns/{pattern_id}/regenerate-token",
+            json={}
         )
         assert response.status_code == 403
 

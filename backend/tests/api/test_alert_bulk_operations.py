@@ -70,7 +70,7 @@ async def test_delete_single_alert_unauthorized(
     async_client: AsyncClient,
 ):
     """Test delete requires authentication."""
-    response = await async_client.delete(f"/api/alerts/{uuid.uuid4()}")
+    response = await async_client.delete(f"/api/alerts/{uuid.uuid4()}", json={})
     assert response.status_code == 401
 
 
@@ -82,6 +82,7 @@ async def test_delete_single_alert_forbidden(
     """Test delete requires manage_rules permission."""
     response = await async_client.delete(
         f"/api/alerts/{uuid.uuid4()}",
+        json={},
         headers={"Authorization": f"Bearer {normal_token}"}
     )
     assert response.status_code == 403

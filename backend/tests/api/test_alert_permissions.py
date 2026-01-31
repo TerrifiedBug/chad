@@ -65,6 +65,7 @@ async def test_alert_delete_requires_manage_alerts(
     # Try to delete alert with user who has only manage_rules
     response = await async_client.delete(
         f"/api/alerts/{alert_id}",
+        json={},
         headers={"Authorization": f"Bearer {token}"}
     )
     # Should fail because user doesn't have manage_alerts
@@ -126,6 +127,7 @@ async def test_alert_delete_with_manage_alerts(
     # Delete alert should succeed
     response = await async_client.delete(
         f"/api/alerts/{alert_id}",
+        json={},
         headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 204

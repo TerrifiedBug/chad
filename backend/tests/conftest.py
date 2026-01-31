@@ -1,8 +1,8 @@
 """Pytest fixtures for backend tests."""
 
+import os
 import uuid
 from collections.abc import AsyncGenerator
-import os
 
 import pytest
 import pytest_asyncio
@@ -15,7 +15,6 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.user import User, UserRole
-
 
 # Use a SEPARATE test database to avoid destroying development data
 TEST_DB_NAME = os.environ.get('TEST_POSTGRES_DB', 'chad_test')
@@ -62,6 +61,7 @@ def create_test_database(request):
         return
 
     import asyncio
+
     from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy.pool import NullPool
 
@@ -120,7 +120,7 @@ async def test_engine():
         await conn.execute(text("CREATE TYPE rulestatus AS ENUM ('deployed', 'undeployed', 'snoozed')"))
         # RuleSource and SigmaHQType use plain String columns, not actual enums
         # MappingOrigin uses enum member names (uppercase)
-        await conn.execute(text("CREATE TYPE mappingorigin AS ENUM ('DEFAULT', 'USER')"))
+        await conn.execute(text("CREATE TYPE mappingorigin AS ENUM ('MANUAL', 'AI_SUGGESTED')"))
         # ExceptionOperator uses enum member names (uppercase) per migration
         await conn.execute(text(
             "CREATE TYPE exceptionoperator AS ENUM "
@@ -293,14 +293,15 @@ async def db_session(test_session: AsyncSession) -> AsyncSession:
 @pytest_asyncio.fixture(scope="function")
 async def sample_rules(test_session: AsyncSession, test_user):
     """Create sample rules for correlation testing."""
-    from app.models.rule import Rule, RuleStatus, RuleSource
     from app.models.index_pattern import IndexPattern
+    from app.models.rule import Rule, RuleSource, RuleStatus
 
     # Create an index pattern first
     index_pattern = IndexPattern(
         id=uuid.uuid4(),
-        name="logs-*",
-        title="Logs Index Pattern",
+        name="logs-test",
+        pattern="logs-*",
+        percolator_index=".percolator-logs-test",
     )
     test_session.add(index_pattern)
     await test_session.flush()
@@ -349,7 +350,6 @@ async def correlation_rule(test_session: AsyncSession, sample_rules):
         entity_field="source.ip",
         time_window_minutes=5,
         severity="high",
-        is_enabled=True,
     )
     test_session.add(rule)
     await test_session.commit()
