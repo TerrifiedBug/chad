@@ -34,8 +34,8 @@ services:
       - "8001:8001"  # Direct log ingestion (bypass nginx)
     command: >
       sh -c "
-      uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4} &
-      uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers ${LOG_WORKERS:-2} &
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-warning} --no-access-log --workers ${UVICORN_WORKERS:-4} &
+      uvicorn app.main:app --host 0.0.0.0 --port 8001 --log-level ${LOG_LEVEL:-warning} --no-access-log --workers ${LOG_WORKERS:-2} &
       wait
       "
     environment:
@@ -93,6 +93,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_started
+    volumes:
+      - chad_data:/data
     deploy:
       replicas: ${WORKER_REPLICAS:-2}
     restart: unless-stopped
