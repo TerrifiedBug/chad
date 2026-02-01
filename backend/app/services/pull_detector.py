@@ -249,6 +249,9 @@ class PullDetector:
         # Get the configurable timestamp field (defaults to @timestamp)
         timestamp_field = getattr(index_pattern, "timestamp_field", "@timestamp") or "@timestamp"
 
+        # Alerts index follows naming convention: chad-alerts-{index_pattern_name}
+        alerts_index = f"chad-alerts-{index_pattern.name}"
+
         # Import here to avoid circular imports
         from app.services.field_mapping import resolve_mappings
 
@@ -322,6 +325,7 @@ class PullDetector:
                         # Create alert for each match
                         for hit in hits:
                             await alert_service.create_alert(
+                                alerts_index=alerts_index,
                                 rule_id=str(rule.id),
                                 rule_title=rule.title,
                                 severity=rule.severity,
