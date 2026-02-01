@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class TIIndicatorType(str, Enum):
@@ -47,10 +47,18 @@ class IndexPatternBase(BaseModel):
     rate_limit_enabled: bool = False
     rate_limit_requests_per_minute: int | None = None
     rate_limit_events_per_minute: int | None = None
+    # Detection mode: 'push' (real-time) or 'pull' (scheduled queries)
+    mode: str = "push"
+    poll_interval_minutes: int = 5
 
 
 class IndexPatternCreate(IndexPatternBase):
-    pass
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in ("push", "pull"):
+            raise ValueError("mode must be 'push' or 'pull'")
+        return v
 
 
 class IndexPatternUpdate(BaseModel):
@@ -70,11 +78,23 @@ class IndexPatternUpdate(BaseModel):
     rate_limit_enabled: bool | None = None
     rate_limit_requests_per_minute: int | None = None
     rate_limit_events_per_minute: int | None = None
+    # Detection mode
+    mode: str | None = None
+    poll_interval_minutes: int | None = None
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("push", "pull"):
+            raise ValueError("mode must be 'push' or 'pull'")
+        return v
 
 
 class IndexPatternResponse(IndexPatternBase):
     id: UUID
     auth_token: str
+    mode: str
+    poll_interval_minutes: int
     created_at: datetime
     updated_at: datetime
 

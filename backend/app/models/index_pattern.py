@@ -7,6 +7,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin, UUIDMixin
 
 
+class DetectionMode:
+    """Constants for detection modes."""
+    PUSH = "push"
+    PULL = "pull"
+
+
 def generate_auth_token() -> str:
     """Generate a secure auth token for log shipping."""
     return secrets.token_urlsafe(32)
@@ -65,6 +71,12 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     rate_limit_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     rate_limit_requests_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True, default=100)
     rate_limit_events_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True, default=50000)
+
+    # Detection mode: 'push' (real-time via /logs) or 'pull' (scheduled OpenSearch queries)
+    mode: Mapped[str] = mapped_column(String(10), default="push", nullable=False)
+
+    # Pull mode polling configuration (only used when mode='pull')
+    poll_interval_minutes: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
 
     # Relationships
     field_mappings = relationship(
