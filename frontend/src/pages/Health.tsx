@@ -210,20 +210,6 @@ export default function HealthPage() {
     }
   }
 
-  const deleteDeadLetterMessage = async (messageId: string) => {
-    try {
-      await queueApi.deleteDeadLetterMessage(messageId)
-      setDeadLetterMessages(prev => prev.filter(m => m.id !== messageId))
-      setDeadLetterCount(prev => prev - 1)
-      if (queueStats) {
-        setQueueStats({ ...queueStats, dead_letter_count: queueStats.dead_letter_count - 1 })
-      }
-      showToast('Message deleted')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to delete message', 'error')
-    }
-  }
-
   // Calculate overall status (includes pull mode health when patterns exist)
   const overallStatus: HealthStatus = (() => {
     // Start with index pattern health
@@ -687,12 +673,10 @@ export default function HealthPage() {
                         {deadLetterMessages.map((msg, i) => (
                           <div key={i} className="p-3 border rounded-lg text-sm">
                             <div className="flex justify-between mb-1">
-                              <span className="font-mono text-muted-foreground">{msg.stream}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {formatDateTime(msg.timestamp)}
-                              </span>
+                              <span className="font-mono text-muted-foreground">{msg.original_stream}</span>
+                              <span className="text-xs text-muted-foreground">ID: {msg.original_id}</span>
                             </div>
-                            <p className="text-destructive">{msg.error}</p>
+                            <p className="text-destructive">{msg.reason}</p>
                           </div>
                         ))}
                       </div>
