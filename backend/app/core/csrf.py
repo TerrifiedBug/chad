@@ -42,7 +42,7 @@ def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None,
     Validate that the Origin, Referer, or Host header is allowed.
 
     In development mode, allows localhost origins.
-    In production, validates against configured APP_URL hostname.
+    In production, validates against configured APP_URL hostname and ALLOWED_HOSTS.
 
     Args:
         origin: Origin header value
@@ -75,31 +75,42 @@ def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None,
             if host in ["localhost", "127.0.0.1", "frontend"]:
                 return True
 
-    # Production: validate against configured APP_URL
+    # Build list of allowed hosts from APP_URL and ALLOWED_HOSTS
+    allowed_hosts: list[str] = []
+
+    # Add hostname from APP_URL
     if app_url:
-        # Extract hostname from APP_URL (e.g., https://chad.example.com)
         expected_host = urlparse(app_url).hostname
-
-        if not expected_host:
+        if expected_host:
+            allowed_hosts.append(expected_host)
+        else:
             logger.warning(f"Invalid APP_URL format: {app_url}")
-            return False
 
-        # Check origin header
-        if origin:
-            origin_host = urlparse(origin).hostname
-            if origin_host == expected_host:
-                return True
+    # Add additional allowed hosts from ALLOWED_HOSTS setting
+    allowed_hosts.extend(settings.allowed_hosts_list)
 
-        # Check referer header as fallback
-        if referer:
-            referer_host = urlparse(referer).hostname
-            if referer_host == expected_host:
-                return True
+    if not allowed_hosts:
+        logger.warning("No allowed hosts configured (APP_URL and ALLOWED_HOSTS both unset)")
+        return False
 
-        # Check host header (for reverse proxy scenarios)
-        if host:
-            if host == expected_host:
-                return True
+    # Check origin header
+    if origin:
+        origin_host = urlparse(origin).hostname
+        if origin_host in allowed_hosts:
+            return True
+
+    # Check referer header as fallback
+    if referer:
+        referer_host = urlparse(referer).hostname
+        if referer_host in allowed_hosts:
+            return True
+
+    # Check host header (for reverse proxy scenarios)
+    if host:
+        # Host header may include port, extract just the hostname
+        host_only = host.split(":")[0] if ":" in host else host
+        if host_only in allowed_hosts:
+            return True
 
     return False
 

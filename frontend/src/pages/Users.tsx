@@ -30,10 +30,12 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X, Lock, Unlock, Loader2 } from 'lucide-react'
+import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X, Lock, Unlock, Loader2, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
+import { LoadingState } from '@/components/ui/loading-state'
+import { EmptyState } from '@/components/ui/empty-state'
 
 // Password complexity validation
 function validatePasswordComplexity(password: string) {
@@ -419,17 +421,18 @@ export default function UsersPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8">
-                  Loading...
+                <TableCell colSpan={8}>
+                  <LoadingState message="Loading users..." />
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="text-center py-8 text-muted-foreground"
-                >
-                  No users found
+                <TableCell colSpan={8}>
+                  <EmptyState
+                    icon={<Users className="h-12 w-12" />}
+                    title="No users found"
+                    description="Add users to grant access to CHAD."
+                  />
                 </TableCell>
               </TableRow>
             ) : (

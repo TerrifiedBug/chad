@@ -839,6 +839,12 @@ export const alertsApi = {
   unassign: async (alertId: string): Promise<{ message: string }> => {
     return api.post(`/alerts/${alertId}/unassign`)
   },
+  getRelated: (alertId: string, limit?: number) => {
+    const params = new URLSearchParams()
+    if (limit) params.set('limit', limit.toString())
+    const query = params.toString()
+    return api.get<RelatedAlertsResponse>(`/alerts/${alertId}/related${query ? `?${query}` : ''}`)
+  },
 }
 
 // Alert Comments types
@@ -1364,6 +1370,15 @@ export type HealthIntervals = {
   mitre_attack_interval_seconds: number
   opensearch_interval_seconds: number
   ti_interval_seconds: number
+}
+
+// Related Alerts response type
+export type RelatedAlertsResponse = {
+  alert_id: string
+  related_count: number
+  clustering_enabled: boolean
+  window_minutes: number | null
+  alerts: Alert[]
 }
 
 // Alert Clustering types
@@ -2016,5 +2031,53 @@ export const configApi = {
     }
     return response.json()
   },
+}
+
+// Queue Settings types
+export type QueueSettings = {
+  max_queue_size: number
+  warning_threshold: number
+  critical_threshold: number
+  backpressure_mode: 'reject' | 'drop'
+  batch_size: number
+  batch_timeout_seconds: number
+  message_ttl_seconds: number
+}
+
+export type QueueSettingsUpdate = Partial<QueueSettings>
+
+export type QueueStatsResponse = {
+  total_depth: number
+  queues: Record<string, number>
+  dead_letter_count: number
+}
+
+export type DeadLetterMessage = {
+  id: string
+  original_stream: string
+  original_id: string
+  data: Record<string, unknown>
+  reason: string
+}
+
+export type DeadLetterResponse = {
+  count: number
+  messages: DeadLetterMessage[]
+}
+
+// Queue API
+export const queueApi = {
+  getSettings: () =>
+    api.get<QueueSettings>('/queue/settings'),
+  updateSettings: (data: QueueSettingsUpdate) =>
+    api.put<QueueSettings>('/queue/settings', data),
+  getStats: () =>
+    api.get<QueueStatsResponse>('/queue/stats'),
+  getDeadLetter: (limit = 100) =>
+    api.get<DeadLetterResponse>(`/queue/dead-letter?limit=${limit}`),
+  clearDeadLetter: () =>
+    api.delete('/queue/dead-letter'),
+  deleteDeadLetterMessage: (messageId: string) =>
+    api.delete(`/queue/dead-letter/${messageId}`),
 }
 

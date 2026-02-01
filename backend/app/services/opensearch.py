@@ -86,6 +86,44 @@ def create_client(
     )
 
 
+async def get_client_from_settings(db_session) -> OpenSearch | None:
+    """
+    Get OpenSearch client from database settings.
+
+    For use by background workers and services that don't have FastAPI dependencies.
+    Returns None if OpenSearch is not configured.
+    """
+    from sqlalchemy import select
+    from app.models.setting import Setting
+    from app.core.encryption import decrypt
+
+    result = await db_session.execute(
+        select(Setting).where(Setting.key == "opensearch")
+    )
+    setting = result.scalar_one_or_none()
+
+    if not setting:
+        return None
+
+    config = setting.value
+    password = config.get("password")
+    if password:
+        try:
+            password = decrypt(password)
+        except Exception as e:
+            # Decryption failed - use raw password value (may be unencrypted)
+            logger.debug("Password decryption failed, using raw value: %s", e)
+
+    return create_client(
+        host=config["host"],
+        port=config["port"],
+        username=config.get("username"),
+        password=password,
+        use_ssl=config.get("use_ssl", True),
+        verify_certs=config.get("verify_certs", True),
+    )
+
+
 def validate_opensearch_connection(
     host: str,
     port: int,

@@ -38,12 +38,16 @@ from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
 from app.api.stats import router as stats_router
 from app.api.users import router as users_router
+from app.api.metrics import router as metrics_router
+from app.api.queue import router as queue_router
 from app.api.webhooks import router as webhooks_router
 from app.api.websocket import router as websocket_router
 from app.core.config import settings
 from app.core.csrf import CSRFMiddleware
 from app.core.middleware import ErrorResponseMiddleware, RequestValidationMiddleware
+from app.core.redis import close_redis
 from app.services.scheduler import scheduler_service
+from app.services.websocket import manager as websocket_manager
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +105,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to sync scheduler jobs on startup: {e}")
 
+    # Start WebSocket pub/sub subscriber for cross-worker broadcasts
+    logger.info("Starting WebSocket pub/sub subscriber")
+    try:
+        await websocket_manager.start_subscriber()
+    except Exception as e:
+        logger.warning(f"Failed to start WebSocket subscriber: {e}")
+
     yield
 
     # Shutdown
+    logger.info("Stopping WebSocket pub/sub subscriber")
+    await websocket_manager.stop_subscriber()
+
     logger.info("Stopping scheduler service")
     scheduler_service.stop()
+
+    # Close Redis connection
+    logger.info("Closing Redis connection")
+    await close_redis()
 
 
 app = FastAPI(
@@ -335,6 +353,8 @@ app.include_router(field_mappings_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(attack_router, prefix="/api")
 app.include_router(webhooks_router, prefix="/api")
+app.include_router(queue_router, prefix="/api")
+app.include_router(metrics_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(jira_router, prefix="/api")
 app.include_router(ti_router, prefix="/api")

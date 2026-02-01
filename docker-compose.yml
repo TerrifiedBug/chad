@@ -16,8 +16,28 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     image: ghcr.io/terrifiedbug/chad/chad-backend:${VERSION:-latest}
+    ports:
+      - "8001:8001"  # Direct log ingestion (bypass nginx)
+    command: >
+      sh -c "
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-warning} --no-access-log --workers ${UVICORN_WORKERS:-4} &
+      uvicorn app.main:app --host 0.0.0.0 --port 8001 --log-level ${LOG_LEVEL:-warning} --no-access-log --workers ${LOG_WORKERS:-2} &
+      wait
+      "
     environment:
       # Database
       - POSTGRES_HOST=postgres
@@ -25,20 +45,63 @@ services:
       - POSTGRES_USER=chad
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=chad
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-20}
+      - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
+      # Redis
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       # Security (REQUIRED - must be set in production)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - SESSION_SECRET_KEY=${SESSION_SECRET_KEY}
       - CHAD_ENCRYPTION_KEY=${CHAD_ENCRYPTION_KEY}
       # Application URL
       - APP_URL=${APP_URL:-http://localhost}
+      # Additional allowed hosts for CSRF (comma-separated, e.g., "api.example.com,backend.example.com")
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
       # Logging (production default is warning for quiet logs)
       - LOG_LEVEL=${LOG_LEVEL:-warning}
       # - CHAD_SSO_ONLY=true  # Enable SSO-only authentication (optional)
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - chad_data:/data
+
+  worker:
+    image: ghcr.io/terrifiedbug/chad/chad-backend:${VERSION:-latest}
+    command: python -m app.worker
+    environment:
+      # Database
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=chad
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=chad
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-20}
+      - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
+      # Redis
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      # Security (REQUIRED - must be set in production)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY}
+      - CHAD_ENCRYPTION_KEY=${CHAD_ENCRYPTION_KEY}
+      # Application URL (required for webhook notification URLs)
+      - APP_URL=${APP_URL:-http://localhost}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - chad_data:/data
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+    restart: unless-stopped
 
   frontend:
     image: ghcr.io/terrifiedbug/chad/chad-frontend:${VERSION:-latest}
@@ -50,3 +113,4 @@ services:
 volumes:
   pgdata:
   chad_data:
+  redis_data:

@@ -44,33 +44,12 @@ import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { DateRange } from 'react-day-picker'
 import { cn } from '@/lib/utils'
+import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 import { useAuth } from '@/hooks/use-auth'
+import { LoadingState } from '@/components/ui/loading-state'
+import { EmptyState } from '@/components/ui/empty-state'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
-
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-black',
-  low: 'bg-blue-500 text-white',
-  informational: 'bg-gray-500 text-white',
-}
-
-const statusColors: Record<AlertStatus, string> = {
-  new: 'bg-blue-500 text-white',
-  acknowledged: 'bg-yellow-500 text-black',
-  resolved: 'bg-green-500 text-white',
-  false_positive: 'bg-gray-500 text-white',
-}
-
-const statusLabels: Record<AlertStatus, string> = {
-  new: 'New',
-  acknowledged: 'Acknowledged',
-  resolved: 'Resolved',
-  false_positive: 'False Positive',
-}
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // Type guard to check if response is clustered
 function isClusteredResponse(response: AlertListResponse | ClusteredAlertListResponse): response is ClusteredAlertListResponse {
@@ -89,9 +68,20 @@ export default function AlertsPage() {
   const [totalClusters, setTotalClusters] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<AlertStatus | 'all'>('all')
-  const [severityFilter, setSeverityFilter] = useState<string[]>([])
+
+  // Initialize filters from URL params
+  const [search, setSearch] = useState(() => searchParams.get('search') || '')
+  const [statusFilter, setStatusFilter] = useState<AlertStatus | 'all'>(() => {
+    const status = searchParams.get('status')
+    if (status === 'new' || status === 'acknowledged' || status === 'resolved' || status === 'false_positive') {
+      return status
+    }
+    return 'all'
+  })
+  const [severityFilter, setSeverityFilter] = useState<string[]>(() => {
+    const severities = searchParams.get('severity')
+    return severities ? severities.split(',').filter(s => SEVERITIES.includes(s as typeof SEVERITIES[number])) : []
+  })
   const [page, setPage] = useState(1)
 
   // Owner filter - initialize from URL query param, fallback to localStorage
@@ -185,17 +175,20 @@ export default function AlertsPage() {
     setPage(1)
   }, [statusFilter, severityFilter, ownerFilter])
 
-  // Sync ownerFilter with URL and localStorage
+  // Sync all filters with URL
   useEffect(() => {
-    if (ownerFilter) {
-      searchParams.set('owner', ownerFilter)
-    } else {
-      searchParams.delete('owner')
-    }
-    setSearchParams(searchParams, { replace: true })
+    const newParams = new URLSearchParams()
+
+    if (search) newParams.set('search', search)
+    if (statusFilter !== 'all') newParams.set('status', statusFilter)
+    if (severityFilter.length > 0) newParams.set('severity', severityFilter.join(','))
+    if (ownerFilter) newParams.set('owner', ownerFilter)
+
+    setSearchParams(newParams, { replace: true })
+
     // Persist "Assigned to Me" preference to localStorage
     localStorage.setItem('alerts-assigned-to-me', ownerFilter === 'me' ? 'true' : 'false')
-  }, [ownerFilter, searchParams, setSearchParams])
+  }, [search, statusFilter, severityFilter, ownerFilter, setSearchParams])
 
   useEffect(() => {
     loadData()
@@ -207,8 +200,8 @@ export default function AlertsPage() {
 
   // Filter alerts (works for non-clustered mode)
   const filteredAlerts = alerts.filter((alert) => {
-    // Search filter
-    if (!alert.rule_title.toLowerCase().includes(search.toLowerCase())) {
+    // Search filter (handle null rule_title for deleted rules)
+    if (!(alert.rule_title || '').toLowerCase().includes(search.toLowerCase())) {
       return false
     }
     // Severity filter (client-side when multiple selected)
@@ -220,8 +213,8 @@ export default function AlertsPage() {
 
   // Filter clusters (client-side search/filter for clustered mode)
   const filteredClusters = clusters.filter((cluster) => {
-    // Search filter
-    if (!cluster.representative.rule_title.toLowerCase().includes(search.toLowerCase())) {
+    // Search filter (handle null rule_title for deleted rules)
+    if (!(cluster.representative.rule_title || '').toLowerCase().includes(search.toLowerCase())) {
       return false
     }
     // Severity filter
@@ -588,13 +581,15 @@ export default function AlertsPage() {
       )}
 
       {isLoading ? (
-        <div className="text-center py-8 text-muted-foreground">Loading...</div>
+        <LoadingState message="Loading alerts..." />
       ) : (isClustered ? filteredClusters.length === 0 : filteredAlerts.length === 0) ? (
-        <div className="text-center py-8 text-muted-foreground">
-          {search || statusFilter !== 'all' || severityFilter.length > 0
-            ? 'No alerts match your filters'
-            : 'No alerts yet. Alerts will appear when rules match incoming logs.'}
-        </div>
+        <EmptyState
+          icon={<Bell className="h-12 w-12" />}
+          title={search || statusFilter !== 'all' || severityFilter.length > 0 ? 'No alerts match your filters' : 'No alerts yet'}
+          description={search || statusFilter !== 'all' || severityFilter.length > 0
+            ? 'Try adjusting your filters to see more results.'
+            : 'Alerts will appear when rules match incoming logs.'}
+        />
       ) : (
         <TooltipProvider>
           <div className="border rounded-lg">
@@ -695,7 +690,7 @@ export default function AlertsPage() {
                           <TableCell>
                             <span
                               className={`px-2 py-1 rounded text-xs font-medium ${
-                                severityColors[alert.severity] || 'bg-gray-500 text-white'
+                                SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
                               }`}
                             >
                               {capitalize(alert.severity)}
@@ -703,9 +698,9 @@ export default function AlertsPage() {
                           </TableCell>
                           <TableCell>
                             <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
+                              className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
                             >
-                              {statusLabels[alert.status]}
+                              {ALERT_STATUS_LABELS[alert.status]}
                             </span>
                           </TableCell>
                           <TableCell>
@@ -788,7 +783,7 @@ export default function AlertsPage() {
                             <TableCell>
                               <span
                                 className={`px-2 py-1 rounded text-xs font-medium ${
-                                  severityColors[clusterAlert.severity] || 'bg-gray-500 text-white'
+                                  SEVERITY_COLORS[clusterAlert.severity] || 'bg-gray-500 text-white'
                                 }`}
                               >
                                 {capitalize(clusterAlert.severity)}
@@ -796,9 +791,9 @@ export default function AlertsPage() {
                             </TableCell>
                             <TableCell>
                               <span
-                                className={`px-2 py-1 rounded text-xs font-medium ${statusColors[clusterAlert.status]}`}
+                                className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[clusterAlert.status]}`}
                               >
-                                {statusLabels[clusterAlert.status]}
+                                {ALERT_STATUS_LABELS[clusterAlert.status]}
                               </span>
                             </TableCell>
                             <TableCell>
@@ -871,7 +866,7 @@ export default function AlertsPage() {
                       <TableCell>
                         <span
                           className={`px-2 py-1 rounded text-xs font-medium ${
-                            severityColors[alert.severity] || 'bg-gray-500 text-white'
+                            SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
                           }`}
                         >
                           {capitalize(alert.severity)}
@@ -879,9 +874,9 @@ export default function AlertsPage() {
                       </TableCell>
                       <TableCell>
                         <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
+                          className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
                         >
-                          {statusLabels[alert.status]}
+                          {ALERT_STATUS_LABELS[alert.status]}
                         </span>
                       </TableCell>
                       <TableCell>

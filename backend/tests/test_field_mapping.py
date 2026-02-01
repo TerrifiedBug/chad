@@ -2,7 +2,6 @@
 
 import uuid
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,13 +34,28 @@ class TestResolveMappings:
         return pattern
 
     @pytest_asyncio.fixture
-    async def global_mapping(self, test_session: AsyncSession, test_user: User) -> FieldMapping:
+    async def another_index_pattern(self, test_session: AsyncSession) -> IndexPattern:
+        pattern = IndexPattern(
+            id=uuid.uuid4(),
+            name="another-pattern",
+            pattern="another-*",
+            percolator_index=".percolator-another",
+        )
+        test_session.add(pattern)
+        await test_session.commit()
+        await test_session.refresh(pattern)
+        return pattern
+
+    @pytest_asyncio.fixture
+    async def source_ip_mapping(
+        self, test_session: AsyncSession, test_user: User, index_pattern: IndexPattern
+    ) -> FieldMapping:
         mapping = FieldMapping(
             sigma_field="SourceIp",
             target_field="src_ip",
             origin=MappingOrigin.MANUAL,
             created_by=test_user.id,
-            index_pattern_id=None,  # Global
+            index_pattern_id=index_pattern.id,
         )
         test_session.add(mapping)
         await test_session.commit()
@@ -49,7 +63,7 @@ class TestResolveMappings:
         return mapping
 
     @pytest_asyncio.fixture
-    async def index_mapping(
+    async def user_mapping(
         self, test_session: AsyncSession, test_user: User, index_pattern: IndexPattern
     ) -> FieldMapping:
         mapping = FieldMapping(
@@ -64,55 +78,54 @@ class TestResolveMappings:
         await test_session.refresh(mapping)
         return mapping
 
-    async def test_resolve_global_mapping(
-        self, test_session: AsyncSession, global_mapping: FieldMapping, index_pattern: IndexPattern
+    async def test_resolve_index_mapping(
+        self, test_session: AsyncSession, source_ip_mapping: FieldMapping, index_pattern: IndexPattern
     ):
-        """Global mapping should resolve for any index pattern."""
+        """Per-index mapping should resolve for that index pattern."""
         result = await resolve_mappings(
             test_session, ["SourceIp"], index_pattern.id
         )
         assert result["SourceIp"] == "src_ip"
 
-    async def test_resolve_index_mapping(
-        self, test_session: AsyncSession, index_mapping: FieldMapping, index_pattern: IndexPattern
+    async def test_resolve_user_mapping(
+        self, test_session: AsyncSession, user_mapping: FieldMapping, index_pattern: IndexPattern
     ):
-        """Per-index mapping should resolve for that index pattern."""
+        """User field mapping should resolve correctly."""
         result = await resolve_mappings(
             test_session, ["User"], index_pattern.id
         )
         assert result["User"] == "acct"
 
-    async def test_index_overrides_global(
+    async def test_mapping_isolated_to_index_pattern(
         self,
         test_session: AsyncSession,
         test_user: User,
         index_pattern: IndexPattern,
+        another_index_pattern: IndexPattern,
     ):
-        """Per-index mapping should override global for same field."""
-        # Create global mapping
-        global_map = FieldMapping(
+        """Mappings should be isolated to their index pattern."""
+        # Create mapping for one index pattern
+        mapping = FieldMapping(
             sigma_field="User",
             target_field="username",
             origin=MappingOrigin.MANUAL,
             created_by=test_user.id,
-            index_pattern_id=None,
-        )
-        test_session.add(global_map)
-        # Create per-index mapping for same field
-        index_map = FieldMapping(
-            sigma_field="User",
-            target_field="acct",
-            origin=MappingOrigin.MANUAL,
-            created_by=test_user.id,
             index_pattern_id=index_pattern.id,
         )
-        test_session.add(index_map)
+        test_session.add(mapping)
         await test_session.commit()
 
+        # Should resolve for its own index pattern
         result = await resolve_mappings(
             test_session, ["User"], index_pattern.id
         )
-        assert result["User"] == "acct"  # Index wins over global
+        assert result["User"] == "username"
+
+        # Should NOT resolve for different index pattern
+        result = await resolve_mappings(
+            test_session, ["User"], another_index_pattern.id
+        )
+        assert result["User"] is None
 
     async def test_unmapped_field_returns_none(
         self, test_session: AsyncSession, index_pattern: IndexPattern
@@ -126,8 +139,8 @@ class TestResolveMappings:
     async def test_resolve_multiple_fields(
         self,
         test_session: AsyncSession,
-        global_mapping: FieldMapping,
-        index_mapping: FieldMapping,
+        source_ip_mapping: FieldMapping,
+        user_mapping: FieldMapping,
         index_pattern: IndexPattern,
     ):
         """Should resolve multiple fields at once."""
@@ -171,19 +184,6 @@ class TestCRUDOperations:
         )
         assert mapping.sigma_field == "TestField"
         assert mapping.target_field == "test_field"
-
-    async def test_get_mappings_global(self, test_session: AsyncSession, test_user: User):
-        """Should get global mappings when index_pattern_id is None."""
-        await create_mapping(
-            test_session,
-            sigma_field="GlobalField",
-            target_field="global_field",
-            index_pattern_id=None,
-            created_by=test_user.id,
-        )
-        mappings = await get_mappings(test_session, index_pattern_id=None)
-        assert len(mappings) >= 1
-        assert any(m.sigma_field == "GlobalField" for m in mappings)
 
     async def test_get_mappings_by_index(
         self, test_session: AsyncSession, test_user: User, index_pattern: IndexPattern
@@ -231,4 +231,4 @@ class TestCRUDOperations:
 
         # Verify deleted
         mappings = await get_mappings(test_session, index_pattern_id=index_pattern.id)
-        assert not any(m.sigma_field == "DeleteField" for m in mappings)
+        assert all(m.id != mapping.id for m in mappings)

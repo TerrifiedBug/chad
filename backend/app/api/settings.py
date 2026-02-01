@@ -981,13 +981,17 @@ async def update_setting(
 
     # For SSO settings, preserve existing encrypted client_secret if not provided
     # This allows enabling/disabling SSO without losing the secret
+    # Track which fields are already encrypted (to avoid double-encryption)
+    already_encrypted_fields: set[str] = set()
     if key == "sso" and setting and setting.value:
         existing_secret = setting.value.get("client_secret")
         if existing_secret and "client_secret" not in value:
             value["client_secret"] = existing_secret
+            # Mark as already encrypted to prevent double-encryption
+            already_encrypted_fields.add("client_secret")
 
-    # Encrypt sensitive values
-    encrypted_value = _encrypt_sensitive(key, value)
+    # Encrypt sensitive values (skip already-encrypted fields)
+    encrypted_value = _encrypt_sensitive(key, value, skip_fields=already_encrypted_fields)
 
     if setting:
         setting.value = encrypted_value
@@ -1024,10 +1028,18 @@ def _mask_sensitive(key: str, value: dict | None) -> dict | None:
     return value
 
 
-def _encrypt_sensitive(key: str, value: dict) -> dict:
-    """Encrypt sensitive fields in settings value."""
+def _encrypt_sensitive(key: str, value: dict, skip_fields: set[str] | None = None) -> dict:
+    """Encrypt sensitive fields in settings value.
+
+    Args:
+        key: The setting key (unused but kept for future use)
+        value: The settings dict to encrypt
+        skip_fields: Fields to skip encryption for (already encrypted)
+    """
     if not isinstance(value, dict):
         return value
+
+    skip_fields = skip_fields or set()
 
     # Patterns to match in field names (substring match)
     sensitive_patterns = {"password", "secret", "token", "api_key", "client_secret"}
@@ -1036,6 +1048,11 @@ def _encrypt_sensitive(key: str, value: dict) -> dict:
     result = {}
 
     for k, v in value.items():
+        # Skip fields that are already encrypted
+        if k in skip_fields:
+            result[k] = v
+            continue
+
         is_sensitive = (
             k.lower() in sensitive_exact
             or any(s in k.lower() for s in sensitive_patterns)

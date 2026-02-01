@@ -389,14 +389,89 @@ class AlertService:
 
         # Use the deterministic alert_id as the document ID
         # This makes retries overwrite instead of creating duplicates
+        # Use refresh=False for eventual consistency (~1 second delay)
+        # This significantly improves write performance at scale
         self.client.index(
             index=alerts_index,
             id=alert_id,
             body=alert,
-            refresh=True,
+            refresh=False,
         )
 
         return alert
+
+    def bulk_create_alerts(
+        self,
+        alerts_index: str,
+        alerts: list[dict[str, Any]],
+    ) -> list[str]:
+        """
+        Create multiple alerts in a single bulk operation.
+
+        Uses OpenSearch bulk API for efficient writes at scale.
+        Each alert uses deterministic ID to prevent duplicates on retry.
+
+        Args:
+            alerts_index: Target OpenSearch index
+            alerts: List of alert documents to create. Each must have:
+                - rule_id: str
+                - rule_title: str
+                - severity: str
+                - log_document: dict
+
+        Returns:
+            List of created alert IDs
+        """
+        if not alerts:
+            return []
+
+        self.ensure_alerts_index(alerts_index)
+
+        bulk_body = []
+        alert_ids = []
+        now = datetime.now(UTC).isoformat()
+
+        for alert_data in alerts:
+            alert_id = generate_deterministic_alert_id(
+                alert_data["rule_id"],
+                alert_data.get("log_document", {}),
+            )
+            alert_ids.append(alert_id)
+
+            # Index action
+            bulk_body.append({"index": {"_index": alerts_index, "_id": alert_id}})
+
+            # Extract TI enrichment to top level for querying
+            log_doc = alert_data.get("log_document", {})
+            ti_enrichment = log_doc.pop("ti_enrichment", None) if isinstance(log_doc, dict) else None
+
+            # Document
+            alert_doc = {
+                "alert_id": alert_id,
+                "rule_id": alert_data["rule_id"],
+                "rule_title": alert_data["rule_title"],
+                "severity": alert_data["severity"],
+                "tags": alert_data.get("tags", []),
+                "status": "new",
+                "log_document": log_doc,
+                "created_at": now,
+                "updated_at": now,
+            }
+
+            if ti_enrichment:
+                alert_doc["ti_enrichment"] = ti_enrichment
+
+            bulk_body.append(alert_doc)
+
+        if bulk_body:
+            import logging
+            logger = logging.getLogger(__name__)
+
+            result = self.client.bulk(body=bulk_body, refresh=False)
+            if result.get("errors"):
+                logger.warning(f"Some bulk alert writes failed: {result}")
+
+        return alert_ids
 
     def get_alerts(
         self,

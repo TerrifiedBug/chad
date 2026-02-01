@@ -18,6 +18,20 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes --loglevel warning
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -29,6 +43,10 @@ services:
       - POSTGRES_USER=chad
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpassword}
       - POSTGRES_DB=chad
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-20}
+      - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
+      # Redis
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       # Security (CHANGE IN PRODUCTION)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-prod}
       - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}
@@ -41,13 +59,56 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
       - "8000:8000"
+      - "8001:8001"  # Direct log ingestion (bypass nginx)
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./backend:/app
       - chad_data:/data
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+    # Note: --reload is incompatible with --workers, dev uses single-worker per port
+    command: >
+      sh -c "
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info --no-access-log &
+      uvicorn app.main:app --host 0.0.0.0 --port 8001 --log-level info --no-access-log &
+      wait
+      "
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      # Database
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=chad
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpassword}
+      - POSTGRES_DB=chad
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-20}
+      - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
+      # Redis
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      # Security (CHANGE IN PRODUCTION)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-prod}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}
+      # Development mode
+      - DEBUG=true
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    # Worker runs without entrypoint (no migrations needed)
+    entrypoint: []
+    command: python -m app.worker
+    # Worker starts by default in dev for testing queue processing
 
   frontend:
     build:
@@ -65,3 +126,4 @@ services:
 volumes:
   pgdata:
   chad_data:
+  redis_data:

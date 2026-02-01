@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, require_permission_dep
 from app.db.session import get_db
 from app.models.setting import Setting
 from app.models.user import User
@@ -98,12 +98,13 @@ async def get_technique(
 async def sync_attack_data(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_sigmahq"))],
 ):
     """
     Trigger manual ATT&CK data refresh.
 
-    Admin only. Downloads latest STIX data from MITRE and updates the cache.
+    Requires manage_sigmahq permission. Downloads latest STIX data from MITRE
+    and updates the cache.
     """
     # Capture user ID before sync - the sync uses to_thread which can disrupt
     # the greenlet context, causing issues with lazy attribute loading afterwards

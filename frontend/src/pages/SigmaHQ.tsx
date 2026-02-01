@@ -50,24 +50,17 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
+import { LoadingState } from '@/components/ui/loading-state'
 
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-black',
-  low: 'bg-blue-500 text-white',
-  informational: 'bg-gray-500 text-white',
-}
-
-const statusColors: Record<string, string> = {
+// SigmaHQ rule stability status colors (different from alert status)
+const sigmaStatusColors: Record<string, string> = {
   stable: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
   test: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
   experimental: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
   deprecated: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
   unsupported: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
 }
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 type CategoryTreeItemProps = {
   name: string
@@ -397,11 +390,7 @@ export default function SigmaHQPage() {
 
   // Loading state
   if (isLoadingStatus) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <LoadingState message="Loading SigmaHQ status..." />
   }
 
   // Not cloned - show sync card
@@ -619,7 +608,7 @@ export default function SigmaHQPage() {
                     </div>
                     <span
                       className={`px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${
-                        severityColors[rule.severity] || 'bg-gray-500 text-white'
+                        SEVERITY_COLORS[rule.severity] || 'bg-gray-500 text-white'
                       }`}
                     >
                       {capitalize(rule.severity)}
@@ -631,7 +620,7 @@ export default function SigmaHQPage() {
                   <div className="flex items-center gap-2 mt-2">
                     <span
                       className={`px-1.5 py-0.5 rounded text-xs ${
-                        statusColors[rule.status] || 'bg-gray-100 text-gray-800'
+                        sigmaStatusColors[rule.status] || 'bg-gray-100 text-gray-800'
                       }`}
                     >
                       {rule.status}
@@ -687,14 +676,14 @@ export default function SigmaHQPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
                       className={`px-2 py-1 rounded text-xs font-medium ${
-                        severityColors[selectedRule.severity] || 'bg-gray-500 text-white'
+                        SEVERITY_COLORS[selectedRule.severity] || 'bg-gray-500 text-white'
                       }`}
                     >
                       {capitalize(selectedRule.severity)}
                     </span>
                     <span
                       className={`px-2 py-1 rounded text-xs ${
-                        statusColors[selectedRule.status] || 'bg-gray-100 text-gray-800'
+                        sigmaStatusColors[selectedRule.status] || 'bg-gray-100 text-gray-800'
                       }`}
                     >
                       {selectedRule.status}

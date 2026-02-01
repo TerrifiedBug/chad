@@ -28,8 +28,10 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { Plus, Trash2, Copy, Check, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Copy, Check, AlertTriangle, Key } from 'lucide-react'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
+import { LoadingState } from '@/components/ui/loading-state'
+import { EmptyState } from '@/components/ui/empty-state'
 
 export default function ApiKeysPage() {
   const [apiKeys, setApiKeys] = useState<APIKey[]>([])
@@ -176,11 +178,19 @@ export default function ApiKeysPage() {
       </Card>
 
       {isLoading ? (
-        <div className="text-center py-8 text-muted-foreground">Loading...</div>
+        <LoadingState message="Loading API keys..." />
       ) : apiKeys.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          No API keys found. Create your first key to get started.
-        </div>
+        <EmptyState
+          icon={<Key className="h-12 w-12" />}
+          title="No API keys"
+          description="Create your first API key to enable external integrations with CHAD."
+          action={
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create API Key
+            </Button>
+          }
+        />
       ) : (
         <div className="border rounded-lg">
           <Table>

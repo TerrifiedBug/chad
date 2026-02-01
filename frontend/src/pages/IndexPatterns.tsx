@@ -41,8 +41,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield, HeartPulse, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield, HeartPulse, CheckCircle2, AlertTriangle, AlertCircle, Database } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { LoadingState } from '@/components/ui/loading-state'
+import { EmptyState } from '@/components/ui/empty-state'
 
 const HealthStatusIcon = ({ status }: { status: HealthStatus }) => {
   switch (status) {
@@ -515,11 +517,19 @@ export default function IndexPatternsPage() {
       )}
 
       {isLoading ? (
-        <div className="text-center py-8 text-muted-foreground">Loading...</div>
+        <LoadingState message="Loading index patterns..." />
       ) : patterns.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          No index patterns found. Create your first pattern!
-        </div>
+        <EmptyState
+          icon={<Database className="h-12 w-12" />}
+          title="No index patterns"
+          description="Create your first index pattern to start matching rules against your OpenSearch indices."
+          action={
+            <Button onClick={openCreateDialog}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Pattern
+            </Button>
+          }
+        />
       ) : (
         <div className="border rounded-lg">
           <Table>

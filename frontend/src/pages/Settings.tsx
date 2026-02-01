@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -79,6 +79,10 @@ export default function SettingsPage() {
   const [ssoClientSecret, setSsoClientSecret] = useState('')
   const [ssoProviderName, setSsoProviderName] = useState('SSO')
   const [ssoDefaultRole, setSsoDefaultRole] = useState('analyst')
+
+  // SSO Advanced settings
+  const [ssoTokenAuthMethod, setSsoTokenAuthMethod] = useState('client_secret_post')
+  const [ssoScopes, setSsoScopes] = useState('openid email profile')
 
   // SSO Role Mapping
   const [ssoRoleMappingEnabled, setSsoRoleMappingEnabled] = useState(false)
@@ -177,6 +181,19 @@ export default function SettingsPage() {
   const [alertClusteringForm, setAlertClusteringForm] = useState<AlertClusteringSettings>(alertClusteringSettings)
   const [isSavingAlertClustering, setIsSavingAlertClustering] = useState(false)
 
+  // Queue settings
+  const [queueSettings, setQueueSettings] = useState<QueueSettings>({
+    max_queue_size: 100000,
+    warning_threshold: 10000,
+    critical_threshold: 50000,
+    backpressure_mode: 'drop',
+    batch_size: 500,
+    batch_timeout_seconds: 5,
+    message_ttl_seconds: 1800,
+  })
+  const [queueSettingsForm, setQueueSettingsForm] = useState<QueueSettings>(queueSettings)
+  const [isSavingQueueSettings, setIsSavingQueueSettings] = useState(false)
+
   useEffect(() => {
     loadSettings()
     loadOpenSearchStatus()
@@ -184,6 +201,7 @@ export default function SettingsPage() {
     loadSecuritySettings()
     loadHealthSettings()
     loadAlertClusteringSettings()
+    loadQueueSettings()
   }, [])
 
   const loadSecuritySettings = async () => {
@@ -241,6 +259,30 @@ export default function SettingsPage() {
     }
   }
 
+  const loadQueueSettings = async () => {
+    try {
+      const settings = await queueApi.getSettings()
+      setQueueSettings(settings)
+      setQueueSettingsForm(settings)
+    } catch (err) {
+      // Queue settings may not be available if Redis is not configured
+      console.error('Failed to load queue settings:', err)
+    }
+  }
+
+  const saveQueueSettings = async () => {
+    setIsSavingQueueSettings(true)
+    try {
+      const updated = await queueApi.updateSettings(queueSettingsForm)
+      setQueueSettings(updated)
+      showToast('Queue settings saved')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save queue settings', 'error')
+    } finally {
+      setIsSavingQueueSettings(false)
+    }
+  }
+
   // Check OpenSearch connection when the tab is selected
   useEffect(() => {
     if (activeTab === 'opensearch') {
@@ -275,6 +317,9 @@ export default function SettingsPage() {
         // Don't load client secret - it's masked by the API
         setSsoProviderName((sso.provider_name as string) || 'SSO')
         setSsoDefaultRole((sso.default_role as string) || 'analyst')
+        // Advanced settings
+        setSsoTokenAuthMethod((sso.token_auth_method as string) || 'client_secret_post')
+        setSsoScopes((sso.scopes as string) || 'openid email profile')
         // Role mapping settings
         setSsoRoleMappingEnabled((sso.role_mapping_enabled as boolean) || false)
         setSsoRoleClaim((sso.role_claim as string) || '')
@@ -440,6 +485,9 @@ export default function SettingsPage() {
         client_id: ssoClientId,
         provider_name: ssoProviderName,
         default_role: ssoDefaultRole,
+        // Advanced settings
+        token_auth_method: ssoTokenAuthMethod,
+        scopes: ssoScopes,
         // Role mapping settings
         role_mapping_enabled: ssoRoleMappingEnabled,
         role_claim: ssoRoleClaim,
@@ -629,6 +677,7 @@ export default function SettingsPage() {
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="health">Health Monitoring</TabsTrigger>
+          <TabsTrigger value="queue">Queue</TabsTrigger>
           <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
           <TabsTrigger value="export">Backup & Restore</TabsTrigger>
           <TabsTrigger value="about" className="flex items-center gap-1">
@@ -937,6 +986,39 @@ export default function SettingsPage() {
                     <p className="text-xs text-muted-foreground">
                       Role assigned to users when role mapping is disabled or no match found
                     </p>
+                  </div>
+
+                  {/* Advanced OAuth Settings */}
+                  <div className="pt-4 border-t space-y-4">
+                    <h4 className="text-sm font-medium">Advanced OAuth Settings</h4>
+
+                    <div className="space-y-2">
+                      <Label>OAuth Scopes</Label>
+                      <Input
+                        value={ssoScopes}
+                        onChange={(e) => setSsoScopes(e.target.value)}
+                        placeholder="openid email profile"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Space-separated list of scopes to request. Add "groups" or "roles" if needed for role mapping.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Token Auth Method</Label>
+                      <Select value={ssoTokenAuthMethod} onValueChange={setSsoTokenAuthMethod}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="z-50 bg-popover">
+                          <SelectItem value="client_secret_post">POST Body (Most Common)</SelectItem>
+                          <SelectItem value="client_secret_basic">HTTP Basic Auth</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        How credentials are sent to the token endpoint. Try switching if you get "Invalid client secret" errors.
+                      </p>
+                    </div>
                   </div>
 
                   {/* Role Mapping Section */}
@@ -1721,6 +1803,117 @@ export default function SettingsPage() {
                   {isSavingHealthCheckIntervals ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="queue" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Queue Configuration</CardTitle>
+              <CardDescription>
+                Configure log queue processing and backpressure settings.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="max_queue_size">Max Queue Size</Label>
+                  <Input
+                    id="max_queue_size"
+                    type="number"
+                    min={1000}
+                    value={queueSettingsForm.max_queue_size}
+                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, max_queue_size: parseInt(e.target.value) || 100000 }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Maximum number of messages in queue</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="warning_threshold">Warning Threshold</Label>
+                  <Input
+                    id="warning_threshold"
+                    type="number"
+                    min={100}
+                    value={queueSettingsForm.warning_threshold}
+                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, warning_threshold: parseInt(e.target.value) || 10000 }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Queue depth warning threshold</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="critical_threshold">Critical Threshold</Label>
+                  <Input
+                    id="critical_threshold"
+                    type="number"
+                    min={1000}
+                    value={queueSettingsForm.critical_threshold}
+                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, critical_threshold: parseInt(e.target.value) || 50000 }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Queue depth critical threshold (triggers backpressure)</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="backpressure_mode">Backpressure Mode</Label>
+                  <Select
+                    value={queueSettingsForm.backpressure_mode}
+                    onValueChange={value => setQueueSettingsForm(prev => ({ ...prev, backpressure_mode: value as 'reject' | 'drop' }))}
+                  >
+                    <SelectTrigger id="backpressure_mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="reject">Reject (503 - shipper retries)</SelectItem>
+                      <SelectItem value="drop">Drop (202 - oldest messages evicted)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Behavior when critical threshold exceeded</p>
+                </div>
+              </div>
+              <div className="pt-4 border-t">
+                <h4 className="font-medium mb-4">Worker Settings</h4>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="batch_size">Batch Size</Label>
+                    <Input
+                      id="batch_size"
+                      type="number"
+                      min={10}
+                      max={5000}
+                      value={queueSettingsForm.batch_size}
+                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, batch_size: parseInt(e.target.value) || 500 }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Logs per batch</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="batch_timeout">Batch Timeout (seconds)</Label>
+                    <Input
+                      id="batch_timeout"
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={queueSettingsForm.batch_timeout_seconds}
+                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, batch_timeout_seconds: parseInt(e.target.value) || 5 }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Max wait for batch to fill</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="message_ttl">Message TTL (seconds)</Label>
+                    <Input
+                      id="message_ttl"
+                      type="number"
+                      min={60}
+                      value={queueSettingsForm.message_ttl_seconds}
+                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, message_ttl_seconds: parseInt(e.target.value) || 1800 }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Message TTL before dead-letter ({Math.round(queueSettingsForm.message_ttl_seconds / 60)} min)</p>
+                  </div>
+                </div>
+              </div>
+              <Button onClick={saveQueueSettings} disabled={isSavingQueueSettings}>
+                {isSavingQueueSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Settings
+              </Button>
+              <p className="text-sm text-muted-foreground mt-4">
+                Queue statistics and dead letter management are available on the <a href="/health" className="text-primary underline">Health</a> page.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

@@ -208,6 +208,7 @@ class TestResetPassword:
 
         response = await authenticated_client.post(
             f"/api/users/{user.id}/reset-password",
+            json={},
         )
         assert response.status_code == 200
         data = response.json()
@@ -232,6 +233,7 @@ class TestResetPassword:
 
         response = await authenticated_client.post(
             f"/api/users/{user.id}/reset-password",
+            json={},
         )
         assert response.status_code == 200
 
@@ -256,6 +258,7 @@ class TestResetPassword:
 
         response = await authenticated_client.post(
             f"/api/users/{sso_user.id}/reset-password",
+            json={},
         )
         assert response.status_code == 400
         assert "sso" in response.json()["detail"].lower()
@@ -268,6 +271,7 @@ class TestResetPassword:
         fake_user_id = uuid.uuid4()
         response = await authenticated_client.post(
             f"/api/users/{fake_user_id}/reset-password",
+            json={},
         )
         assert response.status_code == 404
 
@@ -279,6 +283,7 @@ class TestResetPassword:
         fake_user_id = uuid.uuid4()
         response = await client.post(
             f"/api/users/{fake_user_id}/reset-password",
+            json={},
         )
         # HTTPBearer returns 403 when no credentials provided
         assert response.status_code == 403

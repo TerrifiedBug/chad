@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { rulesApi, indexPatternsApi, reportsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
 import yaml from 'js-yaml'
@@ -36,6 +36,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
+import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
@@ -47,16 +48,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { FileSpreadsheet, Loader2 } from 'lucide-react'
-
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-black',
-  low: 'bg-blue-500 text-white',
-  informational: 'bg-gray-500 text-white',
-}
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+import { LoadingState } from '@/components/ui/loading-state'
+import { EmptyState } from '@/components/ui/empty-state'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -75,18 +68,29 @@ type Filters = {
 
 export default function RulesPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { canManageRules, canDeployRules } = useAuth()
   const [rules, setRules] = useState<Rule[]>([])
   const [indexPatterns, setIndexPatterns] = useState<Record<string, IndexPattern>>({})
   const [indexPatternsList, setIndexPatternsList] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
-  const [filters, setFilters] = useState<Filters>({
-    indexPattern: [],
-    severity: [],
-    status: [],
-    source: 'all',
-    search: '',
+
+  // Initialize filters from URL params
+  const [filters, setFilters] = useState<Filters>(() => {
+    const indexPattern = searchParams.get('indexPattern')
+    const severity = searchParams.get('severity')
+    const status = searchParams.get('status')
+    const source = searchParams.get('source')
+    const search = searchParams.get('search')
+
+    return {
+      indexPattern: indexPattern ? indexPattern.split(',') : [],
+      severity: severity ? severity.split(',').filter(s => SEVERITIES.includes(s as typeof SEVERITIES[number])) : [],
+      status: status ? status.split(',').filter(s => RULE_STATUSES.includes(s as RuleStatus)) : [],
+      source: (source === 'user' || source === 'sigmahq') ? source : 'all',
+      search: search || '',
+    }
   })
   const [viewMode, setViewMode] = useState<'tree' | 'table'>(() => {
     return (localStorage.getItem('rules-view-mode') as 'tree' | 'table') || 'table'
@@ -128,6 +132,19 @@ export default function RulesPage() {
   useEffect(() => {
     localStorage.setItem('rules-view-mode', viewMode)
   }, [viewMode])
+
+  // Sync filters to URL
+  useEffect(() => {
+    const newParams = new URLSearchParams()
+
+    if (filters.search) newParams.set('search', filters.search)
+    if (filters.indexPattern.length > 0) newParams.set('indexPattern', filters.indexPattern.join(','))
+    if (filters.severity.length > 0) newParams.set('severity', filters.severity.join(','))
+    if (filters.status.length > 0) newParams.set('status', filters.status.join(','))
+    if (filters.source !== 'all') newParams.set('source', filters.source)
+
+    setSearchParams(newParams, { replace: true })
+  }, [filters, setSearchParams])
 
   // Check deployment eligibility when selection changes
   useEffect(() => {
@@ -849,13 +866,21 @@ export default function RulesPage() {
       )}
 
       {isLoading ? (
-        <div className="text-center py-8 text-muted-foreground">Loading...</div>
+        <LoadingState message="Loading rules..." />
       ) : filteredRules.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          {hasActiveFilters
-            ? 'No rules match your filters'
-            : 'No rules found. Create your first rule!'}
-        </div>
+        <EmptyState
+          icon={<FileCode className="h-12 w-12" />}
+          title={hasActiveFilters ? 'No rules match your filters' : 'No rules found'}
+          description={hasActiveFilters
+            ? 'Try adjusting your filters to see more results.'
+            : 'Create your first rule to start detecting threats.'}
+          action={!hasActiveFilters && canManageRules() ? (
+            <Button onClick={() => navigate('/rules/new')}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Rule
+            </Button>
+          ) : undefined}
+        />
       ) : viewMode === 'table' ? (
         <TooltipProvider>
           <div className="border rounded-lg">
@@ -917,7 +942,7 @@ export default function RulesPage() {
                     <TableCell>
                       <span
                         className={`px-2 py-1 rounded text-xs font-medium ${
-                          severityColors[rule.severity] || 'bg-gray-500 text-white'
+                          SEVERITY_COLORS[rule.severity] || 'bg-gray-500 text-white'
                         }`}
                       >
                         {capitalize(rule.severity)}

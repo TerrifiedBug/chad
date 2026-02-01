@@ -1,9 +1,8 @@
 """Tests for the Percolator service."""
 
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from app.services.percolator import PercolatorService, PERCOLATOR_MAPPING
+from app.services.percolator import PERCOLATOR_MAPPING, PercolatorService
 
 
 class TestPercolatorIndexNaming:
@@ -71,7 +70,6 @@ class TestPercolatorServiceMocked:
             title="Test Rule",
             severity="high",
             tags=["attack.discovery"],
-            enabled=True,
         )
 
         mock_client.index.assert_called_once()
@@ -82,7 +80,7 @@ class TestPercolatorServiceMocked:
         assert call_kwargs["body"]["rule_id"] == "test-rule-123"
         assert call_kwargs["body"]["rule_title"] == "Test Rule"
         assert call_kwargs["body"]["severity"] == "high"
-        assert call_kwargs["body"]["enabled"] is True
+        assert call_kwargs["body"]["tags"] == ["attack.discovery"]
 
     def test_undeploy_rule_success(self):
         """Test successful rule undeployment."""

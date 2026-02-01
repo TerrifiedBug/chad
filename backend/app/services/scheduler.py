@@ -5,6 +5,9 @@ Uses APScheduler to manage scheduled tasks for:
 - ATT&CK data sync
 - SigmaHQ repository sync
 - Health monitoring checks
+
+With multiple uvicorn workers, distributed locking via Redis ensures
+only one worker executes each scheduled job.
 """
 
 import logging
@@ -18,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings as app_settings
 from app.core.encryption import decrypt
+from app.core.redis import get_redis
 from app.models.setting import Setting
 
 logger = logging.getLogger(__name__)
@@ -64,6 +68,42 @@ class SchedulerService:
         if scheduler.running:
             scheduler.shutdown(wait=False)
             logger.info("Scheduler stopped")
+
+    async def _run_with_lock(self, lock_name: str, timeout: int, job_func):
+        """
+        Execute a job function with distributed locking.
+
+        Only one worker will execute the job; others will skip.
+
+        Args:
+            lock_name: Unique name for the lock (e.g., "scheduler:health_check")
+            timeout: Lock timeout in seconds
+            job_func: Async function to execute if lock acquired
+        """
+        try:
+            redis = await get_redis()
+        except Exception as e:
+            logger.warning(f"Redis unavailable, running job without lock: {e}")
+            await job_func()
+            return
+
+        lock = redis.lock(lock_name, timeout=timeout, blocking=False)
+
+        try:
+            acquired = await lock.acquire(blocking=False)
+            if not acquired:
+                logger.debug(f"Lock {lock_name} held by another worker, skipping")
+                return
+
+            try:
+                await job_func()
+            finally:
+                try:
+                    await lock.release()
+                except Exception:
+                    pass  # Lock may have expired
+        except Exception as e:
+            logger.error(f"Error in locked job {lock_name}: {e}")
 
     async def sync_jobs_from_settings(self):
         """
@@ -201,7 +241,15 @@ class SchedulerService:
             pass  # Job didn't exist
 
     async def _run_attack_sync(self):
-        """Execute ATT&CK sync job."""
+        """Execute ATT&CK sync job with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:attack_sync",
+            timeout=3600,  # 1 hour
+            job_func=self._execute_attack_sync
+        )
+
+    async def _execute_attack_sync(self):
+        """Actual ATT&CK sync execution."""
         from app.services.attack_sync import attack_sync_service
         from app.services.audit import audit_log
         from app.services.notification import send_system_notification
@@ -268,7 +316,15 @@ class SchedulerService:
             await session.close()
 
     async def _run_sigmahq_sync(self):
-        """Execute SigmaHQ sync job."""
+        """Execute SigmaHQ sync job with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:sigmahq_sync",
+            timeout=3600,  # 1 hour
+            job_func=self._execute_sigmahq_sync
+        )
+
+    async def _execute_sigmahq_sync(self):
+        """Actual SigmaHQ sync execution."""
         from app.services.audit import audit_log
         from app.services.notification import send_system_notification
         from app.services.sigmahq import sigmahq_service
@@ -348,7 +404,19 @@ class SchedulerService:
             await session.close()
 
     async def _run_health_check(self):
-        """Execute health monitoring check."""
+        """Execute health monitoring check with distributed lock."""
+        await self._run_health_check_with_lock()
+
+    async def _run_health_check_with_lock(self):
+        """Health check wrapper with distributed locking."""
+        await self._run_with_lock(
+            "scheduler:health_check",
+            timeout=30,
+            job_func=self._execute_health_check
+        )
+
+    async def _execute_health_check(self):
+        """Actual health check execution (extracted for testability)."""
         from app.services.health_monitor import check_index_health
         from app.background.tasks.health_checks import check_opensearch_health, check_jira_health, check_ti_source_health
 
@@ -499,7 +567,15 @@ class SchedulerService:
             self._remove_job("geoip_update")
 
     async def _run_geoip_update(self):
-        """Execute GeoIP database update job."""
+        """Execute GeoIP database update job with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:geoip_update",
+            timeout=600,  # 10 minutes
+            job_func=self._execute_geoip_update
+        )
+
+    async def _execute_geoip_update(self):
+        """Actual GeoIP database update execution."""
         from app.services.geoip import geoip_service
 
         logger.info("Running scheduled GeoIP database update")
@@ -552,7 +628,15 @@ class SchedulerService:
         return None
 
     async def _run_correlation_cleanup(self):
-        """Execute correlation state cleanup job."""
+        """Execute correlation state cleanup job with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:correlation_cleanup",
+            timeout=300,  # 5 minutes
+            job_func=self._execute_correlation_cleanup
+        )
+
+    async def _execute_correlation_cleanup(self):
+        """Actual correlation state cleanup execution."""
         from app.services.correlation import cleanup_expired_states
 
         logger.debug("Running scheduled correlation state cleanup")
@@ -568,8 +652,16 @@ class SchedulerService:
             await session.close()
 
     async def _run_version_cleanup(self):
+        """Execute version cleanup job with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:version_cleanup",
+            timeout=1800,  # 30 minutes
+            job_func=self._execute_version_cleanup
+        )
+
+    async def _execute_version_cleanup(self):
         """
-        Execute version cleanup job.
+        Actual version cleanup execution.
 
         Deletes old rule and correlation rule versions based on settings:
         - version_cleanup_enabled: Whether cleanup is enabled (default: True)

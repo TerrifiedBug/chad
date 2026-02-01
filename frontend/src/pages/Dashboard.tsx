@@ -24,25 +24,12 @@ import { AlertTriangle, ChevronDown, Clock, FileText, Shield } from 'lucide-reac
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { cn } from '@/lib/utils'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import { LoadingState } from '@/components/ui/loading-state'
+import { ErrorAlert } from '@/components/ui/error-alert'
+import { ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
-
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-black',
-  low: 'bg-blue-500 text-white',
-  informational: 'bg-gray-500 text-white',
-}
-
-const statusLabels: Record<string, string> = {
-  new: 'New',
-  acknowledged: 'Acknowledged',
-  resolved: 'Resolved',
-  false_positive: 'False Positive',
-}
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -78,19 +65,11 @@ export default function Dashboard() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        Loading dashboard...
-      </div>
-    )
+    return <LoadingState message="Loading dashboard..." />
   }
 
   if (error) {
-    return (
-      <div className="bg-destructive/10 text-destructive p-4 rounded-md">
-        {error}
-      </div>
-    )
+    return <ErrorAlert message={error} onRetry={loadStats} />
   }
 
   return (
@@ -228,13 +207,7 @@ export default function Dashboard() {
                   {filteredAlerts.map((alert) => (
                     <TableRow key={alert.alert_id}>
                       <TableCell>
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            severityColors[alert.severity] || 'bg-gray-500 text-white'
-                          }`}
-                        >
-                          {capitalize(alert.severity)}
-                        </span>
+                        <SeverityBadge severity={alert.severity} />
                       </TableCell>
                       <TableCell>
                         <Link
@@ -244,7 +217,7 @@ export default function Dashboard() {
                           {alert.rule_title}
                         </Link>
                       </TableCell>
-                      <TableCell>{statusLabels[alert.status] || capitalize(alert.status)}</TableCell>
+                      <TableCell>{ALERT_STATUS_LABELS[alert.status] || capitalize(alert.status)}</TableCell>
                       <TableCell className="text-muted-foreground">
                         <RelativeTime date={alert.created_at} />
                       </TableCell>

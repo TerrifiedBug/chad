@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useVersion } from '@/hooks/use-version'
@@ -12,8 +13,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { ChevronDown, LogOut, Settings, Key, Lock, User } from 'lucide-react'
+import { ChevronDown, LogOut, Settings, Key, Lock, User, Menu } from 'lucide-react'
 
 type NavItem = {
   href: string
@@ -41,6 +49,7 @@ export function Header() {
   const { version, updateAvailable } = useVersion()
   const location = useLocation()
   const navigate = useNavigate()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   // Filter nav items based on permissions
   const visibleNavItems = navItems.filter(item => {
@@ -48,10 +57,55 @@ export function Header() {
     return hasPermission(item.permission)
   })
 
+  const handleMobileNavClick = (href: string) => {
+    navigate(href)
+    setMobileMenuOpen(false)
+  }
+
   return (
     <header className="border-b">
       <div className="flex h-16 w-full items-center justify-between px-6">
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-4 md:gap-8">
+          {/* Mobile menu button */}
+          {isAuthenticated && (
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open navigation menu">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-64">
+                <SheetHeader>
+                  <SheetTitle>Navigation</SheetTitle>
+                </SheetHeader>
+                <nav className="flex flex-col gap-2 mt-6" aria-label="Mobile navigation">
+                  {visibleNavItems.map((item) => {
+                    const isActive = item.exact
+                      ? location.pathname === item.href
+                      : location.pathname.startsWith(item.href)
+                    return (
+                      <button
+                        key={item.href}
+                        onClick={() => handleMobileNavClick(item.href)}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={cn(
+                          'text-sm font-medium transition-colors hover:text-primary text-left px-2 py-2 rounded-md',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          isActive ? 'text-foreground bg-muted' : 'text-muted-foreground'
+                        )}
+                      >
+                        {item.label}
+                        {item.href === '/settings' && updateAvailable && (
+                          <span className="ml-1 inline-block h-2 w-2 rounded-full bg-red-500" aria-label="Update available" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </nav>
+              </SheetContent>
+            </Sheet>
+          )}
+
           <Link to="/" className="text-xl font-bold flex items-baseline gap-2">
             CHAD
             {version && (
@@ -60,8 +114,10 @@ export function Header() {
               </span>
             )}
           </Link>
+
+          {/* Desktop navigation */}
           {isAuthenticated && (
-            <nav className="flex items-center gap-6">
+            <nav className="hidden md:flex items-center gap-6" aria-label="Main navigation">
               {visibleNavItems.map((item) => {
                 const isActive = item.exact
                   ? location.pathname === item.href
@@ -70,14 +126,16 @@ export function Header() {
                   <Link
                     key={item.href}
                     to={item.href}
+                    aria-current={isActive ? 'page' : undefined}
                     className={cn(
                       'text-sm font-medium transition-colors hover:text-primary',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm',
                       isActive ? 'text-foreground' : 'text-muted-foreground'
                     )}
                   >
                     {item.label}
                     {item.href === '/settings' && updateAvailable && (
-                      <span className="ml-1 h-2 w-2 rounded-full bg-red-500" />
+                      <span className="ml-1 h-2 w-2 rounded-full bg-red-500" aria-label="Update available" />
                     )}
                   </Link>
                 )
@@ -86,13 +144,13 @@ export function Header() {
           )}
         </div>
         <div className="flex items-center gap-4">
-          {isAuthenticated && <NotificationBell />}
+          {isAuthenticated && <NotificationBell aria-label="Notifications" />}
           {isAuthenticated && user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1">
+                <Button variant="ghost" size="sm" className="gap-1" aria-label={`User menu for ${user.email}`}>
                   {user.email}
-                  <ChevronDown className="h-4 w-4" />
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">

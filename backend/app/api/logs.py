@@ -1,7 +1,11 @@
 """
 Log matching API - receives logs from Fluentd and matches against percolator rules.
 
-Flow:
+Supports two processing modes:
+- Sync (default): Logs processed immediately, returns match results
+- Async (queue): Logs queued to Redis Streams, returns 202 Accepted immediately
+
+Flow (Sync mode):
 1. Fluentd sends logs: POST /api/logs/{index_suffix}
 2. Backend validates auth token against index pattern
 3. Backend checks IP allowlist (if configured)
@@ -10,12 +14,17 @@ Flow:
 6. For each match, create alert document
 7. Store alerts in OpenSearch alerts index
 8. Trigger webhook notifications (async)
+
+Flow (Async mode - queue enabled):
+1. Fluentd sends logs: POST /api/logs/{index_suffix}
+2. Backend validates auth token and checks rate limits
+3. Backend enqueues logs to Redis Streams
+4. Returns 202 Accepted with queue depth
+5. Background worker processes logs asynchronously
 """
 
 import ipaddress
 import secrets
-import time
-from collections import defaultdict
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
@@ -36,41 +45,14 @@ from app.models.rule import Rule
 from app.models.rule_exception import RuleException
 from app.services.alerts import AlertService, should_suppress_alert
 from app.services.correlation import check_correlation
+from app.services.redis_rate_limit import check_rate_limit_redis
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
 from app.services.websocket import AlertBroadcast, manager
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/logs", tags=["logs"])
-
-# Rate limiting storage (in-memory, per-process)
-# Format: {pattern_id: {"requests": [timestamps], "events": [(timestamp, count)]}}
-rate_limits: dict[str, dict[str, list]] = defaultdict(lambda: {"requests": [], "events": []})
-
-
-def get_client_ip(request: Request) -> str:
-    """
-    Get the client IP address from the request.
-
-    Checks X-Forwarded-For and X-Real-IP headers first (for reverse proxy setups),
-    then falls back to the direct connection IP.
-    """
-    # Check X-Forwarded-For first (may contain multiple IPs)
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # Take the first IP (original client)
-        return forwarded_for.split(",")[0].strip()
-
-    # Check X-Real-IP
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
-
-    # Fall back to direct connection
-    if request.client:
-        return request.client.host
-
-    return ""
 
 
 def ip_matches_allowlist(client_ip: str, allowed_ips: list[str]) -> bool:
@@ -107,54 +89,17 @@ def ip_matches_allowlist(client_ip: str, allowed_ips: list[str]) -> bool:
     return False
 
 
-def check_rate_limit(pattern_id: str, event_count: int, max_requests: int, max_events: int) -> None:
-    """
-    Check and enforce rate limits for log shipping.
-
-    Uses a sliding window of 60 seconds.
-
-    Args:
-        pattern_id: The index pattern ID
-        event_count: Number of events in this request
-        max_requests: Maximum requests per minute
-        max_events: Maximum events per minute
-
-    Raises:
-        HTTPException: If rate limit is exceeded
-    """
-    now = time.time()
-    window = 60  # 1 minute
-
-    limits = rate_limits[pattern_id]
-
-    # Clean old entries
-    limits["requests"] = [t for t in limits["requests"] if now - t < window]
-    limits["events"] = [(t, c) for t, c in limits["events"] if now - t < window]
-
-    # Check request limit
-    if len(limits["requests"]) >= max_requests:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded: too many requests ({max_requests}/minute)"
-        )
-
-    # Check event limit
-    total_events = sum(c for _, c in limits["events"])
-    if total_events + event_count > max_events:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded: too many events ({max_events}/minute)"
-        )
-
-    # Record this request
-    limits["requests"].append(now)
-    limits["events"].append((now, event_count))
-
-
 class LogMatchResponse(BaseModel):
     logs_received: int
     matches_found: int
     alerts_created: int
+
+
+class LogQueueResponse(BaseModel):
+    """Response for async queue processing."""
+    status: str = "queued"
+    queued: int
+    queue_depth: int
 
 
 async def validate_log_shipping_token(
@@ -267,7 +212,7 @@ async def receive_logs(
     if index_pattern.rate_limit_enabled:
         max_requests = index_pattern.rate_limit_requests_per_minute or 100
         max_events = index_pattern.rate_limit_events_per_minute or 50000
-        check_rate_limit(str(index_pattern.id), len(logs), max_requests, max_events)
+        await check_rate_limit_redis(str(index_pattern.id), len(logs), max_requests, max_events)
 
     if os_client is None:
         raise HTTPException(
@@ -418,8 +363,8 @@ async def receive_logs(
                                             if parsed and isinstance(parsed, dict):
                                                 tags = parsed.get("tags", []) or []
                                                 correlation_tags.extend(tags)
-                                except (ValueError, yaml.YAMLError, Exception):
-                                    pass
+                                except (ValueError, yaml.YAMLError, Exception) as e:
+                                    logger.debug("Failed to extract tags from rule_a: %s", e)
 
                             if rule_b_id:
                                 try:
@@ -434,8 +379,8 @@ async def receive_logs(
                                             if parsed and isinstance(parsed, dict):
                                                 tags = parsed.get("tags", []) or []
                                                 correlation_tags.extend(tags)
-                                except (ValueError, yaml.YAMLError, Exception):
-                                    pass
+                                except (ValueError, yaml.YAMLError, Exception) as e:
+                                    logger.debug("Failed to extract tags from rule_b: %s", e)
 
                             # Deduplicate tags while preserving order
                             seen = set()
@@ -648,8 +593,8 @@ async def test_log_matching(
                     suppressed = True
                     matching_exception = exc
                     break
-        except (ValueError, Exception):
-            pass
+        except (ValueError, Exception) as e:
+            logger.debug("Exception match check failed for rule %s: %s", rule_id, e)
 
         results.append({
             "rule_id": rule_id,
@@ -662,3 +607,64 @@ async def test_log_matching(
         })
 
     return {"matches": results}
+
+
+@router.post("/{index_suffix}/queue", response_model=LogQueueResponse, status_code=202)
+async def receive_logs_queue(
+    index_suffix: str,
+    logs: list[dict[str, Any]],
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+):
+    """
+    Receive logs and queue for asynchronous processing.
+
+    Returns 202 Accepted immediately. Logs are processed by background workers.
+    Use this endpoint for high-volume log shipping where immediate alert creation
+    is not required.
+
+    Backpressure behavior controlled by queue_settings.backpressure_mode:
+    - "drop": Accept logs, evict oldest when queue full (default)
+    - "reject": Return 503 when queue is at critical threshold
+    """
+    # Validate the auth token first (also checks IP allowlist)
+    index_pattern = await validate_log_shipping_token(index_suffix, authorization, db, request)
+
+    # Check rate limits if enabled
+    if index_pattern.rate_limit_enabled:
+        max_requests = index_pattern.rate_limit_requests_per_minute or 100
+        max_events = index_pattern.rate_limit_events_per_minute or 50000
+        await check_rate_limit_redis(str(index_pattern.id), len(logs), max_requests, max_events)
+
+    # Get queue settings
+    from app.services.queue_settings import get_queue_settings
+    queue_settings = await get_queue_settings(db)
+
+    # Get Redis client and queue service
+    from app.core.redis import get_redis
+    from app.services.log_queue import LogQueueService
+
+    redis = await get_redis()
+    queue_service = LogQueueService(redis, max_queue_size=queue_settings.max_queue_size)
+
+    # Check backpressure
+    current_depth = await queue_service.get_queue_depth(index_suffix)
+
+    if current_depth >= queue_settings.critical_threshold:
+        if queue_settings.backpressure_mode == "reject":
+            raise HTTPException(
+                status_code=503,
+                detail="Queue at capacity",
+                headers={"Retry-After": "30"},
+            )
+        # "drop" mode continues - maxlen will evict oldest
+
+    # Queue the logs
+    result = await queue_service.enqueue_logs(index_suffix, logs)
+
+    return LogQueueResponse(
+        status="queued",
+        queued=result["queued"],
+        queue_depth=result["queue_depth"],
+    )

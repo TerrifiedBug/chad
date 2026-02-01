@@ -20,7 +20,7 @@ class TestSetup2FA:
         self, authenticated_client: AsyncClient, test_user: User
     ):
         """2FA setup returns QR URI and secret."""
-        response = await authenticated_client.post("/api/auth/2fa/setup")
+        response = await authenticated_client.post("/api/auth/2fa/setup", json={})
         assert response.status_code == 200
         data = response.json()
         assert "qr_uri" in data
@@ -51,6 +51,7 @@ class TestSetup2FA:
 
         response = await client.post(
             "/api/auth/2fa/setup",
+            json={},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 400
@@ -79,6 +80,7 @@ class TestSetup2FA:
 
         response = await client.post(
             "/api/auth/2fa/setup",
+            json={},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 400

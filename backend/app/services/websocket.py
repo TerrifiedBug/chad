@@ -2,14 +2,16 @@
 WebSocket connection manager for real-time alert broadcasting.
 
 Manages active WebSocket connections and broadcasts alerts to connected clients.
+Uses Redis pub/sub for cross-worker broadcasting in multi-worker deployments.
 """
 
-import json
 import logging
 from typing import Dict, List, Set
 
 from fastapi import WebSocket
 from pydantic import BaseModel
+
+from app.services.alert_pubsub import AlertSubscriber, publish_alert
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +30,8 @@ class ConnectionManager:
     """
     Manages WebSocket connections and broadcasts messages.
 
-    This is a singleton class that maintains active connections
-    and broadcasts alerts to all connected clients.
+    This class maintains active connections for the current worker process
+    and uses Redis pub/sub to receive alerts from other workers.
     """
 
     def __init__(self):
@@ -37,6 +39,39 @@ class ConnectionManager:
         self.active_connections: Dict[str, List[WebSocket]] = {}
         # Store all active connections for debugging
         self._all_connections: Set[WebSocket] = set()
+        # Redis subscriber for cross-worker broadcasts
+        self._subscriber: AlertSubscriber | None = None
+
+    async def start_subscriber(self):
+        """Start the Redis pub/sub subscriber for cross-worker broadcasts."""
+        if self._subscriber is not None:
+            return
+
+        self._subscriber = AlertSubscriber(self._on_redis_alert)
+        await self._subscriber.start()
+        logger.info("WebSocket manager started Redis pub/sub subscriber")
+
+    async def stop_subscriber(self):
+        """Stop the Redis pub/sub subscriber."""
+        if self._subscriber:
+            await self._subscriber.stop()
+            self._subscriber = None
+            logger.info("WebSocket manager stopped Redis pub/sub subscriber")
+
+    async def _on_redis_alert(self, alert_data: dict):
+        """
+        Callback for alerts received from Redis pub/sub.
+
+        Broadcasts the alert to all local WebSocket connections.
+        """
+        if not self._all_connections:
+            return
+
+        message = {
+            "type": "alert",
+            "data": alert_data,
+        }
+        await self.broadcast_to_all_local(message)
 
     async def connect(self, websocket: WebSocket, user_id: str):
         """
@@ -111,9 +146,9 @@ class ConnectionManager:
         for conn in disconnected:
             self.disconnect(conn, user_id)
 
-    async def broadcast_to_all(self, message: dict):
+    async def broadcast_to_all_local(self, message: dict):
         """
-        Broadcast a message to all active connections.
+        Broadcast a message to all local connections (this worker only).
 
         Args:
             message: The message to broadcast (will be JSON serialized)
@@ -122,7 +157,7 @@ class ConnectionManager:
             return
 
         disconnected = []
-        for connection in self._all_connections:
+        for connection in list(self._all_connections):
             try:
                 await connection.send_json(message)
             except Exception as e:
@@ -133,10 +168,26 @@ class ConnectionManager:
         for conn in disconnected:
             self._all_connections.discard(conn)
             # Also remove from user-specific lists
-            for user_id, connections in self.active_connections.items():
-                if conn in connections:
+            for user_id in list(self.active_connections.keys()):
+                if conn in self.active_connections.get(user_id, []):
                     self.disconnect(conn, user_id)
                     break
+
+    async def broadcast_to_all(self, message: dict):
+        """
+        Broadcast a message to all connections across all workers.
+
+        Uses Redis pub/sub for cross-worker broadcasting.
+
+        Args:
+            message: The message to broadcast (will be JSON serialized)
+        """
+        # Publish to Redis for other workers
+        if message.get("type") == "alert" and message.get("data"):
+            await publish_alert(message["data"])
+
+        # Also broadcast locally (in case pub/sub hasn't delivered yet)
+        await self.broadcast_to_all_local(message)
 
     async def broadcast_alert(self, alert: AlertBroadcast, user_id: str | None = None):
         """
@@ -156,6 +207,25 @@ class ConnectionManager:
             await self.broadcast_to_user(user_id, message)
         else:
             await self.broadcast_to_all(message)
+
+    async def broadcast_alert_dict(self, alert_data: dict):
+        """
+        Broadcast an alert dict to all WebSocket clients across all workers.
+
+        This is used by the worker to broadcast alerts via Redis pub/sub.
+
+        Args:
+            alert_data: Alert data dictionary
+        """
+        # Publish to Redis for cross-worker broadcast
+        await publish_alert(alert_data)
+
+        # Also broadcast locally
+        message = {
+            "type": "alert",
+            "data": alert_data,
+        }
+        await self.broadcast_to_all_local(message)
 
     def get_connection_count(self) -> int:
         """Get the total number of active connections."""

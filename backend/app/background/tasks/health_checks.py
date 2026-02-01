@@ -147,11 +147,7 @@ async def check_jira_health(db: AsyncSession):
         start_time = datetime.now(UTC)
 
         # Create Jira service and test connectivity
-        jira = JiraService(
-            base_url=config.jira_url,
-            email=config.email,
-            api_token=config.api_token_encrypted
-        )
+        jira = JiraService(config)
 
         await jira.test_connection()
 
@@ -186,8 +182,15 @@ async def check_jira_health(db: AsyncSession):
 
 
 async def check_ti_source_health(db: AsyncSession):
-    """Check health of all enabled TI sources."""
+    """
+    Check health of all enabled TI sources.
+
+    Uses Redis caching to avoid hitting rate limits. TI source health checks
+    are cached for 5 minutes (300 seconds) to prevent excessive API calls.
+    """
+    import json
     from app.core.encryption import decrypt
+    from app.core.redis import get_redis
     from app.services.ti import (
         VirusTotalClient,
         AbuseIPDBClient,
@@ -197,6 +200,16 @@ async def check_ti_source_health(db: AsyncSession):
 
     service = HealthCheckService(db)
 
+    # TI health check cache TTL (5 minutes)
+    TI_HEALTH_CACHE_TTL = 300
+    TI_HEALTH_CACHE_PREFIX = "health:ti:"
+
+    # Get Redis for caching
+    try:
+        redis = await get_redis()
+    except Exception:
+        redis = None
+
     # Get all enabled TI sources
     result = await db.execute(
         select(TISourceConfig).where(TISourceConfig.is_enabled == True)
@@ -204,6 +217,20 @@ async def check_ti_source_health(db: AsyncSession):
     configs = result.scalars().all()
 
     for config in configs:
+        # Check cache first to avoid rate limits
+        cache_key = f"{TI_HEALTH_CACHE_PREFIX}{config.source_type}"
+        if redis:
+            try:
+                cached = await redis.get(cache_key)
+                if cached:
+                    # Use cached result, skip API call
+                    cached_data = json.loads(cached)
+                    config.last_health_check = datetime.now(UTC)
+                    config.last_health_status = cached_data.get("status", "unknown")
+                    config.health_check_error = cached_data.get("error")
+                    continue  # Skip to next source
+            except Exception:
+                pass  # Cache miss or error, proceed with check
         client = None
         try:
             start_time = datetime.now(UTC)
@@ -245,6 +272,14 @@ async def check_ti_source_health(db: AsyncSession):
             config.last_health_status = "healthy"
             config.health_check_error = None
 
+            # Cache the successful result
+            if redis:
+                try:
+                    cache_data = json.dumps({"status": "healthy", "error": None})
+                    await redis.set(cache_key, cache_data, ex=TI_HEALTH_CACHE_TTL)
+                except Exception:
+                    pass  # Cache write failure is non-critical
+
             # Log health check
             service_name = config.source_type.replace("_", " ").title()
             await service.log_health_check(
@@ -259,6 +294,14 @@ async def check_ti_source_health(db: AsyncSession):
             config.last_health_check = datetime.now(UTC)
             config.last_health_status = "unhealthy"
             config.health_check_error = error_msg
+
+            # Cache the failed result (still cache to avoid rate limits)
+            if redis:
+                try:
+                    cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
+                    await redis.set(cache_key, cache_data, ex=TI_HEALTH_CACHE_TTL)
+                except Exception:
+                    pass  # Cache write failure is non-critical
 
             service_name = config.source_type.replace("_", " ").title()
             await service.log_health_check(

@@ -10,7 +10,6 @@ from sqlalchemy import select
 from app.services.correlation import (
     check_correlation,
     cleanup_expired_states,
-    resolve_entity_field,
     get_nested_value,
 )
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion

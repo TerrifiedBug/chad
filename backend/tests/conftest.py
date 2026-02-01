@@ -1,8 +1,8 @@
 """Pytest fixtures for backend tests."""
 
+import os
 import uuid
 from collections.abc import AsyncGenerator
-import os
 
 import pytest
 import pytest_asyncio
@@ -16,7 +16,6 @@ from app.db.session import get_db
 from app.main import app
 from app.models.user import User, UserRole
 
-
 # Use a SEPARATE test database to avoid destroying development data
 TEST_DB_NAME = os.environ.get('TEST_POSTGRES_DB', 'chad_test')
 POSTGRES_URL = (
@@ -28,10 +27,41 @@ POSTGRES_URL = (
 TEST_DATABASE_URL = f"{POSTGRES_URL}/{TEST_DB_NAME}"
 
 
+def _should_skip_db_setup(config):
+    """Check if all collected tests are unit tests without DB requirements."""
+    # Check if we're running a subset of tests
+    if hasattr(config, 'args') and config.args:
+        # Skip DB setup for unit test directories and specific test files
+        skip_patterns = [
+            'tests/core',
+            'tests/db',
+            'test_scheduler_locking.py',  # Unit tests with mocking
+            'test_queue_settings.py',     # Unit tests with mocking
+            'test_log_queue.py',          # Unit tests with mocking
+            'test_queue_worker.py',       # Unit tests with mocking
+            'test_logs_queue.py',         # Unit tests with mocking
+            'test_batch_percolate.py',    # Unit tests with mocking
+            'test_bulk_alerts.py',        # Unit tests with mocking
+            'test_worker.py',             # Unit tests with mocking
+            'test_queue.py',              # Unit tests with mocking
+            'test_metrics.py',            # Unit tests with mocking
+        ]
+        for arg in config.args:
+            for skip_pattern in skip_patterns:
+                if skip_pattern in arg:
+                    return True
+    return False
+
+
 @pytest.fixture(scope="session", autouse=True)
-def create_test_database():
+def create_test_database(request):
     """Create the test database if it doesn't exist."""
+    # Skip DB setup for unit tests in tests/core
+    if _should_skip_db_setup(request.config):
+        return
+
     import asyncio
+
     from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy.pool import NullPool
 
@@ -90,7 +120,7 @@ async def test_engine():
         await conn.execute(text("CREATE TYPE rulestatus AS ENUM ('deployed', 'undeployed', 'snoozed')"))
         # RuleSource and SigmaHQType use plain String columns, not actual enums
         # MappingOrigin uses enum member names (uppercase)
-        await conn.execute(text("CREATE TYPE mappingorigin AS ENUM ('DEFAULT', 'USER')"))
+        await conn.execute(text("CREATE TYPE mappingorigin AS ENUM ('MANUAL', 'AI_SUGGESTED')"))
         # ExceptionOperator uses enum member names (uppercase) per migration
         await conn.execute(text(
             "CREATE TYPE exceptionoperator AS ENUM "
@@ -263,14 +293,15 @@ async def db_session(test_session: AsyncSession) -> AsyncSession:
 @pytest_asyncio.fixture(scope="function")
 async def sample_rules(test_session: AsyncSession, test_user):
     """Create sample rules for correlation testing."""
-    from app.models.rule import Rule, RuleStatus, RuleSource
     from app.models.index_pattern import IndexPattern
+    from app.models.rule import Rule, RuleSource, RuleStatus
 
     # Create an index pattern first
     index_pattern = IndexPattern(
         id=uuid.uuid4(),
-        name="logs-*",
-        title="Logs Index Pattern",
+        name="logs-test",
+        pattern="logs-*",
+        percolator_index=".percolator-logs-test",
     )
     test_session.add(index_pattern)
     await test_session.flush()
@@ -319,7 +350,6 @@ async def correlation_rule(test_session: AsyncSession, sample_rules):
         entity_field="source.ip",
         time_window_minutes=5,
         severity="high",
-        is_enabled=True,
     )
     test_session.add(rule)
     await test_session.commit()

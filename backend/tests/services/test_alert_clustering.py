@@ -1,9 +1,5 @@
 """Tests for alert clustering functionality."""
 
-from datetime import UTC, datetime, timedelta
-
-import pytest
-
 from app.services.alerts import cluster_alerts
 
 

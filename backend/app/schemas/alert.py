@@ -19,7 +19,7 @@ class ExceptionCreatedInfo(BaseModel):
 class AlertResponse(BaseModel):
     alert_id: str
     rule_id: str
-    rule_title: str
+    rule_title: str | None = None  # Can be None if rule was deleted
     severity: str
     tags: list[str]
     status: str
@@ -70,3 +70,13 @@ class AlertCountsResponse(BaseModel):
     by_status: dict[str, int]
     by_severity: dict[str, int]
     last_24h: int
+
+
+class RelatedAlertsResponse(BaseModel):
+    """Response for related alerts query."""
+
+    alert_id: str
+    related_count: int
+    clustering_enabled: bool
+    window_minutes: int | None = None
+    alerts: list[AlertResponse]
