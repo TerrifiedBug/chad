@@ -365,9 +365,17 @@ export default function IndexPatternsPage() {
   }
 
   const handleSave = async () => {
-    if (!formData.name || !formData.pattern || !formData.percolator_index) {
+    // For push mode, percolator_index is required; for pull mode, auto-generate if empty
+    if (!formData.name || !formData.pattern) {
       return
     }
+    if (detectionMode === 'push' && !formData.percolator_index) {
+      return
+    }
+
+    // For pull mode, auto-generate percolator index if not set (still needed in DB but not used)
+    const percolatorIndex = formData.percolator_index ||
+      `chad-percolator-${formData.pattern.replace(/\*/g, '').replace(/-$/, '')}`
 
     setIsSaving(true)
     setSaveError('')
@@ -405,7 +413,7 @@ export default function IndexPatternsPage() {
         await indexPatternsApi.update(editingPattern.id, {
           name: formData.name,
           pattern: formData.pattern,
-          percolator_index: formData.percolator_index,
+          percolator_index: percolatorIndex,
           description: formData.description || undefined,
           ...healthData,
           geoip_fields: geoipFields,
@@ -417,7 +425,7 @@ export default function IndexPatternsPage() {
         await indexPatternsApi.create({
           name: formData.name,
           pattern: formData.pattern,
-          percolator_index: formData.percolator_index,
+          percolator_index: percolatorIndex,
           description: formData.description || undefined,
           ...healthData,
           geoip_fields: geoipFields,
@@ -834,22 +842,25 @@ export default function IndexPatternsPage() {
               )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="percolator">Percolator Index</Label>
-              <Input
-                id="percolator"
-                value={formData.percolator_index}
-                onChange={(e) => {
-                  setFormData({ ...formData, percolator_index: e.target.value })
-                  setPercolatorIndexManuallyEdited(true)
-                }}
-                placeholder="chad-percolator-windows"
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Where deployed rules will be stored in OpenSearch. Must start with "chad-percolator-".
-              </p>
-            </div>
+            {/* Percolator Index - only shown for push mode */}
+            {detectionMode === 'push' && (
+              <div className="space-y-2">
+                <Label htmlFor="percolator">Percolator Index</Label>
+                <Input
+                  id="percolator"
+                  value={formData.percolator_index}
+                  onChange={(e) => {
+                    setFormData({ ...formData, percolator_index: e.target.value })
+                    setPercolatorIndexManuallyEdited(true)
+                  }}
+                  placeholder="chad-percolator-windows"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Where deployed rules will be stored in OpenSearch. Must start with "chad-percolator-".
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="description">Description (optional)</Label>
@@ -1518,7 +1529,7 @@ export default function IndexPatternsPage() {
                 isSaving ||
                 !formData.name ||
                 !formData.pattern ||
-                !formData.percolator_index
+                (detectionMode === 'push' && !formData.percolator_index)
               }
             >
               {isSaving ? 'Saving...' : 'Save'}

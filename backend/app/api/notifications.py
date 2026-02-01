@@ -300,12 +300,13 @@ async def get_recent_notifications(
     """
     Get recent notifications for the current user.
 
-    Returns current health issues.
+    Returns current health issues including pull mode patterns.
     Note: Security alerts are stored in OpenSearch and not included here.
     """
     from app.services.health import get_all_indices_health
+    from app.api.health import get_pull_mode_health
 
-    # Get health status for all indices
+    # Get health status for all indices (push mode)
     index_health = await get_all_indices_health(db, os_client)
 
     # Filter to only show warning/critical health issues
@@ -315,10 +316,30 @@ async def get_recent_notifications(
             "index_pattern_name": h["index_pattern_name"],
             "status": h["status"],
             "issues": h["issues"],
+            "mode": "push",
         }
         for h in index_health
         if h["status"] in ["warning", "critical"]
     ]
+
+    # Get pull mode health issues
+    try:
+        pull_health = await get_pull_mode_health(db, current_user)
+        pull_issues = [
+            {
+                "index_pattern_id": p["index_pattern_id"],
+                "index_pattern_name": p["index_pattern_name"],
+                "status": p["status"],
+                "issues": p["issues"],
+                "mode": "pull",
+            }
+            for p in pull_health.get("patterns", [])
+            if p["status"] in ["warning", "critical"]
+        ]
+        health_issues.extend(pull_issues)
+    except Exception:
+        # Pull mode health may fail if not configured
+        pass
 
     return {
         "security_alerts": [],
