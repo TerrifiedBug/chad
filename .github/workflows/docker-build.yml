@@ -21,7 +21,7 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      should_build: ${{ steps.filter.outputs.code }}
+      should_build: ${{ steps.decide.outputs.should_build }}
       image_frontend: ${{ steps.image-names.outputs.frontend }}
       image_backend: ${{ steps.image-names.outputs.backend }}
     steps:
@@ -35,6 +35,8 @@ jobs:
           echo "backend=${REPO_LOWER}/chad-backend" >> $GITHUB_OUTPUT
       - uses: dorny/paths-filter@v3
         id: filter
+        # Skip filter for tags - always build on tag push
+        if: github.ref_type != 'tag'
         with:
           filters: |
             code:
@@ -47,6 +49,15 @@ jobs:
               - 'frontend/Dockerfile'
               - 'frontend/package.json'
               - 'frontend/vite.config.ts'
+      - name: Decide if should build
+        id: decide
+        run: |
+          # Always build on tags or workflow_dispatch, otherwise use filter result
+          if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
+          fi
 
   # PR builds: single arch, no push, fast feedback
   build-pr:
