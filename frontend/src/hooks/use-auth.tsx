@@ -5,6 +5,7 @@ interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
   isStartingUp: boolean
+  connectionFailed: boolean
   setupCompleted: boolean
   isOpenSearchConfigured: boolean
   user: CurrentUser | null
@@ -22,6 +23,7 @@ interface AuthContextType {
   setup: (email: string, password: string) => Promise<void>
   setOpenSearchConfigured: (configured: boolean) => void
   refreshUser: () => Promise<void>
+  retryConnection: () => void
 }
 
 interface SetupStatusResponse {
@@ -38,6 +40,7 @@ const AuthContext = createContext<AuthContextType | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [isStartingUp, setIsStartingUp] = useState(false)
+  const [connectionFailed, setConnectionFailed] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [setupCompleted, setSetupCompleted] = useState(false)
   const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
@@ -62,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const baseDelay = 2000 // 2 seconds
 
     try {
+      setConnectionFailed(false)
       await checkAuth()
     } catch (error) {
       if (isConnectionError(error) && retryCount < maxRetries) {
@@ -69,14 +73,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const delay = Math.min(baseDelay * Math.pow(1.5, retryCount), 15000) // Max 15 seconds
         console.log(`Backend starting up, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`)
         setTimeout(() => checkAuthWithRetry(retryCount + 1, maxRetries), delay)
+      } else if (isConnectionError(error)) {
+        // Connection error and max retries exceeded - show connection failed state
+        setIsStartingUp(false)
+        setIsLoading(false)
+        setConnectionFailed(true)
+        setIsAuthenticated(false)
       } else {
-        // Either not a connection error or max retries exceeded
+        // Not a connection error - could be a real error, treat as setup not completed
         setIsStartingUp(false)
         setIsLoading(false)
         setSetupCompleted(false)
         setIsAuthenticated(false)
       }
     }
+  }
+
+  // Allow manual retry of connection
+  const retryConnection = () => {
+    setIsLoading(true)
+    setConnectionFailed(false)
+    checkAuthWithRetry(0, 10)
   }
 
   const checkAuth = async () => {
@@ -195,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated,
       isLoading,
       isStartingUp,
+      connectionFailed,
       setupCompleted,
       isOpenSearchConfigured,
       user,
@@ -212,6 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setup,
       setOpenSearchConfigured: setIsOpenSearchConfigured,
       refreshUser,
+      retryConnection,
     }}>
       {children}
     </AuthContext.Provider>

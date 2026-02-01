@@ -50,7 +50,7 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-  const { setupCompleted, isLoading, isStartingUp, isAuthenticated, isOpenSearchConfigured } = useAuth()
+  const { setupCompleted, isLoading, isStartingUp, connectionFailed, isAuthenticated, isOpenSearchConfigured, retryConnection } = useAuth()
 
   if (isLoading || isStartingUp) {
     return (
@@ -65,6 +65,31 @@ function AppRoutes() {
               Please wait while the backend initializes
             </p>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  // Connection failed after all retries - show error with retry button
+  if (connectionFailed) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-center space-y-4 max-w-md px-4">
+          <div className="h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <svg className="h-6 w-6 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold">Unable to Connect</h2>
+          <p className="text-muted-foreground">
+            Could not connect to the backend server. The server may still be starting up or may be unavailable.
+          </p>
+          <button
+            onClick={retryConnection}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            Retry Connection
+          </button>
         </div>
       </div>
     )
