@@ -647,6 +647,9 @@ export type TIConfig = {
   [sourceName: string]: TISourceConfigForPattern
 }
 
+// Index Pattern mode types
+export type IndexPatternMode = 'push' | 'pull'
+
 // Index Pattern types
 export type IndexPattern = {
   id: string
@@ -672,6 +675,9 @@ export type IndexPattern = {
   rate_limit_enabled: boolean
   rate_limit_requests_per_minute: number | null
   rate_limit_events_per_minute: number | null
+  // Detection mode: 'push' (real-time via /logs) or 'pull' (scheduled queries)
+  mode: IndexPatternMode
+  poll_interval_minutes: number
 }
 
 export type IndexPatternCreate = {
@@ -694,6 +700,9 @@ export type IndexPatternCreate = {
   rate_limit_enabled?: boolean
   rate_limit_requests_per_minute?: number | null
   rate_limit_events_per_minute?: number | null
+  // Detection mode
+  mode?: IndexPatternMode
+  poll_interval_minutes?: number
 }
 
 export type IndexPatternUpdate = Partial<IndexPatternCreate>

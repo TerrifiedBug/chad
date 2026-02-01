@@ -3,6 +3,7 @@ import {
   indexPatternsApi,
   IndexPattern,
   IndexPatternValidateResponse,
+  IndexPatternMode,
   TIConfig,
   TI_SOURCE_INFO,
   TI_INDICATOR_TYPE_INFO,
@@ -14,6 +15,7 @@ import {
   healthApi,
   HealthStatus,
 } from '@/lib/api'
+import { useMode } from '@/hooks/useMode'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -58,6 +60,7 @@ const HealthStatusIcon = ({ status }: { status: HealthStatus }) => {
 }
 
 export default function IndexPatternsPage() {
+  const { isPullOnly, supportsPush } = useMode()
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -68,6 +71,10 @@ export default function IndexPatternsPage() {
   const [editingPattern, setEditingPattern] = useState<IndexPattern | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+
+  // Detection mode state
+  const [detectionMode, setDetectionMode] = useState<IndexPatternMode>('push')
+  const [pollIntervalMinutes, setPollIntervalMinutes] = useState<number>(5)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -254,6 +261,9 @@ export default function IndexPatternsPage() {
     setRateLimitEnabled(false)
     setRateLimitRequests(100)
     setRateLimitEvents(50000)
+    // Detection mode - default to pull in pull-only deployment
+    setDetectionMode(isPullOnly ? 'pull' : 'push')
+    setPollIntervalMinutes(5)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(false)
     setSaveError('')
@@ -312,6 +322,9 @@ export default function IndexPatternsPage() {
     // Show security settings if any are configured
     const hasSecuritySettings = (pattern.allowed_ips && pattern.allowed_ips.length > 0) || pattern.rate_limit_enabled
     setShowSecuritySettings(hasSecuritySettings || false)
+    // Detection mode
+    setDetectionMode(pattern.mode || 'push')
+    setPollIntervalMinutes(pattern.poll_interval_minutes || 5)
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
     setSaveError('')
@@ -382,6 +395,12 @@ export default function IndexPatternsPage() {
         rate_limit_events_per_minute: rateLimitEnabled ? rateLimitEvents : null,
       }
 
+      // Detection mode settings
+      const modeData = {
+        mode: detectionMode,
+        poll_interval_minutes: detectionMode === 'pull' ? pollIntervalMinutes : 5,
+      }
+
       if (editingPattern) {
         await indexPatternsApi.update(editingPattern.id, {
           name: formData.name,
@@ -392,6 +411,7 @@ export default function IndexPatternsPage() {
           geoip_fields: geoipFields,
           ti_config: Object.keys(tiConfigToSave).length > 0 ? tiConfigToSave : null,
           ...securityData,
+          ...modeData,
         })
       } else {
         await indexPatternsApi.create({
@@ -403,6 +423,7 @@ export default function IndexPatternsPage() {
           geoip_fields: geoipFields,
           ti_config: Object.keys(tiConfigToSave).length > 0 ? tiConfigToSave : null,
           ...securityData,
+          ...modeData,
         })
       }
       setIsDialogOpen(false)
@@ -537,7 +558,7 @@ export default function IndexPatternsPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Pattern</TableHead>
-                <TableHead>Percolator Index</TableHead>
+                <TableHead>Mode</TableHead>
                 <TableHead className="w-32">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -555,8 +576,10 @@ export default function IndexPatternsPage() {
                   <TableCell className="font-mono text-sm">
                     {pattern.pattern}
                   </TableCell>
-                  <TableCell className="font-mono text-sm">
-                    {pattern.percolator_index}
+                  <TableCell>
+                    <Badge variant={pattern.mode === 'push' ? 'default' : 'secondary'}>
+                      {pattern.mode === 'push' ? 'Push' : `Pull (${pattern.poll_interval_minutes}m)`}
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
@@ -597,13 +620,35 @@ export default function IndexPatternsPage() {
       <Dialog open={!!tokenDetailsPattern} onOpenChange={() => setTokenDetailsPattern(null)}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Log Shipping Configuration</DialogTitle>
+            <DialogTitle>
+              {tokenDetailsPattern?.mode === 'pull' ? 'Pull Mode Configuration' : 'Log Shipping Configuration'}
+            </DialogTitle>
             <DialogDescription>
-              Use this token to authenticate log shipping requests for "{tokenDetailsPattern?.name}"
+              {tokenDetailsPattern?.mode === 'pull'
+                ? `This pattern polls OpenSearch every ${tokenDetailsPattern?.poll_interval_minutes} minutes for new logs.`
+                : `Use this token to authenticate log shipping requests for "${tokenDetailsPattern?.name}"`}
             </DialogDescription>
           </DialogHeader>
 
-          {tokenDetailsPattern && (
+          {tokenDetailsPattern && tokenDetailsPattern.mode === 'pull' && (
+            <div className="space-y-4 py-4">
+              <div className="p-3 bg-muted rounded-md space-y-2">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4" />
+                  <span className="font-medium text-sm">Pull Mode Active</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  CHAD automatically queries OpenSearch for logs matching the pattern "{tokenDetailsPattern.pattern}"
+                  every {tokenDetailsPattern.poll_interval_minutes} minutes. No log shipping configuration is needed.
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                To change to push mode, edit this index pattern and select "Push" as the detection mode.
+              </p>
+            </div>
+          )}
+
+          {tokenDetailsPattern && tokenDetailsPattern.mode !== 'pull' && (
             <div className="space-y-4 py-4">
               {/* Endpoint URL */}
               <div className="space-y-2">
@@ -806,8 +851,78 @@ export default function IndexPatternsPage() {
               </p>
             </div>
 
-            {/* Dynamic Log Shipper Endpoint Info */}
-            {formData.percolator_index && formData.percolator_index.startsWith('chad-percolator-') && (
+            <div className="space-y-2">
+              <Label htmlFor="description">Description (optional)</Label>
+              <Input
+                id="description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                placeholder="Windows event logs from Sysmon"
+              />
+            </div>
+
+            {/* Detection Mode Selector */}
+            <div className="space-y-3 p-3 border rounded-lg">
+              <div className="flex items-center gap-2">
+                <Database className="h-4 w-4" />
+                <Label className="font-medium">Detection Mode</Label>
+              </div>
+              <div className="space-y-2">
+                <Select
+                  value={detectionMode}
+                  onValueChange={(value) => setDetectionMode(value as IndexPatternMode)}
+                  disabled={isPullOnly}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {supportsPush && (
+                      <SelectItem value="push">
+                        Push (Real-time via /logs endpoint)
+                      </SelectItem>
+                    )}
+                    <SelectItem value="pull">
+                      Pull (Scheduled OpenSearch queries)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {detectionMode === 'push'
+                    ? 'Logs are pushed to CHAD via the /logs endpoint for real-time detection.'
+                    : 'CHAD periodically queries OpenSearch for new logs matching deployed rules.'}
+                </p>
+                {isPullOnly && (
+                  <p className="text-xs text-amber-600">
+                    This deployment only supports pull mode.
+                  </p>
+                )}
+              </div>
+
+              {/* Poll Interval for Pull Mode */}
+              {detectionMode === 'pull' && (
+                <div className="space-y-2 pt-2 border-t">
+                  <Label htmlFor="poll-interval">Poll Interval (minutes)</Label>
+                  <Input
+                    id="poll-interval"
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={pollIntervalMinutes}
+                    onChange={(e) => setPollIntervalMinutes(parseInt(e.target.value) || 5)}
+                    className="w-24"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How often to query OpenSearch for new logs (1-60 minutes).
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Dynamic Log Shipper Endpoint Info - only show for push mode */}
+            {detectionMode === 'push' && formData.percolator_index && formData.percolator_index.startsWith('chad-percolator-') && (
               <div className="space-y-2 p-3 bg-muted rounded-md">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Log Shipper Endpoint</Label>
@@ -834,18 +949,6 @@ export default function IndexPatternsPage() {
                 </p>
               </div>
             )}
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Input
-                id="description"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                placeholder="Windows event logs from Sysmon"
-              />
-            </div>
 
             {/* Health Alerting Section */}
             <div className="border rounded-lg">
