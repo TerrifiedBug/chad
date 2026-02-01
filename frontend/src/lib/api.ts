@@ -196,6 +196,20 @@ export type WebhookTestResponse = {
   error?: string | null
 }
 
+// Mode types (deployment mode: push, pull, or hybrid)
+export type ModeResponse = {
+  mode: string  // 'push' or 'pull'
+  is_pull_only: boolean  // True if CHAD_MODE=pull
+  supports_push: boolean  // True in full deployment
+  supports_pull: boolean  // Always True
+}
+
+// Mode API
+export const modeApi = {
+  getMode: () =>
+    api.get<ModeResponse>('/mode'),
+}
+
 // Version types
 export type VersionResponse = {
   version: string

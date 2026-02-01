@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
+import { ModeProvider } from '@/hooks/useMode'
 import { ToastProvider } from '@/components/ui/toast-provider'
 import { AppLayout } from '@/components/AppLayout'
 import { Header } from '@/components/Header'
@@ -199,7 +200,9 @@ export default function App() {
     <ThemeProvider defaultTheme="system" storageKey="chad-ui-theme">
       <ToastProvider>
         <AuthProvider>
-          <AppRoutes />
+          <ModeProvider>
+            <AppRoutes />
+          </ModeProvider>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>
