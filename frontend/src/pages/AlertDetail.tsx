@@ -33,6 +33,7 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/comp
 import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
+import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 
 // Type for exception conditions (for AND grouping)
 type ExceptionCondition = {
@@ -41,30 +42,6 @@ type ExceptionCondition = {
   operator: ExceptionOperator
   value: string
 }
-
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-black',
-  low: 'bg-blue-500 text-white',
-  informational: 'bg-gray-500 text-white',
-}
-
-const statusColors: Record<AlertStatus, string> = {
-  new: 'bg-blue-500 text-white',
-  acknowledged: 'bg-yellow-500 text-black',
-  resolved: 'bg-green-500 text-white',
-  false_positive: 'bg-gray-500 text-white',
-}
-
-const statusLabels: Record<AlertStatus, string> = {
-  new: 'New',
-  acknowledged: 'Acknowledged',
-  resolved: 'Resolved',
-  false_positive: 'False Positive',
-}
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // TI Risk level colors
 const riskLevelColors: Record<string, string> = {
@@ -378,7 +355,7 @@ function CorrelationInfoCard({ correlations, ruleId }: { correlations: Correlati
                   )}
                   <Badge
                     className={`text-xs ${
-                      severityColors[correlation.severity] || 'bg-gray-500 text-white'
+                      SEVERITY_COLORS[correlation.severity] || 'bg-gray-500 text-white'
                     }`}
                   >
                     {correlation.severity}
@@ -914,7 +891,7 @@ export default function AlertDetailPage() {
         <div className="flex items-center gap-4">
           <span
             className={`px-3 py-1 rounded text-sm font-medium ${
-              severityColors[alert.severity] || 'bg-gray-500 text-white'
+              SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
             }`}
           >
             {capitalize(alert.severity)}
@@ -1028,9 +1005,9 @@ export default function AlertDetailPage() {
             </CardHeader>
             <CardContent>
               <span
-                className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
+                className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
               >
-                {statusLabels[alert.status]}
+                {ALERT_STATUS_LABELS[alert.status]}
               </span>
             </CardContent>
           </Card>
@@ -1229,7 +1206,7 @@ export default function AlertDetailPage() {
                             <div className="flex items-center gap-2 min-w-0">
                               <Badge
                                 className={`text-xs shrink-0 ${
-                                  severityColors[relatedAlert.severity] || 'bg-gray-500 text-white'
+                                  SEVERITY_COLORS[relatedAlert.severity] || 'bg-gray-500 text-white'
                                 }`}
                               >
                                 {capitalize(relatedAlert.severity)}
@@ -1237,10 +1214,10 @@ export default function AlertDetailPage() {
                               <Badge
                                 variant="outline"
                                 className={`text-xs shrink-0 ${
-                                  statusColors[relatedAlert.status]
+                                  ALERT_STATUS_COLORS[relatedAlert.status]
                                 }`}
                               >
-                                {statusLabels[relatedAlert.status]}
+                                {ALERT_STATUS_LABELS[relatedAlert.status]}
                               </Badge>
                             </div>
                             <span className="text-xs text-muted-foreground shrink-0">

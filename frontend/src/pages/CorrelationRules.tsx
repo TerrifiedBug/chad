@@ -35,18 +35,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronDown, ChevronLeft, CircleOff, Clock, Plus, Rocket, RotateCcw, Search, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
+import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
 import { RelativeTime } from '@/components/RelativeTime'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-black',
-  low: 'bg-blue-500 text-white',
-  informational: 'bg-gray-500 text-white',
-}
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -672,7 +663,7 @@ export default function CorrelationRulesPage() {
                     <TableCell className="font-mono text-xs">{rule.entity_field}</TableCell>
                     <TableCell>{rule.time_window_minutes} min</TableCell>
                     <TableCell>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${severityColors[rule.severity]}`}>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${SEVERITY_COLORS[rule.severity]}`}>
                         {capitalize(rule.severity)}
                       </span>
                     </TableCell>

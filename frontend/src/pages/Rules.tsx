@@ -36,6 +36,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
+import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
@@ -47,16 +48,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { FileSpreadsheet, Loader2 } from 'lucide-react'
-
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-black',
-  low: 'bg-blue-500 text-white',
-  informational: 'bg-gray-500 text-white',
-}
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -917,7 +908,7 @@ export default function RulesPage() {
                     <TableCell>
                       <span
                         className={`px-2 py-1 rounded text-xs font-medium ${
-                          severityColors[rule.severity] || 'bg-gray-500 text-white'
+                          SEVERITY_COLORS[rule.severity] || 'bg-gray-500 text-white'
                         }`}
                       >
                         {capitalize(rule.severity)}

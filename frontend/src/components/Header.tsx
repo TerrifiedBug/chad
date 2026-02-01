@@ -61,7 +61,7 @@ export function Header() {
             )}
           </Link>
           {isAuthenticated && (
-            <nav className="flex items-center gap-6">
+            <nav className="flex items-center gap-6" aria-label="Main navigation">
               {visibleNavItems.map((item) => {
                 const isActive = item.exact
                   ? location.pathname === item.href
@@ -70,14 +70,16 @@ export function Header() {
                   <Link
                     key={item.href}
                     to={item.href}
+                    aria-current={isActive ? 'page' : undefined}
                     className={cn(
                       'text-sm font-medium transition-colors hover:text-primary',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm',
                       isActive ? 'text-foreground' : 'text-muted-foreground'
                     )}
                   >
                     {item.label}
                     {item.href === '/settings' && updateAvailable && (
-                      <span className="ml-1 h-2 w-2 rounded-full bg-red-500" />
+                      <span className="ml-1 h-2 w-2 rounded-full bg-red-500" aria-label="Update available" />
                     )}
                   </Link>
                 )
@@ -86,13 +88,13 @@ export function Header() {
           )}
         </div>
         <div className="flex items-center gap-4">
-          {isAuthenticated && <NotificationBell />}
+          {isAuthenticated && <NotificationBell aria-label="Notifications" />}
           {isAuthenticated && user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1">
+                <Button variant="ghost" size="sm" className="gap-1" aria-label={`User menu for ${user.email}`}>
                   {user.email}
-                  <ChevronDown className="h-4 w-4" />
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">

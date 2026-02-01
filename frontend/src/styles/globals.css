@@ -24,6 +24,14 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+
+    /* Z-index scale */
+    --z-dropdown: 50;
+    --z-sticky: 40;
+    --z-modal: 50;
+    --z-modal-dropdown: 60;
+    --z-popover: 50;
+    --z-tooltip: 60;
   }
 
   .dark {
@@ -55,5 +63,17 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* Respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

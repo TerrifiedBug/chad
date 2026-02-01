@@ -8,15 +8,7 @@ import { RelativeTime } from '@/components/RelativeTime'
 import { Activity, Wifi, WifiOff, Trash2, AlertCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
-
-// Severity color mapping
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500/10 text-red-500 border-red-500/20',
-  high: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-  medium: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-  low: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  informational: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
-}
+import { SEVERITY_COLORS_SUBTLE } from '@/lib/constants'
 
 export default function LiveAlertFeedPage() {
   const navigate = useNavigate()
@@ -106,7 +98,7 @@ export default function LiveAlertFeedPage() {
                         {alert.rule_title}
                       </CardTitle>
                       <Badge
-                        className={`${severityColors[alert.severity] || severityColors.medium} shrink-0`}
+                        className={`${SEVERITY_COLORS_SUBTLE[alert.severity] || SEVERITY_COLORS_SUBTLE.medium} shrink-0`}
                       >
                         {alert.severity}
                       </Badge>

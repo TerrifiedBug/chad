@@ -44,33 +44,10 @@ import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { DateRange } from 'react-day-picker'
 import { cn } from '@/lib/utils'
+import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 import { useAuth } from '@/hooks/use-auth'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
-
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500 text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-yellow-500 text-black',
-  low: 'bg-blue-500 text-white',
-  informational: 'bg-gray-500 text-white',
-}
-
-const statusColors: Record<AlertStatus, string> = {
-  new: 'bg-blue-500 text-white',
-  acknowledged: 'bg-yellow-500 text-black',
-  resolved: 'bg-green-500 text-white',
-  false_positive: 'bg-gray-500 text-white',
-}
-
-const statusLabels: Record<AlertStatus, string> = {
-  new: 'New',
-  acknowledged: 'Acknowledged',
-  resolved: 'Resolved',
-  false_positive: 'False Positive',
-}
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // Type guard to check if response is clustered
 function isClusteredResponse(response: AlertListResponse | ClusteredAlertListResponse): response is ClusteredAlertListResponse {
@@ -695,7 +672,7 @@ export default function AlertsPage() {
                           <TableCell>
                             <span
                               className={`px-2 py-1 rounded text-xs font-medium ${
-                                severityColors[alert.severity] || 'bg-gray-500 text-white'
+                                SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
                               }`}
                             >
                               {capitalize(alert.severity)}
@@ -703,9 +680,9 @@ export default function AlertsPage() {
                           </TableCell>
                           <TableCell>
                             <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
+                              className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
                             >
-                              {statusLabels[alert.status]}
+                              {ALERT_STATUS_LABELS[alert.status]}
                             </span>
                           </TableCell>
                           <TableCell>
@@ -788,7 +765,7 @@ export default function AlertsPage() {
                             <TableCell>
                               <span
                                 className={`px-2 py-1 rounded text-xs font-medium ${
-                                  severityColors[clusterAlert.severity] || 'bg-gray-500 text-white'
+                                  SEVERITY_COLORS[clusterAlert.severity] || 'bg-gray-500 text-white'
                                 }`}
                               >
                                 {capitalize(clusterAlert.severity)}
@@ -796,9 +773,9 @@ export default function AlertsPage() {
                             </TableCell>
                             <TableCell>
                               <span
-                                className={`px-2 py-1 rounded text-xs font-medium ${statusColors[clusterAlert.status]}`}
+                                className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[clusterAlert.status]}`}
                               >
-                                {statusLabels[clusterAlert.status]}
+                                {ALERT_STATUS_LABELS[clusterAlert.status]}
                               </span>
                             </TableCell>
                             <TableCell>
@@ -871,7 +848,7 @@ export default function AlertsPage() {
                       <TableCell>
                         <span
                           className={`px-2 py-1 rounded text-xs font-medium ${
-                            severityColors[alert.severity] || 'bg-gray-500 text-white'
+                            SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
                           }`}
                         >
                           {capitalize(alert.severity)}
@@ -879,9 +856,9 @@ export default function AlertsPage() {
                       </TableCell>
                       <TableCell>
                         <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${statusColors[alert.status]}`}
+                          className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
                         >
-                          {statusLabels[alert.status]}
+                          {ALERT_STATUS_LABELS[alert.status]}
                         </span>
                       </TableCell>
                       <TableCell>
