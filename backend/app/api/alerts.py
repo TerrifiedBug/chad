@@ -390,7 +390,8 @@ async def bulk_update_alert_status(
                               ip_address=get_client_ip(request))
                 success.append(str(alert_id))
             except Exception as e:
-                failed.append({"id": str(alert_id), "error": str(e)})
+                logger.warning("Failed to update alert %s: %s", alert_id, e)
+                failed.append({"id": str(alert_id), "error": "Update failed"})
         else:
             failed.append({"id": str(alert_id), "error": "Not found"})
 
@@ -436,7 +437,8 @@ async def bulk_delete_alerts(
                     os_client.delete(index=alert.alert_index, id=alert.alert_id, refresh=True)
                 except Exception as e:
                     # Don't proceed with DB deletion if OpenSearch fails
-                    failed.append({"id": alert_id_str, "error": f"Failed to delete from OpenSearch: {e}"})
+                    logger.warning("Failed to delete alert %s from OpenSearch: %s", alert_id_str, e)
+                    failed.append({"id": alert_id_str, "error": "Failed to delete from OpenSearch"})
                     continue
 
                 # Delete from database

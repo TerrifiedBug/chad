@@ -363,8 +363,8 @@ async def receive_logs(
                                             if parsed and isinstance(parsed, dict):
                                                 tags = parsed.get("tags", []) or []
                                                 correlation_tags.extend(tags)
-                                except (ValueError, yaml.YAMLError, Exception):
-                                    pass
+                                except (ValueError, yaml.YAMLError, Exception) as e:
+                                    logger.debug("Failed to extract tags from rule_a: %s", e)
 
                             if rule_b_id:
                                 try:
@@ -379,8 +379,8 @@ async def receive_logs(
                                             if parsed and isinstance(parsed, dict):
                                                 tags = parsed.get("tags", []) or []
                                                 correlation_tags.extend(tags)
-                                except (ValueError, yaml.YAMLError, Exception):
-                                    pass
+                                except (ValueError, yaml.YAMLError, Exception) as e:
+                                    logger.debug("Failed to extract tags from rule_b: %s", e)
 
                             # Deduplicate tags while preserving order
                             seen = set()
@@ -593,8 +593,8 @@ async def test_log_matching(
                     suppressed = True
                     matching_exception = exc
                     break
-        except (ValueError, Exception):
-            pass
+        except (ValueError, Exception) as e:
+            logger.debug("Exception match check failed for rule %s: %s", rule_id, e)
 
         results.append({
             "rule_id": rule_id,

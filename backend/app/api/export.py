@@ -945,14 +945,14 @@ async def _import_exceptions(
             try:
                 operator = ExceptionOperator(exc["operator"])
             except ValueError:
-                pass
+                logger.debug("Invalid operator value '%s', using default", exc.get("operator"))
 
         group_id = uuid.uuid4()
         if exc.get("group_id"):
             try:
                 group_id = uuid.UUID(exc["group_id"])
             except ValueError:
-                pass
+                logger.debug("Invalid group_id '%s', generating new UUID", exc.get("group_id"))
 
         new_exc = RuleException(
             rule_id=rule_id,

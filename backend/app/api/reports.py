@@ -482,8 +482,8 @@ async def generate_rule_coverage_report(
             parsed = yaml.safe_load(yaml_content)
             if parsed and isinstance(parsed, dict):
                 return parsed.get("tags", []) or []
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to parse YAML for tags extraction: %s", e)
         return []
 
     # Severity distribution
