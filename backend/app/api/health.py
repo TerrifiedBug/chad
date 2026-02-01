@@ -27,6 +27,12 @@ DEFAULT_LATENCY_MS = 1000
 DEFAULT_QUEUE_WARNING = 10000
 DEFAULT_QUEUE_CRITICAL = 100000
 
+# Pull mode default values
+DEFAULT_PULL_MAX_RETRIES = 3
+DEFAULT_PULL_RETRY_DELAY_SECONDS = 5
+DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING = 3
+DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL = 10
+
 
 class HealthSettingsResponse(BaseModel):
     """Response for health settings."""
@@ -201,6 +207,78 @@ async def update_health_intervals(
         mitre_attack_interval_seconds=config.mitre_attack_interval_seconds,
         opensearch_interval_seconds=config.opensearch_interval_seconds,
         ti_interval_seconds=config.ti_interval_seconds,
+    )
+
+
+# Pull Mode Settings
+class PullModeSettingsResponse(BaseModel):
+    """Response for pull mode settings."""
+
+    max_retries: int
+    retry_delay_seconds: int
+    consecutive_failures_warning: int
+    consecutive_failures_critical: int
+
+
+class PullModeSettingsUpdate(BaseModel):
+    """Request for updating pull mode settings."""
+
+    max_retries: int = Field(default=3, ge=1, le=10, description="Max retry attempts for failed polls")
+    retry_delay_seconds: int = Field(default=5, ge=1, le=60, description="Delay between retries in seconds")
+    consecutive_failures_warning: int = Field(default=3, ge=1, le=50, description="Consecutive failures before warning status")
+    consecutive_failures_critical: int = Field(default=10, ge=1, le=100, description="Consecutive failures before critical status")
+
+    @field_validator("consecutive_failures_critical")
+    @classmethod
+    def critical_greater_than_warning(cls, v: int, info) -> int:
+        """Ensure critical threshold is greater than warning threshold."""
+        warning = info.data.get("consecutive_failures_warning", 3)
+        if v <= warning:
+            raise ValueError("consecutive_failures_critical must be greater than consecutive_failures_warning")
+        return v
+
+
+@router.get("/pull-mode/settings", response_model=PullModeSettingsResponse)
+async def get_pull_mode_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Get pull mode detection settings."""
+    setting = await get_setting(db, "pull_mode")
+    pull_settings = setting or {}
+
+    return PullModeSettingsResponse(
+        max_retries=pull_settings.get("max_retries", DEFAULT_PULL_MAX_RETRIES),
+        retry_delay_seconds=pull_settings.get("retry_delay_seconds", DEFAULT_PULL_RETRY_DELAY_SECONDS),
+        consecutive_failures_warning=pull_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING),
+        consecutive_failures_critical=pull_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL),
+    )
+
+
+@router.put("/pull-mode/settings", response_model=PullModeSettingsResponse)
+async def update_pull_mode_settings(
+    data: PullModeSettingsUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Update pull mode detection settings."""
+    # Get current settings
+    current = await get_setting(db, "pull_mode")
+    pull_settings = current or {}
+
+    # Apply updates
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        pull_settings[key] = value
+
+    # Save
+    await set_setting(db, "pull_mode", pull_settings)
+
+    return PullModeSettingsResponse(
+        max_retries=pull_settings.get("max_retries", DEFAULT_PULL_MAX_RETRIES),
+        retry_delay_seconds=pull_settings.get("retry_delay_seconds", DEFAULT_PULL_RETRY_DELAY_SECONDS),
+        consecutive_failures_warning=pull_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING),
+        consecutive_failures_critical=pull_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL),
     )
 
 
@@ -487,6 +565,11 @@ async def get_pull_mode_health(
     from sqlalchemy.orm import selectinload
     from datetime import datetime, UTC
 
+    # Load configurable thresholds
+    pull_mode_settings = await get_setting(db, "pull_mode") or {}
+    failures_warning = pull_mode_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING)
+    failures_critical = pull_mode_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL)
+
     # Get all index patterns with poll state
     result = await db.execute(
         select(IndexPattern)
@@ -508,14 +591,14 @@ async def get_pull_mode_health(
         if ps:
             # Check poll status
             if ps.last_poll_status == "error":
-                status = "warning" if ps.consecutive_failures < 3 else "critical"
+                status = "warning" if ps.consecutive_failures < failures_warning else "critical"
                 issues.append(f"Last poll failed: {ps.last_error}")
 
-            # Check consecutive failures
-            if ps.consecutive_failures >= 10:
+            # Check consecutive failures against configurable thresholds
+            if ps.consecutive_failures >= failures_critical:
                 status = "critical"
                 issues.append(f"{ps.consecutive_failures} consecutive poll failures")
-            elif ps.consecutive_failures >= 3:
+            elif ps.consecutive_failures >= failures_warning:
                 if status != "critical":
                     status = "warning"
                 issues.append(f"{ps.consecutive_failures} consecutive poll failures")

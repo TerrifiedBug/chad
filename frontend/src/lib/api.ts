@@ -1471,6 +1471,13 @@ export type PullModeHealth = {
   patterns: PullModePatternHealth[]
 }
 
+export type PullModeSettings = {
+  max_retries: number
+  retry_delay_seconds: number
+  consecutive_failures_warning: number
+  consecutive_failures_critical: number
+}
+
 // Health API
 export const healthApi = {
   listIndices: () =>
@@ -1489,6 +1496,10 @@ export const healthApi = {
     api.put<HealthIntervals>('/health/intervals', data),
   getPullModeHealth: () =>
     api.get<PullModeHealth>('/health/pull-mode'),
+  getPullModeSettings: () =>
+    api.get<PullModeSettings>('/health/pull-mode/settings'),
+  updatePullModeSettings: (data: PullModeSettings) =>
+    api.put<PullModeSettings>('/health/pull-mode/settings', data),
 }
 
 // Notification settings types

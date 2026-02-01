@@ -9,11 +9,11 @@ from opensearchpy import OpenSearch
 
 logger = logging.getLogger(__name__)
 
-# Constants for retry logic
-MAX_RETRIES = 3
-RETRY_DELAY_SECONDS = 5
-MAX_CONSECUTIVE_FAILURES_WARNING = 3
-MAX_CONSECUTIVE_FAILURES_CRITICAL = 10
+# Default constants for retry logic (used when settings not loaded)
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_RETRY_DELAY_SECONDS = 5
+DEFAULT_CONSECUTIVE_FAILURES_WARNING = 3
+DEFAULT_CONSECUTIVE_FAILURES_CRITICAL = 10
 
 
 def get_settings():
@@ -22,11 +22,53 @@ def get_settings():
     return settings
 
 
+async def get_pull_mode_settings(session) -> dict[str, int]:
+    """
+    Get pull mode settings from the database.
+
+    Args:
+        session: SQLAlchemy async session
+
+    Returns:
+        Dict with pull mode settings
+    """
+    from app.services.settings import get_setting
+
+    pull_settings = await get_setting(session, "pull_mode")
+    if not pull_settings:
+        pull_settings = {}
+
+    return {
+        "max_retries": pull_settings.get("max_retries", DEFAULT_MAX_RETRIES),
+        "retry_delay_seconds": pull_settings.get("retry_delay_seconds", DEFAULT_RETRY_DELAY_SECONDS),
+        "consecutive_failures_warning": pull_settings.get(
+            "consecutive_failures_warning", DEFAULT_CONSECUTIVE_FAILURES_WARNING
+        ),
+        "consecutive_failures_critical": pull_settings.get(
+            "consecutive_failures_critical", DEFAULT_CONSECUTIVE_FAILURES_CRITICAL
+        ),
+    }
+
+
 class PullDetector:
     """Executes scheduled queries against OpenSearch for pull mode detection."""
 
-    def __init__(self, client: OpenSearch):
+    def __init__(self, client: OpenSearch, settings: dict[str, int] | None = None):
         self.client = client
+        self._settings = settings or {
+            "max_retries": DEFAULT_MAX_RETRIES,
+            "retry_delay_seconds": DEFAULT_RETRY_DELAY_SECONDS,
+            "consecutive_failures_warning": DEFAULT_CONSECUTIVE_FAILURES_WARNING,
+            "consecutive_failures_critical": DEFAULT_CONSECUTIVE_FAILURES_CRITICAL,
+        }
+
+    @property
+    def max_retries(self) -> int:
+        return self._settings.get("max_retries", DEFAULT_MAX_RETRIES)
+
+    @property
+    def retry_delay_seconds(self) -> int:
+        return self._settings.get("retry_delay_seconds", DEFAULT_RETRY_DELAY_SECONDS)
 
     def build_time_filtered_query(
         self,
@@ -91,7 +133,10 @@ class PullDetector:
             Exception: If all retries fail
         """
         last_error = None
-        for attempt in range(MAX_RETRIES):
+        max_retries = self.max_retries
+        retry_delay = self.retry_delay_seconds
+
+        for attempt in range(max_retries):
             try:
                 return self.client.search(
                     index=index_pattern,
@@ -99,14 +144,14 @@ class PullDetector:
                 )
             except Exception as e:
                 last_error = e
-                if attempt < MAX_RETRIES - 1:
+                if attempt < max_retries - 1:
                     logger.warning(
-                        f"OpenSearch query failed for rule {rule_id} (attempt {attempt + 1}/{MAX_RETRIES}): {e}"
+                        f"OpenSearch query failed for rule {rule_id} (attempt {attempt + 1}/{max_retries}): {e}"
                     )
-                    time.sleep(RETRY_DELAY_SECONDS)
+                    time.sleep(retry_delay)
                 else:
                     logger.error(
-                        f"OpenSearch query failed for rule {rule_id} after {MAX_RETRIES} attempts: {e}"
+                        f"OpenSearch query failed for rule {rule_id} after {max_retries} attempts: {e}"
                     )
         raise last_error
 
@@ -245,6 +290,11 @@ async def run_poll_job(index_pattern_id: str) -> None:
 
     async with async_session_maker() as session:
         try:
+            # Load pull mode settings from database
+            pull_settings = await get_pull_mode_settings(session)
+            failures_warning = pull_settings["consecutive_failures_warning"]
+            failures_critical = pull_settings["consecutive_failures_critical"]
+
             # Get index pattern with poll state
             result = await session.execute(
                 select(IndexPattern)
@@ -274,9 +324,9 @@ async def run_poll_job(index_pattern_id: str) -> None:
             if index_pattern.poll_state:
                 last_poll = index_pattern.poll_state.last_poll_at
 
-            # Execute poll
+            # Execute poll with configurable settings
             client = get_opensearch_client()
-            detector = PullDetector(client=client)
+            detector = PullDetector(client=client, settings=pull_settings)
             sigma_service = SigmaService()
             alert_service = AlertService(client=client)
 
@@ -309,12 +359,12 @@ async def run_poll_job(index_pattern_id: str) -> None:
                     ps.failed_polls += 1
                     ps.consecutive_failures += 1
 
-                    # Log warning/critical based on consecutive failures
-                    if ps.consecutive_failures >= MAX_CONSECUTIVE_FAILURES_CRITICAL:
+                    # Log warning/critical based on configurable thresholds
+                    if ps.consecutive_failures >= failures_critical:
                         logger.error(
                             f"CRITICAL: {ps.consecutive_failures} consecutive poll failures for {index_pattern.pattern}"
                         )
-                    elif ps.consecutive_failures >= MAX_CONSECUTIVE_FAILURES_WARNING:
+                    elif ps.consecutive_failures >= failures_warning:
                         logger.warning(
                             f"WARNING: {ps.consecutive_failures} consecutive poll failures for {index_pattern.pattern}"
                         )

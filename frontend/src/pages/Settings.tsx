@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, healthApi } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -135,6 +135,16 @@ export default function SettingsPage() {
   const [healthCheckIntervalsForm, setHealthCheckIntervalsForm] = useState(healthCheckIntervals)
   const [isSavingHealthCheckIntervals, setIsSavingHealthCheckIntervals] = useState(false)
 
+  // Pull mode settings
+  const [pullModeSettings, setPullModeSettings] = useState({
+    max_retries: 3,
+    retry_delay_seconds: 5,
+    consecutive_failures_warning: 3,
+    consecutive_failures_critical: 10,
+  })
+  const [pullModeSettingsForm, setPullModeSettingsForm] = useState(pullModeSettings)
+  const [isSavingPullModeSettings, setIsSavingPullModeSettings] = useState(false)
+
   // Version cleanup settings
   const [versionCleanupEnabled, setVersionCleanupEnabled] = useState(true)
   const [versionCleanupMinKeep, setVersionCleanupMinKeep] = useState(10)
@@ -215,9 +225,10 @@ export default function SettingsPage() {
 
   const loadHealthSettings = async () => {
     try {
-      const [thresholds, intervals] = await Promise.all([
+      const [thresholds, intervals, pullMode] = await Promise.all([
         settingsApi.getHealthSettings(),
-        api.get('/health/intervals')
+        api.get('/health/intervals'),
+        healthApi.getPullModeSettings()
       ] as const)
       // Convert ms to seconds for display
       const displayThresholds = {
@@ -231,6 +242,8 @@ export default function SettingsPage() {
       setHealthSettingsForm(displayThresholds)
       setHealthCheckIntervals(intervals as typeof healthCheckIntervals)
       setHealthCheckIntervalsForm(intervals as typeof healthCheckIntervals)
+      setPullModeSettings(pullMode)
+      setPullModeSettingsForm(pullMode)
     } catch (err) {
       console.error('Failed to load health settings:', err)
     }
@@ -635,6 +648,19 @@ export default function SettingsPage() {
       showToast(err instanceof Error ? err.message : 'Failed to save health settings', 'error')
     } finally {
       setIsSavingHealthSettings(false)
+    }
+  }
+
+  const savePullModeSettings = async () => {
+    setIsSavingPullModeSettings(true)
+    try {
+      await healthApi.updatePullModeSettings(pullModeSettingsForm)
+      setPullModeSettings(pullModeSettingsForm)
+      showToast('Pull mode settings saved successfully')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save pull mode settings', 'error')
+    } finally {
+      setIsSavingPullModeSettings(false)
     }
   }
 
@@ -1801,6 +1827,79 @@ export default function SettingsPage() {
                   disabled={isSavingHealthCheckIntervals}
                 >
                   {isSavingHealthCheckIntervals ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Pull Mode Settings</CardTitle>
+              <CardDescription>
+                Configure pull mode detection behavior including retry logic and health status thresholds.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pull-max-retries">Max Retries</Label>
+                  <Input
+                    id="pull-max-retries"
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={pullModeSettingsForm.max_retries}
+                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, max_retries: parseInt(e.target.value) || 3})}
+                  />
+                  <p className="text-xs text-muted-foreground">Retry attempts for failed polls (default: 3)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pull-retry-delay">Retry Delay (seconds)</Label>
+                  <Input
+                    id="pull-retry-delay"
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={pullModeSettingsForm.retry_delay_seconds}
+                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, retry_delay_seconds: parseInt(e.target.value) || 5})}
+                  />
+                  <p className="text-xs text-muted-foreground">Delay between retries (default: 5)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pull-failures-warning">Failures Warning Threshold</Label>
+                  <Input
+                    id="pull-failures-warning"
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={pullModeSettingsForm.consecutive_failures_warning}
+                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_warning: parseInt(e.target.value) || 3})}
+                  />
+                  <p className="text-xs text-muted-foreground">Consecutive failures before warning (default: 3)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pull-failures-critical">Failures Critical Threshold</Label>
+                  <Input
+                    id="pull-failures-critical"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={pullModeSettingsForm.consecutive_failures_critical}
+                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_critical: parseInt(e.target.value) || 10})}
+                  />
+                  <p className="text-xs text-muted-foreground">Consecutive failures before critical (default: 10)</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  onClick={savePullModeSettings}
+                  disabled={isSavingPullModeSettings}
+                >
+                  {isSavingPullModeSettings ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
                 </Button>
               </div>
             </CardContent>
