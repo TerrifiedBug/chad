@@ -55,6 +55,12 @@ from app.utils.request import get_client_ip
 router = APIRouter(prefix="/logs", tags=["logs"])
 
 
+def get_settings():
+    """Get application settings (for easier mocking in tests)."""
+    from app.core.config import settings
+    return settings
+
+
 def ip_matches_allowlist(client_ip: str, allowed_ips: list[str]) -> bool:
     """
     Check if a client IP matches any entry in the allowlist.
@@ -204,9 +210,24 @@ async def receive_logs(
     Returns:
         Summary of matches found
     """
+    # Check if we're in pull-only deployment mode
+    settings = get_settings()
+    if settings.is_pull_only:
+        raise HTTPException(
+            status_code=503,
+            detail="Log ingestion disabled in pull-only deployment. CHAD queries OpenSearch directly.",
+        )
+
     # Validate the auth token first and get the index pattern for enrichment config
     # This also checks IP allowlist
     index_pattern = await validate_log_shipping_token(index_suffix, authorization, db, request)
+
+    # Check if pattern is in pull mode
+    if index_pattern.mode == "pull":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Index pattern '{index_pattern.name}' is in pull mode. Logs are queried from OpenSearch, not pushed.",
+        )
 
     # Check rate limits if enabled
     if index_pattern.rate_limit_enabled:
@@ -628,8 +649,23 @@ async def receive_logs_queue(
     - "drop": Accept logs, evict oldest when queue full (default)
     - "reject": Return 503 when queue is at critical threshold
     """
+    # Check if we're in pull-only deployment mode
+    settings = get_settings()
+    if settings.is_pull_only:
+        raise HTTPException(
+            status_code=503,
+            detail="Log ingestion disabled in pull-only deployment. CHAD queries OpenSearch directly.",
+        )
+
     # Validate the auth token first (also checks IP allowlist)
     index_pattern = await validate_log_shipping_token(index_suffix, authorization, db, request)
+
+    # Check if pattern is in pull mode
+    if index_pattern.mode == "pull":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Index pattern '{index_pattern.name}' is in pull mode. Logs are queried from OpenSearch, not pushed.",
+        )
 
     # Check rate limits if enabled
     if index_pattern.rate_limit_enabled:
