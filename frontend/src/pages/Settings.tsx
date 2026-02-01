@@ -703,7 +703,8 @@ export default function SettingsPage() {
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="health">Health Monitoring</TabsTrigger>
-          <TabsTrigger value="queue">Queue</TabsTrigger>
+          <TabsTrigger value="push-queue">Push Queue</TabsTrigger>
+          <TabsTrigger value="pull-queue">Pull Queue</TabsTrigger>
           <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
           <TabsTrigger value="export">Backup & Restore</TabsTrigger>
           <TabsTrigger value="about" className="flex items-center gap-1">
@@ -1831,87 +1832,14 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Pull Mode Settings</CardTitle>
-              <CardDescription>
-                Configure pull mode detection behavior including retry logic and health status thresholds.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="pull-max-retries">Max Retries</Label>
-                  <Input
-                    id="pull-max-retries"
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={pullModeSettingsForm.max_retries}
-                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, max_retries: parseInt(e.target.value) || 3})}
-                  />
-                  <p className="text-xs text-muted-foreground">Retry attempts for failed polls (default: 3)</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pull-retry-delay">Retry Delay (seconds)</Label>
-                  <Input
-                    id="pull-retry-delay"
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={pullModeSettingsForm.retry_delay_seconds}
-                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, retry_delay_seconds: parseInt(e.target.value) || 5})}
-                  />
-                  <p className="text-xs text-muted-foreground">Delay between retries (default: 5)</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pull-failures-warning">Failures Warning Threshold</Label>
-                  <Input
-                    id="pull-failures-warning"
-                    type="number"
-                    min="1"
-                    max="50"
-                    value={pullModeSettingsForm.consecutive_failures_warning}
-                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_warning: parseInt(e.target.value) || 3})}
-                  />
-                  <p className="text-xs text-muted-foreground">Consecutive failures before warning (default: 3)</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pull-failures-critical">Failures Critical Threshold</Label>
-                  <Input
-                    id="pull-failures-critical"
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={pullModeSettingsForm.consecutive_failures_critical}
-                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_critical: parseInt(e.target.value) || 10})}
-                  />
-                  <p className="text-xs text-muted-foreground">Consecutive failures before critical (default: 10)</p>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-4 border-t">
-                <Button
-                  onClick={savePullModeSettings}
-                  disabled={isSavingPullModeSettings}
-                >
-                  {isSavingPullModeSettings ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
-        <TabsContent value="queue" className="mt-4 space-y-6">
+        <TabsContent value="push-queue" className="mt-4 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Queue Configuration</CardTitle>
+              <CardTitle>Push Queue Configuration</CardTitle>
               <CardDescription>
-                Configure log queue processing and backpressure settings.
+                Configure log queue processing and backpressure settings for push mode detection.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -2013,6 +1941,81 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground mt-4">
                 Queue statistics and dead letter management are available on the <a href="/health" className="text-primary underline">Health</a> page.
               </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="pull-queue" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Pull Queue Configuration</CardTitle>
+              <CardDescription>
+                Configure pull mode detection behavior including retry logic and health status thresholds.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pull-max-retries">Max Retries</Label>
+                  <Input
+                    id="pull-max-retries"
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={pullModeSettingsForm.max_retries}
+                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, max_retries: parseInt(e.target.value) || 3})}
+                  />
+                  <p className="text-xs text-muted-foreground">Retry attempts for failed polls (default: 3)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pull-retry-delay">Retry Delay (seconds)</Label>
+                  <Input
+                    id="pull-retry-delay"
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={pullModeSettingsForm.retry_delay_seconds}
+                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, retry_delay_seconds: parseInt(e.target.value) || 5})}
+                  />
+                  <p className="text-xs text-muted-foreground">Delay between retries (default: 5)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pull-failures-warning">Failures Warning Threshold</Label>
+                  <Input
+                    id="pull-failures-warning"
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={pullModeSettingsForm.consecutive_failures_warning}
+                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_warning: parseInt(e.target.value) || 3})}
+                  />
+                  <p className="text-xs text-muted-foreground">Consecutive failures before warning (default: 3)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pull-failures-critical">Failures Critical Threshold</Label>
+                  <Input
+                    id="pull-failures-critical"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={pullModeSettingsForm.consecutive_failures_critical}
+                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_critical: parseInt(e.target.value) || 10})}
+                  />
+                  <p className="text-xs text-muted-foreground">Consecutive failures before critical (default: 10)</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  onClick={savePullModeSettings}
+                  disabled={isSavingPullModeSettings}
+                >
+                  {isSavingPullModeSettings ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
