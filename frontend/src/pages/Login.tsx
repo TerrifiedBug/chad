@@ -122,7 +122,7 @@ export default function LoginPage() {
               type="text"
               name="totp"
               autoComplete="one-time-code"
-              style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
+              className="sr-only"
               tabIndex={-1}
               aria-hidden="true"
             />

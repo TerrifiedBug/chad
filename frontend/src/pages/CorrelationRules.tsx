@@ -38,6 +38,9 @@ import { cn } from '@/lib/utils'
 import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
 import { RelativeTime } from '@/components/RelativeTime'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { LoadingState } from '@/components/ui/loading-state'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Link2 } from 'lucide-react'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -602,13 +605,21 @@ export default function CorrelationRulesPage() {
       )}
 
       {isLoading ? (
-        <div className="text-center py-8 text-muted-foreground">Loading...</div>
+        <LoadingState message="Loading correlation rules..." />
       ) : filteredRules.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          {hasActiveFilters
-            ? 'No correlation rules match your filters'
-            : 'No correlation rules found. Create one to detect patterns across multiple rules.'}
-        </div>
+        <EmptyState
+          icon={<Link2 className="h-12 w-12" />}
+          title={hasActiveFilters ? 'No correlation rules match your filters' : 'No correlation rules found'}
+          description={hasActiveFilters
+            ? 'Try adjusting your filters to see more results.'
+            : 'Create a correlation rule to detect patterns across multiple rules.'}
+          action={!hasActiveFilters && canManageRules() ? (
+            <Button onClick={() => navigate('/correlation/new')}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Correlation Rule
+            </Button>
+          ) : undefined}
+        />
       ) : (
         <TooltipProvider>
         <div className="border rounded-lg">

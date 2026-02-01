@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers, XCircle, Loader2, ChevronUp } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useToast } from '@/components/ui/toast-provider'
+import { LoadingState } from '@/components/ui/loading-state'
 import {
   Popover,
   PopoverContent,
@@ -216,11 +217,7 @@ export default function HealthPage() {
   )
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading health data...</div>
-      </div>
-    )
+    return <LoadingState message="Loading health data..." />
   }
 
   return (

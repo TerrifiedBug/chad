@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import { ToastProvider } from '@/components/ui/toast-provider'
+import { AppLayout } from '@/components/AppLayout'
 import { Header } from '@/components/Header'
 import { ProtectedRoute } from '@/components/protected-route'
 import SetupPage from '@/pages/Setup'
@@ -80,222 +81,112 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <Dashboard />
-            </main>
-          </div>
+          <AppLayout><Dashboard /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/rules" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <RulesPage />
-            </main>
-          </div>
+          <AppLayout><RulesPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/rules/new" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <RuleEditorPage />
-            </main>
-          </div>
+          <AppLayout><RuleEditorPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/rules/:id" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <RuleEditorPage />
-            </main>
-          </div>
+          <AppLayout><RuleEditorPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/correlation" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <CorrelationRulesPage />
-            </main>
-          </div>
+          <AppLayout><CorrelationRulesPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/correlation/new" element={
         <ProtectedRoute permission="manage_correlation">
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <CorrelationRuleEditorPage />
-            </main>
-          </div>
+          <AppLayout><CorrelationRuleEditorPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/correlation/:id" element={
         <ProtectedRoute permission="manage_correlation">
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <CorrelationRuleEditorPage />
-            </main>
-          </div>
+          <AppLayout><CorrelationRuleEditorPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/index-patterns" element={
         <ProtectedRoute permission="manage_index_config">
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <IndexPatternsPage />
-            </main>
-          </div>
+          <AppLayout><IndexPatternsPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/alerts" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <AlertsPage />
-            </main>
-          </div>
+          <AppLayout><AlertsPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/alerts/:id" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <AlertDetailPage />
-            </main>
-          </div>
+          <AppLayout><AlertDetailPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/live" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <LiveAlertFeedPage />
-            </main>
-          </div>
+          <AppLayout><LiveAlertFeedPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/settings" element={
         <ProtectedRoute permission="manage_settings">
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <SettingsPage />
-            </main>
-          </div>
+          <AppLayout><SettingsPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/settings/users" element={
         <ProtectedRoute permission="manage_users">
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <UsersPage />
-            </main>
-          </div>
+          <AppLayout><UsersPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/settings/audit" element={
         <ProtectedRoute permission="view_audit">
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <AuditLogPage />
-            </main>
-          </div>
+          <AppLayout><AuditLogPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/change-password" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <ChangePasswordPage />
-            </main>
-          </div>
+          <AppLayout><ChangePasswordPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/account" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <AccountPage />
-            </main>
-          </div>
+          <AppLayout><AccountPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/settings/api-keys" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <ApiKeysPage />
-            </main>
-          </div>
+          <AppLayout><ApiKeysPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/sigmahq" element={
         <ProtectedRoute permission="manage_sigmahq">
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <SigmaHQPage />
-            </main>
-          </div>
+          <AppLayout><SigmaHQPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/health" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <HealthPage />
-            </main>
-          </div>
+          <AppLayout><HealthPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/field-mappings" element={
         <ProtectedRoute permission="manage_index_config">
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <FieldMappingsPage />
-            </main>
-          </div>
+          <AppLayout><FieldMappingsPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/attack" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <AttackMatrixPage />
-            </main>
-          </div>
+          <AppLayout><AttackMatrixPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/opensearch-wizard" element={
         <AuthRoute>
-          <div className="min-h-screen bg-background">
-            <Header />
-            <main className="px-6 py-8">
-              <OpenSearchWizard />
-            </main>
-          </div>
+          <AppLayout><OpenSearchWizard /></AppLayout>
         </AuthRoute>
       } />
       <Route path="*" element={<Navigate to="/" replace />} />

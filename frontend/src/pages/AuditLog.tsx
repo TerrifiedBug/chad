@@ -28,7 +28,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eye, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Eye, RefreshCw, FileText } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +37,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
+import { LoadingState } from '@/components/ui/loading-state'
+import { EmptyState } from '@/components/ui/empty-state'
 
 const PAGE_SIZE = 50
 
@@ -316,17 +318,25 @@ export default function AuditLogPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">
-                  Loading...
+                <TableCell colSpan={7}>
+                  <LoadingState message="Loading audit logs..." />
                 </TableCell>
               </TableRow>
             ) : !auditData || auditData.items.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="text-center py-8 text-muted-foreground"
-                >
-                  No audit log entries found
+                <TableCell colSpan={7}>
+                  <EmptyState
+                    icon={<FileText className="h-12 w-12" />}
+                    title="No audit log entries"
+                    description="Audit events will appear here as users interact with the system."
+                    action={
+                      (actionFilter !== 'all' || resourceTypeFilter !== 'all' || dateRange) && (
+                        <Button variant="outline" onClick={resetFilters}>
+                          Clear Filters
+                        </Button>
+                      )
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ) : (

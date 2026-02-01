@@ -51,6 +51,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
+import { LoadingState } from '@/components/ui/loading-state'
 
 // SigmaHQ rule stability status colors (different from alert status)
 const sigmaStatusColors: Record<string, string> = {
@@ -389,11 +390,7 @@ export default function SigmaHQPage() {
 
   // Loading state
   if (isLoadingStatus) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <LoadingState message="Loading SigmaHQ status..." />
   }
 
   // Not cloned - show sync card
