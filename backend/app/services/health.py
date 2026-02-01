@@ -137,8 +137,49 @@ async def get_index_health(
     latest = result.scalar_one_or_none()
 
     if not latest:
-        # No metrics at all - mode-specific warning messages
+        # No IndexHealthMetrics records - check if pull mode with poll_state
         is_pull_mode = index_pattern and index_pattern.mode == "pull"
+
+        if is_pull_mode and index_pattern.poll_state:
+            # Pull mode with poll_state - use poll_state for health status
+            ps = index_pattern.poll_state
+
+            # Determine status from consecutive failures
+            if ps.consecutive_failures == 0 and ps.total_polls > 0:
+                status = HealthStatus.HEALTHY
+                issues = []
+            elif ps.consecutive_failures >= 10:  # Critical threshold
+                status = HealthStatus.CRITICAL
+                issues = [f"Pull mode has {ps.consecutive_failures} consecutive failures"]
+            elif ps.consecutive_failures >= 3:  # Warning threshold
+                status = HealthStatus.WARNING
+                issues = [f"Pull mode has {ps.consecutive_failures} consecutive failures"]
+            elif ps.total_polls == 0:
+                status = HealthStatus.WARNING
+                issues = ["No polls executed yet - check pull mode configuration and scheduler status"]
+            else:
+                status = HealthStatus.HEALTHY
+                issues = []
+
+            return {
+                "status": status,
+                "message": "Pull mode active",
+                "issues": issues,
+                "latest": {
+                    "queue_depth": 0,
+                    "avg_detection_latency_ms": ps.avg_poll_duration_ms or 0,
+                    "avg_opensearch_query_latency_ms": 0,
+                    "logs_per_minute": 0,
+                    "alerts_per_hour": alerts_per_hour,
+                },
+                "totals_24h": {
+                    "logs_received": ps.total_events_scanned or 0,
+                    "logs_errored": ps.failed_polls or 0,
+                    "alerts_generated": alerts_24h,
+                },
+            }
+
+        # Push mode or pull mode without poll_state
         if is_pull_mode:
             issue_msg = "No polls executed yet - check pull mode configuration and scheduler status"
         else:
