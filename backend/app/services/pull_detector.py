@@ -254,7 +254,8 @@ class PullDetector:
                     errors_str = ", ".join(e.message for e in (result.errors or []))
                     errors.append({"rule_id": str(rule.id), "error": f"Translation failed: {errors_str}"})
                     continue
-                base_query = result.query
+                # Sigma returns {"query": {"query_string": ...}}, we need just {"query_string": ...}
+                base_query = result.query.get("query", result.query)
 
                 # Add time filter using configurable timestamp field
                 query = self.build_time_filtered_query(base_query, last_poll, now, timestamp_field)

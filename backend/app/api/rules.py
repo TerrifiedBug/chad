@@ -1244,6 +1244,7 @@ async def deploy_rule(
     # Pull mode doesn't use percolator - rules are evaluated during scheduled polls
     settings = get_settings()
     use_percolator = not settings.is_pull_only and rule.index_pattern.mode == "push"
+    percolator_index = None  # Initialize for pull mode case
 
     if use_percolator:
         percolator = PercolatorService(os_client)

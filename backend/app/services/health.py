@@ -133,12 +133,17 @@ async def get_index_health(
     latest = result.scalar_one_or_none()
 
     if not latest:
-        # No metrics at all - this is a warning state (index may not be configured or receiving logs)
-        # But we still have OpenSearch query results for alert counts
+        # No metrics at all - mode-specific warning messages
+        is_pull_mode = index_pattern and index_pattern.mode == "pull"
+        if is_pull_mode:
+            issue_msg = "No polls executed yet - check pull mode configuration and scheduler status"
+        else:
+            issue_msg = "No data received - index may not be configured or receiving logs"
+
         return {
             "status": HealthStatus.WARNING,
-            "message": "No data received",
-            "issues": ["No data received - index may not be configured or receiving logs"],
+            "message": "No metrics",
+            "issues": [issue_msg],
             "latest": {
                 "queue_depth": 0,
                 "avg_detection_latency_ms": 0,
@@ -157,17 +162,24 @@ async def get_index_health(
     status = HealthStatus.HEALTHY
     issues = []
 
-    # Check time since last data
+    # Check time since last data - mode-specific messages
     now = datetime.now(UTC)
     time_since_last = now - latest.timestamp.replace(tzinfo=UTC)
     minutes_since_last = time_since_last.total_seconds() / 60
+    is_pull_mode = index_pattern and index_pattern.mode == "pull"
 
     if minutes_since_last >= no_data_critical_minutes:
         status = HealthStatus.CRITICAL
-        issues.append(f"No data received for {int(minutes_since_last)} minutes")
+        if is_pull_mode:
+            issues.append(f"No successful polls for {int(minutes_since_last)} minutes - check index accessibility and query errors")
+        else:
+            issues.append(f"No data received for {int(minutes_since_last)} minutes")
     elif minutes_since_last >= no_data_warning_minutes:
         status = _max_status(status, HealthStatus.WARNING)
-        issues.append(f"No data received for {int(minutes_since_last)} minutes")
+        if is_pull_mode:
+            issues.append(f"No successful polls for {int(minutes_since_last)} minutes")
+        else:
+            issues.append(f"No data received for {int(minutes_since_last)} minutes")
 
     if latest.queue_depth >= QUEUE_CRITICAL_THRESHOLD:
         status = HealthStatus.CRITICAL
