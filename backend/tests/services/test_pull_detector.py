@@ -1,7 +1,7 @@
 """Tests for PullDetector service."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
@@ -55,35 +55,66 @@ class TestPullDetectorBuildQuery:
 
 class TestPollIndexPattern:
     @pytest.fixture
+    def mock_db(self):
+        """Mock async database session."""
+        db = AsyncMock()
+        # Mock execute to return empty results for field mappings and exceptions
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(return_value=mock_result)
+        return db
+
+    @pytest.fixture
     def mock_sigma_service(self):
+        """Mock SigmaService with successful translation."""
         service = MagicMock()
-        service.translate_rule = MagicMock(
-            return_value={"bool": {"must": [{"match": {"event.code": "1"}}]}}
-        )
+        # Mock translate_and_validate to return a valid result
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.query = {"query": {"query_string": {"query": "event.code:1"}}}
+        mock_result.fields = set()
+        mock_result.errors = None
+        service.translate_and_validate = MagicMock(return_value=mock_result)
         return service
 
     @pytest.fixture
     def mock_alert_service(self):
-        service = AsyncMock()
-        service.create_alert = AsyncMock(return_value={"alert_id": "test-123"})
+        """Mock AlertService - NOTE: create_alert is SYNC, not async."""
+        service = MagicMock()
+        # create_alert is a SYNC method that returns a dict
+        service.create_alert = MagicMock(return_value={
+            "alert_id": "test-alert-123",
+            "rule_id": "test-rule",
+            "rule_title": "Test Rule",
+            "severity": "high",
+            "tags": [],
+            "status": "new",
+            "log_document": {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
         return service
 
     @pytest.mark.asyncio
     async def test_poll_index_pattern_creates_alerts_for_matches(
-        self, mock_sigma_service, mock_alert_service
+        self, mock_db, mock_sigma_service, mock_alert_service
     ):
         """Should create alerts for documents matching deployed rules."""
         mock_client = MagicMock()
+        # Mock search to return hits with sort values for pagination
         mock_client.search = MagicMock(
             return_value={
                 "hits": {
+                    "total": {"value": 2, "relation": "eq"},
                     "hits": [
-                        {"_id": "doc1", "_source": {"message": "suspicious"}},
-                        {"_id": "doc2", "_source": {"message": "malware"}},
+                        {"_id": "doc1", "_source": {"message": "suspicious"}, "sort": [1, "doc1"]},
+                        {"_id": "doc2", "_source": {"message": "malware"}, "sort": [2, "doc2"]},
                     ]
                 }
             }
         )
+        # Mock PIT operations
+        mock_client.create_pit = MagicMock(return_value={"pit_id": "test-pit"})
+        mock_client.delete_pit = MagicMock()
 
         detector = PullDetector(client=mock_client)
 
@@ -91,30 +122,49 @@ class TestPollIndexPattern:
         mock_rule.id = uuid4()
         mock_rule.title = "Test Rule"
         mock_rule.severity = "high"
-        mock_rule.yaml_content = "title: Test\nlogsource:\n  product: windows"
+        mock_rule.yaml_content = "title: Test\nlogsource:\n  product: windows\ntags:\n  - attack.execution"
 
         mock_index_pattern = MagicMock()
         mock_index_pattern.id = uuid4()
+        mock_index_pattern.name = "test-index"
         mock_index_pattern.pattern = "logs-windows-*"
+        mock_index_pattern.timestamp_field = "@timestamp"
 
-        results = await detector.poll_index_pattern(
-            index_pattern=mock_index_pattern,
-            rules=[mock_rule],
-            sigma_service=mock_sigma_service,
-            alert_service=mock_alert_service,
-            last_poll=datetime.now(timezone.utc) - timedelta(minutes=5),
-        )
+        # Patch async functions that require real services
+        with patch('app.services.pull_detector.get_app_url', new_callable=AsyncMock) as mock_get_url, \
+             patch('app.services.pull_detector.enrich_alert', new_callable=AsyncMock) as mock_enrich, \
+             patch('app.services.pull_detector.should_suppress_alert') as mock_suppress, \
+             patch('app.services.pull_detector.publish_alert', new_callable=AsyncMock) as mock_publish, \
+             patch('app.services.pull_detector.send_alert_notification', new_callable=AsyncMock) as mock_notify, \
+             patch('app.services.pull_detector.check_correlation', new_callable=AsyncMock) as mock_corr:
 
-        assert mock_alert_service.create_alert.call_count == 2
-        assert results["matches"] == 2
+            mock_get_url.return_value = "http://localhost:3000"
+            mock_enrich.side_effect = lambda db, doc, ip: doc  # Return doc unchanged
+            mock_suppress.return_value = False  # Don't suppress any alerts
+            mock_corr.return_value = []  # No correlation triggers
+
+            results = await detector.poll_index_pattern(
+                index_pattern=mock_index_pattern,
+                rules=[mock_rule],
+                sigma_service=mock_sigma_service,
+                alert_service=mock_alert_service,
+                last_poll=datetime.now(timezone.utc) - timedelta(minutes=5),
+                db=mock_db,
+            )
+
+            assert mock_alert_service.create_alert.call_count == 2
+            assert results["matches"] == 2
+            assert results["alerts_created"] == 2
 
     @pytest.mark.asyncio
     async def test_poll_index_pattern_handles_no_matches(
-        self, mock_sigma_service, mock_alert_service
+        self, mock_db, mock_sigma_service, mock_alert_service
     ):
         """Should handle case when no documents match."""
         mock_client = MagicMock()
-        mock_client.search = MagicMock(return_value={"hits": {"hits": []}})
+        mock_client.search = MagicMock(return_value={"hits": {"total": {"value": 0}, "hits": []}})
+        mock_client.create_pit = MagicMock(return_value={"pit_id": "test-pit"})
+        mock_client.delete_pit = MagicMock()
 
         detector = PullDetector(client=mock_client)
 
@@ -122,19 +172,28 @@ class TestPollIndexPattern:
         mock_rule.id = uuid4()
         mock_rule.title = "Test Rule"
         mock_rule.severity = "medium"
-        mock_rule.yaml_content = "title: Test"
+        mock_rule.yaml_content = "title: Test\nlogsource:\n  product: test"
 
         mock_index_pattern = MagicMock()
         mock_index_pattern.id = uuid4()
+        mock_index_pattern.name = "test-index"
         mock_index_pattern.pattern = "logs-*"
+        mock_index_pattern.timestamp_field = "@timestamp"
 
-        results = await detector.poll_index_pattern(
-            index_pattern=mock_index_pattern,
-            rules=[mock_rule],
-            sigma_service=mock_sigma_service,
-            alert_service=mock_alert_service,
-            last_poll=datetime.now(timezone.utc) - timedelta(minutes=5),
-        )
+        with patch('app.services.pull_detector.get_app_url', new_callable=AsyncMock) as mock_get_url, \
+             patch('app.services.pull_detector.publish_alert', new_callable=AsyncMock), \
+             patch('app.services.pull_detector.send_alert_notification', new_callable=AsyncMock):
 
-        assert results["matches"] == 0
-        assert mock_alert_service.create_alert.call_count == 0
+            mock_get_url.return_value = None
+
+            results = await detector.poll_index_pattern(
+                index_pattern=mock_index_pattern,
+                rules=[mock_rule],
+                sigma_service=mock_sigma_service,
+                alert_service=mock_alert_service,
+                last_poll=datetime.now(timezone.utc) - timedelta(minutes=5),
+                db=mock_db,
+            )
+
+            assert results["matches"] == 0
+            assert mock_alert_service.create_alert.call_count == 0

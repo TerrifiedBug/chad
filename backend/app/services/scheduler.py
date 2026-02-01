@@ -223,6 +223,7 @@ class SchedulerService:
         from app.services.pull_detector import run_poll_job
 
         # Get index patterns that need polling based on deployment mode
+        logger.debug(f"Scheduling pull polling jobs (is_pull_only={app_settings.is_pull_only})")
         if app_settings.is_pull_only:
             # In pull-only mode, schedule ALL patterns for polling
             result = await session.execute(select(IndexPattern))
@@ -233,7 +234,9 @@ class SchedulerService:
             )
         patterns = result.scalars().all()
 
+        logger.info(f"Found {len(patterns)} index pattern(s) for pull mode polling")
         for pattern in patterns:
+            logger.debug(f"Processing pattern: {pattern.name} (mode={pattern.mode}, interval={pattern.poll_interval_minutes}min)")
 
             job_id = f"pull_poll_{pattern.id}"
 
