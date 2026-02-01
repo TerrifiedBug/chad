@@ -75,6 +75,19 @@ async def create_index_pattern(
     db.add(pattern)
     await db.commit()
     await db.refresh(pattern)
+
+    # Schedule pull poll job if this is a pull mode index
+    if pattern.mode == "pull":
+        try:
+            from app.services.scheduler import scheduler_service
+            scheduler_service.schedule_pull_poll_job(
+                str(pattern.id),
+                pattern.name,
+                pattern.poll_interval_minutes,
+            )
+        except Exception:
+            pass  # Scheduler may not be available during tests
+
     return pattern
 
 
@@ -184,6 +197,25 @@ async def update_index_pattern(
 
     await db.commit()
     await db.refresh(pattern)
+
+    # Update scheduler for pull mode changes
+    try:
+        from app.services.scheduler import scheduler_service
+
+        if pattern.mode == "pull":
+            # Schedule or update pull poll job
+            scheduler_service.schedule_pull_poll_job(
+                str(pattern.id),
+                pattern.name,
+                pattern.poll_interval_minutes,
+            )
+        elif old_mode == "pull" and new_mode == "push":
+            # Switching from pull to push - remove the poll job
+            scheduler_service.remove_pull_poll_job(str(pattern.id))
+    except Exception as e:
+        # Scheduler may not be available during tests
+        logger.debug(f"Could not update scheduler: {e}")
+
     return pattern
 
 
@@ -213,6 +245,14 @@ async def delete_index_pattern(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot delete index pattern: {rule_count} rule{'s' if rule_count != 1 else ''} {'are' if rule_count != 1 else 'is'} using this pattern. Reassign or delete the rules first.",
         )
+
+    # Remove any pull poll job if this was a pull mode index
+    if pattern.mode == "pull":
+        try:
+            from app.services.scheduler import scheduler_service
+            scheduler_service.remove_pull_poll_job(str(pattern.id))
+        except Exception:
+            pass  # Scheduler may not be available during tests
 
     await db.delete(pattern)
     await db.commit()

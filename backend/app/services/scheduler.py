@@ -261,6 +261,47 @@ class SchedulerService:
                 f"every {pattern.poll_interval_minutes} minutes"
             )
 
+    def schedule_pull_poll_job(self, index_pattern_id: str, pattern_name: str, poll_interval_minutes: int):
+        """
+        Schedule or update a pull poll job for an index pattern.
+
+        Called when a pull mode index pattern is created or updated.
+        """
+        from app.services.pull_detector import run_poll_job
+
+        job_id = f"pull_poll_{index_pattern_id}"
+
+        # Remove existing job if any
+        try:
+            scheduler.remove_job(job_id)
+        except Exception:
+            pass
+
+        # Add new job
+        scheduler.add_job(
+            run_poll_job,
+            trigger=IntervalTrigger(minutes=poll_interval_minutes),
+            id=job_id,
+            name=f"pull_poll for {pattern_name}",
+            args=[index_pattern_id],
+            replace_existing=True,
+            misfire_grace_time=poll_interval_minutes * 60,
+        )
+        logger.info(f"Scheduled pull polling job for {pattern_name} every {poll_interval_minutes} minutes")
+
+    def remove_pull_poll_job(self, index_pattern_id: str):
+        """
+        Remove a pull poll job for an index pattern.
+
+        Called when an index pattern is deleted or changes from pull to push mode.
+        """
+        job_id = f"pull_poll_{index_pattern_id}"
+        try:
+            scheduler.remove_job(job_id)
+            logger.info(f"Removed pull poll job {job_id}")
+        except Exception:
+            pass  # Job didn't exist
+
     def _schedule_job(self, job_id: str, func, frequency: str):
         """Schedule or reschedule a job."""
         trigger = FREQUENCY_CRON_MAP.get(frequency, FREQUENCY_CRON_MAP["weekly"])

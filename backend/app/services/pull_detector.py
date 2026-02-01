@@ -264,6 +264,7 @@ class PullDetector:
         last_poll: datetime | None,
         now: datetime,
         timestamp_field: str = "@timestamp",
+        default_lookback_minutes: int = 60,
     ) -> dict[str, Any]:
         """
         Wrap the base query with a time filter.
@@ -273,13 +274,14 @@ class PullDetector:
             last_poll: Last successful poll time, or None for first poll
             now: Current time
             timestamp_field: The timestamp field name to filter on (configurable per index pattern)
+            default_lookback_minutes: Minutes to look back if no last_poll (defaults to 60, but uses poll_interval_minutes when available)
 
         Returns:
             Query with time range filter added
         """
-        # If no last poll, look back 1 hour as default window
+        # If no last poll, look back by the configured interval (or default)
         if last_poll is None:
-            last_poll = now - timedelta(hours=1)
+            last_poll = now - timedelta(minutes=default_lookback_minutes)
 
         time_filter = {
             "range": {
@@ -483,7 +485,11 @@ class PullDetector:
                 base_query = result.query.get("query", result.query)
 
                 # Add time filter using configurable timestamp field
-                query = self.build_time_filtered_query(base_query, last_poll, now, timestamp_field)
+                # Use poll_interval_minutes as the initial lookback for first poll
+                query = self.build_time_filtered_query(
+                    base_query, last_poll, now, timestamp_field,
+                    default_lookback_minutes=index_pattern.poll_interval_minutes,
+                )
 
                 # Open PIT for consistent pagination
                 pit_id = await self._open_pit(index_pattern.pattern)
