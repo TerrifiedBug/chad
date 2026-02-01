@@ -223,15 +223,29 @@ export default function HealthPage() {
     }
   }
 
-  // Calculate overall status
-  const overallStatus: HealthStatus = health.reduce((worst, h) => {
-    if (h.status === 'critical') return 'critical'
-    if (h.status === 'warning' && worst !== 'critical') return 'warning'
+  // Calculate overall status (includes pull mode health when patterns exist)
+  const overallStatus: HealthStatus = (() => {
+    // Start with index pattern health
+    let worst: HealthStatus = health.reduce((acc, h) => {
+      if (h.status === 'critical') return 'critical'
+      if (h.status === 'warning' && acc !== 'critical') return 'warning'
+      return acc
+    }, 'healthy' as HealthStatus)
+
+    // Include pull mode health if there are pull patterns
+    if (pullModeHealth && pullModeHealth.patterns.length > 0) {
+      if (pullModeHealth.overall_status === 'critical') worst = 'critical'
+      else if (pullModeHealth.overall_status === 'warning' && worst !== 'critical') worst = 'warning'
+    }
+
     return worst
-  }, 'healthy' as HealthStatus)
+  })()
 
   // Get problematic index patterns for the popover
   const problematicPatterns = health.filter(h => h.status === 'warning' || h.status === 'critical')
+
+  // Get problematic pull mode patterns for the popover
+  const problematicPullPatterns = pullModeHealth?.patterns.filter(p => p.status === 'warning' || p.status === 'critical') || []
 
   // Get problematic external services for the popover
   const problematicServices = serviceHealth?.services.filter(s => s.status === 'warning' || s.status === 'unhealthy') || []
@@ -268,13 +282,13 @@ export default function HealthPage() {
               <span className={`font-medium capitalize ${statusColors[overallStatus]}`}>
                 {overallStatus === 'healthy' ? 'All Systems Healthy' : `System ${overallStatus}`}
               </span>
-              {(problematicPatterns.length > 0 || problematicServices.length > 0) && (
+              {(problematicPatterns.length > 0 || problematicPullPatterns.length > 0 || problematicServices.length > 0) && (
                 <ChevronDown className={`h-4 w-4 transition-transform ${statusPopoverOpen ? 'rotate-180' : ''}`} />
               )}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-80" align="end">
-            {(problematicPatterns.length === 0 && problematicServices.length === 0) ? (
+            {(problematicPatterns.length === 0 && problematicPullPatterns.length === 0 && problematicServices.length === 0) ? (
               <div className="text-sm text-muted-foreground">All systems operating normally</div>
             ) : (
               <div className="space-y-3">
@@ -287,6 +301,28 @@ export default function HealthPage() {
                     <div className="space-y-1">
                       {problematicPatterns.map((pattern, index) => (
                         <div key={`${pattern.index_pattern_id}-${index}`} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <StatusIcon status={pattern.status} />
+                            <span className="truncate font-medium">{pattern.index_pattern_name}</span>
+                          </div>
+                          <span className={`text-xs capitalize ${statusColors[pattern.status as HealthStatus]}`}>
+                            {pattern.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {problematicPullPatterns.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-yellow-600" />
+                      Pull Mode Detection
+                    </h4>
+                    <div className="space-y-1">
+                      {problematicPullPatterns.map((pattern, index) => (
+                        <div key={`pull-${pattern.index_pattern_id}-${index}`} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             <StatusIcon status={pattern.status} />
                             <span className="truncate font-medium">{pattern.index_pattern_name}</span>
