@@ -1356,6 +1356,7 @@ export type IndexHealth = {
   index_pattern_id: string
   index_pattern_name: string
   pattern: string
+  mode: 'push' | 'pull'
   status: HealthStatus
   issues: string[]
   latest: {

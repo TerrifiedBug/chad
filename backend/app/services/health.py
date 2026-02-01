@@ -241,6 +241,7 @@ async def get_all_indices_health(
                 "index_pattern_id": str(pattern.id),
                 "index_pattern_name": pattern.name,
                 "pattern": pattern.pattern,
+                "mode": pattern.mode,
                 **health,
             }
         )
