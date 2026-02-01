@@ -21,7 +21,7 @@ from app.schemas.index_pattern import (
 )
 from app.services.audit import audit_log
 from app.utils.request import get_client_ip
-from app.services.opensearch import get_index_fields, validate_index_pattern
+from app.services.opensearch import get_index_fields, get_time_fields, validate_index_pattern
 
 router = APIRouter(prefix="/index-patterns", tags=["index-patterns"])
 
@@ -292,6 +292,36 @@ async def get_index_pattern_fields(
         raise HTTPException(
             status_code=503,
             detail=f"Failed to get index fields: {e}",
+        )
+
+
+@router.get("/{pattern_id}/time-fields", response_model=list[str])
+async def get_index_pattern_time_fields(
+    pattern_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Get available date/timestamp fields from an index pattern's OpenSearch index.
+
+    Returns a list of field names that can be used as the timestamp_field for pull mode.
+    Only returns fields with date or date_nanos type.
+    """
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == pattern_id)
+    )
+    pattern = result.scalar_one_or_none()
+    if pattern is None:
+        raise HTTPException(status_code=404, detail="Index pattern not found")
+
+    try:
+        fields = get_time_fields(opensearch, pattern.pattern)
+        return fields
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to get time fields: {e}",
         )
 
 

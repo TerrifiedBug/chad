@@ -2,8 +2,8 @@
 
 from datetime import datetime, timezone, timedelta
 from typing import Any
+import asyncio
 import logging
-import time
 
 from opensearchpy import OpenSearch
 
@@ -14,6 +14,10 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_DELAY_SECONDS = 5
 DEFAULT_CONSECUTIVE_FAILURES_WARNING = 3
 DEFAULT_CONSECUTIVE_FAILURES_CRITICAL = 10
+
+# Pagination settings
+BATCH_SIZE = 1000  # Events per batch
+MAX_EVENTS_PER_POLL = 100000  # Safety limit to prevent runaway queries
 
 
 def get_settings():
@@ -75,6 +79,7 @@ class PullDetector:
         base_query: dict[str, Any],
         last_poll: datetime | None,
         now: datetime,
+        timestamp_field: str = "@timestamp",
     ) -> dict[str, Any]:
         """
         Wrap the base query with a time filter.
@@ -83,6 +88,7 @@ class PullDetector:
             base_query: The original DSL query from Sigma translation
             last_poll: Last successful poll time, or None for first poll
             now: Current time
+            timestamp_field: The timestamp field name to filter on (configurable per index pattern)
 
         Returns:
             Query with time range filter added
@@ -93,7 +99,7 @@ class PullDetector:
 
         time_filter = {
             "range": {
-                "@timestamp": {
+                timestamp_field: {
                     "gt": last_poll.isoformat(),
                     "lte": now.isoformat(),
                 }
@@ -112,19 +118,27 @@ class PullDetector:
 
         return wrapped
 
-    def _execute_search_with_retry(
+    async def _execute_search_with_retry(
         self,
         index_pattern: str,
         query: dict[str, Any],
         rule_id: str,
+        sort_field: str = "@timestamp",
+        search_after: list | None = None,
+        pit_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Execute OpenSearch query with retry logic.
+        Execute OpenSearch query with retry logic (async-safe).
+
+        Uses asyncio.to_thread() to avoid blocking the event loop.
 
         Args:
             index_pattern: OpenSearch index pattern
             query: DSL query to execute
             rule_id: Rule ID for logging
+            sort_field: Field to sort by for pagination
+            search_after: search_after values for pagination
+            pit_id: Point in Time ID for consistent pagination
 
         Returns:
             OpenSearch response dict
@@ -138,22 +152,67 @@ class PullDetector:
 
         for attempt in range(max_retries):
             try:
-                return self.client.search(
-                    index=index_pattern,
-                    body={"query": query, "size": 1000},
-                )
+                # Build search body
+                body: dict[str, Any] = {
+                    "query": query,
+                    "size": BATCH_SIZE,
+                    "sort": [{sort_field: "asc"}, {"_id": "asc"}],  # Deterministic sort for pagination
+                }
+
+                if search_after:
+                    body["search_after"] = search_after
+
+                if pit_id:
+                    body["pit"] = {"id": pit_id, "keep_alive": "2m"}
+                    # When using PIT, don't specify index in the search call
+                    result = await asyncio.to_thread(
+                        self.client.search,
+                        body=body,
+                    )
+                else:
+                    result = await asyncio.to_thread(
+                        self.client.search,
+                        index=index_pattern,
+                        body=body,
+                    )
+                return result
+
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:
                     logger.warning(
                         f"OpenSearch query failed for rule {rule_id} (attempt {attempt + 1}/{max_retries}): {e}"
                     )
-                    time.sleep(retry_delay)
+                    # Use async sleep to not block the event loop
+                    await asyncio.sleep(retry_delay)
                 else:
                     logger.error(
                         f"OpenSearch query failed for rule {rule_id} after {max_retries} attempts: {e}"
                     )
         raise last_error
+
+    async def _open_pit(self, index_pattern: str) -> str | None:
+        """Open a Point in Time for consistent pagination."""
+        try:
+            response = await asyncio.to_thread(
+                self.client.create_pit,
+                index=index_pattern,
+                keep_alive="5m",
+            )
+            return response.get("pit_id")
+        except Exception as e:
+            logger.warning(f"Failed to open PIT for {index_pattern}, will paginate without: {e}")
+            return None
+
+    async def _close_pit(self, pit_id: str) -> None:
+        """Close a Point in Time."""
+        try:
+            await asyncio.to_thread(
+                self.client.delete_pit,
+                body={"pit_id": pit_id},
+            )
+        except Exception as e:
+            logger.debug(f"Failed to close PIT: {e}")
 
     async def poll_index_pattern(
         self,
@@ -164,7 +223,7 @@ class PullDetector:
         last_poll: datetime | None,
     ) -> dict[str, Any]:
         """
-        Poll an index pattern for all deployed rules.
+        Poll an index pattern for all deployed rules with full pagination support.
 
         Args:
             index_pattern: The IndexPattern to poll
@@ -174,57 +233,116 @@ class PullDetector:
             last_poll: Last successful poll time
 
         Returns:
-            Dict with poll results: {"matches": int, "errors": list, "events_scanned": int, "duration_ms": int}
+            Dict with poll results: {"matches": int, "errors": list, "events_scanned": int, "duration_ms": int, "truncated": bool}
         """
-        start_time = time.monotonic()
+        import time as time_module
+        start_time = time_module.monotonic()
         now = datetime.now(timezone.utc)
         total_matches = 0
         total_events_scanned = 0
         errors = []
+        truncated = False
+
+        # Get the configurable timestamp field (defaults to @timestamp)
+        timestamp_field = getattr(index_pattern, "timestamp_field", "@timestamp") or "@timestamp"
 
         for rule in rules:
             try:
                 # Translate rule to DSL
                 base_query = sigma_service.translate_rule(rule.yaml_content)
 
-                # Add time filter
-                query = self.build_time_filtered_query(base_query, last_poll, now)
+                # Add time filter using configurable timestamp field
+                query = self.build_time_filtered_query(base_query, last_poll, now, timestamp_field)
 
-                # Execute search with retry
-                response = self._execute_search_with_retry(
-                    index_pattern.pattern, query, str(rule.id)
-                )
+                # Open PIT for consistent pagination
+                pit_id = await self._open_pit(index_pattern.pattern)
 
-                hits = response.get("hits", {}).get("hits", [])
-                total_hits = response.get("hits", {}).get("total", {})
-                if isinstance(total_hits, dict):
-                    events_count = total_hits.get("value", 0)
-                else:
-                    events_count = total_hits
-                total_events_scanned += events_count
+                try:
+                    search_after = None
+                    rule_matches = 0
+                    rule_events = 0
 
-                # Create alert for each match
-                for hit in hits:
-                    await alert_service.create_alert(
-                        rule_id=str(rule.id),
-                        rule_title=rule.title,
-                        severity=rule.severity,
-                        tags=[],
-                        log_document=hit["_source"],
-                    )
-                    total_matches += 1
+                    while True:
+                        # Execute search with pagination
+                        response = await self._execute_search_with_retry(
+                            index_pattern.pattern,
+                            query,
+                            str(rule.id),
+                            sort_field=timestamp_field,
+                            search_after=search_after,
+                            pit_id=pit_id,
+                        )
+
+                        hits = response.get("hits", {}).get("hits", [])
+
+                        # Get total count (first page only)
+                        if search_after is None:
+                            total_hits = response.get("hits", {}).get("total", {})
+                            if isinstance(total_hits, dict):
+                                rule_events = total_hits.get("value", 0)
+                            else:
+                                rule_events = total_hits
+
+                            # Warn if we're going to truncate
+                            if rule_events > MAX_EVENTS_PER_POLL:
+                                logger.warning(
+                                    f"Rule {rule.id} matched {rule_events} events, truncating to {MAX_EVENTS_PER_POLL}"
+                                )
+                                truncated = True
+
+                        if not hits:
+                            break
+
+                        # Create alert for each match
+                        for hit in hits:
+                            await alert_service.create_alert(
+                                rule_id=str(rule.id),
+                                rule_title=rule.title,
+                                severity=rule.severity,
+                                tags=[],
+                                log_document=hit["_source"],
+                            )
+                            rule_matches += 1
+
+                            # Safety check to prevent runaway queries
+                            if rule_matches >= MAX_EVENTS_PER_POLL:
+                                logger.warning(f"Reached max events limit for rule {rule.id}")
+                                truncated = True
+                                break
+
+                        if rule_matches >= MAX_EVENTS_PER_POLL:
+                            break
+
+                        # Get search_after values for next page
+                        if hits:
+                            search_after = hits[-1].get("sort")
+                            if not search_after:
+                                break
+
+                        # If we got fewer results than batch size, we're done
+                        if len(hits) < BATCH_SIZE:
+                            break
+
+                    total_matches += rule_matches
+                    total_events_scanned += rule_events
+
+                finally:
+                    # Always close PIT
+                    if pit_id:
+                        await self._close_pit(pit_id)
 
             except Exception as e:
                 logger.error(f"Error polling rule {rule.id}: {e}")
                 errors.append({"rule_id": str(rule.id), "error": str(e)})
 
-        duration_ms = int((time.monotonic() - start_time) * 1000)
+        duration_ms = int((time_module.monotonic() - start_time) * 1000)
 
         return {
             "matches": total_matches,
             "errors": errors,
             "events_scanned": total_events_scanned,
             "duration_ms": duration_ms,
+            "truncated": truncated,
         }
 
 
@@ -273,6 +391,9 @@ async def run_poll_job(index_pattern_id: str) -> None:
     """
     Execute a single poll job for an index pattern.
 
+    Uses database-level locking to prevent concurrent execution by multiple workers.
+    This works without Redis (for pull-only deployments).
+
     Args:
         index_pattern_id: UUID of the index pattern to poll
     """
@@ -282,8 +403,8 @@ async def run_poll_job(index_pattern_id: str) -> None:
     from app.models.rule import Rule, RuleStatus
     from app.services.sigma import SigmaService
     from app.services.alerts import AlertService
-    from app.services.opensearch import get_opensearch_client
-    from sqlalchemy import select
+    from app.services.opensearch import get_client_from_settings
+    from sqlalchemy import select, text
     from sqlalchemy.orm import selectinload
 
     logger.info(f"Running pull poll for index pattern {index_pattern_id}")
@@ -294,6 +415,32 @@ async def run_poll_job(index_pattern_id: str) -> None:
             pull_settings = await get_pull_mode_settings(session)
             failures_warning = pull_settings["consecutive_failures_warning"]
             failures_critical = pull_settings["consecutive_failures_critical"]
+
+            # Try to acquire lock on poll state using database-level locking
+            # This prevents multiple workers from polling the same pattern simultaneously
+            # Uses SKIP LOCKED to immediately return if another worker has the lock
+            lock_result = await session.execute(
+                select(IndexPatternPollState)
+                .where(IndexPatternPollState.index_pattern_id == index_pattern_id)
+                .with_for_update(skip_locked=True)
+            )
+            poll_state_lock = lock_result.scalar_one_or_none()
+
+            # If poll_state doesn't exist yet, we need to check if another worker is creating it
+            # by trying to lock the index_pattern row instead
+            if poll_state_lock is None:
+                # Check if poll_state exists but is locked
+                check_result = await session.execute(
+                    select(IndexPatternPollState)
+                    .where(IndexPatternPollState.index_pattern_id == index_pattern_id)
+                )
+                existing_state = check_result.scalar_one_or_none()
+
+                if existing_state is not None:
+                    # State exists but is locked by another worker - skip this poll
+                    logger.debug(f"Poll state for {index_pattern_id} is locked by another worker, skipping")
+                    return
+                # else: state doesn't exist, we'll create it below
 
             # Get index pattern with poll state
             result = await session.execute(
@@ -325,7 +472,11 @@ async def run_poll_job(index_pattern_id: str) -> None:
                 last_poll = index_pattern.poll_state.last_poll_at
 
             # Execute poll with configurable settings
-            client = get_opensearch_client()
+            client = await get_client_from_settings(session)
+            if not client:
+                logger.error("OpenSearch client not configured")
+                return
+
             detector = PullDetector(client=client, settings=pull_settings)
             sigma_service = SigmaService()
             alert_service = AlertService(client=client)
@@ -400,10 +551,11 @@ async def run_poll_job(index_pattern_id: str) -> None:
 
             await session.commit()
 
+            truncated_msg = " (TRUNCATED)" if poll_result.get("truncated") else ""
             logger.info(
                 f"Poll complete for {index_pattern.pattern}: "
                 f"{poll_result['matches']} matches, {poll_result['events_scanned']} events scanned, "
-                f"{poll_result['duration_ms']}ms, {len(poll_result['errors'])} errors"
+                f"{poll_result['duration_ms']}ms, {len(poll_result['errors'])} errors{truncated_msg}"
             )
 
         except Exception as e:

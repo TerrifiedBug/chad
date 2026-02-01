@@ -50,6 +50,8 @@ class IndexPatternBase(BaseModel):
     # Detection mode: 'push' (real-time) or 'pull' (scheduled queries)
     mode: str = "push"
     poll_interval_minutes: int = 5
+    # Timestamp field for pull mode time filtering (must be a date/timestamp field in the index)
+    timestamp_field: str = "@timestamp"
 
     @field_validator("poll_interval_minutes")
     @classmethod
@@ -88,6 +90,7 @@ class IndexPatternUpdate(BaseModel):
     # Detection mode
     mode: str | None = None
     poll_interval_minutes: int | None = None
+    timestamp_field: str | None = None
 
     @field_validator("mode")
     @classmethod
@@ -109,6 +112,7 @@ class IndexPatternResponse(IndexPatternBase):
     auth_token: str
     mode: str
     poll_interval_minutes: int
+    timestamp_field: str
     created_at: datetime
     updated_at: datetime
 

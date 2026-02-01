@@ -678,6 +678,8 @@ export type IndexPattern = {
   // Detection mode: 'push' (real-time via /logs) or 'pull' (scheduled queries)
   mode: IndexPatternMode
   poll_interval_minutes: number
+  // Timestamp field for pull mode time filtering (must be a date field in the index)
+  timestamp_field: string
 }
 
 export type IndexPatternCreate = {
@@ -703,6 +705,7 @@ export type IndexPatternCreate = {
   // Detection mode
   mode?: IndexPatternMode
   poll_interval_minutes?: number
+  timestamp_field?: string
 }
 
 export type IndexPatternUpdate = Partial<IndexPatternCreate>
@@ -733,6 +736,8 @@ export const indexPatternsApi = {
     api.post<{ auth_token: string }>(`/index-patterns/${id}/regenerate-token`),
   getFields: (id: string) =>
     api.get<string[]>(`/index-patterns/${id}/fields`),
+  getTimeFields: (id: string) =>
+    api.get<string[]>(`/index-patterns/${id}/time-fields`),
 }
 
 // Alert types

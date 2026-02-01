@@ -78,6 +78,9 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     # Pull mode polling configuration (only used when mode='pull')
     poll_interval_minutes: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
 
+    # Timestamp field for pull mode time filtering (default: @timestamp)
+    timestamp_field: Mapped[str] = mapped_column(String(255), default="@timestamp", nullable=False)
+
     # Relationships
     field_mappings = relationship(
         "FieldMapping", back_populates="index_pattern", cascade="all, delete-orphan"

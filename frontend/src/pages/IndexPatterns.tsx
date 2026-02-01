@@ -75,6 +75,9 @@ export default function IndexPatternsPage() {
   // Detection mode state
   const [detectionMode, setDetectionMode] = useState<IndexPatternMode>('push')
   const [pollIntervalMinutes, setPollIntervalMinutes] = useState<number>(5)
+  const [timestampField, setTimestampField] = useState<string>('@timestamp')
+  const [availableTimeFields, setAvailableTimeFields] = useState<string[]>([])
+  const [isLoadingTimeFields, setIsLoadingTimeFields] = useState(false)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -212,6 +215,19 @@ export default function IndexPatternsPage() {
     }
   }
 
+  const loadTimeFields = async (patternId: string) => {
+    setIsLoadingTimeFields(true)
+    try {
+      const fields = await indexPatternsApi.getTimeFields(patternId)
+      setAvailableTimeFields(fields)
+    } catch (err) {
+      console.error('Failed to load time fields:', err)
+      setAvailableTimeFields([])
+    } finally {
+      setIsLoadingTimeFields(false)
+    }
+  }
+
   const loadHealthData = async () => {
     try {
       const health = await healthApi.listIndices()
@@ -264,6 +280,8 @@ export default function IndexPatternsPage() {
     // Detection mode - default to pull in pull-only deployment
     setDetectionMode(isPullOnly ? 'pull' : 'push')
     setPollIntervalMinutes(5)
+    setTimestampField('@timestamp')
+    setAvailableTimeFields([])
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(false)
     setSaveError('')
@@ -325,6 +343,8 @@ export default function IndexPatternsPage() {
     // Detection mode
     setDetectionMode(pattern.mode || 'push')
     setPollIntervalMinutes(pattern.poll_interval_minutes || 5)
+    setTimestampField(pattern.timestamp_field || '@timestamp')
+    setAvailableTimeFields([])
     setValidationResult(null)
     setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
     setSaveError('')
@@ -341,6 +361,11 @@ export default function IndexPatternsPage() {
       } finally {
         setIsValidating(false)
       }
+    }
+
+    // Load time fields for pull mode timestamp configuration
+    if (pattern.mode === 'pull') {
+      loadTimeFields(pattern.id)
     }
   }
 
@@ -407,6 +432,7 @@ export default function IndexPatternsPage() {
       const modeData = {
         mode: detectionMode,
         poll_interval_minutes: detectionMode === 'pull' ? pollIntervalMinutes : 5,
+        timestamp_field: detectionMode === 'pull' ? timestampField : '@timestamp',
       }
 
       if (editingPattern) {
@@ -919,25 +945,75 @@ export default function IndexPatternsPage() {
 
               {/* Poll Interval for Pull Mode */}
               {detectionMode === 'pull' && (
-                <div className="space-y-2 pt-2 border-t">
-                  <Label htmlFor="poll-interval">Poll Interval (minutes)</Label>
-                  <Input
-                    id="poll-interval"
-                    type="number"
-                    min="1"
-                    max="1440"
-                    value={pollIntervalMinutes}
-                    onChange={(e) => setPollIntervalMinutes(Math.min(1440, Math.max(1, parseInt(e.target.value) || 5)))}
-                    className="w-24"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    How often to query OpenSearch for new logs (1-1440 minutes / 24 hours max).
-                  </p>
-                  {pollIntervalMinutes > 15 && (
-                    <p className="text-xs text-amber-600">
-                      ⚠️ Longer polling intervals mean delayed detection. For time-sensitive detections, consider shorter intervals.
+                <div className="space-y-4 pt-2 border-t">
+                  <div className="space-y-2">
+                    <Label htmlFor="poll-interval">Poll Interval (minutes)</Label>
+                    <Input
+                      id="poll-interval"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={pollIntervalMinutes}
+                      onChange={(e) => setPollIntervalMinutes(Math.min(1440, Math.max(1, parseInt(e.target.value) || 5)))}
+                      className="w-24"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      How often to query OpenSearch for new logs (1-1440 minutes / 24 hours max).
                     </p>
-                  )}
+                    {pollIntervalMinutes > 15 && (
+                      <p className="text-xs text-amber-600">
+                        ⚠️ Longer polling intervals mean delayed detection. For time-sensitive detections, consider shorter intervals.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Timestamp Field for Pull Mode */}
+                  <div className="space-y-2">
+                    <Label htmlFor="timestamp-field">Timestamp Field</Label>
+                    <Select
+                      value={timestampField}
+                      onValueChange={setTimestampField}
+                    >
+                      <SelectTrigger className="w-full font-mono text-sm">
+                        <SelectValue placeholder="Select timestamp field" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {isLoadingTimeFields ? (
+                          <div className="p-2 text-xs text-muted-foreground flex items-center gap-2">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Loading time fields...
+                          </div>
+                        ) : availableTimeFields.length > 0 ? (
+                          availableTimeFields.map((field) => (
+                            <SelectItem key={field} value={field} className="font-mono">
+                              {field}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <>
+                            <SelectItem value="@timestamp" className="font-mono">@timestamp</SelectItem>
+                            <SelectItem value="timestamp" className="font-mono">timestamp</SelectItem>
+                            <SelectItem value="event.created" className="font-mono">event.created</SelectItem>
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      The field used to track which logs have been processed.
+                      {!editingPattern && ' Validate the pattern to see available time fields.'}
+                    </p>
+                    {editingPattern && availableTimeFields.length === 0 && !isLoadingTimeFields && (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-xs"
+                        onClick={() => loadTimeFields(editingPattern.id)}
+                      >
+                        Load available time fields
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

@@ -385,6 +385,64 @@ def _extract_fields(
                         _extract_fields(sub_field_config["properties"], f"{sub_full_name}.", fields, include_multi_fields)
 
 
+def get_time_fields(
+    client: OpenSearch,
+    pattern: str,
+) -> list[str]:
+    """
+    Get all date/timestamp field names from indices matching the pattern.
+
+    Args:
+        client: OpenSearch client
+        pattern: Index pattern (e.g., "logs-*")
+
+    Returns:
+        List of field names that are date/timestamp type, sorted alphabetically
+    """
+    time_fields: set[str] = set()
+
+    try:
+        # Get mapping for all indices matching pattern
+        mappings = client.indices.get_mapping(index=pattern)
+
+        for index_name, index_data in mappings.items():
+            props = index_data.get("mappings", {}).get("properties", {})
+            _extract_time_fields(props, "", time_fields)
+
+    except Exception:
+        # Pattern may not match any indices
+        pass
+
+    return sorted(time_fields)
+
+
+def _extract_time_fields(
+    properties: dict[str, Any],
+    prefix: str,
+    fields: set[str],
+) -> None:
+    """Recursively extract date/timestamp field names from mapping properties.
+
+    Args:
+        properties: Field mappings from OpenSearch
+        prefix: Current field path (for recursion)
+        fields: Set to populate with time field names
+    """
+    DATE_TYPES = {"date", "date_nanos"}
+
+    for field_name, field_config in properties.items():
+        full_name = f"{prefix}{field_name}" if prefix else field_name
+
+        # Handle nested objects - recurse into them
+        if "properties" in field_config:
+            _extract_time_fields(field_config["properties"], f"{full_name}.", fields)
+
+        # Check if this field is a date type
+        field_type = field_config.get("type", "")
+        if field_type in DATE_TYPES:
+            fields.add(full_name)
+
+
 def validate_index_pattern(client: OpenSearch, pattern: str) -> dict[str, Any]:
     """
     Validate an index pattern exists and check permissions.
