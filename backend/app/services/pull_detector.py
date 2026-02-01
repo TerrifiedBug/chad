@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 import asyncio
 import logging
+import yaml
 
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -257,6 +258,15 @@ class PullDetector:
 
         for rule in rules:
             try:
+                # Extract tags from Sigma YAML for alert creation
+                rule_tags = []
+                try:
+                    parsed_rule = yaml.safe_load(rule.yaml_content)
+                    if parsed_rule and isinstance(parsed_rule, dict):
+                        rule_tags = parsed_rule.get("tags", []) or []
+                except yaml.YAMLError:
+                    logger.debug(f"Failed to parse YAML for tags in rule {rule.id}")
+
                 # Translate rule to DSL
                 result = sigma_service.translate_and_validate(rule.yaml_content)
                 if not result.success:
@@ -329,7 +339,7 @@ class PullDetector:
                                 "rule_id": str(rule.id),
                                 "rule_title": rule.title,
                                 "severity": rule.severity,
-                                "tags": [],
+                                "tags": rule_tags,
                                 "log_document": hit["_source"],
                             })
                             rule_matches += 1
