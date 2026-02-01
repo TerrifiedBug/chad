@@ -2,12 +2,22 @@
 
 from datetime import datetime, timezone, timedelta
 from typing import Any
+from uuid import UUID
 import asyncio
 import logging
 import yaml
 
 from opensearchpy import OpenSearch
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.rule_exception import RuleException
+from app.services.alerts import AlertService, should_suppress_alert
+from app.services.alert_pubsub import publish_alert
+from app.services.correlation import check_correlation
+from app.services.enrichment import enrich_alert
+from app.services.notification import send_alert_notification
+from app.services.settings import get_app_url
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +85,178 @@ class PullDetector:
     @property
     def retry_delay_seconds(self) -> int:
         return self._settings.get("retry_delay_seconds", DEFAULT_RETRY_DELAY_SECONDS)
+
+    async def _get_rule_exceptions(
+        self,
+        db: AsyncSession,
+        rule_id: str,
+        cache: dict[str, list[dict]],
+    ) -> list[dict]:
+        """Get exceptions for a rule, with caching."""
+        if rule_id in cache:
+            return cache[rule_id]
+
+        try:
+            rule_uuid = UUID(rule_id)
+            result = await db.execute(
+                select(RuleException).where(
+                    RuleException.rule_id == rule_uuid,
+                    RuleException.is_active == True,
+                )
+            )
+            exceptions = result.scalars().all()
+            cache[rule_id] = [
+                {
+                    "field": e.field,
+                    "operator": e.operator.value,
+                    "value": e.value,
+                    "is_active": e.is_active,
+                    "group_id": str(e.group_id) if e.group_id else str(e.id),
+                }
+                for e in exceptions
+            ]
+        except (ValueError, Exception) as e:
+            logger.debug(f"Failed to load exceptions for rule {rule_id}: {e}")
+            cache[rule_id] = []
+
+        return cache[rule_id]
+
+    async def _broadcast_alerts(self, alerts: list[dict]):
+        """Broadcast alerts via Redis pub/sub for WebSocket delivery."""
+        for alert in alerts:
+            try:
+                alert_data = {
+                    "alert_id": str(alert.get("alert_id", "")),
+                    "rule_id": str(alert.get("rule_id", "")),
+                    "rule_title": alert.get("rule_title", "Unknown Rule"),
+                    "severity": alert.get("severity", "medium"),
+                    "timestamp": alert.get("created_at", ""),
+                    "matched_log": alert.get("log_document", {}),
+                }
+                await publish_alert(alert_data)
+            except Exception as e:
+                logger.warning(f"Failed to broadcast alert {alert.get('alert_id')}: {e}")
+
+    async def _send_notifications(
+        self,
+        db: AsyncSession,
+        alerts: list[dict],
+        app_url: str | None,
+    ):
+        """Send notifications for created alerts."""
+        for alert in alerts:
+            alert_url = f"{app_url}/alerts/{alert['alert_id']}" if app_url else None
+            try:
+                await send_alert_notification(
+                    db,
+                    alert_id=UUID(alert["alert_id"]) if isinstance(alert["alert_id"], str) else alert["alert_id"],
+                    rule_title=alert.get("rule_title", "Unknown Rule"),
+                    severity=alert.get("severity", "medium"),
+                    matched_log=alert.get("log_document", {}),
+                    alert_url=alert_url,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send notification for alert {alert['alert_id']}: {e}")
+
+    async def _check_correlations(
+        self,
+        db: AsyncSession,
+        rule_id: str,
+        enriched_log: dict,
+        alert: dict,
+        alerts_index: str,
+        alert_service: AlertService,
+        alerts_created: list,
+    ):
+        """Check correlation rules and create correlation alerts if triggered."""
+        try:
+            triggered_correlations = await check_correlation(
+                db,
+                rule_id=UUID(rule_id),
+                log_document=enriched_log,
+                alert_id=alert["alert_id"],
+            )
+
+            if not triggered_correlations:
+                return
+
+            from app.models.rule import Rule
+
+            for corr in triggered_correlations:
+                # Gather tags from both rules for the correlation alert
+                correlation_tags = []
+                rule_a_id = corr.get("rule_a_id")
+                rule_b_id = corr.get("rule_b_id")
+
+                if rule_a_id:
+                    rule_a_title, tags = await self._get_rule_tags(db, rule_a_id)
+                    correlation_tags.extend(tags)
+
+                if rule_b_id:
+                    rule_b_title, tags = await self._get_rule_tags(db, rule_b_id)
+                    correlation_tags.extend(tags)
+
+                # Deduplicate tags
+                unique_tags = list(dict.fromkeys(correlation_tags))
+
+                # Create correlation alert
+                correlation_alert = alert_service.create_alert(
+                    alerts_index=alerts_index,
+                    rule_id=corr["correlation_rule_id"],
+                    rule_title=corr["correlation_name"],
+                    severity=corr.get("severity", "high"),
+                    tags=unique_tags,
+                    log_document={
+                        "correlation": {
+                            "correlation_rule_id": corr["correlation_rule_id"],
+                            "correlation_name": corr["correlation_name"],
+                            "first_alert_id": corr.get("first_alert_id"),
+                            "second_alert_id": corr.get("second_alert_id"),
+                            "rule_a_id": str(rule_a_id) if rule_a_id else None,
+                            "rule_b_id": str(rule_b_id) if rule_b_id else None,
+                            "entity_field": corr.get("entity_field"),
+                            "entity_value": corr.get("entity_value"),
+                            "time_window_minutes": corr.get("time_window_minutes"),
+                            "first_triggered_at": corr.get("first_triggered_at"),
+                            "second_triggered_at": corr.get("second_triggered_at"),
+                        },
+                        "@timestamp": enriched_log.get("@timestamp"),
+                    },
+                )
+                alerts_created.append(correlation_alert)
+
+                logger.info(
+                    "Correlation alert created: %s (entity: %s)",
+                    corr["correlation_name"],
+                    corr.get("entity_value"),
+                )
+
+        except Exception as e:
+            logger.error(f"Correlation check failed: {e}")
+
+    async def _get_rule_tags(self, db: AsyncSession, rule_id: str) -> tuple[str | None, list[str]]:
+        """Get rule title and MITRE tags from a rule."""
+        from app.models.rule import Rule
+
+        try:
+            result = await db.execute(
+                select(Rule).where(Rule.id == UUID(rule_id))
+            )
+            rule = result.scalar_one_or_none()
+            if rule:
+                title = rule.title
+                tags = []
+                if rule.yaml_content:
+                    try:
+                        parsed = yaml.safe_load(rule.yaml_content)
+                        if parsed and isinstance(parsed, dict):
+                            tags = parsed.get("tags", []) or []
+                    except yaml.YAMLError as e:
+                        logger.debug("Failed to parse rule YAML for tags: %s", e)
+                return title, tags
+        except Exception as e:
+            logger.debug("Failed to get rule info: %s", e)
+        return None, []
 
     def build_time_filtered_query(
         self,
@@ -256,6 +438,16 @@ class PullDetector:
         # Import here to avoid circular imports
         from app.services.field_mapping import resolve_mappings
 
+        # Cache for rule exceptions (avoid repeated DB queries)
+        rule_exceptions_cache: dict[str, list[dict]] = {}
+
+        # Track alerts for broadcast/notification
+        alerts_created: list[dict] = []
+        suppressed_count = 0
+
+        # Get app URL for notification links
+        app_url = await get_app_url(db)
+
         for rule in rules:
             try:
                 # Extract tags from Sigma YAML for alert creation
@@ -332,27 +524,58 @@ class PullDetector:
                         if not hits:
                             break
 
-                        # Collect alerts for bulk creation
-                        batch_alerts = []
+                        # Get exceptions for this rule (cached)
+                        exceptions = await self._get_rule_exceptions(db, str(rule.id), rule_exceptions_cache)
+
+                        # Process each hit with full alert workflow
                         for hit in hits:
-                            batch_alerts.append({
-                                "rule_id": str(rule.id),
-                                "rule_title": rule.title,
-                                "severity": rule.severity,
-                                "tags": rule_tags,
-                                "log_document": hit["_source"],
-                            })
-                            rule_matches += 1
+                            log_document = hit["_source"]
+
+                            # Check if alert should be suppressed by exception
+                            if should_suppress_alert(log_document, exceptions):
+                                suppressed_count += 1
+                                continue
+
+                            # Enrich log with GeoIP/TI data if configured
+                            try:
+                                enriched_log = await enrich_alert(db, log_document, index_pattern)
+                            except Exception as e:
+                                logger.warning(f"Enrichment failed for log: {e}")
+                                enriched_log = log_document
+
+                            # Create individual alert
+                            try:
+                                alert = alert_service.create_alert(
+                                    alerts_index=alerts_index,
+                                    rule_id=str(rule.id),
+                                    rule_title=rule.title,
+                                    severity=rule.severity,
+                                    tags=rule_tags,
+                                    log_document=enriched_log,
+                                )
+                                alerts_created.append(alert)
+                                rule_matches += 1
+
+                                # Check for correlation triggers
+                                await self._check_correlations(
+                                    db=db,
+                                    rule_id=str(rule.id),
+                                    enriched_log=enriched_log,
+                                    alert=alert,
+                                    alerts_index=alerts_index,
+                                    alert_service=alert_service,
+                                    alerts_created=alerts_created,
+                                )
+
+                            except Exception as e:
+                                logger.error(f"Failed to create alert for rule {rule.id}: {e}")
+                                continue
 
                             # Safety check to prevent runaway queries
                             if rule_matches >= MAX_EVENTS_PER_POLL:
                                 logger.warning(f"Reached max events limit for rule {rule.id}")
                                 truncated = True
                                 break
-
-                        # Bulk create alerts for this batch
-                        if batch_alerts:
-                            alert_service.bulk_create_alerts(alerts_index, batch_alerts)
 
                         if rule_matches >= MAX_EVENTS_PER_POLL:
                             break
@@ -379,7 +602,21 @@ class PullDetector:
                 logger.error(f"Error polling rule {rule.id}: {e}")
                 errors.append({"rule_id": str(rule.id), "error": str(e)})
 
+        # Broadcast alerts via WebSocket (Redis pub/sub for cross-worker)
+        if alerts_created:
+            await self._broadcast_alerts(alerts_created)
+
+        # Send notifications for created alerts
+        if alerts_created:
+            await self._send_notifications(db, alerts_created, app_url)
+
         duration_ms = int((time_module.monotonic() - start_time) * 1000)
+
+        logger.info(
+            f"Pull mode poll completed: {len(rules)} rules, {total_events_scanned} events, "
+            f"{total_matches} matches, {len(alerts_created)} alerts, {suppressed_count} suppressed "
+            f"in {duration_ms}ms"
+        )
 
         return {
             "matches": total_matches,
@@ -387,6 +624,8 @@ class PullDetector:
             "events_scanned": total_events_scanned,
             "duration_ms": duration_ms,
             "truncated": truncated,
+            "alerts_created": len(alerts_created),
+            "suppressed": suppressed_count,
         }
 
 
