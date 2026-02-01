@@ -115,9 +115,9 @@ async def get_index_health(
     )
     no_data_critical_minutes = no_data_warning_minutes * 2  # Critical is 2x the warning threshold
 
-    # Query actual alert counts from OpenSearch
-    # Use wildcard to catch all alerts indices (pattern-specific and date-based)
-    alerts_index = "chad-alerts-*"
+    # Query actual alert counts from OpenSearch for this specific index pattern
+    # Alerts index follows naming convention: chad-alerts-{index_pattern_name}
+    alerts_index = f"chad-alerts-{index_pattern.name}" if index_pattern else "chad-alerts-*"
 
     # Per-hour count (last hour)
     one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
