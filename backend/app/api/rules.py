@@ -1048,13 +1048,6 @@ async def bulk_deploy_rules(
                     failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
                     continue
 
-                # Deploy to percolator
-                percolator = PercolatorService(os_client)
-                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-
-                # Ensure the percolator index exists
-                percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
-
                 # Extract rule metadata from YAML
                 parsed_rule = yaml.safe_load(rule.yaml_content)
                 tags = parsed_rule.get("tags", [])
@@ -1069,17 +1062,26 @@ async def bulk_deploy_rules(
                     import logging
                     logging.getLogger(__name__).warning(f"Failed to update attack mappings for rule {rule.id}: {e}")
 
-                # Deploy the rule - extract inner query for percolator
-                percolator_query = translation.query.get("query", translation.query)
+                # Deploy to percolator (push mode only)
+                # Pull mode doesn't use percolator - rules are evaluated during scheduled polls
+                if rule.index_pattern.mode == "push":
+                    percolator = PercolatorService(os_client)
+                    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
 
-                percolator.deploy_rule(
-                    percolator_index=percolator_index,
-                    rule_id=str(rule.id),
-                    query=percolator_query,
-                    title=rule.title,
-                    severity=rule.severity,
-                    tags=tags,
-                )
+                    # Ensure the percolator index exists
+                    percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
+
+                    # Deploy the rule - extract inner query for percolator
+                    percolator_query = translation.query.get("query", translation.query)
+
+                    percolator.deploy_rule(
+                        percolator_index=percolator_index,
+                        rule_id=str(rule.id),
+                        query=percolator_query,
+                        title=rule.title,
+                        severity=rule.severity,
+                        tags=tags,
+                    )
 
                 # Update rule deployment tracking
                 now = datetime.now(UTC)
@@ -1224,13 +1226,6 @@ async def deploy_rule(
             detail=f"Failed to translate rule: {errors_str}",
         )
 
-    # Deploy to percolator
-    percolator = PercolatorService(os_client)
-    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-
-    # Ensure the percolator index exists (copy mappings from source index)
-    percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
-
     # Extract rule metadata from YAML for the percolator doc
     parsed_rule = yaml.safe_load(rule.yaml_content)
     tags = parsed_rule.get("tags", [])
@@ -1245,15 +1240,22 @@ async def deploy_rule(
         import logging
         logging.getLogger(__name__).warning(f"Failed to update attack mappings for rule {rule.id}: {e}")
 
-    # Deploy the rule - extract inner query for percolator
-    # Sigma returns {"query": {"query_string": ...}}, percolator needs {"query_string": ...}
-    percolator_query = translation.query.get("query", translation.query)
-
-    # Skip percolator in pull-only deployment or for pull-mode patterns
+    # Deploy to percolator (push mode only)
+    # Pull mode doesn't use percolator - rules are evaluated during scheduled polls
     settings = get_settings()
     use_percolator = not settings.is_pull_only and rule.index_pattern.mode == "push"
 
     if use_percolator:
+        percolator = PercolatorService(os_client)
+        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+
+        # Ensure the percolator index exists (copy mappings from source index)
+        percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
+
+        # Deploy the rule - extract inner query for percolator
+        # Sigma returns {"query": {"query_string": ...}}, percolator needs {"query_string": ...}
+        percolator_query = translation.query.get("query", translation.query)
+
         percolator.deploy_rule(
             percolator_index=percolator_index,
             rule_id=str(rule.id),
@@ -1924,28 +1926,31 @@ async def unsnooze_rule(
         )
 
         if translation.success:
-            percolator = PercolatorService(os_client)
-            percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+            # Re-deploy to percolator (push mode only)
+            # Pull mode doesn't use percolator - rules are evaluated during scheduled polls
+            if rule.index_pattern.mode == "push":
+                percolator = PercolatorService(os_client)
+                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
 
-            # Ensure the percolator index exists
-            percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
+                # Ensure the percolator index exists
+                percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
 
-            # Extract tags from YAML
-            parsed_rule = yaml.safe_load(rule.yaml_content)
-            tags = parsed_rule.get("tags", [])
+                # Extract tags from YAML
+                parsed_rule = yaml.safe_load(rule.yaml_content)
+                tags = parsed_rule.get("tags", [])
 
-            # Extract the percolator query
-            percolator_query = translation.query.get("query", translation.query)
+                # Extract the percolator query
+                percolator_query = translation.query.get("query", translation.query)
 
-            # Re-deploy to percolator
-            percolator.deploy_rule(
-                percolator_index=percolator_index,
-                rule_id=str(rule.id),
-                query=percolator_query,
-                title=rule.title,
-                severity=rule.severity,
-                tags=tags,
-            )
+                # Re-deploy to percolator
+                percolator.deploy_rule(
+                    percolator_index=percolator_index,
+                    rule_id=str(rule.id),
+                    query=percolator_query,
+                    title=rule.title,
+                    severity=rule.severity,
+                    tags=tags,
+                )
 
     # Auto-unsnooze any linked correlation rules
     unsnoozed_correlations = await unsnooze_linked_correlations(

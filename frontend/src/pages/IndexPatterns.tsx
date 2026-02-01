@@ -617,14 +617,16 @@ export default function IndexPatternsPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="View token & endpoint"
-                        onClick={() => setTokenDetailsPattern(pattern)}
-                      >
-                        <Key className="h-4 w-4" />
-                      </Button>
+                      {pattern.mode === 'push' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="View token & endpoint"
+                          onClick={() => setTokenDetailsPattern(pattern)}
+                        >
+                          <Key className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
