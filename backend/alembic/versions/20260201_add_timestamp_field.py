@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20260201_timestamp"
-down_revision = "20260201_add_poll_state_metrics"
+down_revision = "add_poll_state_metrics"
 branch_labels = None
 depends_on = None
 
