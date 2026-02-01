@@ -249,7 +249,12 @@ class PullDetector:
         for rule in rules:
             try:
                 # Translate rule to DSL
-                base_query = sigma_service.translate_rule(rule.yaml_content)
+                result = sigma_service.translate_and_validate(rule.yaml_content)
+                if not result.success:
+                    errors_str = ", ".join(e.message for e in (result.errors or []))
+                    errors.append({"rule_id": str(rule.id), "error": f"Translation failed: {errors_str}"})
+                    continue
+                base_query = result.query
 
                 # Add time filter using configurable timestamp field
                 query = self.build_time_filtered_query(base_query, last_poll, now, timestamp_field)
