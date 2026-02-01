@@ -161,14 +161,20 @@ async def get_index_health(
                 status = HealthStatus.HEALTHY
                 issues = []
 
+            # For pull mode, detection latency is based on poll interval
+            # Events are detected anywhere from 0 to poll_interval after they occur
+            # Average detection latency = poll_interval / 2
+            poll_interval_ms = index_pattern.poll_interval_minutes * 60 * 1000
+            avg_detection_latency_ms = poll_interval_ms / 2
+
             return {
                 "status": status,
                 "message": "Pull mode active",
                 "issues": issues,
                 "latest": {
                     "queue_depth": 0,
-                    "avg_detection_latency_ms": ps.avg_poll_duration_ms or 0,
-                    "avg_opensearch_query_latency_ms": 0,
+                    "avg_detection_latency_ms": avg_detection_latency_ms,
+                    "avg_opensearch_query_latency_ms": ps.avg_poll_duration_ms or 0,
                     "logs_per_minute": 0,
                     "alerts_per_hour": alerts_per_hour,
                 },
