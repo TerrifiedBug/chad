@@ -1,5 +1,5 @@
 import pytest
-from app.services.rate_limit import record_failed_attempt, is_account_locked, clear_failed_attempts
+from app.services.rate_limit import record_failed_attempt, is_account_locked
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,6 @@
 """Tests for async log queue processing."""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestLogsQueueEndpoint:

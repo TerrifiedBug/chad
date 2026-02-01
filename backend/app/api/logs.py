@@ -48,7 +48,7 @@ from app.services.correlation import check_correlation
 from app.services.redis_rate_limit import check_rate_limit_redis
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
-from app.services.settings import get_app_url, get_setting
+from app.services.settings import get_app_url
 from app.services.websocket import AlertBroadcast, manager
 from app.utils.request import get_client_ip
 

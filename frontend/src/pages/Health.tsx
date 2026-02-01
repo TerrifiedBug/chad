@@ -79,6 +79,7 @@ export default function HealthPage() {
   const { showToast } = useToast()
   const [health, setHealth] = useState<IndexHealth[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshingIndexes, setIsRefreshingIndexes] = useState(false)
   const [error, setError] = useState('')
 
   // Service health state
@@ -116,8 +117,12 @@ export default function HealthPage() {
     return () => clearInterval(interval)
   }, [])
 
-  const loadHealth = async () => {
-    setIsLoading(true)
+  const loadHealth = async (isRefresh = false) => {
+    if (isRefresh) {
+      setIsRefreshingIndexes(true)
+    } else {
+      setIsLoading(true)
+    }
     try {
       const data = await healthApi.listIndices()
       setHealth(data)
@@ -126,6 +131,7 @@ export default function HealthPage() {
       setError(err instanceof Error ? err.message : 'Failed to load health data')
     } finally {
       setIsLoading(false)
+      setIsRefreshingIndexes(false)
     }
   }
 
@@ -667,11 +673,11 @@ export default function HealthPage() {
                 size="sm"
                 onClick={(e) => {
                   e.stopPropagation()
-                  loadHealth()
+                  loadHealth(true)
                 }}
-                disabled={isLoading}
+                disabled={isRefreshingIndexes}
               >
-                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-4 w-4 ${isRefreshingIndexes ? 'animate-spin' : ''}`} />
               </Button>
               {indexesOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </div>

@@ -280,7 +280,7 @@ async def get_related_alerts(
             alerts=related_alerts,
         )
     except Exception as e:
-        logger.warning(f"Failed to get related alerts for {alert_id}: {e}")
+        logger.warning("Failed to get related alerts: %s", e)
         return RelatedAlertsResponse(
             alert_id=alert_id,
             related_count=0,
@@ -437,7 +437,8 @@ async def bulk_delete_alerts(
                     os_client.delete(index=alert.alert_index, id=alert.alert_id, refresh=True)
                 except Exception as e:
                     # Don't proceed with DB deletion if OpenSearch fails
-                    logger.warning("Failed to delete alert %s from OpenSearch: %s", alert_id_str, e)
+                    # Log sanitized alert ID (already validated as UUID)
+                    logger.warning("Failed to delete alert from OpenSearch: %s", str(e))
                     failed.append({"id": alert_id_str, "error": "Failed to delete from OpenSearch"})
                     continue
 

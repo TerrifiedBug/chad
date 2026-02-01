@@ -110,8 +110,9 @@ async def get_client_from_settings(db_session) -> OpenSearch | None:
     if password:
         try:
             password = decrypt(password)
-        except Exception:
-            pass
+        except Exception as e:
+            # Decryption failed - use raw password value (may be unencrypted)
+            logger.debug("Password decryption failed, using raw value: %s", e)
 
     return create_client(
         host=config["host"],

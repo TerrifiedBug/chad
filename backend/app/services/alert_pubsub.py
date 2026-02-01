@@ -79,8 +79,9 @@ class AlertSubscriber:
             try:
                 await self._pubsub.unsubscribe(ALERT_CHANNEL)
                 await self._pubsub.close()
-            except Exception:
-                pass
+            except Exception as e:
+                # Ignore errors during cleanup - connection may already be closed
+                logger.debug("Error during pubsub cleanup: %s", e)
             self._pubsub = None
 
         if self._task:
@@ -88,6 +89,7 @@ class AlertSubscriber:
             try:
                 await self._task
             except asyncio.CancelledError:
+                # Expected when cancelling the task - no action needed
                 pass
             self._task = None
 

@@ -312,11 +312,13 @@ class LogProcessor:
                         parsed = yaml.safe_load(rule.yaml_content)
                         if parsed and isinstance(parsed, dict):
                             tags = parsed.get("tags", []) or []
-                    except yaml.YAMLError:
-                        pass
+                    except yaml.YAMLError as e:
+                        # Invalid YAML in rule content - return title without tags
+                        logger.debug("Failed to parse rule YAML for tags: %s", e)
                 return title, tags
-        except Exception:
-            pass
+        except Exception as e:
+            # Database query failed - return empty result
+            logger.debug("Failed to get rule info: %s", e)
         return None, []
 
     async def _broadcast_alerts(self, alerts: list[dict]):

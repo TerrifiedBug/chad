@@ -1,6 +1,5 @@
 """Tests for batch percolation service."""
 
-import pytest
 from unittest.mock import MagicMock
 
 

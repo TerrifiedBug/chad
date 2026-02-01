@@ -1,6 +1,5 @@
 """Tests for bulk alert writing."""
 
-import pytest
 from unittest.mock import MagicMock
 
 

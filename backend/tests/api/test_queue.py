@@ -1,7 +1,6 @@
 """Tests for queue management API."""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestQueueSettingsAPI:
