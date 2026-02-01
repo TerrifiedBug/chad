@@ -424,12 +424,14 @@ class PullDetector:
             Dict with poll results: {"matches": int, "errors": list, "events_scanned": int, "duration_ms": int, "truncated": bool}
         """
         import time as time_module
+        from dateutil.parser import parse as parse_datetime
         start_time = time_module.monotonic()
         now = datetime.now(timezone.utc)
         total_matches = 0
         total_events_scanned = 0
         errors = []
         truncated = False
+        detection_latencies_ms: list[float] = []  # Track real detection latency per event
 
         # Get the configurable timestamp field (defaults to @timestamp)
         timestamp_field = getattr(index_pattern, "timestamp_field", "@timestamp") or "@timestamp"
@@ -537,6 +539,27 @@ class PullDetector:
                         for hit in hits:
                             log_document = hit["_source"]
 
+                            # Calculate real detection latency from event timestamp
+                            event_timestamp_raw = log_document.get(timestamp_field) or log_document.get("@timestamp")
+                            if event_timestamp_raw:
+                                try:
+                                    if isinstance(event_timestamp_raw, str):
+                                        event_timestamp = parse_datetime(event_timestamp_raw)
+                                    elif isinstance(event_timestamp_raw, datetime):
+                                        event_timestamp = event_timestamp_raw
+                                    else:
+                                        event_timestamp = None
+
+                                    if event_timestamp:
+                                        # Ensure timezone awareness
+                                        if event_timestamp.tzinfo is None:
+                                            event_timestamp = event_timestamp.replace(tzinfo=timezone.utc)
+                                        latency_ms = (now - event_timestamp).total_seconds() * 1000
+                                        if latency_ms >= 0:  # Sanity check (shouldn't be negative)
+                                            detection_latencies_ms.append(latency_ms)
+                                except Exception as e:
+                                    logger.debug(f"Could not parse event timestamp for latency calc: {e}")
+
                             # Check if alert should be suppressed by exception
                             if should_suppress_alert(log_document, exceptions):
                                 suppressed_count += 1
@@ -618,7 +641,15 @@ class PullDetector:
 
         duration_ms = int((time_module.monotonic() - start_time) * 1000)
 
+        # Calculate average detection latency from real timestamps
+        avg_detection_latency_ms = None
+        if detection_latencies_ms:
+            avg_detection_latency_ms = sum(detection_latencies_ms) / len(detection_latencies_ms)
+
         logger.info(
+            f"Pull mode poll completed: {len(rules)} rules, {total_events_scanned} events, "
+            f"{total_matches} matches, {len(alerts_created)} alerts, {suppressed_count} suppressed "
+            f"in {duration_ms}ms (avg detection latency: {avg_detection_latency_ms:.0f}ms)" if avg_detection_latency_ms else
             f"Pull mode poll completed: {len(rules)} rules, {total_events_scanned} events, "
             f"{total_matches} matches, {len(alerts_created)} alerts, {suppressed_count} suppressed "
             f"in {duration_ms}ms"
@@ -632,6 +663,7 @@ class PullDetector:
             "truncated": truncated,
             "alerts_created": len(alerts_created),
             "suppressed": suppressed_count,
+            "avg_detection_latency_ms": avg_detection_latency_ms,
         }
 
 
@@ -814,7 +846,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
                 ps.total_events_scanned += poll_result["events_scanned"]
                 ps.last_poll_duration_ms = poll_result["duration_ms"]
 
-                # Calculate running average
+                # Calculate running average for poll duration
                 if ps.avg_poll_duration_ms is None:
                     ps.avg_poll_duration_ms = float(poll_result["duration_ms"])
                 else:
@@ -822,6 +854,16 @@ async def run_poll_job(index_pattern_id: str) -> None:
                     ps.avg_poll_duration_ms = (
                         0.8 * ps.avg_poll_duration_ms + 0.2 * poll_result["duration_ms"]
                     )
+
+                # Update real detection latency if we have data
+                if poll_result.get("avg_detection_latency_ms") is not None:
+                    if ps.avg_detection_latency_ms is None:
+                        ps.avg_detection_latency_ms = poll_result["avg_detection_latency_ms"]
+                    else:
+                        # Exponential moving average for detection latency
+                        ps.avg_detection_latency_ms = (
+                            0.8 * ps.avg_detection_latency_ms + 0.2 * poll_result["avg_detection_latency_ms"]
+                        )
             else:
                 poll_state = IndexPatternPollState(
                     index_pattern_id=index_pattern.id,
@@ -836,6 +878,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
                     total_events_scanned=poll_result["events_scanned"],
                     last_poll_duration_ms=poll_result["duration_ms"],
                     avg_poll_duration_ms=float(poll_result["duration_ms"]),
+                    avg_detection_latency_ms=poll_result.get("avg_detection_latency_ms"),
                 )
                 session.add(poll_state)
 

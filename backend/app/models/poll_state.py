@@ -41,5 +41,8 @@ class IndexPatternPollState(Base):
     avg_poll_duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+    # Real detection latency (time from event @timestamp to alert creation)
+    avg_detection_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     # Relationship
     index_pattern = relationship("IndexPattern", back_populates="poll_state")
