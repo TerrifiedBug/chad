@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
+from app.models.poll_state import IndexPatternPollState
+from sqlalchemy.orm import selectinload
 
 
 def get_alert_count(
@@ -97,9 +99,11 @@ async def get_index_health(
     # Convert to naive datetime for OpenSearch query consistency
     since_naive = since.replace(tzinfo=None)
 
-    # Get index pattern settings for thresholds
+    # Get index pattern settings for thresholds (with poll_state for pull mode)
     pattern_result = await db.execute(
-        select(IndexPattern).where(IndexPattern.id == index_pattern_id)
+        select(IndexPattern)
+        .where(IndexPattern.id == index_pattern_id)
+        .options(selectinload(IndexPattern.poll_state))
     )
     index_pattern = pattern_result.scalar_one_or_none()
 
@@ -218,6 +222,18 @@ async def get_index_health(
     elif error_rate >= ERROR_RATE_WARNING:
         status = _max_status(status, HealthStatus.WARNING)
         issues.append(f"Error rate elevated: {error_rate:.1%}")
+
+    # For pull mode, use consecutive_failures as the primary health indicator
+    # This ensures consistency with the Pull Mode Detection section
+    if is_pull_mode and index_pattern.poll_state:
+        ps = index_pattern.poll_state
+        # If no consecutive failures, the system is healthy (override any warning from success rate)
+        if ps.consecutive_failures == 0 and ps.last_poll_status == "success":
+            # Only override to healthy if not critical due to other factors
+            if status == HealthStatus.WARNING:
+                status = HealthStatus.HEALTHY
+                # Remove any "No data/polls" issues since we're currently healthy
+                issues = [i for i in issues if "No successful polls" not in i and "No data received" not in i]
 
     return {
         "status": status,

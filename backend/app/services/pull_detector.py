@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from opensearchpy import OpenSearch
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +222,7 @@ class PullDetector:
         sigma_service,  # SigmaService
         alert_service,  # AlertService
         last_poll: datetime | None,
+        db: AsyncSession,  # Database session for field mapping resolution
     ) -> dict[str, Any]:
         """
         Poll an index pattern for all deployed rules with full pagination support.
@@ -231,6 +233,7 @@ class PullDetector:
             sigma_service: Service for translating Sigma to DSL
             alert_service: Service for creating alerts
             last_poll: Last successful poll time
+            db: Database session for resolving field mappings
 
         Returns:
             Dict with poll results: {"matches": int, "errors": list, "events_scanned": int, "duration_ms": int, "truncated": bool}
@@ -246,6 +249,9 @@ class PullDetector:
         # Get the configurable timestamp field (defaults to @timestamp)
         timestamp_field = getattr(index_pattern, "timestamp_field", "@timestamp") or "@timestamp"
 
+        # Import here to avoid circular imports
+        from app.services.field_mapping import resolve_mappings
+
         for rule in rules:
             try:
                 # Translate rule to DSL
@@ -254,6 +260,20 @@ class PullDetector:
                     errors_str = ", ".join(e.message for e in (result.errors or []))
                     errors.append({"rule_id": str(rule.id), "error": f"Translation failed: {errors_str}"})
                     continue
+
+                # Apply field mappings if configured (matching rule_testing.py behavior)
+                sigma_fields = list(result.fields or set())
+                if sigma_fields and index_pattern.id:
+                    field_mappings_dict = await resolve_mappings(db, sigma_fields, index_pattern.id)
+                    field_mappings_dict = {k: v for k, v in field_mappings_dict.items() if v is not None}
+
+                    if field_mappings_dict:
+                        result = sigma_service.translate_with_mappings(rule.yaml_content, field_mappings_dict)
+                        if not result.success:
+                            errors_str = ", ".join(e.message for e in (result.errors or []))
+                            errors.append({"rule_id": str(rule.id), "error": f"Translation with mappings failed: {errors_str}"})
+                            continue
+
                 # Sigma returns {"query": {"query_string": ...}}, we need just {"query_string": ...}
                 base_query = result.query.get("query", result.query)
 
@@ -493,6 +513,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
                 sigma_service=sigma_service,
                 alert_service=alert_service,
                 last_poll=last_poll,
+                db=session,
             )
 
             # Update poll state with metrics

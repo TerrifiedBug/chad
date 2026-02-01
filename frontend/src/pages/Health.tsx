@@ -936,10 +936,10 @@ export default function HealthPage() {
                               <div className="flex items-center gap-2">
                                 <Activity className="h-4 w-4 text-muted-foreground" />
                                 <div>
-                                  <p className="text-muted-foreground">Events/poll</p>
+                                  <p className="text-muted-foreground">Matches/poll</p>
                                   <p className="font-medium">
                                     {pullData?.metrics.total_polls
-                                      ? formatNumber(Math.round(pullData.metrics.total_events_scanned / pullData.metrics.total_polls))
+                                      ? formatNumber(Math.round(pullData.metrics.total_matches / pullData.metrics.total_polls))
                                       : '-'}
                                   </p>
                                 </div>
