@@ -1432,6 +1432,45 @@ export const alertClusteringApi = {
     api.put<AlertClusteringSettings>('/settings/alert-clustering', data),
 }
 
+// Pull mode health types
+export type PullModePatternHealth = {
+  index_pattern_id: string
+  index_pattern_name: string
+  pattern: string
+  mode: string
+  poll_interval_minutes: number
+  last_poll_at: string | null
+  last_poll_status: string | null
+  last_error: string | null
+  status: HealthStatus
+  issues: string[]
+  metrics: {
+    total_polls: number
+    successful_polls: number
+    failed_polls: number
+    success_rate: number
+    total_matches: number
+    total_events_scanned: number
+    last_poll_duration_ms: number | null
+    avg_poll_duration_ms: number | null
+    consecutive_failures: number
+  }
+}
+
+export type PullModeHealth = {
+  overall_status: HealthStatus
+  summary: {
+    total_patterns: number
+    healthy_patterns: number
+    warning_patterns: number
+    critical_patterns: number
+    total_polls: number
+    total_matches: number
+    total_events_scanned: number
+  }
+  patterns: PullModePatternHealth[]
+}
+
 // Health API
 export const healthApi = {
   listIndices: () =>
@@ -1448,6 +1487,8 @@ export const healthApi = {
     api.get<HealthIntervals>('/health/intervals'),
   updateIntervals: (data: HealthIntervals) =>
     api.put<HealthIntervals>('/health/intervals', data),
+  getPullModeHealth: () =>
+    api.get<PullModeHealth>('/health/pull-mode'),
 }
 
 // Notification settings types

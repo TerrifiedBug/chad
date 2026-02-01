@@ -51,6 +51,13 @@ class IndexPatternBase(BaseModel):
     mode: str = "push"
     poll_interval_minutes: int = 5
 
+    @field_validator("poll_interval_minutes")
+    @classmethod
+    def validate_poll_interval(cls, v: int) -> int:
+        if v < 1 or v > 1440:
+            raise ValueError("poll_interval_minutes must be between 1 and 1440 (24 hours)")
+        return v
+
 
 class IndexPatternCreate(IndexPatternBase):
     @field_validator("mode")
@@ -87,6 +94,13 @@ class IndexPatternUpdate(BaseModel):
     def validate_mode(cls, v: str | None) -> str | None:
         if v is not None and v not in ("push", "pull"):
             raise ValueError("mode must be 'push' or 'pull'")
+        return v
+
+    @field_validator("poll_interval_minutes")
+    @classmethod
+    def validate_poll_interval(cls, v: int | None) -> int | None:
+        if v is not None and (v < 1 or v > 1440):
+            raise ValueError("poll_interval_minutes must be between 1 and 1440 (24 hours)")
         return v
 
 

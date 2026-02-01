@@ -100,8 +100,14 @@ async def update_index_pattern(
     pattern_id: UUID,
     pattern_data: IndexPatternUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
     _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
+    import logging
+    from app.services.percolator import PercolatorService
+
+    logger = logging.getLogger(__name__)
+
     result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
 
@@ -154,6 +160,24 @@ async def update_index_pattern(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="An index pattern with this percolator index already exists",
             )
+
+    # Handle mode transition: push -> pull
+    # When switching to pull mode, percolator queries are no longer needed
+    # (pull mode queries OpenSearch directly instead of using percolate API)
+    old_mode = pattern.mode
+    new_mode = update_data.get("mode")
+
+    if new_mode == "pull" and old_mode == "push":
+        try:
+            percolator_service = PercolatorService(opensearch)
+            deleted_count = percolator_service.undeploy_all_rules(pattern.percolator_index)
+            if deleted_count > 0:
+                logger.info(
+                    f"Mode transition (push -> pull): Removed {deleted_count} percolator queries "
+                    f"from {pattern.percolator_index}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to cleanup percolator queries during mode transition: {e}")
 
     for field, value in update_data.items():
         setattr(pattern, field, value)

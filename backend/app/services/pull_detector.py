@@ -3,10 +3,17 @@
 from datetime import datetime, timezone, timedelta
 from typing import Any
 import logging
+import time
 
 from opensearchpy import OpenSearch
 
 logger = logging.getLogger(__name__)
+
+# Constants for retry logic
+MAX_RETRIES = 3
+RETRY_DELAY_SECONDS = 5
+MAX_CONSECUTIVE_FAILURES_WARNING = 3
+MAX_CONSECUTIVE_FAILURES_CRITICAL = 10
 
 
 def get_settings():
@@ -63,6 +70,46 @@ class PullDetector:
 
         return wrapped
 
+    def _execute_search_with_retry(
+        self,
+        index_pattern: str,
+        query: dict[str, Any],
+        rule_id: str,
+    ) -> dict[str, Any]:
+        """
+        Execute OpenSearch query with retry logic.
+
+        Args:
+            index_pattern: OpenSearch index pattern
+            query: DSL query to execute
+            rule_id: Rule ID for logging
+
+        Returns:
+            OpenSearch response dict
+
+        Raises:
+            Exception: If all retries fail
+        """
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                return self.client.search(
+                    index=index_pattern,
+                    body={"query": query, "size": 1000},
+                )
+            except Exception as e:
+                last_error = e
+                if attempt < MAX_RETRIES - 1:
+                    logger.warning(
+                        f"OpenSearch query failed for rule {rule_id} (attempt {attempt + 1}/{MAX_RETRIES}): {e}"
+                    )
+                    time.sleep(RETRY_DELAY_SECONDS)
+                else:
+                    logger.error(
+                        f"OpenSearch query failed for rule {rule_id} after {MAX_RETRIES} attempts: {e}"
+                    )
+        raise last_error
+
     async def poll_index_pattern(
         self,
         index_pattern,  # IndexPattern model
@@ -82,10 +129,12 @@ class PullDetector:
             last_poll: Last successful poll time
 
         Returns:
-            Dict with poll results: {"matches": int, "errors": list}
+            Dict with poll results: {"matches": int, "errors": list, "events_scanned": int, "duration_ms": int}
         """
+        start_time = time.monotonic()
         now = datetime.now(timezone.utc)
         total_matches = 0
+        total_events_scanned = 0
         errors = []
 
         for rule in rules:
@@ -96,13 +145,18 @@ class PullDetector:
                 # Add time filter
                 query = self.build_time_filtered_query(base_query, last_poll, now)
 
-                # Execute search
-                response = self.client.search(
-                    index=index_pattern.pattern,
-                    body={"query": query, "size": 1000},
+                # Execute search with retry
+                response = self._execute_search_with_retry(
+                    index_pattern.pattern, query, str(rule.id)
                 )
 
                 hits = response.get("hits", {}).get("hits", [])
+                total_hits = response.get("hits", {}).get("total", {})
+                if isinstance(total_hits, dict):
+                    events_count = total_hits.get("value", 0)
+                else:
+                    events_count = total_hits
+                total_events_scanned += events_count
 
                 # Create alert for each match
                 for hit in hits:
@@ -119,7 +173,14 @@ class PullDetector:
                 logger.error(f"Error polling rule {rule.id}: {e}")
                 errors.append({"rule_id": str(rule.id), "error": str(e)})
 
-        return {"matches": total_matches, "errors": errors}
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+
+        return {
+            "matches": total_matches,
+            "errors": errors,
+            "events_scanned": total_events_scanned,
+            "duration_ms": duration_ms,
+        }
 
 
 async def schedule_pull_jobs(scheduler, index_patterns: list) -> None:
@@ -227,23 +288,63 @@ async def run_poll_job(index_pattern_id: str) -> None:
                 last_poll=last_poll,
             )
 
-            # Update poll state
+            # Update poll state with metrics
             now = datetime.now(timezone.utc)
+            has_errors = len(poll_result["errors"]) > 0
+            is_success = not has_errors
+
             if index_pattern.poll_state:
-                index_pattern.poll_state.last_poll_at = now
-                index_pattern.poll_state.last_poll_status = (
-                    "error" if poll_result["errors"] else "success"
-                )
-                index_pattern.poll_state.last_error = (
-                    str(poll_result["errors"]) if poll_result["errors"] else None
-                )
-                index_pattern.poll_state.updated_at = now
+                ps = index_pattern.poll_state
+                ps.last_poll_at = now
+                ps.last_poll_status = "error" if has_errors else "success"
+                ps.last_error = str(poll_result["errors"]) if has_errors else None
+                ps.updated_at = now
+
+                # Update metrics
+                ps.total_polls += 1
+                if is_success:
+                    ps.successful_polls += 1
+                    ps.consecutive_failures = 0
+                else:
+                    ps.failed_polls += 1
+                    ps.consecutive_failures += 1
+
+                    # Log warning/critical based on consecutive failures
+                    if ps.consecutive_failures >= MAX_CONSECUTIVE_FAILURES_CRITICAL:
+                        logger.error(
+                            f"CRITICAL: {ps.consecutive_failures} consecutive poll failures for {index_pattern.pattern}"
+                        )
+                    elif ps.consecutive_failures >= MAX_CONSECUTIVE_FAILURES_WARNING:
+                        logger.warning(
+                            f"WARNING: {ps.consecutive_failures} consecutive poll failures for {index_pattern.pattern}"
+                        )
+
+                ps.total_matches += poll_result["matches"]
+                ps.total_events_scanned += poll_result["events_scanned"]
+                ps.last_poll_duration_ms = poll_result["duration_ms"]
+
+                # Calculate running average
+                if ps.avg_poll_duration_ms is None:
+                    ps.avg_poll_duration_ms = float(poll_result["duration_ms"])
+                else:
+                    # Exponential moving average (weight new value at 20%)
+                    ps.avg_poll_duration_ms = (
+                        0.8 * ps.avg_poll_duration_ms + 0.2 * poll_result["duration_ms"]
+                    )
             else:
                 poll_state = IndexPatternPollState(
                     index_pattern_id=index_pattern.id,
                     last_poll_at=now,
-                    last_poll_status="error" if poll_result["errors"] else "success",
-                    last_error=str(poll_result["errors"]) if poll_result["errors"] else None,
+                    last_poll_status="error" if has_errors else "success",
+                    last_error=str(poll_result["errors"]) if has_errors else None,
+                    total_polls=1,
+                    successful_polls=1 if is_success else 0,
+                    failed_polls=0 if is_success else 1,
+                    consecutive_failures=0 if is_success else 1,
+                    total_matches=poll_result["matches"],
+                    total_events_scanned=poll_result["events_scanned"],
+                    last_poll_duration_ms=poll_result["duration_ms"],
+                    avg_poll_duration_ms=float(poll_result["duration_ms"]),
                 )
                 session.add(poll_state)
 
@@ -251,9 +352,27 @@ async def run_poll_job(index_pattern_id: str) -> None:
 
             logger.info(
                 f"Poll complete for {index_pattern.pattern}: "
-                f"{poll_result['matches']} matches, {len(poll_result['errors'])} errors"
+                f"{poll_result['matches']} matches, {poll_result['events_scanned']} events scanned, "
+                f"{poll_result['duration_ms']}ms, {len(poll_result['errors'])} errors"
             )
 
         except Exception as e:
             logger.error(f"Poll job failed for {index_pattern_id}: {e}")
+            # Try to update failure count even on exception
+            try:
+                result = await session.execute(
+                    select(IndexPattern)
+                    .where(IndexPattern.id == index_pattern_id)
+                    .options(selectinload(IndexPattern.poll_state))
+                )
+                pattern = result.scalar_one_or_none()
+                if pattern and pattern.poll_state:
+                    pattern.poll_state.failed_polls += 1
+                    pattern.poll_state.consecutive_failures += 1
+                    pattern.poll_state.last_poll_status = "error"
+                    pattern.poll_state.last_error = str(e)
+                    pattern.poll_state.updated_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception as update_error:
+                logger.error(f"Failed to update poll state on error: {update_error}")
             raise

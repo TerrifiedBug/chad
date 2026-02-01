@@ -892,11 +892,16 @@ export default function IndexPatternsPage() {
                 <p className="text-xs text-muted-foreground">
                   {detectionMode === 'push'
                     ? 'Logs are pushed to CHAD via the /logs endpoint for real-time detection.'
-                    : 'CHAD periodically queries OpenSearch for new logs matching deployed rules.'}
+                    : 'CHAD periodically queries OpenSearch for new logs matching deployed rules. Detection is delayed by the poll interval.'}
                 </p>
                 {isPullOnly && (
                   <p className="text-xs text-amber-600">
                     This deployment only supports pull mode.
+                  </p>
+                )}
+                {!isPullOnly && detectionMode === 'pull' && (
+                  <p className="text-xs text-blue-600">
+                    Pull mode has delayed detection compared to push mode. Use push mode for time-sensitive security detections.
                   </p>
                 )}
               </div>
@@ -909,14 +914,19 @@ export default function IndexPatternsPage() {
                     id="poll-interval"
                     type="number"
                     min="1"
-                    max="60"
+                    max="1440"
                     value={pollIntervalMinutes}
-                    onChange={(e) => setPollIntervalMinutes(parseInt(e.target.value) || 5)}
+                    onChange={(e) => setPollIntervalMinutes(Math.min(1440, Math.max(1, parseInt(e.target.value) || 5)))}
                     className="w-24"
                   />
                   <p className="text-xs text-muted-foreground">
-                    How often to query OpenSearch for new logs (1-60 minutes).
+                    How often to query OpenSearch for new logs (1-1440 minutes / 24 hours max).
                   </p>
+                  {pollIntervalMinutes > 15 && (
+                    <p className="text-xs text-amber-600">
+                      ⚠️ Longer polling intervals mean delayed detection. For time-sensitive detections, consider shorter intervals.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

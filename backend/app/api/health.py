@@ -457,3 +457,139 @@ async def test_service_health(
         return {"message": "AI connectivity check triggered"}
 
     return {"error": "Unknown service"}, 400
+
+
+# Pull mode health schema
+class PullModeHealthResponse(BaseModel):
+    """Health status for pull mode index patterns."""
+
+    index_pattern_id: str
+    index_pattern_name: str
+    pattern: str
+    mode: str
+    poll_interval_minutes: int
+    last_poll_at: str | None
+    last_poll_status: str | None
+    last_error: str | None
+    status: str  # healthy, warning, critical
+    issues: list[str]
+    metrics: dict
+
+
+@router.get("/pull-mode")
+async def get_pull_mode_health(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Get health status for all pull mode index patterns."""
+    from app.models.index_pattern import IndexPattern
+    from app.models.poll_state import IndexPatternPollState
+    from sqlalchemy.orm import selectinload
+    from datetime import datetime, UTC
+
+    # Get all index patterns with poll state
+    result = await db.execute(
+        select(IndexPattern)
+        .options(selectinload(IndexPattern.poll_state))
+    )
+    patterns = result.scalars().all()
+
+    pull_patterns = []
+    for pattern in patterns:
+        # Skip push-only patterns unless in pull-only deployment
+        from app.core.config import settings
+        if not settings.is_pull_only and pattern.mode != "pull":
+            continue
+
+        ps = pattern.poll_state
+        status = "healthy"
+        issues = []
+
+        if ps:
+            # Check poll status
+            if ps.last_poll_status == "error":
+                status = "warning" if ps.consecutive_failures < 3 else "critical"
+                issues.append(f"Last poll failed: {ps.last_error}")
+
+            # Check consecutive failures
+            if ps.consecutive_failures >= 10:
+                status = "critical"
+                issues.append(f"{ps.consecutive_failures} consecutive poll failures")
+            elif ps.consecutive_failures >= 3:
+                if status != "critical":
+                    status = "warning"
+                issues.append(f"{ps.consecutive_failures} consecutive poll failures")
+
+            # Check time since last poll
+            if ps.last_poll_at:
+                time_since = datetime.now(UTC) - ps.last_poll_at.replace(tzinfo=UTC)
+                expected_interval = pattern.poll_interval_minutes * 60 * 2  # 2x expected interval
+                if time_since.total_seconds() > expected_interval:
+                    if status != "critical":
+                        status = "warning"
+                    issues.append(f"No poll in {int(time_since.total_seconds() / 60)} minutes (expected every {pattern.poll_interval_minutes})")
+
+            metrics = {
+                "total_polls": ps.total_polls,
+                "successful_polls": ps.successful_polls,
+                "failed_polls": ps.failed_polls,
+                "success_rate": round(ps.successful_polls / ps.total_polls * 100, 1) if ps.total_polls > 0 else 0,
+                "total_matches": ps.total_matches,
+                "total_events_scanned": ps.total_events_scanned,
+                "last_poll_duration_ms": ps.last_poll_duration_ms,
+                "avg_poll_duration_ms": round(ps.avg_poll_duration_ms, 1) if ps.avg_poll_duration_ms else None,
+                "consecutive_failures": ps.consecutive_failures,
+            }
+        else:
+            # No poll state yet - pattern hasn't been polled
+            status = "warning"
+            issues.append("Pattern not yet polled")
+            metrics = {
+                "total_polls": 0,
+                "successful_polls": 0,
+                "failed_polls": 0,
+                "success_rate": 0,
+                "total_matches": 0,
+                "total_events_scanned": 0,
+                "last_poll_duration_ms": None,
+                "avg_poll_duration_ms": None,
+                "consecutive_failures": 0,
+            }
+
+        pull_patterns.append({
+            "index_pattern_id": str(pattern.id),
+            "index_pattern_name": pattern.name,
+            "pattern": pattern.pattern,
+            "mode": pattern.mode,
+            "poll_interval_minutes": pattern.poll_interval_minutes,
+            "last_poll_at": ps.last_poll_at.isoformat() if ps and ps.last_poll_at else None,
+            "last_poll_status": ps.last_poll_status if ps else None,
+            "last_error": ps.last_error if ps else None,
+            "status": status,
+            "issues": issues,
+            "metrics": metrics,
+        })
+
+    # Calculate overall status
+    overall_status = "healthy"
+    if any(p["status"] == "critical" for p in pull_patterns):
+        overall_status = "critical"
+    elif any(p["status"] == "warning" for p in pull_patterns):
+        overall_status = "warning"
+
+    # Aggregate metrics
+    total_metrics = {
+        "total_patterns": len(pull_patterns),
+        "healthy_patterns": sum(1 for p in pull_patterns if p["status"] == "healthy"),
+        "warning_patterns": sum(1 for p in pull_patterns if p["status"] == "warning"),
+        "critical_patterns": sum(1 for p in pull_patterns if p["status"] == "critical"),
+        "total_polls": sum(p["metrics"]["total_polls"] for p in pull_patterns),
+        "total_matches": sum(p["metrics"]["total_matches"] for p in pull_patterns),
+        "total_events_scanned": sum(p["metrics"]["total_events_scanned"] for p in pull_patterns),
+    }
+
+    return {
+        "overall_status": overall_status,
+        "summary": total_metrics,
+        "patterns": pull_patterns,
+    }

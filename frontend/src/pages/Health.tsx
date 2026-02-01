@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse, DeadLetterMessage } from '@/lib/api'
+import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse, DeadLetterMessage, PullModeHealth } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers, XCircle, Loader2, ChevronUp } from 'lucide-react'
@@ -95,6 +95,11 @@ export default function HealthPage() {
   const [deadLetterCount, setDeadLetterCount] = useState(0)
   const [isClearingDeadLetter, setIsClearingDeadLetter] = useState(false)
 
+  // Pull mode health state
+  const [pullModeHealth, setPullModeHealth] = useState<PullModeHealth | null>(null)
+  const [isLoadingPullMode, setIsLoadingPullMode] = useState(false)
+  const [pullModeOpen, setPullModeOpen] = useState(false)
+
   // Collapsible sections state
   const [externalServicesOpen, setExternalServicesOpen] = useState(false)
   const [queueDetailsOpen, setQueueDetailsOpen] = useState(false)
@@ -108,11 +113,13 @@ export default function HealthPage() {
     loadHealth()
     loadServiceHealth()
     loadQueueStats()
+    loadPullModeHealth()
     // Refresh every 30 seconds
     const interval = setInterval(() => {
       loadHealth()
       loadServiceHealth()
       loadQueueStats()
+      loadPullModeHealth()
     }, 30000)
     return () => clearInterval(interval)
   }, [])
@@ -162,6 +169,23 @@ export default function HealthPage() {
       console.error('Failed to load queue stats:', err)
     } finally {
       setIsLoadingQueueStats(false)
+    }
+  }
+
+  const loadPullModeHealth = async () => {
+    setIsLoadingPullMode(true)
+    try {
+      const data = await healthApi.getPullModeHealth()
+      setPullModeHealth(data)
+      // Auto-expand if there are pull mode patterns
+      if (data.patterns.length > 0 && pullModeHealth === null) {
+        setPullModeOpen(true)
+      }
+    } catch (err) {
+      // Pull mode health may not be available
+      console.error('Failed to load pull mode health:', err)
+    } finally {
+      setIsLoadingPullMode(false)
     }
   }
 
@@ -645,6 +669,147 @@ export default function HealthPage() {
             )}
           </Card>
         </div>
+
+      {/* Pull Mode Health Section */}
+      {pullModeHealth && pullModeHealth.patterns.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div
+              className="flex items-center justify-between cursor-pointer"
+              onClick={() => setPullModeOpen(!pullModeOpen)}
+            >
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                <CardTitle className="text-lg">Pull Mode Detection</CardTitle>
+                <span className="text-sm font-normal text-muted-foreground">
+                  ({pullModeHealth.patterns.length})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    loadPullModeHealth()
+                  }}
+                  disabled={isLoadingPullMode}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingPullMode ? 'animate-spin' : ''}`} />
+                </Button>
+                {pullModeOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+            </div>
+            <CardDescription>Health metrics for pull-mode index patterns that query OpenSearch on a schedule.</CardDescription>
+          </CardHeader>
+          {pullModeOpen && (
+            <CardContent>
+              {/* Summary Stats */}
+              <div className="grid gap-4 md:grid-cols-4 mb-6">
+                <div className="p-4 border rounded-lg">
+                  <div className="text-2xl font-bold">{pullModeHealth.summary.total_polls.toLocaleString()}</div>
+                  <div className="text-sm text-muted-foreground">Total Polls</div>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <div className="text-2xl font-bold">{pullModeHealth.summary.total_matches.toLocaleString()}</div>
+                  <div className="text-sm text-muted-foreground">Total Matches</div>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <div className="text-2xl font-bold">{formatNumber(pullModeHealth.summary.total_events_scanned)}</div>
+                  <div className="text-sm text-muted-foreground">Events Scanned</div>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <StatusIcon status={pullModeHealth.overall_status} />
+                    <div>
+                      <div className="text-lg font-bold capitalize">{pullModeHealth.overall_status}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {pullModeHealth.summary.healthy_patterns} healthy, {pullModeHealth.summary.warning_patterns + pullModeHealth.summary.critical_patterns} issues
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pattern Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pullModeHealth.patterns.map((pattern) => (
+                  <Card key={pattern.index_pattern_id} className={statusBgColors[pattern.status]}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">{pattern.index_pattern_name}</CardTitle>
+                        <StatusIcon status={pattern.status} />
+                      </div>
+                      <p className="text-xs text-muted-foreground font-mono">{pattern.pattern}</p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {/* Issues */}
+                      {pattern.issues.length > 0 && (
+                        <div className="space-y-1">
+                          {pattern.issues.map((issue, i) => (
+                            <p key={i} className="text-xs text-destructive flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              {issue}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Last Poll Info */}
+                      <div className="text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Poll Interval</span>
+                          <span className="font-medium">{pattern.poll_interval_minutes}m</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Last Poll</span>
+                          <span className="font-medium">
+                            {pattern.last_poll_at ? (
+                              <TimestampTooltip timestamp={pattern.last_poll_at}>
+                                <span>{formatDateTime(pattern.last_poll_at)}</span>
+                              </TimestampTooltip>
+                            ) : 'Never'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Success Rate</span>
+                          <span className={`font-medium ${pattern.metrics.success_rate < 90 ? 'text-yellow-600' : pattern.metrics.success_rate < 50 ? 'text-red-600' : 'text-green-600'}`}>
+                            {pattern.metrics.success_rate}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Avg Duration</span>
+                          <span className="font-medium">
+                            {pattern.metrics.avg_poll_duration_ms ? `${(pattern.metrics.avg_poll_duration_ms / 1000).toFixed(1)}s` : '-'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Stats Row */}
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t text-xs">
+                        <div className="text-center">
+                          <div className="font-medium">{formatNumber(pattern.metrics.total_matches)}</div>
+                          <div className="text-muted-foreground">Matches</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="font-medium">{pattern.metrics.total_polls}</div>
+                          <div className="text-muted-foreground">Polls</div>
+                        </div>
+                        <div className="text-center">
+                          <div className={`font-medium ${pattern.metrics.consecutive_failures > 0 ? 'text-red-600' : ''}`}>
+                            {pattern.metrics.consecutive_failures}
+                          </div>
+                          <div className="text-muted-foreground">Failures</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {/* Index Pattern Health Cards */}
       <Card>
