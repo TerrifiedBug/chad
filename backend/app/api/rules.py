@@ -48,6 +48,12 @@ from app.schemas.rule_exception import (
 )
 from app.services.attack_sync import update_rule_attack_mappings
 from app.services.audit import audit_log
+from app.core.config import settings as app_settings
+
+
+def get_settings():
+    """Get application settings (for easier mocking in tests)."""
+    return app_settings
 from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
@@ -1243,14 +1249,22 @@ async def deploy_rule(
     # Sigma returns {"query": {"query_string": ...}}, percolator needs {"query_string": ...}
     percolator_query = translation.query.get("query", translation.query)
 
-    percolator.deploy_rule(
-        percolator_index=percolator_index,
-        rule_id=str(rule.id),
-        query=percolator_query,
-        title=rule.title,
-        severity=rule.severity,
-        tags=tags,
-    )
+    # Skip percolator in pull-only deployment or for pull-mode patterns
+    settings = get_settings()
+    use_percolator = not settings.is_pull_only and rule.index_pattern.mode == "push"
+
+    if use_percolator:
+        percolator.deploy_rule(
+            percolator_index=percolator_index,
+            rule_id=str(rule.id),
+            query=percolator_query,
+            title=rule.title,
+            severity=rule.severity,
+            tags=tags,
+        )
+    else:
+        import logging
+        logging.getLogger(__name__).info(f"Skipping percolator deploy for rule {rule.id} (pull mode)")
 
     # Update rule deployment tracking
     now = datetime.now(UTC)
@@ -1531,10 +1545,19 @@ async def undeploy_rule(
             message="Rule was not deployed",
         )
 
-    # Remove from percolator
-    percolator = PercolatorService(os_client)
-    percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-    was_deleted = percolator.undeploy_rule(percolator_index, str(rule.id))
+    # Remove from percolator (skip for pull-mode patterns or pull-only deployment)
+    settings = get_settings()
+    use_percolator = not settings.is_pull_only and rule.index_pattern.mode == "push"
+
+    was_deleted = False
+    percolator_index = None
+    if use_percolator:
+        percolator = PercolatorService(os_client)
+        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+        was_deleted = percolator.undeploy_rule(percolator_index, str(rule.id))
+    else:
+        import logging
+        logging.getLogger(__name__).info(f"Skipping percolator undeploy for rule {rule.id} (pull mode)")
 
     # Clear deployment tracking and set status to UNDEPLOYED
     rule.deployed_at = None
