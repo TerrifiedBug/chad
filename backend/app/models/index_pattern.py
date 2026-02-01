@@ -85,3 +85,9 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     health_suppressions = relationship(
         "HealthAlertSuppression", back_populates="index_pattern", cascade="all, delete-orphan"
     )
+    poll_state = relationship(
+        "IndexPatternPollState",
+        back_populates="index_pattern",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )

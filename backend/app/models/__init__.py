@@ -10,6 +10,7 @@ from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.health_check import HealthCheckLog
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
+from app.models.poll_state import IndexPatternPollState
 from app.models.jira_config import JiraConfig
 from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.login_attempt import LoginAttempt
@@ -47,6 +48,7 @@ __all__ = [
     "DEFAULT_ROLE_PERMISSIONS",
     "ExceptionOperator",
     "IndexPattern",
+    "IndexPatternPollState",
     "LoginAttempt",
     "NotificationSettings",
     "RolePermission",
