@@ -201,11 +201,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_frontend }}
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
       - name: Extract metadata for backend
@@ -214,11 +211,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_backend }}
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
       - name: Create and push frontend multi-arch manifest
