@@ -107,24 +107,31 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to sync scheduler jobs on startup: {e}")
 
     # Start WebSocket pub/sub subscriber for cross-worker broadcasts
-    logger.info("Starting WebSocket pub/sub subscriber")
-    try:
-        await websocket_manager.start_subscriber()
-    except Exception as e:
-        logger.warning(f"Failed to start WebSocket subscriber: {e}")
+    # Only start in full deployment mode (not pull-only)
+    if not settings.is_pull_only:
+        logger.info("Starting WebSocket pub/sub subscriber")
+        try:
+            await websocket_manager.start_subscriber()
+        except Exception as e:
+            logger.warning(f"Failed to start WebSocket subscriber: {e}")
+    else:
+        logger.info("Pull-only mode: skipping WebSocket pub/sub subscriber (no Redis)")
 
     yield
 
     # Shutdown
-    logger.info("Stopping WebSocket pub/sub subscriber")
-    await websocket_manager.stop_subscriber()
+    if not settings.is_pull_only:
+        logger.info("Stopping WebSocket pub/sub subscriber")
+        await websocket_manager.stop_subscriber()
+
+        # Close Redis connection
+        logger.info("Closing Redis connection")
+        await close_redis()
+    else:
+        logger.info("Pull-only mode: no Redis connections to close")
 
     logger.info("Stopping scheduler service")
     scheduler_service.stop()
-
-    # Close Redis connection
-    logger.info("Closing Redis connection")
-    await close_redis()
 
 
 app = FastAPI(

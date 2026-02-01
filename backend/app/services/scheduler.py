@@ -173,6 +173,9 @@ class SchedulerService:
             # Add version cleanup job (runs daily at 3 AM)
             self._schedule_version_cleanup()
 
+            # Schedule pull polling jobs for pull-mode index patterns
+            await self._schedule_pull_polling_jobs(session)
+
             logger.info("Scheduler jobs synced from settings")
 
         finally:
@@ -213,6 +216,49 @@ class SchedulerService:
             misfire_grace_time=3600,  # 1 hour grace period
         )
         logger.info("Scheduled version_cleanup job (daily at 3:00 AM)")
+
+    async def _schedule_pull_polling_jobs(self, session: AsyncSession):
+        """Schedule polling jobs for pull-mode index patterns."""
+        from app.models.index_pattern import IndexPattern
+        from app.services.pull_detector import run_poll_job
+
+        # Get all index patterns that need polling
+        result = await session.execute(
+            select(IndexPattern).where(
+                (IndexPattern.mode == "pull") |
+                (app_settings.is_pull_only == True)  # noqa: E712 - SQLAlchemy needs == True
+            )
+        )
+        patterns = result.scalars().all()
+
+        # In pull-only mode, schedule all patterns
+        # In full mode, only schedule pull-mode patterns
+        for pattern in patterns:
+            if not app_settings.is_pull_only and pattern.mode != "pull":
+                continue
+
+            job_id = f"pull_poll_{pattern.id}"
+
+            # Remove existing job if any
+            try:
+                scheduler.remove_job(job_id)
+            except Exception:
+                pass
+
+            # Add new job with pattern's poll interval
+            scheduler.add_job(
+                run_poll_job,
+                trigger=IntervalTrigger(minutes=pattern.poll_interval_minutes),
+                id=job_id,
+                name=f"pull_poll for {pattern.pattern}",
+                args=[str(pattern.id)],
+                replace_existing=True,
+                misfire_grace_time=pattern.poll_interval_minutes * 60,
+            )
+            logger.info(
+                f"Scheduled pull polling job for {pattern.pattern} "
+                f"every {pattern.poll_interval_minutes} minutes"
+            )
 
     def _schedule_job(self, job_id: str, func, frequency: str):
         """Schedule or reschedule a job."""

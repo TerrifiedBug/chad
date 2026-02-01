@@ -1,0 +1,69 @@
+# Docker Compose for CHAD Pull-Only Deployment
+#
+# This configuration runs CHAD in pull-only mode, which:
+# - Queries OpenSearch on a schedule instead of receiving pushed logs
+# - Does not require Redis or worker processes
+# - Has a smaller resource footprint
+#
+# Usage:
+#   docker compose -f docker-compose.pull.yml up -d
+#
+# For hybrid push+pull mode, use the standard docker-compose.yml instead.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chad
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: chad
+    command: ["postgres", "-c", "log_min_messages=${POSTGRES_LOG_LEVEL:-warning}", "-c", "log_checkpoints=${POSTGRES_LOG_CHECKPOINTS:-off}"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chad"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ghcr.io/terrifiedbug/chad/chad-backend:${VERSION:-latest}
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-warning} --no-access-log --workers ${UVICORN_WORKERS:-2}
+    environment:
+      # Database
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=chad
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=chad
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-10}
+      - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-20}
+      # Pull-only mode (disables push features)
+      - CHAD_MODE=pull
+      # Security (REQUIRED - must be set in production)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY}
+      - CHAD_ENCRYPTION_KEY=${CHAD_ENCRYPTION_KEY}
+      # Application URL
+      - APP_URL=${APP_URL:-http://localhost}
+      # Additional allowed hosts for CSRF (comma-separated)
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - chad_data:/data
+
+  frontend:
+    image: ghcr.io/terrifiedbug/chad/chad-frontend:${VERSION:-latest}
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  chad_data:
