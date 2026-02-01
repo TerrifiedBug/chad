@@ -29,6 +29,7 @@ from app.api.health import router as health_router
 from app.api.index_patterns import router as index_patterns_router
 from app.api.jira import router as jira_router
 from app.api.logs import router as logs_router
+from app.api.mode import router as mode_router
 from app.api.ti import router as ti_router
 from app.api.notifications import router as notifications_router
 from app.api.permissions import router as permissions_router
@@ -341,6 +342,7 @@ app.include_router(settings_router, prefix="/api")
 app.include_router(circuit_breakers_router, prefix="/api")
 app.include_router(alerts_router, prefix="/api")
 app.include_router(logs_router, prefix="/api")
+app.include_router(mode_router, prefix="/api")
 app.include_router(stats_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(api_keys_router, prefix="/api")
