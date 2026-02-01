@@ -322,16 +322,16 @@ class PullDetector:
                         if not hits:
                             break
 
-                        # Create alert for each match
+                        # Collect alerts for bulk creation
+                        batch_alerts = []
                         for hit in hits:
-                            await alert_service.create_alert(
-                                alerts_index=alerts_index,
-                                rule_id=str(rule.id),
-                                rule_title=rule.title,
-                                severity=rule.severity,
-                                tags=[],
-                                log_document=hit["_source"],
-                            )
+                            batch_alerts.append({
+                                "rule_id": str(rule.id),
+                                "rule_title": rule.title,
+                                "severity": rule.severity,
+                                "tags": [],
+                                "log_document": hit["_source"],
+                            })
                             rule_matches += 1
 
                             # Safety check to prevent runaway queries
@@ -339,6 +339,10 @@ class PullDetector:
                                 logger.warning(f"Reached max events limit for rule {rule.id}")
                                 truncated = True
                                 break
+
+                        # Bulk create alerts for this batch
+                        if batch_alerts:
+                            alert_service.bulk_create_alerts(alerts_index, batch_alerts)
 
                         if rule_matches >= MAX_EVENTS_PER_POLL:
                             break
