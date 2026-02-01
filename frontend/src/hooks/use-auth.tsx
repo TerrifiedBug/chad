@@ -4,6 +4,7 @@ import { api, authApi, settingsApi, CurrentUser } from '@/lib/api'
 interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
+  isStartingUp: boolean
   setupCompleted: boolean
   isOpenSearchConfigured: boolean
   user: CurrentUser | null
@@ -36,68 +37,97 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
+  const [isStartingUp, setIsStartingUp] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [setupCompleted, setSetupCompleted] = useState(false)
   const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
   const [user, setUser] = useState<CurrentUser | null>(null)
 
   useEffect(() => {
-    checkAuth()
+    checkAuthWithRetry()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount
   }, [])
 
-  const checkAuth = async () => {
+  // Check if error is a connection/startup error (502, 503, network error)
+  const isConnectionError = (error: unknown): boolean => {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      return true // Network error
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return message.includes('502') || message.includes('503') || message.includes('Failed to fetch')
+  }
+
+  // Retry auth check with exponential backoff during startup
+  const checkAuthWithRetry = async (retryCount = 0, maxRetries = 10) => {
+    const baseDelay = 2000 // 2 seconds
+
     try {
-      // Check for SSO exchange code in URL (returned from SSO callback)
-      const urlParams = new URLSearchParams(window.location.search)
-      const ssoCode = urlParams.get('sso_code')
-      if (ssoCode) {
-        // Exchange code for token via POST
-        try {
-          const response = await api.post<TokenResponse>('/auth/sso/exchange', { code: ssoCode })
-          localStorage.setItem('chad-token', response.access_token)
-        } catch {
-          // Exchange failed - clear the code
-          console.error('SSO code exchange failed')
-        }
-        // Clean up URL (remove the code from URL bar)
-        window.history.replaceState({}, '', '/')
-      }
-
-      const status = await api.get<SetupStatusResponse>('/auth/setup-status')
-      setSetupCompleted(status.setup_completed)
-
-      const token = localStorage.getItem('chad-token')
-
-      if (!token || !status.setup_completed) {
+      await checkAuth()
+    } catch (error) {
+      if (isConnectionError(error) && retryCount < maxRetries) {
+        setIsStartingUp(true)
+        const delay = Math.min(baseDelay * Math.pow(1.5, retryCount), 15000) // Max 15 seconds
+        console.log(`Backend starting up, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`)
+        setTimeout(() => checkAuthWithRetry(retryCount + 1, maxRetries), delay)
+      } else {
+        // Either not a connection error or max retries exceeded
+        setIsStartingUp(false)
+        setIsLoading(false)
+        setSetupCompleted(false)
         setIsAuthenticated(false)
-        setIsOpenSearchConfigured(false)
-        return
       }
+    }
+  }
 
-      // Validate token, get user info, and check OpenSearch status
-      // This will throw if the token is invalid
+  const checkAuth = async () => {
+    // Check for SSO exchange code in URL (returned from SSO callback)
+    const urlParams = new URLSearchParams(window.location.search)
+    const ssoCode = urlParams.get('sso_code')
+    if (ssoCode) {
+      // Exchange code for token via POST
       try {
-        const [userData, osStatus] = await Promise.all([
-          authApi.getMe(),
-          settingsApi.getOpenSearchStatus(),
-        ])
-        setUser(userData)
-        setIsOpenSearchConfigured(osStatus.configured)
-        setIsAuthenticated(true)
+        const response = await api.post<TokenResponse>('/auth/sso/exchange', { code: ssoCode })
+        localStorage.setItem('chad-token', response.access_token)
       } catch {
-        // Token is invalid or expired - clear it
-        localStorage.removeItem('chad-token')
-        setIsAuthenticated(false)
-        setIsOpenSearchConfigured(false)
-        setUser(null)
+        // Exchange failed - clear the code
+        console.error('SSO code exchange failed')
       }
-    } catch {
-      setSetupCompleted(false)
+      // Clean up URL (remove the code from URL bar)
+      window.history.replaceState({}, '', '/')
+    }
+
+    // This call will throw if backend is unavailable (502/503/network error)
+    const status = await api.get<SetupStatusResponse>('/auth/setup-status')
+    setSetupCompleted(status.setup_completed)
+    setIsStartingUp(false)
+
+    const token = localStorage.getItem('chad-token')
+
+    if (!token || !status.setup_completed) {
       setIsAuthenticated(false)
       setIsOpenSearchConfigured(false)
-    } finally {
       setIsLoading(false)
+      return
     }
+
+    // Validate token, get user info, and check OpenSearch status
+    // This will throw if the token is invalid
+    try {
+      const [userData, osStatus] = await Promise.all([
+        authApi.getMe(),
+        settingsApi.getOpenSearchStatus(),
+      ])
+      setUser(userData)
+      setIsOpenSearchConfigured(osStatus.configured)
+      setIsAuthenticated(true)
+    } catch {
+      // Token is invalid or expired - clear it
+      localStorage.removeItem('chad-token')
+      setIsAuthenticated(false)
+      setIsOpenSearchConfigured(false)
+      setUser(null)
+    }
+    setIsLoading(false)
   }
 
   const login = async (email: string, password: string) => {
@@ -164,6 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider value={{
       isAuthenticated,
       isLoading,
+      isStartingUp,
       setupCompleted,
       isOpenSearchConfigured,
       user,

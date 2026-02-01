@@ -363,7 +363,7 @@ export default function FieldMappingsPage() {
                           {mapping.target_field}
                         </TableCell>
                         <TableCell>
-                          {mapping.origin === 'ai_suggested' ? (
+                          {mapping.origin === 'AI_SUGGESTED' ? (
                             <Badge variant="secondary">
                               <Sparkles className="mr-1 h-3 w-3" />
                               AI

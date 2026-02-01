@@ -195,7 +195,7 @@ export function MapFieldsModal({
           sigma_field: mapping.sigmaField,
           target_field: mapping.targetField,
           index_pattern_id: indexPatternId,
-          origin: mapping.confidence !== undefined ? 'ai_suggested' : 'manual',
+          origin: mapping.confidence !== undefined ? 'AI_SUGGESTED' : 'MANUAL',
           confidence: mapping.confidence,
         })
       }

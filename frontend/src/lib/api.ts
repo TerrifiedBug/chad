@@ -1263,7 +1263,7 @@ export type AITestResponse = {
 }
 
 // Field Mapping types
-export type MappingOrigin = 'manual' | 'ai_suggested'
+export type MappingOrigin = 'MANUAL' | 'AI_SUGGESTED'
 
 export type FieldMapping = {
   id: string

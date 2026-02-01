@@ -222,20 +222,18 @@ class SchedulerService:
         from app.models.index_pattern import IndexPattern
         from app.services.pull_detector import run_poll_job
 
-        # Get all index patterns that need polling
-        result = await session.execute(
-            select(IndexPattern).where(
-                (IndexPattern.mode == "pull") |
-                (app_settings.is_pull_only == True)  # noqa: E712 - SQLAlchemy needs == True
+        # Get index patterns that need polling based on deployment mode
+        if app_settings.is_pull_only:
+            # In pull-only mode, schedule ALL patterns for polling
+            result = await session.execute(select(IndexPattern))
+        else:
+            # In full mode, only schedule patterns explicitly set to pull mode
+            result = await session.execute(
+                select(IndexPattern).where(IndexPattern.mode == "pull")
             )
-        )
         patterns = result.scalars().all()
 
-        # In pull-only mode, schedule all patterns
-        # In full mode, only schedule pull-mode patterns
         for pattern in patterns:
-            if not app_settings.is_pull_only and pattern.mode != "pull":
-                continue
 
             job_id = f"pull_poll_{pattern.id}"
 

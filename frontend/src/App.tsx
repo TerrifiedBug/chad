@@ -50,10 +50,24 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-  const { setupCompleted, isLoading, isAuthenticated, isOpenSearchConfigured } = useAuth()
+  const { setupCompleted, isLoading, isStartingUp, isAuthenticated, isOpenSearchConfigured } = useAuth()
 
-  if (isLoading) {
-    return <div className="flex h-screen items-center justify-center">Loading...</div>
+  if (isLoading || isStartingUp) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
+          <p className="text-muted-foreground">
+            {isStartingUp ? 'Application starting up...' : 'Loading...'}
+          </p>
+          {isStartingUp && (
+            <p className="text-sm text-muted-foreground">
+              Please wait while the backend initializes
+            </p>
+          )}
+        </div>
+      </div>
+    )
   }
 
   // Step 1: Initial setup (create admin account)
