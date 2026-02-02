@@ -4,6 +4,7 @@ import {
   indexPatternsApi,
   IndexPattern,
   healthApi,
+  IndexHealth,
   HealthStatus,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { Plus, Trash2, Check, Loader2, Copy, Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle, Database } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState } from '@/components/ui/loading-state'
@@ -64,7 +71,7 @@ export default function IndexPatternsPage() {
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
-  const [healthData, setHealthData] = useState<Record<string, HealthStatus>>({})
+  const [healthData, setHealthData] = useState<Record<string, IndexHealth>>({})
 
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -103,9 +110,9 @@ export default function IndexPatternsPage() {
   const loadHealthData = async () => {
     try {
       const health = await healthApi.listIndices()
-      const healthMap: Record<string, HealthStatus> = {}
+      const healthMap: Record<string, IndexHealth> = {}
       for (const h of health) {
-        healthMap[h.index_pattern_id] = h.status
+        healthMap[h.index_pattern_id] = h
       }
       setHealthData(healthMap)
     } catch {
@@ -196,6 +203,7 @@ export default function IndexPatternsPage() {
   }
 
   return (
+    <TooltipProvider>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Index Patterns</h1>
@@ -248,7 +256,24 @@ export default function IndexPatternsPage() {
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       {healthData[pattern.id] && (
-                        <HealthStatusIcon status={healthData[pattern.id]} />
+                        healthData[pattern.id].issues.length > 0 ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="cursor-help">
+                                <HealthStatusIcon status={healthData[pattern.id].status} />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs">
+                              <ul className="list-disc list-inside text-sm space-y-1">
+                                {healthData[pattern.id].issues.map((issue, i) => (
+                                  <li key={i}>{issue}</li>
+                                ))}
+                              </ul>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <HealthStatusIcon status={healthData[pattern.id].status} />
+                        )
                       )}
                       {pattern.name}
                     </div>
@@ -551,5 +576,6 @@ export default function IndexPatternsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   )
 }
