@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/sheet'
 import { X, Settings, Table2, Key } from 'lucide-react'
 import { SettingsTab } from './SettingsTab'
+import { FieldMappingsTab } from './FieldMappingsTab'
 
 export type PanelTab = 'settings' | 'mappings' | 'endpoint'
 
@@ -138,11 +139,17 @@ export function IndexPatternPanel({
               />
             </TabsContent>
 
-            <TabsContent value="mappings" className="mt-0 h-full">
-              {/* FieldMappingsTab placeholder - will be implemented in Phase 3 */}
-              <div className="text-sm text-muted-foreground">
-                Field mappings will be available after saving the pattern.
-              </div>
+            <TabsContent value="mappings" className="mt-0">
+              {pattern ? (
+                <FieldMappingsTab
+                  patternId={pattern.id}
+                  patternName={pattern.name}
+                />
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  Save the pattern first to configure field mappings.
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="endpoint" className="mt-0 h-full">
