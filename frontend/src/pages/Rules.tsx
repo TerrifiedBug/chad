@@ -1253,6 +1253,102 @@ export default function RulesPage() {
         </TabsContent>
 
         <TabsContent value="correlation" className="mt-4 space-y-4">
+          {/* Correlation Filter Bar */}
+          <div className="flex flex-wrap gap-3 items-center">
+            {/* Search input */}
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search title or description..."
+                value={filters.search}
+                onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+                className="pl-10"
+                aria-label="Search correlation rules"
+              />
+            </div>
+
+            {/* Severity multi-select */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  Severity
+                  {filters.severity.length > 0 && (
+                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                      {filters.severity.length}
+                    </Badge>
+                  )}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Severity Levels</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {SEVERITIES.map((severity) => (
+                  <DropdownMenuCheckboxItem
+                    key={severity}
+                    checked={filters.severity.includes(severity)}
+                    onCheckedChange={() => toggleFilter('severity', severity)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    <span
+                      className={cn(
+                        'mr-2 inline-block w-2 h-2 rounded-full',
+                        severity === 'critical' && 'bg-red-500',
+                        severity === 'high' && 'bg-orange-500',
+                        severity === 'medium' && 'bg-yellow-500',
+                        severity === 'low' && 'bg-blue-500',
+                        severity === 'informational' && 'bg-gray-500'
+                      )}
+                    />
+                    {capitalize(severity)}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Status multi-select */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  Status
+                  {filters.status.length > 0 && (
+                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                      {filters.status.length}
+                    </Badge>
+                  )}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Rule Status</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {RULE_STATUSES.map((status) => (
+                  <DropdownMenuCheckboxItem
+                    key={status}
+                    checked={filters.status.includes(status)}
+                    onCheckedChange={() => toggleFilter('status', status)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {capitalize(status)}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Clear filters */}
+            {(filters.search || filters.severity.length > 0 || filters.status.length > 0) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFilters(prev => ({ ...prev, search: '', severity: [], status: [] }))}
+                className="h-8 px-2"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
+
           {correlationError && (
             <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
               {correlationError}
@@ -1294,9 +1390,10 @@ export default function RulesPage() {
                           aria-label="Select all correlation rules"
                         />
                       </TableHead>
-                      <TableHead>Name</TableHead>
+                      <TableHead>Title</TableHead>
                       <TableHead>Severity</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Last Edited By</TableHead>
                       <TableHead>Updated</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1351,6 +1448,9 @@ export default function RulesPage() {
                               ? 'Snoozed'
                               : 'Undeployed'}
                           </span>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {rule.last_edited_by || '-'}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           <RelativeTime date={rule.updated_at} />
