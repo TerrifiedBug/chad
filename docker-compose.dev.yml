@@ -47,6 +47,10 @@ services:
       - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
       # Redis
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      # OpenSearch (external)
+      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-}
+      - OPENSEARCH_USER=${OPENSEARCH_USER:-}
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD:-}
       # Security (CHANGE IN PRODUCTION)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-prod}
       - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}

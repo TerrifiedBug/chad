@@ -228,8 +228,8 @@ class TestSigmaHQSync:
             assert len(sync_complete_calls) > 0, "sync_complete notification should be sent"
 
     @pytest.mark.asyncio
-    async def test_sync_sends_new_rules_notification(self, authenticated_client: AsyncClient):
-        """Sync sends new rules notification when new rules are available."""
+    async def test_sync_sends_completion_notification_with_new_rules(self, authenticated_client: AsyncClient):
+        """Sync sends completion notification when new rules are available."""
         with patch("app.api.sigmahq.sigmahq_service") as mock_service, \
              patch("app.api.sigmahq.send_system_notification") as mock_notify, \
              patch("app.api.sigmahq.audit_log") as mock_audit:
@@ -247,10 +247,10 @@ class TestSigmaHQSync:
             response = await authenticated_client.post("/api/sigmahq/sync", json={})
 
             assert response.status_code == 200
-            # Verify new_rules notification was sent
+            # Verify sync_complete notification was sent (new_rules is only sent by scheduler)
             call_args = mock_notify.call_args_list
-            new_rules_calls = [c for c in call_args if "sigmahq_new_rules" in str(c)]
-            assert len(new_rules_calls) > 0, "new_rules notification should be sent when new rules exist"
+            sync_complete_calls = [c for c in call_args if "sigmahq_sync_complete" in str(c)]
+            assert len(sync_complete_calls) > 0, "sync_complete notification should be sent"
 
     @pytest.mark.asyncio
     async def test_sync_sends_failure_notification_on_error(self, authenticated_client: AsyncClient):

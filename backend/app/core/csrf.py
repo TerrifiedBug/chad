@@ -135,6 +135,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     # delegate authentication to external providers
     EXEMPT_PATHS = {
         "/api/auth/sso/exchange",  # SSO exchange uses short-lived code (30s, single-use)
+        "/api/auth/login",  # Login creates session (no CSRF cookie exists before login)
+        "/api/auth/login/2fa",  # 2FA login uses short-lived 2fa_token from prior login
     }
 
     # Path prefixes that are exempt from CSRF (for external integrations)
