@@ -226,9 +226,10 @@ export default function RulesPage() {
     setIsLoading(true)
     setError('')
     try {
-      const [rulesData, patternsData] = await Promise.all([
+      const [rulesData, patternsData, correlationData] = await Promise.all([
         rulesApi.list(),
         indexPatternsApi.list(),
+        correlationRulesApi.list(true),
       ])
       setRules(rulesData)
       // Create lookup map for index patterns
@@ -238,6 +239,9 @@ export default function RulesPage() {
       })
       setIndexPatterns(patternsMap)
       setIndexPatternsList(patternsData)
+      // Set correlation rules
+      setCorrelationRules(correlationData.correlation_rules)
+      setCorrelationLoaded(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rules')
     } finally {
