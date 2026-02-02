@@ -34,7 +34,6 @@ const navItems: NavItem[] = [
   { href: '/', label: 'Dashboard', exact: true },
   { href: '/alerts', label: 'Alerts' },
   { href: '/rules', label: 'Rules' },
-  { href: '/correlation', label: 'Correlation' },
   { href: '/attack', label: 'ATT&CK' },
   { href: '/index-patterns', label: 'Index Patterns', permission: 'manage_index_config' },
   { href: '/field-mappings', label: 'Field Mappings', permission: 'manage_index_config' },

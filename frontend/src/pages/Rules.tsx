@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { rulesApi, indexPatternsApi, reportsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
+import { rulesApi, indexPatternsApi, reportsApi, correlationRulesApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult, CorrelationRule } from '@/lib/api'
 import yaml from 'js-yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,6 +50,7 @@ import {
 import { FileSpreadsheet, Loader2 } from 'lucide-react'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -69,12 +70,35 @@ type Filters = {
 export default function RulesPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { canManageRules, canDeployRules } = useAuth()
+  const { canManageRules, canDeployRules, hasPermission } = useAuth()
+
+  // Tab state from URL
+  const activeTab = searchParams.get('tab') || 'sigma'
+  const setActiveTab = (tab: string) => {
+    const newParams = new URLSearchParams(searchParams)
+    if (tab === 'sigma') {
+      newParams.delete('tab')
+    } else {
+      newParams.set('tab', tab)
+    }
+    setSearchParams(newParams, { replace: true })
+    // Clear selections when switching tabs
+    setSelectedRules(new Set())
+    setSelectedCorrelationRules(new Set())
+  }
+
+  // Sigma rules state
   const [rules, setRules] = useState<Rule[]>([])
   const [indexPatterns, setIndexPatterns] = useState<Record<string, IndexPattern>>({})
   const [indexPatternsList, setIndexPatternsList] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // Correlation rules state
+  const [correlationRules, setCorrelationRules] = useState<CorrelationRule[]>([])
+  const [correlationLoading, setCorrelationLoading] = useState(false)
+  const [correlationError, setCorrelationError] = useState('')
+  const [selectedCorrelationRules, setSelectedCorrelationRules] = useState<Set<string>>(new Set())
 
   // Initialize filters from URL params
   const [filters, setFilters] = useState<Filters>(() => {
@@ -214,6 +238,27 @@ export default function RulesPage() {
     }
   }
 
+  // Load correlation rules
+  const loadCorrelationRules = async () => {
+    setCorrelationLoading(true)
+    setCorrelationError('')
+    try {
+      const response = await correlationRulesApi.list(true)
+      setCorrelationRules(response.correlation_rules)
+    } catch (err) {
+      setCorrelationError(err instanceof Error ? err.message : 'Failed to load correlation rules')
+    } finally {
+      setCorrelationLoading(false)
+    }
+  }
+
+  // Load correlation rules when switching to correlation tab
+  useEffect(() => {
+    if (activeTab === 'correlation' && correlationRules.length === 0 && !correlationLoading) {
+      loadCorrelationRules()
+    }
+  }, [activeTab])
+
   // Memoized filtered rules based on all filters
   const filteredRules = useMemo(() => {
     return rules.filter((rule) => {
@@ -262,6 +307,30 @@ export default function RulesPage() {
       return true
     })
   }, [rules, filters])
+
+  // Memoized filtered correlation rules
+  const filteredCorrelationRules = useMemo(() => {
+    return correlationRules.filter((rule) => {
+      // Severity filter
+      if (filters.severity.length > 0 && !filters.severity.includes(rule.severity)) {
+        return false
+      }
+      // Status filter
+      if (filters.status.length > 0 && !filters.status.includes(rule.status)) {
+        return false
+      }
+      // Search filter
+      if (filters.search && filters.search.trim()) {
+        const searchLower = filters.search.trim().toLowerCase()
+        const matchesName = rule.name?.toLowerCase().includes(searchLower)
+        const matchesDescription = rule.description?.toLowerCase().includes(searchLower)
+        if (!matchesName && !matchesDescription) {
+          return false
+        }
+      }
+      return true
+    })
+  }, [correlationRules, filters])
 
   // Check if any filters are active
   const hasActiveFilters = useMemo(() => {
@@ -589,18 +658,25 @@ export default function RulesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Rules</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Rules</h1>
+          <p className="text-muted-foreground">
+            Manage your Sigma rules and correlation rules
+          </p>
+        </div>
         <div className="flex gap-2">
-          {hasPermission('manage_sigmahq') && (
+          {activeTab === 'sigma' && hasPermission('manage_sigmahq') && (
             <Button variant="outline" onClick={() => navigate('/sigmahq')}>
               <ExternalLink className="h-4 w-4 mr-2" />
               SigmaHQ
             </Button>
           )}
-          <Button variant="outline" onClick={() => setShowExportDialog(true)}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Report
-          </Button>
+          {activeTab === 'sigma' && (
+            <Button variant="outline" onClick={() => setShowExportDialog(true)}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Report
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button disabled={!canManageRules()}>
@@ -625,8 +701,28 @@ export default function RulesPage() {
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex flex-wrap gap-3 items-center">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList>
+          <TabsTrigger value="sigma" className="gap-2">
+            <FileCode className="h-4 w-4" />
+            Sigma Rules
+            <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+              {rules.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="correlation" className="gap-2">
+            <Link2 className="h-4 w-4" />
+            Correlation Rules
+            <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+              {correlationRules.length}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="sigma" className="mt-4 space-y-4">
+          {/* Filter Bar */}
+          <div className="flex flex-wrap gap-3 items-center">
         {/* Search input */}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1146,6 +1242,132 @@ export default function RulesPage() {
           </div>
         </TooltipProvider>
       )}
+        </TabsContent>
+
+        <TabsContent value="correlation" className="mt-4 space-y-4">
+          {correlationError && (
+            <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
+              {correlationError}
+            </div>
+          )}
+
+          {correlationLoading ? (
+            <LoadingState message="Loading correlation rules..." />
+          ) : filteredCorrelationRules.length === 0 ? (
+            <EmptyState
+              icon={<Link2 className="h-12 w-12" />}
+              title={filters.search || filters.severity.length > 0 || filters.status.length > 0 ? 'No rules match your filters' : 'No correlation rules found'}
+              description={filters.search || filters.severity.length > 0 || filters.status.length > 0
+                ? 'Try adjusting your filters to see more results.'
+                : 'Create your first correlation rule to detect multi-event patterns.'}
+              action={!(filters.search || filters.severity.length > 0 || filters.status.length > 0) && canManageRules() ? (
+                <Button onClick={() => navigate('/correlation/new')}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Correlation Rule
+                </Button>
+              ) : undefined}
+            />
+          ) : (
+            <TooltipProvider>
+              <div className="border rounded-lg">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedCorrelationRules.size === filteredCorrelationRules.length && filteredCorrelationRules.length > 0}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedCorrelationRules(new Set(filteredCorrelationRules.map(r => r.id)))
+                            } else {
+                              setSelectedCorrelationRules(new Set())
+                            }
+                          }}
+                          aria-label="Select all correlation rules"
+                        />
+                      </TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Severity</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Updated</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCorrelationRules.map((rule) => (
+                      <TableRow
+                        key={rule.id}
+                        className={cn(
+                          'cursor-pointer hover:bg-muted/50',
+                          selectedCorrelationRules.has(rule.id) && 'bg-muted/50'
+                        )}
+                        onClick={() => navigate(`/correlation/${rule.id}`)}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedCorrelationRules.has(rule.id)}
+                            onCheckedChange={(checked) => {
+                              const newSet = new Set(selectedCorrelationRules)
+                              if (checked) {
+                                newSet.add(rule.id)
+                              } else {
+                                newSet.delete(rule.id)
+                              }
+                              setSelectedCorrelationRules(newSet)
+                            }}
+                            aria-label={`Select ${rule.name}`}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">{rule.name}</TableCell>
+                        <TableCell>
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium ${
+                              SEVERITY_COLORS[rule.severity] || 'bg-gray-500 text-white'
+                            }`}
+                          >
+                            {capitalize(rule.severity)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
+                              rule.status === 'deployed'
+                                ? 'bg-green-600 text-white'
+                                : rule.status === 'snoozed'
+                                ? 'bg-yellow-500 text-white'
+                                : 'bg-gray-500 text-white'
+                            }`}
+                          >
+                            {rule.status === 'deployed'
+                              ? 'Deployed'
+                              : rule.status === 'snoozed'
+                              ? 'Snoozed'
+                              : 'Undeployed'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <RelativeTime date={rule.updated_at} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </TooltipProvider>
+          )}
+
+          {/* Correlation Bulk Action Bar */}
+          {selectedCorrelationRules.size > 0 && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg p-4 flex items-center gap-4 z-50">
+              <span className="text-sm font-medium">
+                {selectedCorrelationRules.size} rule{selectedCorrelationRules.size > 1 ? 's' : ''} selected
+              </span>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedCorrelationRules(new Set())}>
+                Cancel
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Bulk Deploy Reason Dialog */}
       <Dialog open={showBulkDeployReason} onOpenChange={setShowBulkDeployReason}>

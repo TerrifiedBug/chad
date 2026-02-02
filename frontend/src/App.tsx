@@ -25,7 +25,6 @@ import HealthPage from '@/pages/Health'
 import FieldMappingsPage from '@/pages/FieldMappings'
 import AttackMatrixPage from '@/pages/AttackMatrix'
 import AccountPage from '@/pages/Account'
-import CorrelationRulesPage from '@/pages/CorrelationRules'
 import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
 import LiveAlertFeedPage from '@/pages/LiveAlertFeed'
 
@@ -139,11 +138,8 @@ function AppRoutes() {
           <AppLayout><RuleEditorPage /></AppLayout>
         </AuthRoute>
       } />
-      <Route path="/correlation" element={
-        <AuthRoute>
-          <AppLayout><CorrelationRulesPage /></AppLayout>
-        </AuthRoute>
-      } />
+      {/* Redirect old /correlation URL to unified Rules page with tab */}
+      <Route path="/correlation" element={<Navigate to="/rules?tab=correlation" replace />} />
       <Route path="/correlation/new" element={
         <ProtectedRoute permission="manage_correlation">
           <AppLayout><CorrelationRuleEditorPage /></AppLayout>
