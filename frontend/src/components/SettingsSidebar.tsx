@@ -104,7 +104,7 @@ export function SettingsSidebar({ expanded, onExpandedChange }: SettingsSidebarP
         )}
       >
         {/* Back button and collapse toggle */}
-        <div className={cn('flex items-center border-b p-2', expanded ? 'justify-between' : 'flex-col gap-2')}>
+        <div className={cn('flex items-center p-2', expanded ? 'justify-between' : 'flex-col gap-2')}>
           {expanded ? (
             <>
               <Button

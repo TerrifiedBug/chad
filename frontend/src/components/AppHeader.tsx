@@ -29,7 +29,7 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu }: AppHeaderProps
 
   return (
     <>
-      <header className="sticky top-0 z-50 h-14 border-b bg-background">
+      <header className="sticky top-0 z-50 h-14 bg-background">
         <div className="flex h-full items-center justify-between px-4">
           <div className="flex items-center gap-3">
             {/* Mobile menu button - only show on mobile when authenticated */}

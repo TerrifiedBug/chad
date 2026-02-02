@@ -126,7 +126,7 @@ export function AppRail({ expanded, onExpandedChange, alertCount }: AppRailProps
         )}
       >
         {/* Collapse toggle */}
-        <div className={cn('flex items-center border-b p-2', expanded ? 'justify-end' : 'justify-center')}>
+        <div className={cn('flex items-center p-2', expanded ? 'justify-end' : 'justify-center')}>
           <Button
             variant="ghost"
             size="icon"
