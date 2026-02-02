@@ -1196,6 +1196,31 @@ export type AuditLogListResponse = {
   offset: number
 }
 
+// System Log types
+export type SystemLogEntry = {
+  id: string
+  timestamp: string
+  level: 'ERROR' | 'WARNING'
+  category: 'opensearch' | 'alerts' | 'pull_mode' | 'integrations' | 'background'
+  service: string
+  message: string
+  details: Record<string, unknown> | null
+  created_at: string
+}
+
+export type SystemLogListResponse = {
+  items: SystemLogEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type SystemLogStatsResponse = {
+  errors_24h: number
+  warnings_24h: number
+  by_category: Record<string, { errors: number; warnings: number }>
+}
+
 export const auditApi = {
   list: (params?: {
     user_id?: string
@@ -1241,6 +1266,39 @@ export const auditApi = {
     })
     if (!response.ok) throw new Error('Export failed')
     return response.blob()
+  },
+}
+
+// System Logs API
+export const systemLogsApi = {
+  list: async (params?: {
+    start_time?: string
+    end_time?: string
+    level?: string
+    category?: string
+    search?: string
+    limit?: number
+    offset?: number
+  }): Promise<SystemLogListResponse> => {
+    const searchParams = new URLSearchParams()
+    if (params?.start_time) searchParams.set('start_time', params.start_time)
+    if (params?.end_time) searchParams.set('end_time', params.end_time)
+    if (params?.level) searchParams.set('level', params.level)
+    if (params?.category) searchParams.set('category', params.category)
+    if (params?.search) searchParams.set('search', params.search)
+    if (params?.limit) searchParams.set('limit', params.limit.toString())
+    if (params?.offset) searchParams.set('offset', params.offset.toString())
+
+    const query = searchParams.toString()
+    return api.get<SystemLogListResponse>(`/system-logs${query ? `?${query}` : ''}`)
+  },
+
+  getStats: async (): Promise<SystemLogStatsResponse> => {
+    return api.get<SystemLogStatsResponse>('/system-logs/stats')
+  },
+
+  purge: async (before: string): Promise<{ deleted_count: number }> => {
+    return api.delete<{ deleted_count: number }>(`/system-logs?before=${encodeURIComponent(before)}`)
   },
 }
 
