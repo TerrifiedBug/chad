@@ -710,7 +710,9 @@ export type IndexPatternCreate = {
   timestamp_field?: string
 }
 
-export type IndexPatternUpdate = Partial<IndexPatternCreate>
+export type IndexPatternUpdate = Partial<IndexPatternCreate> & {
+  change_reason?: string  // For audit logging
+}
 
 export type IndexPatternValidateResponse = {
   valid: boolean

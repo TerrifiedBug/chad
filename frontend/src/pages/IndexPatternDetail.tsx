@@ -30,6 +30,7 @@ import { TIEnrichmentTab } from '@/components/index-patterns/TIEnrichmentTab'
 import { GeoIPTab } from '@/components/index-patterns/GeoIPTab'
 import { SecurityTab } from '@/components/index-patterns/SecurityTab'
 import { HealthTab } from '@/components/index-patterns/HealthTab'
+import { ChangeReasonDialog } from '@/components/ChangeReasonDialog'
 
 type DetailTab = 'settings' | 'mappings' | 'threat-intel' | 'geoip' | 'security' | 'health' | 'endpoint'
 
@@ -47,6 +48,8 @@ export default function IndexPatternDetail() {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showChangeReasonDialog, setShowChangeReasonDialog] = useState(false)
+  const [pendingChanges, setPendingChanges] = useState<Partial<IndexPattern> | null>(null)
 
   // Warn on browser refresh/close when there are unsaved changes
   const { confirmNavigation } = useUnsavedChanges(hasUnsavedChanges)
@@ -79,24 +82,47 @@ export default function IndexPatternDetail() {
 
   // Handle save
   const handleSave = async (data: Partial<IndexPattern>) => {
-    setIsSaving(true)
-    try {
-      if (isNew) {
+    if (isNew) {
+      // For new patterns, save directly (no audit needed)
+      setIsSaving(true)
+      try {
         const created = await indexPatternsApi.create(data as Parameters<typeof indexPatternsApi.create>[0])
         setHasUnsavedChanges(false) // Clear before navigation
         showToast('Index pattern created')
         // Navigate to the edit view of the new pattern
         navigate(`/index-patterns/${created.id}`, { replace: true })
-      } else if (pattern) {
-        const updated = await indexPatternsApi.update(pattern.id, data)
-        setPattern(updated)
-        setHasUnsavedChanges(false)
-        showToast('Index pattern updated')
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to save'
+        showToast(message, 'error')
+        throw err // Re-throw so SettingsTab can show the error
+      } finally {
+        setIsSaving(false)
       }
+    } else {
+      // For updates, show change reason dialog
+      setPendingChanges(data)
+      setShowChangeReasonDialog(true)
+    }
+  }
+
+  // Handle confirm save with change reason
+  const handleConfirmSave = async (changeReason: string) => {
+    if (!pendingChanges || !pattern) return
+
+    setIsSaving(true)
+    try {
+      const updated = await indexPatternsApi.update(pattern.id, {
+        ...pendingChanges,
+        change_reason: changeReason,
+      })
+      setPattern(updated)
+      setHasUnsavedChanges(false)
+      showToast('Index pattern updated')
+      setShowChangeReasonDialog(false)
+      setPendingChanges(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save'
       showToast(message, 'error')
-      throw err // Re-throw so SettingsTab can show the error
     } finally {
       setIsSaving(false)
     }
@@ -380,6 +406,15 @@ export default function IndexPatternDetail() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <ChangeReasonDialog
+        open={showChangeReasonDialog}
+        onOpenChange={setShowChangeReasonDialog}
+        onConfirm={handleConfirmSave}
+        title="Save Index Pattern Changes"
+        description="Please provide a reason for these changes. This will be recorded in the audit log."
+        isLoading={isSaving}
+      />
     </div>
   )
 }

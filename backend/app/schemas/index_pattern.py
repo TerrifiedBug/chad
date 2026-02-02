@@ -91,6 +91,8 @@ class IndexPatternUpdate(BaseModel):
     mode: str | None = None
     poll_interval_minutes: int | None = None
     timestamp_field: str | None = None
+    # For audit logging
+    change_reason: str | None = None
 
     @field_validator("mode")
     @classmethod

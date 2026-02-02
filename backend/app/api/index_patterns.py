@@ -119,6 +119,7 @@ async def get_index_pattern(
 async def update_index_pattern(
     pattern_id: UUID,
     pattern_data: IndexPatternUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
@@ -138,6 +139,9 @@ async def update_index_pattern(
         )
 
     update_data = pattern_data.model_dump(exclude_unset=True)
+
+    # Extract change_reason for audit logging (don't set it on the model)
+    change_reason = update_data.pop("change_reason", None)
 
     # Check for duplicate name if name is being updated
     if "name" in update_data:
@@ -207,6 +211,23 @@ async def update_index_pattern(
 
     await db.commit()
     await db.refresh(pattern)
+
+    # Create audit log entry if change_reason provided
+    if change_reason:
+        await audit_log(
+            db,
+            current_user.id,
+            "index_pattern.update",
+            "index_pattern",
+            str(pattern.id),
+            {
+                "name": pattern.name,
+                "change_reason": change_reason,
+                "changed_fields": list(pattern_data.model_dump(exclude_unset=True, exclude={"change_reason"}).keys()),
+            },
+            ip_address=get_client_ip(request),
+        )
+        await db.commit()
 
     # Update scheduler for pull mode changes
     try:
