@@ -561,11 +561,14 @@ async def get_pull_mode_health(
     _: Annotated[User, Depends(get_current_user)],
 ):
     """Get health status for all pull mode index patterns."""
-    from app.models.index_pattern import IndexPattern
-    from app.models.poll_state import IndexPatternPollState
-    from app.services.health_monitor import check_index_data_freshness
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func
     from sqlalchemy.orm import selectinload
-    from datetime import datetime, UTC
+
+    from app.models.index_pattern import IndexPattern
+    from app.models.rule import Rule, RuleStatus
+    from app.services.health_monitor import check_index_data_freshness
 
     # Load configurable thresholds
     pull_mode_settings = await get_setting(db, "pull_mode") or {}
@@ -583,6 +586,14 @@ async def get_pull_mode_health(
     )
     patterns = result.scalars().all()
 
+    # Get count of deployed rules per index pattern
+    deployed_rules_result = await db.execute(
+        select(Rule.index_pattern_id, func.count(Rule.id).label("count"))
+        .where(Rule.status == RuleStatus.DEPLOYED)
+        .group_by(Rule.index_pattern_id)
+    )
+    deployed_rules_by_pattern = {row[0]: row[1] for row in deployed_rules_result}
+
     pull_patterns = []
     for pattern in patterns:
         # Skip push-only patterns unless in pull-only deployment
@@ -593,6 +604,10 @@ async def get_pull_mode_health(
         ps = pattern.poll_state
         status = "healthy"
         issues = []
+        notes = []
+
+        # Check if there are any deployed rules for this pattern
+        has_deployed_rules = deployed_rules_by_pattern.get(pattern.id, 0) > 0
 
         if ps:
             # Check poll status
@@ -614,9 +629,14 @@ async def get_pull_mode_health(
                 time_since = datetime.now(UTC) - ps.last_poll_at.replace(tzinfo=UTC)
                 expected_interval = pattern.poll_interval_minutes * 60 * 2  # 2x expected interval
                 if time_since.total_seconds() > expected_interval:
-                    if status != "critical":
-                        status = "warning"
-                    issues.append(f"No poll in {int(time_since.total_seconds() / 60)} minutes (expected every {pattern.poll_interval_minutes})")
+                    if has_deployed_rules:
+                        # Only warn if there are enabled rules that should be polling
+                        if status != "critical":
+                            status = "warning"
+                        issues.append(f"No poll in {int(time_since.total_seconds() / 60)} minutes (expected every {pattern.poll_interval_minutes})")
+                    else:
+                        # No enabled rules - polling paused is expected, not a warning
+                        notes.append("Polling paused - no enabled rules")
 
             metrics = {
                 "total_polls": ps.total_polls,
@@ -631,8 +651,12 @@ async def get_pull_mode_health(
             }
         else:
             # No poll state yet - pattern hasn't been polled
-            status = "warning"
-            issues.append("Pattern not yet polled")
+            if has_deployed_rules:
+                status = "warning"
+                issues.append("Pattern not yet polled")
+            else:
+                # No enabled rules - no polling expected
+                notes.append("Polling paused - no enabled rules")
             metrics = {
                 "total_polls": 0,
                 "successful_polls": 0,
@@ -674,6 +698,8 @@ async def get_pull_mode_health(
             "last_error": ps.last_error if ps else None,
             "status": status,
             "issues": issues,
+            "notes": notes,
+            "has_enabled_rules": has_deployed_rules,
             "metrics": metrics,
             "data_freshness": data_freshness,
         })
