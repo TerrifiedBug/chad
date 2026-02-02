@@ -613,3 +613,93 @@ class TestCheckIndexHealthDataFreshnessIntegration:
 
             # Assert - should not try to get OpenSearch client for push-only patterns
             mock_get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pull_mode_no_deployed_rules_skips_health_check(self):
+        """Pull mode pattern with no deployed rules should skip health checks entirely."""
+        # Arrange
+        mock_db = AsyncMock()
+        mock_os_client = AsyncMock()
+
+        # Create a pull mode pattern
+        pull_pattern = self._create_mock_pattern(mode="pull")
+
+        # Mock database queries
+        patterns_result = MagicMock()
+        patterns_result.scalars.return_value.all.return_value = [pull_pattern]
+
+        # Mock db.scalar to return 0 deployed rules
+        mock_db.scalar = AsyncMock(return_value=0)
+
+        mock_db.execute = AsyncMock(side_effect=[
+            MagicMock(scalar_one_or_none=MagicMock(return_value={})),  # thresholds
+            patterns_result,  # patterns query
+        ])
+
+        # Act
+        issues = await check_index_health(mock_db, os_client=mock_os_client)
+
+        # Assert
+        # Should NOT have called search because no deployed rules
+        mock_os_client.search.assert_not_called()
+
+        # Should NOT have any issues (pattern was skipped)
+        assert len(issues) == 0
+
+        # Verify scalar was called to check rule count
+        mock_db.scalar.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_pull_mode_with_deployed_rules_checks_health(self):
+        """Pull mode pattern with deployed rules should perform health checks."""
+        # Arrange
+        mock_db = AsyncMock()
+        mock_os_client = AsyncMock()
+
+        # Create a pull mode pattern
+        pull_pattern = self._create_mock_pattern(mode="pull")
+        mock_metrics = self._create_mock_metrics(pull_pattern.id, age_minutes=2)
+
+        # Mock database queries
+        patterns_result = MagicMock()
+        patterns_result.scalars.return_value.all.return_value = [pull_pattern]
+
+        metrics_result = MagicMock()
+        metrics_result.scalar_one_or_none.return_value = mock_metrics
+
+        suppression_result = MagicMock()
+        suppression_result.scalar_one_or_none.return_value = None
+
+        # Mock db.scalar to return 1 deployed rule
+        mock_db.scalar = AsyncMock(return_value=1)
+
+        mock_db.execute = AsyncMock(side_effect=[
+            MagicMock(scalar_one_or_none=MagicMock(return_value={})),  # thresholds
+            patterns_result,  # patterns query
+            metrics_result,  # metrics query
+            suppression_result,  # no_data clear
+            suppression_result,  # error_rate clear
+            suppression_result,  # latency clear
+            suppression_result,  # queue_depth clear
+            suppression_result,  # stale_data clear
+        ])
+
+        # Mock fresh data response from OpenSearch
+        five_minutes_ago = datetime.now(UTC) - timedelta(minutes=5)
+        mock_os_client.search = MagicMock(return_value={
+            "hits": {
+                "hits": [{
+                    "_source": {"@timestamp": five_minutes_ago.isoformat()}
+                }]
+            }
+        })
+
+        # Act
+        await check_index_health(mock_db, os_client=mock_os_client)
+
+        # Assert
+        # Should have called search because there are deployed rules
+        mock_os_client.search.assert_called_once()
+
+        # Verify scalar was called to check rule count
+        mock_db.scalar.assert_called_once()

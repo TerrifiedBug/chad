@@ -17,12 +17,13 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from dateutil.parser import parse as parse_timestamp
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
+from app.models.rule import Rule, RuleStatus
 from app.services.notification import send_health_notification
 from app.services.opensearch import get_client_from_settings
 from app.services.settings import get_setting
@@ -252,6 +253,21 @@ async def check_index_health(db: AsyncSession, os_client=None) -> list[dict]:
             logger.warning(f"Could not get OpenSearch client for data freshness checks: {e}")
 
     for pattern in patterns:
+        # For pull-mode patterns, skip health checks if no deployed rules exist
+        # This prevents false "no data" alerts when all rules are disabled
+        if pattern.mode == "pull":
+            deployed_rules_count = await db.scalar(
+                select(func.count(Rule.id))
+                .where(Rule.index_pattern_id == pattern.id)
+                .where(Rule.status == RuleStatus.DEPLOYED)
+            )
+            if deployed_rules_count == 0:
+                logger.debug(
+                    f"Skipping health check for {pattern.name}: "
+                    f"no deployed rules (pull mode)"
+                )
+                continue
+
         # Track which conditions had issues for this pattern
         # If a condition is not in this set at the end, its suppression should be cleared
         conditions_with_issues: set[str] = set()
