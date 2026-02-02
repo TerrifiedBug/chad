@@ -23,6 +23,7 @@ from app.core.config import settings as app_settings
 from app.core.encryption import decrypt
 from app.core.redis import get_redis
 from app.models.setting import Setting
+from app.services.system_log import LogCategory, system_log_service
 
 logger = logging.getLogger(__name__)
 
@@ -394,6 +395,14 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Scheduled ATT&CK sync failed: {e}")
+            # Log to system log
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="attack_sync",
+                message=f"Scheduled ATT&CK sync failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__}
+            )
             # Send sync failure notification
             try:
                 await send_system_notification(
@@ -482,6 +491,14 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Scheduled SigmaHQ sync failed: {e}")
+            # Log to system log
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="sigmahq_sync",
+                message=f"Scheduled SigmaHQ sync failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__}
+            )
             # Send sync failure notification
             try:
                 await send_system_notification(
@@ -712,6 +729,14 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Scheduled GeoIP update failed: {e}")
+            # Log to system log
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="geoip_update",
+                message=f"Scheduled GeoIP update failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__}
+            )
         finally:
             await session.close()
 
@@ -743,6 +768,14 @@ class SchedulerService:
                 logger.info(f"Correlation cleanup: removed {count} expired states")
         except Exception as e:
             logger.error(f"Scheduled correlation cleanup failed: {e}")
+            # Log to system log
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="correlation_cleanup",
+                message=f"Scheduled correlation cleanup failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__}
+            )
         finally:
             await session.close()
 
@@ -885,6 +918,14 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Scheduled version cleanup failed: {e}")
+            # Log to system log
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="version_cleanup",
+                message=f"Scheduled version cleanup failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__}
+            )
             await session.rollback()
         finally:
             await session.close()
@@ -931,6 +972,17 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Scheduled system log cleanup failed: {e}")
+            # Log to system log (using a fresh session to avoid rollback issues)
+            try:
+                await system_log_service.log_error(
+                    session,
+                    category=LogCategory.BACKGROUND,
+                    service="system_log_cleanup",
+                    message=f"Scheduled system log cleanup failed: {str(e)}",
+                    details={"error": str(e), "error_type": type(e).__name__}
+                )
+            except Exception:
+                pass  # Avoid recursive issues if logging itself fails
             await session.rollback()
         finally:
             await session.close()
