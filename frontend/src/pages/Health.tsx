@@ -98,14 +98,32 @@ export default function HealthPage() {
   // Pull mode health state
   const [pullModeHealth, setPullModeHealth] = useState<PullModeHealth | null>(null)
   const [isLoadingPullMode, setIsLoadingPullMode] = useState(false)
-  const [pullModeOpen, setPullModeOpen] = useState(false)
 
-  // Collapsible sections state
-  const [externalServicesOpen, setExternalServicesOpen] = useState(false)
-  const [pushModeOpen, setPushModeOpen] = useState(false)
-  const [queueDetailsOpen, setQueueDetailsOpen] = useState(false)
-  const [deadLetterOpen, setDeadLetterOpen] = useState(false)
-  const [indexesOpen, setIndexesOpen] = useState(false)
+  // Collapsible sections state with localStorage persistence
+  const [pullModeOpen, setPullModeOpen] = useState(() => {
+    const saved = localStorage.getItem('health-pullmode-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [externalServicesOpen, setExternalServicesOpen] = useState(() => {
+    const saved = localStorage.getItem('health-external-services-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [pushModeOpen, setPushModeOpen] = useState(() => {
+    const saved = localStorage.getItem('health-pushmode-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [queueDetailsOpen, setQueueDetailsOpen] = useState(() => {
+    const saved = localStorage.getItem('health-queue-details-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [deadLetterOpen, setDeadLetterOpen] = useState(() => {
+    const saved = localStorage.getItem('health-dead-letter-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [indexesOpen, setIndexesOpen] = useState(() => {
+    const saved = localStorage.getItem('health-indexes-open')
+    return saved ? JSON.parse(saved) : false
+  })
 
   // Status popover state
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false)
@@ -124,6 +142,31 @@ export default function HealthPage() {
     }, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  // Persist accordion states to localStorage
+  useEffect(() => {
+    localStorage.setItem('health-pullmode-open', JSON.stringify(pullModeOpen))
+  }, [pullModeOpen])
+
+  useEffect(() => {
+    localStorage.setItem('health-external-services-open', JSON.stringify(externalServicesOpen))
+  }, [externalServicesOpen])
+
+  useEffect(() => {
+    localStorage.setItem('health-pushmode-open', JSON.stringify(pushModeOpen))
+  }, [pushModeOpen])
+
+  useEffect(() => {
+    localStorage.setItem('health-queue-details-open', JSON.stringify(queueDetailsOpen))
+  }, [queueDetailsOpen])
+
+  useEffect(() => {
+    localStorage.setItem('health-dead-letter-open', JSON.stringify(deadLetterOpen))
+  }, [deadLetterOpen])
+
+  useEffect(() => {
+    localStorage.setItem('health-indexes-open', JSON.stringify(indexesOpen))
+  }, [indexesOpen])
 
   const loadHealth = async (isRefresh = false) => {
     if (isRefresh) {
@@ -178,10 +221,6 @@ export default function HealthPage() {
     try {
       const data = await healthApi.getPullModeHealth()
       setPullModeHealth(data)
-      // Auto-expand if there are pull mode patterns
-      if (data.patterns.length > 0 && pullModeHealth === null) {
-        setPullModeOpen(true)
-      }
     } catch (err) {
       // Pull mode health may not be available
       console.error('Failed to load pull mode health:', err)

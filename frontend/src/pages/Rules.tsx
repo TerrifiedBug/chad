@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, Clock, Download, ExternalLink, FileCode, FileText, FolderTree, Link2, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
+import { ChevronDown, Clock, Download, ExternalLink, FileCode, FileText, Link2, Plus, RotateCcw, Rocket, Search, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -34,7 +34,6 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
 import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
@@ -117,10 +116,6 @@ export default function RulesPage() {
       search: search || '',
     }
   })
-  const [viewMode, setViewMode] = useState<'tree' | 'table'>(() => {
-    return (localStorage.getItem('rules-view-mode') as 'tree' | 'table') || 'table'
-  })
-
   // Selection state
   const [selectedRules, setSelectedRules] = useState<Set<string>>(new Set())
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
@@ -152,11 +147,6 @@ export default function RulesPage() {
   useEffect(() => {
     loadData()
   }, [])
-
-  // Persist view mode changes
-  useEffect(() => {
-    localStorage.setItem('rules-view-mode', viewMode)
-  }, [viewMode])
 
   // Sync filters to URL (preserve tab param)
   useEffect(() => {
@@ -890,29 +880,6 @@ export default function RulesPage() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* View mode toggle */}
-        <div className="flex items-center gap-1 ml-auto">
-          <Button
-            variant={viewMode === 'tree' ? 'default' : 'outline'}
-            size="icon"
-            onClick={() => setViewMode('tree')}
-            title="Tree view"
-            aria-label="Tree view"
-            aria-pressed={viewMode === 'tree'}
-          >
-            <FolderTree className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'table' ? 'default' : 'outline'}
-            size="icon"
-            onClick={() => setViewMode('table')}
-            title="Table view"
-            aria-label="Table view"
-            aria-pressed={viewMode === 'table'}
-          >
-            <TableIcon className="h-4 w-4" />
-          </Button>
-        </div>
       </div>
 
       {/* Active filters display */}
@@ -1029,7 +996,7 @@ export default function RulesPage() {
             </DropdownMenu>
           ) : undefined}
         />
-      ) : viewMode === 'table' ? (
+      ) : (
         <TooltipProvider>
           <div className="border rounded-lg">
             <Table>
@@ -1147,14 +1114,6 @@ export default function RulesPage() {
             </Table>
           </div>
         </TooltipProvider>
-      ) : (
-        <RulesTreeView
-          rules={filteredRules}
-          indexPatterns={indexPatterns}
-          onRuleClick={(rule) => navigate(`/rules/${rule.id}`)}
-          selectedRules={selectedRules}
-          onRuleSelect={toggleRuleSelection}
-        />
       )}
 
       {/* Bulk Action Bar - shown when items are selected */}
