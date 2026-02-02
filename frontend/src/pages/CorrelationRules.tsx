@@ -32,7 +32,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronDown, ChevronLeft, CircleOff, Clock, Plus, Rocket, RotateCcw, Search, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, CircleOff, Clock, Download, Plus, Rocket, RotateCcw, Search, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
@@ -41,6 +41,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Link2 } from 'lucide-react'
+import { RulesExportDialog } from '@/components/RulesExportDialog'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -86,6 +87,9 @@ export default function CorrelationRulesPage() {
   const [showBulkUnsnoozeReason, setShowBulkUnsnoozeReason] = useState(false)
   const [pendingBulkSnoozeHours, setPendingBulkSnoozeHours] = useState<number | undefined>(undefined)
   const [pendingBulkSnoozeIndefinite, setPendingBulkSnoozeIndefinite] = useState(false)
+
+  // Export dialog state
+  const [showExportDialog, setShowExportDialog] = useState(false)
 
   useEffect(() => {
     loadRules()
@@ -456,12 +460,18 @@ export default function CorrelationRulesPage() {
             </p>
           </div>
         </div>
-        {canManageRules() && (
-          <Button onClick={() => navigate('/correlation/new')}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Correlation Rule
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowExportDialog(true)}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Report
           </Button>
-        )}
+          {canManageRules() && (
+            <Button onClick={() => navigate('/correlation/new')}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Correlation Rule
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -980,6 +990,13 @@ export default function CorrelationRulesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Export Report Dialog */}
+      <RulesExportDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        onError={(msg) => setError(msg)}
+      />
     </div>
   )
 }

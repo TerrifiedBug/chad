@@ -9,6 +9,7 @@ Provides:
 
 import csv
 import io
+import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -25,8 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_opensearch_client_optional
 from app.db.session import get_db
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
+from app.models.correlation_rule import CorrelationRule
 from app.models.rule import Rule, RuleStatus
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -228,6 +232,33 @@ def generate_rule_coverage_csv(data: dict[str, Any]) -> io.StringIO:
             rule["index_pattern"],
             ", ".join(rule["attack_techniques"]),
         ])
+    writer.writerow([])
+
+    # Correlation rules section
+    if "correlation_rules" in data:
+        corr = data["correlation_rules"]
+        writer.writerow(["Correlation Rules Summary"])
+        writer.writerow(["Metric", "Value"])
+        writer.writerow(["Total Correlation Rules", corr["total"]])
+        writer.writerow(["Deployed Correlation Rules", corr["deployed"]])
+        writer.writerow(["Snoozed Correlation Rules", corr["snoozed"]])
+        writer.writerow([])
+
+        writer.writerow(["Correlation Rules by Severity"])
+        writer.writerow(["Severity", "Count"])
+        for severity, count in corr["by_severity"].items():
+            writer.writerow([severity.title(), count])
+        writer.writerow([])
+
+        writer.writerow(["Correlation Rule Details"])
+        writer.writerow(["Name", "Severity", "Status", "Time Window (min)"])
+        for rule in corr["rules"]:
+            writer.writerow([
+                rule["name"],
+                rule["severity"],
+                rule["status"],
+                rule["time_window_minutes"],
+            ])
 
     output.seek(0)
     return output
@@ -329,6 +360,49 @@ def generate_rule_coverage_pdf(data: dict[str, Any]) -> io.BytesIO:
         elements.append(attack_table)
     else:
         elements.append(Paragraph("No ATT&CK techniques mapped to rules.", styles["Normal"]))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Correlation rules section
+    if "correlation_rules" in data:
+        corr = data["correlation_rules"]
+        elements.append(Paragraph("Correlation Rules", styles["Heading2"]))
+        corr_summary_data = [
+            ["Metric", "Value"],
+            ["Total Correlation Rules", str(corr["total"])],
+            ["Deployed Correlation Rules", str(corr["deployed"])],
+            ["Snoozed Correlation Rules", str(corr["snoozed"])],
+        ]
+
+        corr_summary_table = Table(corr_summary_data, colWidths=[3 * inch, 2 * inch])
+        corr_summary_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+        ]))
+        elements.append(corr_summary_table)
+        elements.append(Spacer(1, 0.2 * inch))
+
+        # Correlation rules by severity
+        if corr["by_severity"]:
+            corr_severity_data = [["Severity", "Count"]]
+            for severity, count in corr["by_severity"].items():
+                corr_severity_data.append([severity.title(), str(count)])
+
+            corr_severity_table = Table(corr_severity_data, colWidths=[2.5 * inch, 1.5 * inch])
+            corr_severity_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ]))
+            elements.append(corr_severity_table)
 
     doc.build(elements)
     buffer.seek(0)
@@ -532,6 +606,33 @@ async def generate_rule_coverage_report(
             "attack_techniques": attack_techniques,
         })
 
+    # Get correlation rules
+    correlation_result = await db.execute(select(CorrelationRule))
+    correlation_rules = correlation_result.scalars().all()
+
+    # Calculate correlation rule statistics
+    total_correlation_rules = len(correlation_rules)
+    deployed_correlation_rules = sum(1 for r in correlation_rules if r.deployed_at is not None)
+    snoozed_correlation_rules = sum(1 for r in correlation_rules if r.snooze_until is not None or r.snooze_indefinite)
+
+    # Correlation rule severity distribution
+    correlation_severity_counter: Counter = Counter()
+    for rule in correlation_rules:
+        correlation_severity_counter[rule.severity] += 1
+
+    # Correlation rule details
+    correlation_rule_details = []
+    for rule in correlation_rules:
+        status = "deployed" if rule.deployed_at else "undeployed"
+        if rule.snooze_until or rule.snooze_indefinite:
+            status = "snoozed"
+        correlation_rule_details.append({
+            "name": rule.name,
+            "severity": rule.severity,
+            "status": status,
+            "time_window_minutes": rule.time_window_minutes,
+        })
+
     # Build report data
     report_data = {
         "total_rules": total_rules,
@@ -541,6 +642,13 @@ async def generate_rule_coverage_report(
         "by_severity": dict(severity_counter),
         "attack_coverage": attack_coverage,
         "rules": rule_details,
+        "correlation_rules": {
+            "total": total_correlation_rules,
+            "deployed": deployed_correlation_rules,
+            "snoozed": snoozed_correlation_rules,
+            "by_severity": dict(correlation_severity_counter),
+            "rules": correlation_rule_details,
+        },
     }
 
     # Generate output

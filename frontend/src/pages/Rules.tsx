@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { rulesApi, indexPatternsApi, reportsApi, correlationRulesApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult, CorrelationRule } from '@/lib/api'
+import { rulesApi, indexPatternsApi, correlationRulesApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult, CorrelationRule } from '@/lib/api'
 import yaml from 'js-yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,17 +39,10 @@ import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { FileSpreadsheet, Loader2 } from 'lucide-react'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { RulesExportDialog } from '@/components/RulesExportDialog'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -137,8 +130,6 @@ export default function RulesPage() {
 
   // Export report state
   const [showExportDialog, setShowExportDialog] = useState(false)
-  const [exportFormat, setExportFormat] = useState<'csv' | 'pdf'>('pdf')
-  const [isExporting, setIsExporting] = useState(false)
 
   // Deployment eligibility state
   const [deploymentEligibility, setDeploymentEligibility] = useState<DeploymentEligibilityResult | null>(null)
@@ -629,31 +620,6 @@ export default function RulesPage() {
       window.URL.revokeObjectURL(url)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Export failed')
-    }
-  }
-
-  // Handler for Rule Coverage report export
-  const handleExportReport = async () => {
-    setIsExporting(true)
-    try {
-      const blob = await reportsApi.generateRuleCoverage({
-        format: exportFormat,
-      })
-
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      const dateStr = new Date().toISOString().slice(0, 10)
-      a.download = `rule-coverage-${dateStr}.${exportFormat}`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
-      setShowExportDialog(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed')
-    } finally {
-      setIsExporting(false)
     }
   }
 
@@ -1655,59 +1621,11 @@ export default function RulesPage() {
       </Dialog>
 
       {/* Export Report Dialog */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Export Rule Coverage Report</DialogTitle>
-            <DialogDescription>
-              Generate a report showing rule coverage by severity, status, and index pattern.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Format</Label>
-              <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as 'csv' | 'pdf')}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pdf">
-                    <span className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      PDF
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="csv">
-                    <span className="flex items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4" />
-                      CSV
-                    </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleExportReport} disabled={isExporting}>
-              {isExporting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RulesExportDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        onError={(msg) => setError(msg)}
+      />
     </div>
   )
 }
