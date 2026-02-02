@@ -18,7 +18,7 @@ class TestCheckIndexDataFreshness:
         # Arrange
         mock_client = AsyncMock()
         five_minutes_ago = datetime.now(UTC) - timedelta(minutes=5)
-        mock_client.search = AsyncMock(return_value={
+        mock_client.search = MagicMock(return_value={
             "hits": {
                 "total": {"value": 1},
                 "hits": [
@@ -55,7 +55,7 @@ class TestCheckIndexDataFreshness:
         # Arrange
         mock_client = AsyncMock()
         thirty_minutes_ago = datetime.now(UTC) - timedelta(minutes=30)
-        mock_client.search = AsyncMock(return_value={
+        mock_client.search = MagicMock(return_value={
             "hits": {
                 "total": {"value": 1},
                 "hits": [
@@ -90,7 +90,7 @@ class TestCheckIndexDataFreshness:
         """Empty index (no hits) should return no_data status."""
         # Arrange
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={
+        mock_client.search = MagicMock(return_value={
             "hits": {
                 "total": {"value": 0},
                 "hits": []
@@ -117,7 +117,7 @@ class TestCheckIndexDataFreshness:
         """Document without timestamp field should return no_timestamp status."""
         # Arrange
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={
+        mock_client.search = MagicMock(return_value={
             "hits": {
                 "total": {"value": 1},
                 "hits": [
@@ -150,7 +150,7 @@ class TestCheckIndexDataFreshness:
         """OpenSearch exception should return error status."""
         # Arrange
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(side_effect=Exception("Connection refused"))
+        mock_client.search = MagicMock(side_effect=Exception("Connection refused"))
 
         mock_index_pattern = MagicMock()
         mock_index_pattern.pattern = "logs-*"
@@ -173,7 +173,7 @@ class TestCheckIndexDataFreshness:
         # Arrange
         mock_client = AsyncMock()
         five_minutes_ago = datetime.now(UTC) - timedelta(minutes=5)
-        mock_client.search = AsyncMock(return_value={
+        mock_client.search = MagicMock(return_value={
             "hits": {
                 "total": {"value": 1},
                 "hits": [
@@ -213,7 +213,7 @@ class TestCheckIndexDataFreshness:
         """Should handle missing nested timestamp field gracefully."""
         # Arrange
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={
+        mock_client.search = MagicMock(return_value={
             "hits": {
                 "total": {"value": 1},
                 "hits": [
@@ -248,7 +248,7 @@ class TestCheckIndexDataFreshness:
         # Arrange
         mock_client = AsyncMock()
         five_minutes_ago = datetime.now(UTC) - timedelta(minutes=5)
-        mock_client.search = AsyncMock(return_value={
+        mock_client.search = MagicMock(return_value={
             "hits": {
                 "total": {"value": 1},
                 "hits": [
@@ -284,7 +284,7 @@ class TestCheckIndexDataFreshness:
     async def test_epoch_milliseconds_timestamp(self):
         """Should correctly parse Unix epoch milliseconds."""
         # Arrange
-        mock_client = AsyncMock()
+        mock_client = MagicMock()
         mock_index_pattern = MagicMock()
         mock_index_pattern.pattern = "logs-test-*"
         mock_index_pattern.timestamp_field = "@timestamp"
@@ -311,7 +311,7 @@ class TestCheckIndexDataFreshness:
     async def test_epoch_seconds_timestamp(self):
         """Should correctly parse Unix epoch seconds."""
         # Arrange
-        mock_client = AsyncMock()
+        mock_client = MagicMock()
         mock_index_pattern = MagicMock()
         mock_index_pattern.pattern = "logs-test-*"
         mock_index_pattern.timestamp_field = "@timestamp"
@@ -402,7 +402,7 @@ class TestCheckIndexHealthDataFreshnessIntegration:
 
         # Mock stale data response from OpenSearch
         thirty_minutes_ago = datetime.now(UTC) - timedelta(minutes=30)
-        mock_os_client.search = AsyncMock(return_value={
+        mock_os_client.search = MagicMock(return_value={
             "hits": {
                 "hits": [{
                     "_source": {"@timestamp": thirty_minutes_ago.isoformat()}
@@ -459,7 +459,7 @@ class TestCheckIndexHealthDataFreshnessIntegration:
 
         # Mock fresh data response from OpenSearch
         five_minutes_ago = datetime.now(UTC) - timedelta(minutes=5)
-        mock_os_client.search = AsyncMock(return_value={
+        mock_os_client.search = MagicMock(return_value={
             "hits": {
                 "hits": [{
                     "_source": {"@timestamp": five_minutes_ago.isoformat()}
@@ -558,7 +558,7 @@ class TestCheckIndexHealthDataFreshnessIntegration:
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
 
         # Mock empty index response
-        mock_os_client.search = AsyncMock(return_value={
+        mock_os_client.search = MagicMock(return_value={
             "hits": {"hits": []}
         })
 

@@ -140,7 +140,8 @@ async def check_index_data_freshness(
 
     try:
         # Query for the single most recent document sorted by timestamp
-        response = await os_client.search(
+        # Note: OpenSearch client is synchronous
+        response = os_client.search(
             index=index,
             body={
                 "size": 1,
