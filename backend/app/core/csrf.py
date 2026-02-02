@@ -137,6 +137,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         "/api/auth/sso/exchange",  # SSO exchange uses short-lived code (30s, single-use)
     }
 
+    # Path prefixes that are exempt from CSRF (for external integrations)
+    EXEMPT_PREFIXES = (
+        "/api/logs/",  # Log ingestion uses per-index-pattern auth tokens
+        "/api/external/",  # External API uses API keys
+    )
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
         Process request through CSRF middleware.
@@ -149,8 +155,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             - Validate Origin/Referer/Host headers
         """
         # Check if path is exempt from CSRF protection
-        if str(request.url.path) in self.EXEMPT_PATHS:
-            logger.info(f"CSRF: Exempted path {request.url.path} from validation")
+        path = str(request.url.path)
+        if path in self.EXEMPT_PATHS or path.startswith(self.EXEMPT_PREFIXES):
+            logger.debug(f"CSRF: Exempted path {path} from validation")
             return await call_next(request)
 
         # For API requests with JWT authentication, CSRF is less critical

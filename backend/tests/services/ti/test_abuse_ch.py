@@ -181,13 +181,14 @@ async def test_abuse_ch_test_connection_success(abuse_ch_client):
 
 @pytest.mark.asyncio
 async def test_abuse_ch_test_connection_failure(abuse_ch_client):
-    """Test failed connection to abuse.ch."""
+    """Test failed connection to abuse.ch raises exception."""
     with patch.object(abuse_ch_client._client, 'post', new_callable=AsyncMock) as mock_post:
         mock_post.side_effect = Exception("Connection failed")
 
-        result = await abuse_ch_client.test_connection()
+        with pytest.raises(Exception) as exc_info:
+            await abuse_ch_client.test_connection()
 
-        assert result is False
+        assert "Connection failed" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

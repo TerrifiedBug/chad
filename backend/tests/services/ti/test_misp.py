@@ -178,13 +178,14 @@ async def test_misp_test_connection_success(misp_client):
 
 @pytest.mark.asyncio
 async def test_misp_test_connection_failure(misp_client):
-    """Test failed connection to MISP."""
+    """Test failed connection to MISP raises exception."""
     with patch.object(misp_client._client, 'get', new_callable=AsyncMock) as mock_get:
         mock_get.side_effect = Exception("Connection failed")
 
-        result = await misp_client.test_connection()
+        with pytest.raises(Exception) as exc_info:
+            await misp_client.test_connection()
 
-        assert result is False
+        assert "Connection failed" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

@@ -190,15 +190,15 @@ class TestListAuditLogs:
     async def test_list_requires_auth(self, client: AsyncClient):
         """List endpoint requires authentication."""
         response = await client.get("/api/audit")
-        # HTTPBearer returns 403 when no credentials provided
-        assert response.status_code == 403
+        # HTTPBearer returns 401 when no credentials provided
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_list_requires_admin(self, non_admin_client: AsyncClient):
-        """List endpoint requires admin role."""
+        """List endpoint requires admin role (view_audit permission)."""
         response = await non_admin_client.get("/api/audit")
         assert response.status_code == 403
-        assert "Admin access required" in response.json()["detail"]
+        assert "view_audit" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_list_empty(self, authenticated_client: AsyncClient):
@@ -336,7 +336,7 @@ class TestListAuditActions:
     async def test_actions_requires_auth(self, client: AsyncClient):
         """Actions endpoint requires authentication."""
         response = await client.get("/api/audit/actions")
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_actions_requires_admin(self, non_admin_client: AsyncClient):
@@ -371,7 +371,7 @@ class TestListResourceTypes:
     async def test_resource_types_requires_auth(self, client: AsyncClient):
         """Resource types endpoint requires authentication."""
         response = await client.get("/api/audit/resource-types")
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_resource_types_requires_admin(self, non_admin_client: AsyncClient):
