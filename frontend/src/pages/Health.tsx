@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse, DeadLetterMessage, PullModeHealth } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers, XCircle, Loader2, ChevronUp } from 'lucide-react'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers, XCircle, Loader2, ChevronUp, Info } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useToast } from '@/components/ui/toast-provider'
 import { LoadingState } from '@/components/ui/loading-state'
@@ -909,6 +909,18 @@ export default function HealthPage() {
                               <p key={i} className="text-sm text-destructive flex items-center gap-1">
                                 <AlertCircle className="h-3 w-3" />
                                 {issue}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Notes (informational, not warnings) */}
+                        {'notes' in h && (h as { notes?: string[] }).notes && (h as { notes?: string[] }).notes!.length > 0 && (
+                          <div className="space-y-1">
+                            {(h as { notes?: string[] }).notes!.map((note, i) => (
+                              <p key={i} className="text-sm text-muted-foreground flex items-center gap-1">
+                                <Info className="h-3 w-3" />
+                                {note}
                               </p>
                             ))}
                           </div>

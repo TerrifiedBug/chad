@@ -1462,6 +1462,8 @@ export type PullModePatternHealth = {
   last_error: string | null
   status: HealthStatus
   issues: string[]
+  notes: string[]
+  has_enabled_rules: boolean
   metrics: {
     total_polls: number
     successful_polls: number
