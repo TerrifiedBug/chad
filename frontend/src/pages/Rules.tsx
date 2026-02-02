@@ -639,12 +639,10 @@ export default function RulesPage() {
               SigmaHQ
             </Button>
           )}
-          {activeTab === 'sigma' && (
-            <Button variant="outline" onClick={() => setShowExportDialog(true)}>
-              <Download className="h-4 w-4 mr-2" />
-              Export Report
-            </Button>
-          )}
+          <Button variant="outline" onClick={() => setShowExportDialog(true)}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Report
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button disabled={!canManageRules()}>
