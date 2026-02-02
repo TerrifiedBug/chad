@@ -73,9 +73,9 @@ class BulkAlertDelete(BaseModel):
 
 @router.get("", response_model=AlertListResponse | ClusteredAlertListResponse)
 async def list_alerts(
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     status: str | None = Query(None, description="Filter by status"),
     severity: str | None = Query(None, description="Filter by severity"),
     rule_id: str | None = Query(None, description="Filter by rule ID"),
@@ -295,9 +295,9 @@ async def update_alert_status(
     alert_id: str,
     update: AlertStatusUpdate,
     request: Request,
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     index_pattern: str = Query("chad-alerts-*"),
 ):
     """Update alert status (acknowledge, resolve, mark as false positive)."""
@@ -636,8 +636,8 @@ async def assign_alert(
     alert_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Assign alert to current user. Requires manage_alerts permission (viewers cannot take ownership)."""
     try:
@@ -683,8 +683,8 @@ async def unassign_alert(
     alert_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Release ownership of alert. Requires manage_alerts permission."""
     try:
