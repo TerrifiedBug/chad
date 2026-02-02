@@ -3,7 +3,12 @@ import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse, Dea
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers, XCircle, Loader2, ChevronUp, Info } from 'lucide-react'
-import { TooltipProvider } from '@/components/ui/tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useToast } from '@/components/ui/toast-provider'
 import { LoadingState } from '@/components/ui/loading-state'
 import {
@@ -920,7 +925,24 @@ export default function HealthPage() {
                               {h.mode}
                             </span>
                           </div>
-                          <StatusIcon status={h.status} />
+                          {h.issues.length > 0 ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help">
+                                  <StatusIcon status={h.status} />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="max-w-xs">
+                                <ul className="list-disc list-inside text-sm space-y-1">
+                                  {h.issues.map((issue, i) => (
+                                    <li key={i}>{issue}</li>
+                                  ))}
+                                </ul>
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <StatusIcon status={h.status} />
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground font-mono">{h.pattern}</p>
                       </CardHeader>
