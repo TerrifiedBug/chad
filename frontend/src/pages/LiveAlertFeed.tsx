@@ -12,9 +12,10 @@ import { SEVERITY_COLORS_SUBTLE } from '@/lib/constants'
 
 export default function LiveAlertFeedPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, backendReady } = useAuth()
   const { isConnected, alerts, error, clearAlerts } = useWebSocket({
     notificationPreferences: user?.notification_preferences,
+    enabled: backendReady,
   })
   const [expandedAlert, setExpandedAlert] = useState<string | null>(null)
 

@@ -8,6 +8,7 @@ interface AuthContextType {
   connectionFailed: boolean
   setupCompleted: boolean
   isOpenSearchConfigured: boolean
+  backendReady: boolean
   user: CurrentUser | null
   isAdmin: boolean
   hasPermission: (permission: string) => boolean
@@ -44,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [setupCompleted, setSetupCompleted] = useState(false)
   const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
+  const [backendReady, setBackendReady] = useState(false)
   const [user, setUser] = useState<CurrentUser | null>(null)
 
   useEffect(() => {
@@ -93,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const retryConnection = () => {
     setIsLoading(true)
     setConnectionFailed(false)
+    setBackendReady(false)  // Reset backend ready state
     checkAuthWithRetry(0, 10)
   }
 
@@ -116,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // This call will throw if backend is unavailable (502/503/network error)
     const status = await api.get<SetupStatusResponse>('/auth/setup-status')
     setSetupCompleted(status.setup_completed)
+    setBackendReady(true)
     setIsStartingUp(false)
 
     const token = localStorage.getItem('chad-token')
@@ -215,6 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       connectionFailed,
       setupCompleted,
       isOpenSearchConfigured,
+      backendReady,
       user,
       isAdmin: user?.role === 'admin',
       hasPermission,
