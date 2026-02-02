@@ -158,17 +158,23 @@ export default function RulesPage() {
     localStorage.setItem('rules-view-mode', viewMode)
   }, [viewMode])
 
-  // Sync filters to URL
+  // Sync filters to URL (preserve tab param)
   useEffect(() => {
-    const newParams = new URLSearchParams()
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams()
 
-    if (filters.search) newParams.set('search', filters.search)
-    if (filters.indexPattern.length > 0) newParams.set('indexPattern', filters.indexPattern.join(','))
-    if (filters.severity.length > 0) newParams.set('severity', filters.severity.join(','))
-    if (filters.status.length > 0) newParams.set('status', filters.status.join(','))
-    if (filters.source !== 'all') newParams.set('source', filters.source)
+      // Preserve the tab parameter
+      const currentTab = prev.get('tab')
+      if (currentTab) newParams.set('tab', currentTab)
 
-    setSearchParams(newParams, { replace: true })
+      if (filters.search) newParams.set('search', filters.search)
+      if (filters.indexPattern.length > 0) newParams.set('indexPattern', filters.indexPattern.join(','))
+      if (filters.severity.length > 0) newParams.set('severity', filters.severity.join(','))
+      if (filters.status.length > 0) newParams.set('status', filters.status.join(','))
+      if (filters.source !== 'all') newParams.set('source', filters.source)
+
+      return newParams
+    }, { replace: true })
   }, [filters, setSearchParams])
 
   // Check deployment eligibility when selection changes
