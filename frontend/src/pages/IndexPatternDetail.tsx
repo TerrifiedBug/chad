@@ -5,15 +5,18 @@ import {
   indexPatternsApi,
 } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import {
   ArrowLeft,
   Settings,
   Table2,
   Key,
   Loader2,
+  AlertCircle,
 } from 'lucide-react'
 import { SettingsTab } from '@/components/index-patterns/SettingsTab'
 import { FieldMappingsTab } from '@/components/index-patterns/FieldMappingsTab'
@@ -34,6 +37,10 @@ export default function IndexPatternDetail() {
   const [isLoading, setIsLoading] = useState(!isNew)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  // Block navigation when there are unsaved changes
+  useUnsavedChanges(hasUnsavedChanges)
 
   // Load pattern data
   const loadPattern = useCallback(async () => {
@@ -67,12 +74,14 @@ export default function IndexPatternDetail() {
     try {
       if (isNew) {
         const created = await indexPatternsApi.create(data as Parameters<typeof indexPatternsApi.create>[0])
+        setHasUnsavedChanges(false) // Clear before navigation
         showToast('Index pattern created')
         // Navigate to the edit view of the new pattern
         navigate(`/index-patterns/${created.id}`, { replace: true })
       } else if (pattern) {
         const updated = await indexPatternsApi.update(pattern.id, data)
         setPattern(updated)
+        setHasUnsavedChanges(false)
         showToast('Index pattern updated')
       }
     } catch (err) {
@@ -83,6 +92,11 @@ export default function IndexPatternDetail() {
       setIsSaving(false)
     }
   }
+
+  // Handle dirty state from SettingsTab
+  const handleDirtyChange = useCallback((isDirty: boolean) => {
+    setHasUnsavedChanges(isDirty)
+  }, [])
 
   // Handle back navigation
   const handleBack = () => {
@@ -131,18 +145,42 @@ export default function IndexPatternDetail() {
           <Button variant="ghost" size="icon" onClick={handleBack} title="Back to Index Patterns">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            {pattern && !isNew && (
-              <Badge
-                className={
-                  pattern.mode === 'push'
-                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                    : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-                }
-              >
-                {pattern.mode === 'push' ? 'Push' : `Pull (${pattern.poll_interval_minutes}m)`}
-              </Badge>
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+              {pattern && !isNew && (
+                <Badge
+                  className={
+                    pattern.mode === 'push'
+                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                      : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
+                  }
+                >
+                  {pattern.mode === 'push' ? 'Push' : `Pull (${pattern.poll_interval_minutes}m)`}
+                </Badge>
+              )}
+              {hasUnsavedChanges && (
+                <Badge variant="outline" className="text-amber-600 border-amber-600">
+                  <AlertCircle className="h-3 w-3 mr-1" />
+                  Unsaved changes
+                </Badge>
+              )}
+            </div>
+            {pattern && !isNew && pattern.updated_at && (
+              <p className="text-sm text-muted-foreground mt-1">
+                Last edited{' '}
+                <TimestampTooltip timestamp={pattern.updated_at}>
+                  <span className="underline decoration-dotted cursor-help">
+                    {new Date(pattern.updated_at).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </TimestampTooltip>
+              </p>
             )}
           </div>
         </div>
@@ -182,6 +220,7 @@ export default function IndexPatternDetail() {
                 isNew={isNew}
                 onSave={handleSave}
                 isSaving={isSaving}
+                onDirtyChange={handleDirtyChange}
               />
             </div>
           </TabsContent>

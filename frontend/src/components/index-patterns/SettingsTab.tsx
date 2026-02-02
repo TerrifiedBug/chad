@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   IndexPattern,
   IndexPatternMode,
@@ -37,6 +37,7 @@ interface SettingsTabProps {
   isNew: boolean
   onSave: (data: Partial<IndexPattern>) => Promise<void>
   isSaving?: boolean
+  onDirtyChange?: (isDirty: boolean) => void
 }
 
 interface FormData {
@@ -64,7 +65,7 @@ interface GlobalDefaults {
   queue_critical: number
 }
 
-export function SettingsTab({ pattern, isNew, onSave, isSaving = false }: SettingsTabProps) {
+export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyChange }: SettingsTabProps) {
   const { isPullOnly, supportsPush } = useMode()
 
   // Form state
@@ -184,6 +185,48 @@ export function SettingsTab({ pattern, isNew, onSave, isSaving = false }: Settin
     setPercolatorIndexManuallyEdited(false)
     setSaveError('')
   }, [pattern, isPullOnly])
+
+  // Track dirty state
+  const isDirty = useMemo(() => {
+    if (isNew) {
+      // For new patterns, dirty if any required field has content
+      return formData.name.trim() !== '' || formData.pattern.trim() !== ''
+    }
+    if (!pattern) return false
+
+    // Compare current form state to saved pattern
+    const overrides = pattern.health_overrides || {}
+    return (
+      formData.name !== pattern.name ||
+      formData.pattern !== pattern.pattern ||
+      formData.percolator_index !== pattern.percolator_index ||
+      formData.description !== (pattern.description || '') ||
+      detectionMode !== pattern.mode ||
+      (detectionMode === 'pull' && pollIntervalMinutes !== (pattern.poll_interval_minutes || 5)) ||
+      (detectionMode === 'pull' && timestampField !== (pattern.timestamp_field || '@timestamp')) ||
+      enableHealthAlerting !== (pattern.health_alerting_enabled ?? true) ||
+      JSON.stringify(geoipFields) !== JSON.stringify(pattern.geoip_fields || []) ||
+      JSON.stringify(allowedIps) !== JSON.stringify(pattern.allowed_ips || []) ||
+      rateLimitEnabled !== (pattern.rate_limit_enabled || false) ||
+      (rateLimitEnabled && rateLimitRequests !== (pattern.rate_limit_requests_per_minute || 100)) ||
+      (rateLimitEnabled && rateLimitEvents !== (pattern.rate_limit_events_per_minute || 50000)) ||
+      healthOverrides.detection_latency_warning_seconds !== (overrides.detection_latency_warning_ms ? String(overrides.detection_latency_warning_ms / 1000) : '') ||
+      healthOverrides.detection_latency_critical_seconds !== (overrides.detection_latency_critical_ms ? String(overrides.detection_latency_critical_ms / 1000) : '') ||
+      healthOverrides.error_rate_percent !== (overrides.error_rate_percent ? String(overrides.error_rate_percent) : '') ||
+      healthOverrides.no_data_minutes !== (overrides.no_data_minutes ? String(overrides.no_data_minutes) : '') ||
+      healthOverrides.queue_warning !== (overrides.queue_warning ? String(overrides.queue_warning) : '') ||
+      healthOverrides.queue_critical !== (overrides.queue_critical ? String(overrides.queue_critical) : '')
+    )
+  }, [
+    isNew, pattern, formData, detectionMode, pollIntervalMinutes, timestampField,
+    enableHealthAlerting, geoipFields, allowedIps, rateLimitEnabled,
+    rateLimitRequests, rateLimitEvents, healthOverrides
+  ])
+
+  // Notify parent of dirty state changes
+  useEffect(() => {
+    onDirtyChange?.(isDirty)
+  }, [isDirty, onDirtyChange])
 
   // Load global defaults
   useEffect(() => {
