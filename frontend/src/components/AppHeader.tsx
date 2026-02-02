@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useVersion } from '@/hooks/use-version'
-import { ThemeToggle } from '@/components/ThemeToggle'
 import { NotificationBell } from '@/components/NotificationBell'
 import { AboutDialog } from '@/components/AboutDialog'
 import { Button } from '@/components/ui/button'
@@ -132,8 +131,6 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-
-            <ThemeToggle />
           </div>
         </div>
       </header>

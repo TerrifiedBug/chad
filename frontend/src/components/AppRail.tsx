@@ -2,7 +2,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
@@ -17,8 +16,6 @@ import {
   Database,
   Activity,
   Settings,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react'
 
 type NavItem = {
@@ -121,29 +118,12 @@ export function AppRail({ expanded, onExpandedChange, alertCount }: AppRailProps
     <TooltipProvider>
       <aside
         className={cn(
-          'sticky top-14 flex h-[calc(100vh-3.5rem)] flex-col border-r bg-background transition-all duration-200',
+          'fixed top-0 left-0 flex h-screen flex-col bg-background transition-all duration-200 z-50',
           expanded ? 'w-[200px]' : 'w-14'
         )}
       >
-        {/* Collapse toggle */}
-        <div className={cn('flex items-center p-2', expanded ? 'justify-end' : 'justify-center')}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => onExpandedChange(!expanded)}
-            aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
-          >
-            {expanded ? (
-              <ChevronLeft className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-
-        {/* Main navigation */}
-        <nav className="flex-1 space-y-1 p-2">
+        {/* Main navigation - starts at top */}
+        <nav className="flex-1 space-y-1 p-2 pt-3">
           {visibleItems.map((item) => (
             <NavLink
               key={item.href}
@@ -155,10 +135,29 @@ export function AppRail({ expanded, onExpandedChange, alertCount }: AppRailProps
 
         {/* Settings at bottom */}
         {showSettings && (
-          <div className="border-t p-2">
+          <div className="p-2">
             <NavLink item={settingsItem} />
           </div>
         )}
+
+        {/* Clickable border for expand/collapse */}
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => onExpandedChange(!expanded)}
+              className="absolute top-0 right-0 w-4 h-full cursor-col-resize transition-colors group flex items-center justify-center"
+              aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
+            >
+              {/* Vertical line */}
+              <div className="absolute right-0 w-px h-full bg-border" />
+              {/* Pill handle indicator */}
+              <div className="absolute right-0 translate-x-1/2 w-1.5 h-8 rounded-full bg-border group-hover:bg-primary transition-colors" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="bg-primary text-primary-foreground border-primary">
+            {expanded ? 'Collapse' : 'Expand'}
+          </TooltipContent>
+        </Tooltip>
       </aside>
     </TooltipProvider>
   )

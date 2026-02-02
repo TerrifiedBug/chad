@@ -1,6 +1,7 @@
 // frontend/src/components/AppLayout.tsx
 import { useState, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { cn } from '@/lib/utils'
 import { AppHeader } from '@/components/AppHeader'
 import { AppRail } from '@/components/AppRail'
 import { SettingsSidebar } from '@/components/SettingsSidebar'
@@ -25,8 +26,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const isMobile = useMediaQuery('(max-width: 767px)')
 
-  // Exclude /settings/users and /settings/api-keys as they have their own layouts
-  const useSettingsSidebar = location.pathname === '/settings' || location.pathname.match(/^\/settings\?/)
+  // Use SettingsSidebar for all settings pages
+  const useSettingsSidebar = location.pathname.startsWith('/settings')
 
   const focusSearch = useCallback(() => {
     const searchInput = document.querySelector<HTMLInputElement>(
@@ -99,36 +100,39 @@ export function AppLayout({ children }: AppLayoutProps) {
         railExpanded={railExpanded}
       />
 
-      <div className="flex">
-        {/* Desktop sidebar */}
-        {!isMobile && renderSidebar()}
+      {/* Desktop sidebar (fixed position) */}
+      {!isMobile && renderSidebar()}
 
-        {/* Mobile sidebar (Sheet) */}
-        {isMobile && (
-          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-            <SheetContent side="left" className="w-[200px] p-0">
-              {useSettingsSidebar ? (
-                <SettingsSidebar
-                  expanded={true}
-                  onExpandedChange={() => {}}
-                />
-              ) : (
-                <AppRail
-                  expanded={true}
-                  onExpandedChange={() => {}}
-                />
-              )}
-            </SheetContent>
-          </Sheet>
+      {/* Mobile sidebar (Sheet) */}
+      {isMobile && (
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetContent side="left" className="w-[200px] p-0">
+            {useSettingsSidebar ? (
+              <SettingsSidebar
+                expanded={true}
+                onExpandedChange={() => {}}
+              />
+            ) : (
+              <AppRail
+                expanded={true}
+                onExpandedChange={() => {}}
+              />
+            )}
+          </SheetContent>
+        </Sheet>
+      )}
+
+      {/* Main content - offset by sidebar width on desktop */}
+      <main
+        className={cn(
+          'min-w-0 overflow-x-hidden px-6 py-8 transition-all duration-200',
+          railExpanded ? 'md:ml-[200px]' : 'md:ml-14'
         )}
-
-        {/* Main content */}
-        <main className="flex-1 min-w-0 overflow-x-hidden px-6 py-8">
-          <div className="mx-auto max-w-screen-2xl">
-            {children}
-          </div>
-        </main>
-      </div>
+      >
+        <div className="mx-auto max-w-screen-2xl">
+          {children}
+        </div>
+      </main>
 
       <KeyboardShortcutsHelp
         open={showShortcutsHelp}

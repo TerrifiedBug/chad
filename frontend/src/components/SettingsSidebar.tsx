@@ -1,5 +1,6 @@
 // frontend/src/components/SettingsSidebar.tsx
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -9,8 +10,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
-  ChevronLeft,
-  ChevronRight,
   Wrench,
   Shield,
   Bell,
@@ -21,24 +20,52 @@ import {
   Activity,
   HardDrive,
   ArrowLeft,
+  Users,
+  FileText,
+  Key,
 } from 'lucide-react'
 
-type SettingsSection = {
+type SettingsItem = {
   id: string
   label: string
   icon: React.ElementType
+  permission?: string
 }
 
-const settingsSections: SettingsSection[] = [
-  { id: 'general', label: 'General', icon: Wrench },
-  { id: 'security', label: 'Security', icon: Shield },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'ai', label: 'AI', icon: Bot },
-  { id: 'enrichment', label: 'Enrichment', icon: Globe },
-  { id: 'queue', label: 'Queue', icon: Inbox },
-  { id: 'opensearch', label: 'OpenSearch', icon: Search },
-  { id: 'health', label: 'Health', icon: Activity },
-  { id: 'backup', label: 'Backup', icon: HardDrive },
+type SettingsGroup = {
+  label: string
+  items: SettingsItem[]
+  permission?: string // Group-level permission (all items require this)
+}
+
+const settingsGroups: SettingsGroup[] = [
+  {
+    label: 'Configuration',
+    permission: 'manage_settings',
+    items: [
+      { id: 'general', label: 'General', icon: Wrench },
+      { id: 'security', label: 'Security', icon: Shield },
+      { id: 'notifications', label: 'Notifications', icon: Bell },
+    ],
+  },
+  {
+    label: 'Integrations',
+    permission: 'manage_settings',
+    items: [
+      { id: 'ai', label: 'AI', icon: Bot },
+      { id: 'enrichment', label: 'Enrichment', icon: Globe },
+      { id: 'opensearch', label: 'OpenSearch', icon: Search },
+    ],
+  },
+  {
+    label: 'System',
+    permission: 'manage_settings',
+    items: [
+      { id: 'queue', label: 'Queue', icon: Inbox },
+      { id: 'health', label: 'Health', icon: Activity },
+      { id: 'backup', label: 'Backup', icon: HardDrive },
+    ],
+  },
 ]
 
 interface SettingsSidebarProps {
@@ -46,13 +73,39 @@ interface SettingsSidebarProps {
   onExpandedChange: (expanded: boolean) => void
 }
 
+// Administration section (link-based, separate pages)
+type SettingsLink = {
+  href: string
+  label: string
+  icon: React.ElementType
+  permission?: string
+}
+
+const adminLinks: SettingsLink[] = [
+  { href: '/settings/users', label: 'Users', icon: Users, permission: 'manage_users' },
+  { href: '/settings/audit', label: 'Audit Log', icon: FileText, permission: 'view_audit' },
+  { href: '/settings/api-keys', label: 'API Keys', icon: Key, permission: 'manage_api_keys' },
+]
+
 export function SettingsSidebar({ expanded, onExpandedChange }: SettingsSidebarProps) {
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const { hasPermission } = useAuth()
+  const [searchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') || 'general'
 
+  // Filter groups based on permissions
+  const visibleGroups = settingsGroups.filter(group =>
+    !group.permission || hasPermission(group.permission)
+  )
+
+  // Filter admin links based on permissions
+  const visibleAdminLinks = adminLinks.filter(link =>
+    !link.permission || hasPermission(link.permission)
+  )
+
   const handleSectionClick = (sectionId: string) => {
-    setSearchParams({ tab: sectionId })
+    navigate('/settings?tab=' + sectionId)
   }
 
   const handleBack = () => {
@@ -64,13 +117,16 @@ export function SettingsSidebar({ expanded, onExpandedChange }: SettingsSidebarP
     }
   }
 
-  const NavItem = ({ section }: { section: SettingsSection }) => {
-    const active = activeTab === section.id
-    const Icon = section.icon
+  // Check if we're on main settings page (not a subpage)
+  const isMainSettingsPage = location.pathname === '/settings'
+
+  const NavItem = ({ item }: { item: SettingsItem }) => {
+    const active = isMainSettingsPage && activeTab === item.id
+    const Icon = item.icon
 
     const content = (
       <button
-        onClick={() => handleSectionClick(section.id)}
+        onClick={() => handleSectionClick(item.id)}
         className={cn(
           'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
           'hover:bg-muted',
@@ -79,7 +135,7 @@ export function SettingsSidebar({ expanded, onExpandedChange }: SettingsSidebarP
         )}
       >
         <Icon className="h-5 w-5 flex-shrink-0" />
-        {expanded && <span>{section.label}</span>}
+        {expanded && <span>{item.label}</span>}
       </button>
     )
 
@@ -87,7 +143,7 @@ export function SettingsSidebar({ expanded, onExpandedChange }: SettingsSidebarP
       return (
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>{content}</TooltipTrigger>
-          <TooltipContent side="right">{section.label}</TooltipContent>
+          <TooltipContent side="right">{item.label}</TooltipContent>
         </Tooltip>
       )
     }
@@ -95,71 +151,122 @@ export function SettingsSidebar({ expanded, onExpandedChange }: SettingsSidebarP
     return content
   }
 
+  const SectionLabel = ({ label }: { label: string }) => {
+    if (!expanded) return null
+    return (
+      <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        {label}
+      </div>
+    )
+  }
+
+  const NavLink = ({ link }: { link: SettingsLink }) => {
+    const active = location.pathname === link.href
+    const Icon = link.icon
+
+    const content = (
+      <Link
+        to={link.href}
+        className={cn(
+          'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          'hover:bg-muted',
+          active ? 'bg-muted text-foreground' : 'text-muted-foreground',
+          !expanded && 'justify-center px-2'
+        )}
+      >
+        <Icon className="h-5 w-5 flex-shrink-0" />
+        {expanded && <span>{link.label}</span>}
+      </Link>
+    )
+
+    if (!expanded) {
+      return (
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>{content}</TooltipTrigger>
+          <TooltipContent side="right">{link.label}</TooltipContent>
+        </Tooltip>
+      )
+    }
+
+    return content
+  }
+
+  const backButton = (
+    <Button
+      variant="ghost"
+      size={expanded ? 'sm' : 'icon'}
+      className={cn('gap-1', !expanded && 'h-8 w-8')}
+      onClick={handleBack}
+    >
+      <ArrowLeft className="h-4 w-4" />
+      {expanded && 'Back'}
+    </Button>
+  )
+
   return (
     <TooltipProvider>
       <aside
         className={cn(
-          'sticky top-14 flex h-[calc(100vh-3.5rem)] flex-col border-r bg-background transition-all duration-200',
+          'fixed top-0 left-0 flex h-screen flex-col bg-background transition-all duration-200 z-50',
           expanded ? 'w-[200px]' : 'w-14'
         )}
       >
-        {/* Back button and collapse toggle */}
-        <div className={cn('flex items-center p-2', expanded ? 'justify-between' : 'flex-col gap-2')}>
-          {expanded ? (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1"
-                onClick={handleBack}
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Settings
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => onExpandedChange(!expanded)}
-                aria-label="Collapse navigation"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-            </>
+        {/* Back button - starts at top */}
+        <div className={cn('p-2 pt-3', !expanded && 'flex justify-center')}>
+          {!expanded ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>{backButton}</TooltipTrigger>
+              <TooltipContent side="right">Back</TooltipContent>
+            </Tooltip>
           ) : (
-            <>
-              <Tooltip delayDuration={0}>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={handleBack}
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Back</TooltipContent>
-              </Tooltip>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => onExpandedChange(!expanded)}
-                aria-label="Expand navigation"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </>
+            backButton
           )}
         </div>
 
         {/* Settings sections */}
-        <nav className="flex-1 space-y-1 p-2">
-          {settingsSections.map((section) => (
-            <NavItem key={section.id} section={section} />
+        <nav className="flex-1 overflow-y-auto p-2">
+          {visibleGroups.map((group, index) => (
+            <div key={group.label} className={cn(index > 0 && 'mt-4')}>
+              <SectionLabel label={group.label} />
+              <div className="space-y-1">
+                {group.items.map((item) => (
+                  <NavItem key={item.id} item={item} />
+                ))}
+              </div>
+            </div>
           ))}
+
+          {/* Administration section - only show if user has any admin links */}
+          {visibleAdminLinks.length > 0 && (
+            <div className="mt-4">
+              <SectionLabel label="Administration" />
+              <div className="space-y-1">
+                {visibleAdminLinks.map((link) => (
+                  <NavLink key={link.href} link={link} />
+                ))}
+              </div>
+            </div>
+          )}
         </nav>
+
+        {/* Clickable border for expand/collapse */}
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => onExpandedChange(!expanded)}
+              className="absolute top-0 right-0 w-4 h-full cursor-col-resize transition-colors group flex items-center justify-center"
+              aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
+            >
+              {/* Vertical line */}
+              <div className="absolute right-0 w-px h-full bg-border" />
+              {/* Pill handle indicator */}
+              <div className="absolute right-0 translate-x-1/2 w-1.5 h-8 rounded-full bg-border group-hover:bg-primary transition-colors" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="bg-primary text-primary-foreground border-primary">
+            {expanded ? 'Collapse' : 'Expand'}
+          </TooltipContent>
+        </Tooltip>
       </aside>
     </TooltipProvider>
   )
