@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, Clock, Download, FileCode, FileText, FolderTree, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
+import { ChevronDown, Clock, Download, ExternalLink, FileCode, FileText, FolderTree, Link2, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -591,14 +591,37 @@ export default function RulesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Rules</h1>
         <div className="flex gap-2">
+          {hasPermission('manage_sigmahq') && (
+            <Button variant="outline" onClick={() => navigate('/sigmahq')}>
+              <ExternalLink className="h-4 w-4 mr-2" />
+              SigmaHQ
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setShowExportDialog(true)}>
             <Download className="h-4 w-4 mr-2" />
             Export Report
           </Button>
-          <Button onClick={() => navigate('/rules/new')} disabled={!canManageRules()}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Rule
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button disabled={!canManageRules()}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Rule
+                <ChevronDown className="h-4 w-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => navigate('/rules/new')}>
+                <FileCode className="h-4 w-4 mr-2" />
+                Sigma Rule
+                <span className="ml-auto text-xs text-muted-foreground">Detection logic</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/correlation/new')}>
+                <Link2 className="h-4 w-4 mr-2" />
+                Correlation Rule
+                <span className="ml-auto text-xs text-muted-foreground">Multi-event</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -875,10 +898,27 @@ export default function RulesPage() {
             ? 'Try adjusting your filters to see more results.'
             : 'Create your first rule to start detecting threats.'}
           action={!hasActiveFilters && canManageRules() ? (
-            <Button onClick={() => navigate('/rules/new')}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Rule
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Rule
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center">
+                <DropdownMenuItem onClick={() => navigate('/rules/new')}>
+                  <FileCode className="h-4 w-4 mr-2" />
+                  Sigma Rule
+                  <span className="ml-auto text-xs text-muted-foreground">Detection logic</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/correlation/new')}>
+                  <Link2 className="h-4 w-4 mr-2" />
+                  Correlation Rule
+                  <span className="ml-auto text-xs text-muted-foreground">Multi-event</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : undefined}
         />
       ) : viewMode === 'table' ? (
@@ -973,7 +1013,19 @@ export default function RulesPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {indexPatterns[rule.index_pattern_id]?.name || 'Unknown'}
+                      <div className="flex items-center gap-2">
+                        {indexPatterns[rule.index_pattern_id]?.name || 'Unknown'}
+                        {indexPatterns[rule.index_pattern_id]?.mode && (
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                            indexPatterns[rule.index_pattern_id]?.mode === 'push'
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                              : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                          )}>
+                            {indexPatterns[rule.index_pattern_id]?.mode}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {rule.last_edited_by || '-'}

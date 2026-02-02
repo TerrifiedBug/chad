@@ -33,10 +33,8 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: '/', label: 'Dashboard', exact: true },
   { href: '/alerts', label: 'Alerts' },
-  { href: '/live', label: 'Live' },
   { href: '/rules', label: 'Rules' },
   { href: '/correlation', label: 'Correlation' },
-  { href: '/sigmahq', label: 'SigmaHQ', permission: 'manage_sigmahq' },
   { href: '/attack', label: 'ATT&CK' },
   { href: '/index-patterns', label: 'Index Patterns', permission: 'manage_index_config' },
   { href: '/field-mappings', label: 'Field Mappings', permission: 'manage_index_config' },
