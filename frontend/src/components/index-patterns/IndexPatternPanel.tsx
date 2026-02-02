@@ -12,6 +12,7 @@ import {
 import { X, Settings, Table2, Key } from 'lucide-react'
 import { SettingsTab } from './SettingsTab'
 import { FieldMappingsTab } from './FieldMappingsTab'
+import { EndpointTab } from './EndpointTab'
 
 export type PanelTab = 'settings' | 'mappings' | 'endpoint'
 
@@ -152,11 +153,14 @@ export function IndexPatternPanel({
               )}
             </TabsContent>
 
-            <TabsContent value="endpoint" className="mt-0 h-full">
-              {/* EndpointTab placeholder - will be implemented in Phase 4 */}
-              <div className="text-sm text-muted-foreground">
-                Endpoint details will be available after saving the pattern.
-              </div>
+            <TabsContent value="endpoint" className="mt-0">
+              {pattern ? (
+                <EndpointTab pattern={pattern} />
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  Save the pattern first to view endpoint configuration.
+                </div>
+              )}
             </TabsContent>
           </div>
         </Tabs>
