@@ -557,11 +557,13 @@ class PullModeHealthResponse(BaseModel):
 @router.get("/pull-mode")
 async def get_pull_mode_health(
     db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     _: Annotated[User, Depends(get_current_user)],
 ):
     """Get health status for all pull mode index patterns."""
     from app.models.index_pattern import IndexPattern
     from app.models.poll_state import IndexPatternPollState
+    from app.services.health_monitor import check_index_data_freshness
     from sqlalchemy.orm import selectinload
     from datetime import datetime, UTC
 
@@ -569,6 +571,10 @@ async def get_pull_mode_health(
     pull_mode_settings = await get_setting(db, "pull_mode") or {}
     failures_warning = pull_mode_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING)
     failures_critical = pull_mode_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL)
+
+    # Load health thresholds for data freshness check
+    health_thresholds = await get_setting(db, "health_thresholds") or {}
+    no_data_minutes = health_thresholds.get("no_data_minutes", DEFAULT_NO_DATA_MINUTES)
 
     # Get all index patterns with poll state
     result = await db.execute(
@@ -639,6 +645,24 @@ async def get_pull_mode_health(
                 "consecutive_failures": 0,
             }
 
+        # Check data freshness for this pattern
+        data_freshness = None
+        try:
+            # Use pattern-specific threshold if set, otherwise global
+            threshold = pattern.health_no_data_minutes or no_data_minutes
+            _, freshness_details = await check_index_data_freshness(
+                os_client,
+                pattern,
+                threshold_minutes=threshold
+            )
+            data_freshness = freshness_details
+        except Exception as e:
+            data_freshness = {
+                "status": "error",
+                "message": f"Failed to check data freshness: {e}",
+                "index": pattern.pattern,
+            }
+
         pull_patterns.append({
             "index_pattern_id": str(pattern.id),
             "index_pattern_name": pattern.name,
@@ -651,6 +675,7 @@ async def get_pull_mode_health(
             "status": status,
             "issues": issues,
             "metrics": metrics,
+            "data_freshness": data_freshness,
         })
 
     # Calculate overall status

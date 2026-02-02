@@ -1438,6 +1438,18 @@ export const alertClusteringApi = {
     api.put<AlertClusteringSettings>('/settings/alert-clustering', data),
 }
 
+// Data freshness types for pull mode
+export type DataFreshnessStatus = 'fresh' | 'stale' | 'no_data' | 'no_timestamp' | 'error'
+
+export type DataFreshness = {
+  status: DataFreshnessStatus
+  last_event_at?: string
+  age_minutes?: number
+  threshold_minutes?: number
+  message?: string
+  index?: string
+}
+
 // Pull mode health types
 export type PullModePatternHealth = {
   index_pattern_id: string
@@ -1461,6 +1473,7 @@ export type PullModePatternHealth = {
     avg_poll_duration_ms: number | null
     consecutive_failures: number
   }
+  data_freshness?: DataFreshness
 }
 
 export type PullModeHealth = {
