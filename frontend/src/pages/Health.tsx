@@ -954,7 +954,7 @@ export default function HealthPage() {
                               <div className="flex items-center gap-2">
                                 <Clock className="h-4 w-4 text-muted-foreground" />
                                 <div>
-                                  <p className="text-muted-foreground">Avg Duration</p>
+                                  <p className="text-muted-foreground">OpenSearch Query</p>
                                   <p className="font-medium">
                                     {pullData?.metrics.avg_poll_duration_ms
                                       ? `${(pullData.metrics.avg_poll_duration_ms / 1000).toFixed(1)}s`
