@@ -761,6 +761,7 @@ export default function HealthPage() {
                     <tr className="border-b bg-muted/50">
                       <th className="text-left p-3 font-medium">Index</th>
                       <th className="text-left p-3 font-medium">Last Poll</th>
+                      <th className="text-left p-3 font-medium">Data Freshness</th>
                       <th className="text-right p-3 font-medium">Status</th>
                     </tr>
                   </thead>
@@ -777,6 +778,41 @@ export default function HealthPage() {
                               <span>{formatDateTime(pattern.last_poll_at)}</span>
                             </TimestampTooltip>
                           ) : 'Never'}
+                        </td>
+                        <td className="p-3">
+                          {pattern.data_freshness ? (
+                            <div className="flex items-center gap-1">
+                              {pattern.data_freshness.status === 'fresh' ? (
+                                <>
+                                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                  <span className="text-green-600 dark:text-green-500">
+                                    Fresh ({pattern.data_freshness.age_minutes}m ago)
+                                  </span>
+                                </>
+                              ) : pattern.data_freshness.status === 'stale' ? (
+                                <>
+                                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                                  <span className="text-yellow-600 dark:text-yellow-500">
+                                    Stale ({pattern.data_freshness.age_minutes}m ago)
+                                  </span>
+                                </>
+                              ) : pattern.data_freshness.status === 'no_data' ? (
+                                <>
+                                  <AlertCircle className="h-4 w-4 text-red-600" />
+                                  <span className="text-red-600 dark:text-red-500">No events</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">
+                                    {pattern.data_freshness.message || 'Unknown'}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -990,6 +1026,45 @@ export default function HealthPage() {
                                 </div>
                               </div>
                             </div>
+                            {/* Data Freshness Status */}
+                            {pullData?.data_freshness && (
+                              <div className="pt-2 border-t">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Data Freshness:</span>
+                                  {pullData.data_freshness.status === 'fresh' ? (
+                                    <>
+                                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                      <span className="text-sm text-green-600 dark:text-green-500">
+                                        Fresh (last event {pullData.data_freshness.age_minutes}m ago)
+                                      </span>
+                                    </>
+                                  ) : pullData.data_freshness.status === 'stale' ? (
+                                    <>
+                                      <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                                      <span className="text-sm text-yellow-600 dark:text-yellow-500">
+                                        Stale - Last event was {pullData.data_freshness.age_minutes} minutes ago
+                                      </span>
+                                    </>
+                                  ) : pullData.data_freshness.status === 'no_data' ? (
+                                    <>
+                                      <AlertCircle className="h-4 w-4 text-red-600" />
+                                      <span className="text-sm text-red-600 dark:text-red-500">No events found in index</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                                      <span className="text-sm text-muted-foreground">{pullData.data_freshness.message || 'Unknown status'}</span>
+                                    </>
+                                  )}
+                                </div>
+                                {/* Helper text when stale */}
+                                {pullData.data_freshness.status === 'stale' && (
+                                  <p className="text-xs text-muted-foreground ml-6 mt-1">
+                                    Polling is working but no new events in index. Check your log shipper configuration.
+                                  </p>
+                                )}
+                              </div>
+                            )}
                             {/* 24h Totals - Pull Mode */}
                             <div className="pt-2 border-t text-xs text-muted-foreground">
                               <span>Total: </span>
