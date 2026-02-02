@@ -24,6 +24,7 @@ from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
 from app.services.notification import send_health_notification
+from app.services.opensearch import get_client_from_settings
 from app.services.settings import get_setting
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,7 @@ async def check_index_data_freshness(
         })
 
 
-async def check_index_health(db: AsyncSession) -> list[dict]:
+async def check_index_health(db: AsyncSession, os_client=None) -> list[dict]:
     """
     Check health of all index patterns and send notifications for issues.
 
@@ -240,6 +241,14 @@ async def check_index_health(db: AsyncSession) -> list[dict]:
         select(IndexPattern).where(IndexPattern.health_alerting_enabled == True)  # noqa: E712
     )
     patterns = result.scalars().all()
+
+    # Get OpenSearch client for data freshness checks (only for pull mode)
+    pull_patterns = [p for p in patterns if p.mode == "pull"]
+    if pull_patterns and os_client is None:
+        try:
+            os_client = await get_client_from_settings(db)
+        except Exception as e:
+            logger.warning(f"Could not get OpenSearch client for data freshness checks: {e}")
 
     for pattern in patterns:
         # Track which conditions had issues for this pattern
@@ -374,6 +383,32 @@ async def check_index_health(db: AsyncSession) -> list[dict]:
 
         if queue_healthy:
             await _clear_suppression(db, pattern.id, "queue_depth")
+
+        # For pull mode, also check actual index data freshness
+        if pattern.mode == "pull" and os_client:
+            is_fresh, freshness_details = await check_index_data_freshness(
+                os_client,
+                pattern,
+                threshold_minutes=no_data_minutes  # Reuse no_data threshold
+            )
+
+            if not is_fresh and freshness_details["status"] in ("stale", "no_data"):
+                conditions_with_issues.add("stale_data")
+                issue = await _handle_issue(
+                    db,
+                    pattern,
+                    "warning",
+                    "stale_data",
+                    f"Index data is stale - last event was {freshness_details.get('age_minutes', '?')} minutes ago"
+                    if freshness_details["status"] == "stale"
+                    else "No events found in index",
+                    freshness_details,
+                )
+                if issue:
+                    issues.append(issue)
+            elif is_fresh:
+                # Data is fresh - clear stale_data suppression
+                await _clear_suppression(db, pattern.id, "stale_data")
 
     return issues
 
