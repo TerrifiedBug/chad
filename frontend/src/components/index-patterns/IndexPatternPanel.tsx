@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { IndexPattern } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { X, Settings, Table2, Key } from 'lucide-react'
+import { SettingsTab } from './SettingsTab'
 
 export type PanelTab = 'settings' | 'mappings' | 'endpoint'
 
@@ -20,8 +21,7 @@ interface IndexPatternPanelProps {
   activeTab: PanelTab
   onClose: () => void
   onTabChange: (tab: PanelTab) => void
-  onSave?: (data: Partial<IndexPattern>) => Promise<void>
-  onDelete?: () => void
+  onSave: (data: Partial<IndexPattern>) => Promise<void>
 }
 
 export function IndexPatternPanel({
@@ -31,7 +31,10 @@ export function IndexPatternPanel({
   activeTab,
   onClose,
   onTabChange,
+  onSave,
 }: IndexPatternPanelProps) {
+  const [isSaving, setIsSaving] = useState(false)
+
   // Handle escape key to close panel
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -50,6 +53,16 @@ export function IndexPatternPanel({
   const title = isNew
     ? 'Create Index Pattern'
     : pattern?.name || 'Index Pattern'
+
+  const handleSave = async (data: Partial<IndexPattern>) => {
+    setIsSaving(true)
+    try {
+      await onSave(data)
+      // If this was a new pattern, the parent will handle navigation
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -116,24 +129,26 @@ export function IndexPatternPanel({
 
           {/* Tab Contents */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <TabsContent value="settings" className="mt-0 h-full">
-              {/* SettingsTab placeholder - will be implemented in Phase 2 */}
-              <div className="text-sm text-muted-foreground">
-                Settings tab content (Phase 2)
-              </div>
+            <TabsContent value="settings" className="mt-0">
+              <SettingsTab
+                pattern={pattern}
+                isNew={isNew}
+                onSave={handleSave}
+                isSaving={isSaving}
+              />
             </TabsContent>
 
             <TabsContent value="mappings" className="mt-0 h-full">
               {/* FieldMappingsTab placeholder - will be implemented in Phase 3 */}
               <div className="text-sm text-muted-foreground">
-                Field mappings tab content (Phase 3)
+                Field mappings will be available after saving the pattern.
               </div>
             </TabsContent>
 
             <TabsContent value="endpoint" className="mt-0 h-full">
               {/* EndpointTab placeholder - will be implemented in Phase 4 */}
               <div className="text-sm text-muted-foreground">
-                Endpoint tab content (Phase 4)
+                Endpoint details will be available after saving the pattern.
               </div>
             </TabsContent>
           </div>

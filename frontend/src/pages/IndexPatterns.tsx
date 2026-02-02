@@ -283,6 +283,21 @@ export default function IndexPatternsPage() {
     ? patterns.find((p) => p.id === panelId) || null
     : null
 
+  // Panel save handler
+  const handlePanelSave = async (data: Partial<IndexPattern>) => {
+    if (isNewPattern) {
+      // Create new pattern
+      const result = await indexPatternsApi.create(data as Parameters<typeof indexPatternsApi.create>[0])
+      await loadPatterns()
+      // Navigate to the newly created pattern
+      openPanel(result.id, 'settings')
+    } else if (selectedPattern) {
+      // Update existing pattern
+      await indexPatternsApi.update(selectedPattern.id, data)
+      await loadPatterns()
+    }
+  }
+
   const openCreateDialog = () => {
     setEditingPattern(null)
     setFormData({
@@ -1775,6 +1790,7 @@ export default function IndexPatternsPage() {
         activeTab={panelTab}
         onClose={closePanel}
         onTabChange={handlePanelTabChange}
+        onSave={handlePanelSave}
       />
     </div>
   )
