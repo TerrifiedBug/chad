@@ -98,6 +98,7 @@ export default function RulesPage() {
   const [correlationRules, setCorrelationRules] = useState<CorrelationRule[]>([])
   const [correlationLoading, setCorrelationLoading] = useState(false)
   const [correlationError, setCorrelationError] = useState('')
+  const [correlationLoaded, setCorrelationLoaded] = useState(false)
   const [selectedCorrelationRules, setSelectedCorrelationRules] = useState<Set<string>>(new Set())
 
   // Initialize filters from URL params
@@ -245,6 +246,7 @@ export default function RulesPage() {
     try {
       const response = await correlationRulesApi.list(true)
       setCorrelationRules(response.correlation_rules)
+      setCorrelationLoaded(true)
     } catch (err) {
       setCorrelationError(err instanceof Error ? err.message : 'Failed to load correlation rules')
     } finally {
@@ -254,10 +256,10 @@ export default function RulesPage() {
 
   // Load correlation rules when switching to correlation tab
   useEffect(() => {
-    if (activeTab === 'correlation' && correlationRules.length === 0 && !correlationLoading) {
+    if (activeTab === 'correlation' && !correlationLoaded && !correlationLoading) {
       loadCorrelationRules()
     }
-  }, [activeTab])
+  }, [activeTab, correlationLoaded, correlationLoading])
 
   // Memoized filtered rules based on all filters
   const filteredRules = useMemo(() => {
@@ -685,16 +687,16 @@ export default function RulesPage() {
                 <ChevronDown className="h-4 w-4 ml-2" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => navigate('/rules/new')}>
-                <FileCode className="h-4 w-4 mr-2" />
-                Sigma Rule
-                <span className="ml-auto text-xs text-muted-foreground">Detection logic</span>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={() => navigate('/rules/new')} className="flex items-center gap-2">
+                <FileCode className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">Sigma Rule</span>
+                <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Detection logic</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/correlation/new')}>
-                <Link2 className="h-4 w-4 mr-2" />
-                Correlation Rule
-                <span className="ml-auto text-xs text-muted-foreground">Multi-event</span>
+              <DropdownMenuItem onClick={() => navigate('/correlation/new')} className="flex items-center gap-2">
+                <Link2 className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">Correlation Rule</span>
+                <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Multi-event</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1002,16 +1004,16 @@ export default function RulesPage() {
                   <ChevronDown className="h-4 w-4 ml-2" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="center">
-                <DropdownMenuItem onClick={() => navigate('/rules/new')}>
-                  <FileCode className="h-4 w-4 mr-2" />
-                  Sigma Rule
-                  <span className="ml-auto text-xs text-muted-foreground">Detection logic</span>
+              <DropdownMenuContent align="center" className="w-64">
+                <DropdownMenuItem onClick={() => navigate('/rules/new')} className="flex items-center gap-2">
+                  <FileCode className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">Sigma Rule</span>
+                  <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Detection logic</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/correlation/new')}>
-                  <Link2 className="h-4 w-4 mr-2" />
-                  Correlation Rule
-                  <span className="ml-auto text-xs text-muted-foreground">Multi-event</span>
+                <DropdownMenuItem onClick={() => navigate('/correlation/new')} className="flex items-center gap-2">
+                  <Link2 className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">Correlation Rule</span>
+                  <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Multi-event</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
