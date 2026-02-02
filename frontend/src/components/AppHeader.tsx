@@ -42,7 +42,7 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
         {/* Logo section - matches sidebar width */}
         <div
           className={cn(
-            'flex items-center justify-center border-r transition-all duration-200',
+            'flex items-center justify-center transition-all duration-200',
             railExpanded ? 'w-[200px]' : 'w-14',
             showMobileMenu && 'hidden md:flex'
           )}
