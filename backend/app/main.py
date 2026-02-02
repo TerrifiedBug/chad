@@ -35,6 +35,7 @@ from app.api.rules import router as rules_router
 from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
 from app.api.stats import router as stats_router
+from app.api.system_logs import router as system_logs_router
 from app.api.ti import router as ti_router
 from app.api.users import router as users_router
 from app.api.webhooks import router as webhooks_router
@@ -349,6 +350,7 @@ app.include_router(alerts_router, prefix="/api")
 app.include_router(logs_router, prefix="/api")
 app.include_router(mode_router, prefix="/api")
 app.include_router(stats_router, prefix="/api")
+app.include_router(system_logs_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(api_keys_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
