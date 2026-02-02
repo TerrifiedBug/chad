@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { IndexPattern, indexPatternsApi, tiApi, TISource, TIConfig } from '@/lib/api'
+import { IndexPattern, indexPatternsApi, tiApi, TISourceConfig, TIConfig, TI_SOURCE_INFO } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -21,7 +21,7 @@ interface TIEnrichmentTabProps {
 
 export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabProps) {
   const { showToast } = useToast()
-  const [tiSources, setTiSources] = useState<TISource[]>([])
+  const [tiSources, setTiSources] = useState<TISourceConfig[]>([])
   const [tiConfig, setTiConfig] = useState<TIConfig>(pattern.ti_config || {})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -32,11 +32,12 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
     const loadData = async () => {
       setIsLoading(true)
       try {
-        const [sources, fields] = await Promise.all([
-          tiApi.getSources(),
+        const [sourcesResponse, fields] = await Promise.all([
+          tiApi.listSources(),
           indexPatternsApi.getFields(pattern.id),
         ])
-        setTiSources(sources.filter(s => s.enabled))
+        // Filter to only enabled sources with API keys configured
+        setTiSources(sourcesResponse.sources.filter(s => s.is_enabled && s.has_api_key))
         setAvailableFields(fields)
       } catch (err) {
         console.error('Failed to load TI data:', err)
@@ -67,25 +68,25 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
     }
   }
 
-  const toggleSource = (sourceName: string, enabled: boolean) => {
+  const toggleSource = (sourceType: string, enabled: boolean) => {
     if (enabled) {
       setTiConfig({
         ...tiConfig,
-        [sourceName]: { enabled: true, fields: [] },
+        [sourceType]: { enabled: true, fields: [] },
       })
     } else {
       const newConfig = { ...tiConfig }
-      delete newConfig[sourceName]
+      delete newConfig[sourceType]
       setTiConfig(newConfig)
     }
   }
 
-  const addField = (sourceName: string, field: string) => {
-    const sourceConfig = tiConfig[sourceName] || { enabled: true, fields: [] }
+  const addField = (sourceType: string, field: string) => {
+    const sourceConfig = tiConfig[sourceType] || { enabled: true, fields: [] }
     if (!sourceConfig.fields.includes(field)) {
       setTiConfig({
         ...tiConfig,
-        [sourceName]: {
+        [sourceType]: {
           ...sourceConfig,
           fields: [...sourceConfig.fields, field],
         },
@@ -93,17 +94,23 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
     }
   }
 
-  const removeField = (sourceName: string, field: string) => {
-    const sourceConfig = tiConfig[sourceName]
+  const removeField = (sourceType: string, field: string) => {
+    const sourceConfig = tiConfig[sourceType]
     if (sourceConfig) {
       setTiConfig({
         ...tiConfig,
-        [sourceName]: {
+        [sourceType]: {
           ...sourceConfig,
           fields: sourceConfig.fields.filter(f => f !== field),
         },
       })
     }
+  }
+
+  // Get display name for a TI source type
+  const getSourceDisplayName = (sourceType: string): string => {
+    const info = TI_SOURCE_INFO[sourceType as keyof typeof TI_SOURCE_INFO]
+    return info?.name || sourceType
   }
 
   if (isLoading) {
@@ -131,19 +138,20 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
       ) : (
         <div className="space-y-4">
           {tiSources.map((source) => {
-            const sourceConfig = tiConfig[source.name]
+            const sourceConfig = tiConfig[source.source_type]
             const isEnabled = !!sourceConfig?.enabled
+            const displayName = getSourceDisplayName(source.source_type)
 
             return (
-              <div key={source.name} className="border rounded-lg p-4">
+              <div key={source.source_type} className="border rounded-lg p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <Label className="font-medium">{source.name}</Label>
-                    <p className="text-xs text-muted-foreground capitalize">{source.type}</p>
+                    <Label className="font-medium">{displayName}</Label>
+                    <p className="text-xs text-muted-foreground capitalize">{source.source_type}</p>
                   </div>
                   <Switch
                     checked={isEnabled}
-                    onCheckedChange={(checked) => toggleSource(source.name, checked)}
+                    onCheckedChange={(checked) => toggleSource(source.source_type, checked)}
                   />
                 </div>
 
@@ -153,7 +161,7 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
                     <div className="flex gap-2">
                       <Select
                         value=""
-                        onValueChange={(field) => addField(source.name, field)}
+                        onValueChange={(field) => addField(source.source_type, field)}
                       >
                         <SelectTrigger className="flex-1">
                           <SelectValue placeholder="Add field to check..." />
@@ -177,7 +185,7 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
                             {field}
                             <button
                               type="button"
-                              onClick={() => removeField(source.name, field)}
+                              onClick={() => removeField(source.source_type, field)}
                               className="ml-1 hover:bg-muted rounded-full p-0.5"
                             >
                               <X className="h-3 w-3" />
@@ -188,7 +196,7 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
                     )}
 
                     <p className="text-xs text-muted-foreground">
-                      Select fields containing IPs, domains, or hashes to check against {source.name}.
+                      Select fields containing IPs, domains, or hashes to check against {displayName}.
                     </p>
                   </div>
                 )}
