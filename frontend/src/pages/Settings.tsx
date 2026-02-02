@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Card,
   CardContent,
@@ -17,9 +16,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { CheckCircle2, ChevronDown, Download, ExternalLink, Loader2, RefreshCw, Save, Upload, Users, FileText, XCircle } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Download, Loader2, Save, Upload, XCircle } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { useVersion } from '@/hooks/use-version'
 import {
   Select,
   SelectContent,
@@ -51,7 +49,6 @@ async function downloadWithAuth(url: string, filename: string) {
 export default function SettingsPage() {
   const { showToast } = useToast()
   const [searchParams] = useSearchParams()
-  const { version, updateAvailable, latestVersion, releaseUrl, loading: versionLoading, checkForUpdates } = useVersion()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -67,10 +64,7 @@ export default function SettingsPage() {
   const [force2FAOnSignup, setForce2FAOnSignup] = useState(false)
 
   // Active tab for programmatic navigation - read from URL param if present
-  const [activeTab, setActiveTab] = useState(() => {
-    const tabParam = searchParams.get('tab')
-    return tabParam || 'notifications'
-  })
+  const activeTab = searchParams.get('tab') || 'notifications'
 
   // SSO settings
   const [ssoEnabled, setSsoEnabled] = useState(false)
@@ -673,823 +667,1030 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Settings</h1>
-          <p className="text-muted-foreground">Configure your CHAD installation</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link to="/settings/audit">
-              <FileText className="mr-2 h-4 w-4" /> View Audit Log
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/settings/users">
-              <Users className="mr-2 h-4 w-4" /> Manage Users
-            </Link>
-          </Button>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold">Settings</h1>
+        <p className="text-muted-foreground">Manage your CHAD configuration</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="permissions">Permissions</TabsTrigger>
-          <TabsTrigger value="sso">SSO</TabsTrigger>
-          <TabsTrigger value="ai">AI</TabsTrigger>
-          <TabsTrigger value="geoip">GeoIP</TabsTrigger>
-          <TabsTrigger value="threat-intel">Threat Intel</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
-          <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
-          <TabsTrigger value="health">Health Monitoring</TabsTrigger>
-          <TabsTrigger value="push-queue">Push Queue</TabsTrigger>
-          <TabsTrigger value="pull-queue">Pull Queue</TabsTrigger>
-          <TabsTrigger value="background-sync">Background Sync</TabsTrigger>
-          <TabsTrigger value="export">Backup & Restore</TabsTrigger>
-          <TabsTrigger value="about" className="flex items-center gap-1">
-            About
-            {updateAvailable && <span className="h-2 w-2 rounded-full bg-red-500" />}
-          </TabsTrigger>
-        </TabsList>
+      {/* Notifications Section */}
+      {activeTab === 'notifications' && (
+        <Notifications />
+      )}
 
-        <TabsContent value="notifications" className="mt-4">
-          <Notifications />
-        </TabsContent>
-
-        <TabsContent value="security" className="mt-4 space-y-6" data-form-type="other" data-lpignore="true" data-1p-ignore="true" data-protonpass-ignore="true">
-          {/* Hidden autofill trap to prevent password managers from offering TOTP */}
-          <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', opacity: 0 }}>
-            <input
-              type="text"
-              name="otp"
-              id="trap-otp"
-              tabIndex={-1}
-              autoComplete="one-time-code"
-              data-protonpass-ignore="true"
-              data-lpignore="true"
-              data-1p-ignore="true"
-            />
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Session Settings</CardTitle>
-              <CardDescription>
-                Configure authentication and session behavior
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="session-timeout">Session Timeout (minutes)</Label>
-                <Input
-                  id="session-timeout"
-                  type="number"
-                  autoComplete="off"
-                  value={sessionTimeout}
-                  onChange={(e) =>
-                    setSessionTimeout(parseInt(e.target.value) || 480)
-                  }
-                  min={15}
-                  max={10080}
-                />
-                <p className="text-sm text-muted-foreground">
-                  How long until users are logged out due to inactivity (15 min -
-                  7 days)
-                </p>
-              </div>
-              <Button onClick={saveSession} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? 'Saving...' : 'Save'}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Rate Limiting</CardTitle>
-              <CardDescription>
-                Protect against brute force attacks by limiting failed login attempts
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Enable Rate Limiting</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Lock accounts after too many failed login attempts
-                  </p>
-                </div>
-                <Switch
-                  checked={rateLimitEnabled}
-                  onCheckedChange={setRateLimitEnabled}
-                />
-              </div>
-
-              {rateLimitEnabled && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="rate-limit-max-attempts">Max Failed Attempts</Label>
-                    <Input
-                      id="rate-limit-max-attempts"
-                      type="number"
-                      autoComplete="off"
-                      min={1}
-                      max={20}
-                      value={rateLimitMaxAttempts}
-                      onChange={(e) => setRateLimitMaxAttempts(parseInt(e.target.value) || 5)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Number of failed attempts before account lockout
-                    </p>
+      {/* Security Section - combines security, permissions, and sso */}
+      {activeTab === 'security' && (
+        <div className="space-y-6">
+          {/* Session & Rate Limiting */}
+          <Collapsible defaultOpen>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Session & Rate Limiting</CardTitle>
+                      <CardDescription>Configure session timeout and brute force protection</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="rate-limit-lockout-minutes">Lockout Duration (minutes)</Label>
-                    <Input
-                      id="rate-limit-lockout-minutes"
-                      type="number"
-                      autoComplete="off"
-                      min={1}
-                      max={1440}
-                      value={rateLimitLockoutMinutes}
-                      onChange={(e) => setRateLimitLockoutMinutes(parseInt(e.target.value) || 15)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      How long to lock the account after max attempts
-                    </p>
-                  </div>
-                </>
-              )}
-
-              <Button onClick={saveRateLimiting} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? 'Saving...' : 'Save'}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card data-lpignore="true" data-1p-ignore="true" data-protonpass-ignore="true">
-            <CardHeader>
-              <CardTitle>Multi-Factor Policy</CardTitle>
-              <CardDescription>
-                Configure organization-wide MFA requirements
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Require Multi-Factor Authentication</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Users without MFA must set it up on login. Users can still enable MFA from their Account page if this is disabled.
-                  </p>
-                </div>
-                <Switch
-                  checked={force2FAOnSignup}
-                  onCheckedChange={setForce2FAOnSignup}
-                />
-              </div>
-              <Button onClick={save2FASettings} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? 'Saving...' : 'Save'}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="permissions" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Role Permissions</CardTitle>
-              <CardDescription>
-                Configure what each role can do. Admin permissions cannot be modified.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {['analyst', 'viewer'].map((role) => {
-                  const enabledCount = Object.keys(permissionDescriptions).filter(
-                    (perm) => permissions[role]?.[perm] ?? false
-                  ).length
-                  const totalCount = Object.keys(permissionDescriptions).length
-                  return (
-                    <Collapsible key={role} defaultOpen={false} className="border rounded-lg">
-                      <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-muted/50 transition-colors [&[data-state=open]>svg]:rotate-180">
-                        <div className="flex items-center gap-3">
-                          <h3 className="font-medium capitalize text-lg">{role}</h3>
-                          <span className="text-sm text-muted-foreground">
-                            {enabledCount} of {totalCount} permissions enabled
-                          </span>
-                        </div>
-                        <ChevronDown className="h-4 w-4 transition-transform duration-200" />
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <div className="grid gap-3 p-4 pt-0 border-t">
-                          {Object.entries(permissionDescriptions).map(([perm, desc]) => (
-                            <div key={perm} className="flex items-center justify-between py-2">
-                              <div className="space-y-0.5">
-                                <Label className="text-sm font-medium">
-                                  {perm.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-                                </Label>
-                                <p className="text-xs text-muted-foreground">{desc}</p>
-                              </div>
-                              <Switch
-                                checked={permissions[role]?.[perm] ?? false}
-                                onCheckedChange={async (checked) => {
-                                  try {
-                                    await permissionsApi.update(role, perm, checked)
-                                    setPermissions((prev) => ({
-                                      ...prev,
-                                      [role]: { ...prev[role], [perm]: checked },
-                                    }))
-                                    showToast(`Permission updated for ${role}`)
-                                  } catch (err) {
-                                    showToast(
-                                      err instanceof Error ? err.message : 'Failed to update permission',
-                                      'error'
-                                    )
-                                  }
-                                }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  )
-                })}
-                {Object.keys(permissionDescriptions).length === 0 && (
-                  <p className="text-muted-foreground text-sm">
-                    No permissions configured. The permissions API may not be available.
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="sso" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Single Sign-On (SSO)</CardTitle>
-              <CardDescription>
-                Configure OIDC provider for enterprise authentication
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Enable SSO</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Allow users to login with your identity provider
-                  </p>
-                </div>
-                <Switch checked={ssoEnabled} onCheckedChange={setSsoEnabled} />
-              </div>
-
-              {ssoEnabled && (
-                <div className="space-y-4 pt-4 border-t">
-                  <div className="space-y-2">
-                    <Label htmlFor="sso-provider-name">Provider Name</Label>
-                    <Input
-                      id="sso-provider-name"
-                      value={ssoProviderName}
-                      onChange={(e) => setSsoProviderName(e.target.value)}
-                      placeholder="Microsoft"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Display name on the login button (e.g., "Microsoft", "Okta", "Google")
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="sso-issuer">Issuer URL</Label>
-                    <Input
-                      id="sso-issuer"
-                      value={ssoIssuerUrl}
-                      onChange={(e) => setSsoIssuerUrl(e.target.value)}
-                      placeholder="https://login.microsoftonline.com/tenant-id/v2.0"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      OIDC issuer URL from your identity provider
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="sso-client-id">Client ID</Label>
-                    <Input
-                      id="sso-client-id"
-                      value={ssoClientId}
-                      onChange={(e) => setSsoClientId(e.target.value)}
-                      placeholder="your-client-id"
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6" data-form-type="other" data-lpignore="true" data-1p-ignore="true" data-protonpass-ignore="true">
+                  {/* Hidden autofill trap to prevent password managers from offering TOTP */}
+                  <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', opacity: 0 }}>
+                    <input
+                      type="text"
+                      name="otp"
+                      id="trap-otp"
+                      tabIndex={-1}
+                      autoComplete="one-time-code"
+                      data-protonpass-ignore="true"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="sso-client-secret">Client Secret</Label>
-                    <Input
-                      id="sso-client-secret"
-                      type="password"
-                      value={ssoClientSecret}
-                      onChange={(e) => setSsoClientSecret(e.target.value)}
-                      placeholder="Enter new secret to change"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Leave blank to keep existing secret
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Default Role for New SSO Users</Label>
-                    <Select value={ssoDefaultRole} onValueChange={setSsoDefaultRole}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="z-50 bg-popover">
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="analyst">Analyst</SelectItem>
-                        <SelectItem value="viewer">Viewer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Role assigned to users when role mapping is disabled or no match found
-                    </p>
-                  </div>
-
-                  {/* Advanced OAuth Settings */}
-                  <div className="pt-4 border-t space-y-4">
-                    <h4 className="text-sm font-medium">Advanced OAuth Settings</h4>
-
+                  {/* Session Settings */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium">Session Settings</h4>
                     <div className="space-y-2">
-                      <Label>OAuth Scopes</Label>
+                      <Label htmlFor="session-timeout">Session Timeout (minutes)</Label>
                       <Input
-                        value={ssoScopes}
-                        onChange={(e) => setSsoScopes(e.target.value)}
-                        placeholder="openid email profile"
+                        id="session-timeout"
+                        type="number"
+                        autoComplete="off"
+                        value={sessionTimeout}
+                        onChange={(e) =>
+                          setSessionTimeout(parseInt(e.target.value) || 480)
+                        }
+                        min={15}
+                        max={10080}
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Space-separated list of scopes to request. Add "groups" or "roles" if needed for role mapping.
+                      <p className="text-sm text-muted-foreground">
+                        How long until users are logged out due to inactivity (15 min -
+                        7 days)
                       </p>
                     </div>
+                    <Button onClick={saveSession} disabled={isSaving}>
+                      <Save className="mr-2 h-4 w-4" />
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </Button>
+                  </div>
 
+                  <div className="border-t pt-6">
+                    <h4 className="text-sm font-medium mb-4">Rate Limiting</h4>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label>Enable Rate Limiting</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Lock accounts after too many failed login attempts
+                          </p>
+                        </div>
+                        <Switch
+                          checked={rateLimitEnabled}
+                          onCheckedChange={setRateLimitEnabled}
+                        />
+                      </div>
+
+                      {rateLimitEnabled && (
+                        <>
+                          <div className="space-y-2">
+                            <Label htmlFor="rate-limit-max-attempts">Max Failed Attempts</Label>
+                            <Input
+                              id="rate-limit-max-attempts"
+                              type="number"
+                              autoComplete="off"
+                              min={1}
+                              max={20}
+                              value={rateLimitMaxAttempts}
+                              onChange={(e) => setRateLimitMaxAttempts(parseInt(e.target.value) || 5)}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Number of failed attempts before account lockout
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="rate-limit-lockout-minutes">Lockout Duration (minutes)</Label>
+                            <Input
+                              id="rate-limit-lockout-minutes"
+                              type="number"
+                              autoComplete="off"
+                              min={1}
+                              max={1440}
+                              value={rateLimitLockoutMinutes}
+                              onChange={(e) => setRateLimitLockoutMinutes(parseInt(e.target.value) || 15)}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              How long to lock the account after max attempts
+                            </p>
+                          </div>
+                        </>
+                      )}
+
+                      <Button onClick={saveRateLimiting} disabled={isSaving}>
+                        <Save className="mr-2 h-4 w-4" />
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-6" data-lpignore="true" data-1p-ignore="true" data-protonpass-ignore="true">
+                    <h4 className="text-sm font-medium mb-4">Multi-Factor Policy</h4>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label>Require Multi-Factor Authentication</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Users without MFA must set it up on login. Users can still enable MFA from their Account page if this is disabled.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={force2FAOnSignup}
+                          onCheckedChange={setForce2FAOnSignup}
+                        />
+                      </div>
+                      <Button onClick={save2FASettings} disabled={isSaving}>
+                        <Save className="mr-2 h-4 w-4" />
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
+          {/* Permissions */}
+          <Collapsible defaultOpen>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Role Permissions</CardTitle>
+                      <CardDescription>Configure what each role can do. Admin permissions cannot be modified.</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <div className="space-y-4">
+                    {['analyst', 'viewer'].map((role) => {
+                      const enabledCount = Object.keys(permissionDescriptions).filter(
+                        (perm) => permissions[role]?.[perm] ?? false
+                      ).length
+                      const totalCount = Object.keys(permissionDescriptions).length
+                      return (
+                        <Collapsible key={role} defaultOpen={false} className="border rounded-lg">
+                          <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-muted/50 transition-colors [&[data-state=open]>svg]:rotate-180">
+                            <div className="flex items-center gap-3">
+                              <h3 className="font-medium capitalize text-lg">{role}</h3>
+                              <span className="text-sm text-muted-foreground">
+                                {enabledCount} of {totalCount} permissions enabled
+                              </span>
+                            </div>
+                            <ChevronDown className="h-4 w-4 transition-transform duration-200" />
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="grid gap-3 p-4 pt-0 border-t">
+                              {Object.entries(permissionDescriptions).map(([perm, desc]) => (
+                                <div key={perm} className="flex items-center justify-between py-2">
+                                  <div className="space-y-0.5">
+                                    <Label className="text-sm font-medium">
+                                      {perm.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">{desc}</p>
+                                  </div>
+                                  <Switch
+                                    checked={permissions[role]?.[perm] ?? false}
+                                    onCheckedChange={async (checked) => {
+                                      try {
+                                        await permissionsApi.update(role, perm, checked)
+                                        setPermissions((prev) => ({
+                                          ...prev,
+                                          [role]: { ...prev[role], [perm]: checked },
+                                        }))
+                                        showToast(`Permission updated for ${role}`)
+                                      } catch (err) {
+                                        showToast(
+                                          err instanceof Error ? err.message : 'Failed to update permission',
+                                          'error'
+                                        )
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )
+                    })}
+                    {Object.keys(permissionDescriptions).length === 0 && (
+                      <p className="text-muted-foreground text-sm">
+                        No permissions configured. The permissions API may not be available.
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
+          {/* SSO */}
+          <Collapsible defaultOpen>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Single Sign-On (SSO)</CardTitle>
+                      <CardDescription>Configure OIDC provider for enterprise authentication</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Enable SSO</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Allow users to login with your identity provider
+                      </p>
+                    </div>
+                    <Switch checked={ssoEnabled} onCheckedChange={setSsoEnabled} />
+                  </div>
+
+                  {ssoEnabled && (
+                    <div className="space-y-4 pt-4 border-t">
+                      <div className="space-y-2">
+                        <Label htmlFor="sso-provider-name">Provider Name</Label>
+                        <Input
+                          id="sso-provider-name"
+                          value={ssoProviderName}
+                          onChange={(e) => setSsoProviderName(e.target.value)}
+                          placeholder="Microsoft"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Display name on the login button (e.g., "Microsoft", "Okta", "Google")
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="sso-issuer">Issuer URL</Label>
+                        <Input
+                          id="sso-issuer"
+                          value={ssoIssuerUrl}
+                          onChange={(e) => setSsoIssuerUrl(e.target.value)}
+                          placeholder="https://login.microsoftonline.com/tenant-id/v2.0"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          OIDC issuer URL from your identity provider
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="sso-client-id">Client ID</Label>
+                        <Input
+                          id="sso-client-id"
+                          value={ssoClientId}
+                          onChange={(e) => setSsoClientId(e.target.value)}
+                          placeholder="your-client-id"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="sso-client-secret">Client Secret</Label>
+                        <Input
+                          id="sso-client-secret"
+                          type="password"
+                          value={ssoClientSecret}
+                          onChange={(e) => setSsoClientSecret(e.target.value)}
+                          placeholder="Enter new secret to change"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Leave blank to keep existing secret
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Default Role for New SSO Users</Label>
+                        <Select value={ssoDefaultRole} onValueChange={setSsoDefaultRole}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="z-50 bg-popover">
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="analyst">Analyst</SelectItem>
+                            <SelectItem value="viewer">Viewer</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Role assigned to users when role mapping is disabled or no match found
+                        </p>
+                      </div>
+
+                      {/* Advanced OAuth Settings */}
+                      <div className="pt-4 border-t space-y-4">
+                        <h4 className="text-sm font-medium">Advanced OAuth Settings</h4>
+
+                        <div className="space-y-2">
+                          <Label>OAuth Scopes</Label>
+                          <Input
+                            value={ssoScopes}
+                            onChange={(e) => setSsoScopes(e.target.value)}
+                            placeholder="openid email profile"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Space-separated list of scopes to request. Add "groups" or "roles" if needed for role mapping.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Token Auth Method</Label>
+                          <Select value={ssoTokenAuthMethod} onValueChange={setSsoTokenAuthMethod}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="z-50 bg-popover">
+                              <SelectItem value="client_secret_post">POST Body (Most Common)</SelectItem>
+                              <SelectItem value="client_secret_basic">HTTP Basic Auth</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            How credentials are sent to the token endpoint. Try switching if you get "Invalid client secret" errors.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Role Mapping Section */}
+                      <div className="pt-4 border-t space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label>Enable Role Mapping</Label>
+                            <p className="text-sm text-muted-foreground">
+                              Automatically assign roles based on IdP claims
+                            </p>
+                          </div>
+                          <Switch
+                            checked={ssoRoleMappingEnabled}
+                            onCheckedChange={setSsoRoleMappingEnabled}
+                          />
+                        </div>
+
+                        {ssoRoleMappingEnabled && (
+                          <div className="space-y-4 pl-4 border-l-2 border-muted">
+                            <div className="space-y-2">
+                              <Label htmlFor="role-claim">Role Claim</Label>
+                              <Input
+                                id="role-claim"
+                                value={ssoRoleClaim}
+                                onChange={(e) => setSsoRoleClaim(e.target.value)}
+                                placeholder="groups"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                The claim name in the token containing user roles (e.g., "groups", "roles", "role")
+                              </p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="admin-values">Admin Claim Values</Label>
+                              <Input
+                                id="admin-values"
+                                value={ssoAdminValues}
+                                onChange={(e) => setSsoAdminValues(e.target.value)}
+                                placeholder="chad-admins, security-team"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Comma-separated values that grant Admin role
+                              </p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="analyst-values">Analyst Claim Values</Label>
+                              <Input
+                                id="analyst-values"
+                                value={ssoAnalystValues}
+                                onChange={(e) => setSsoAnalystValues(e.target.value)}
+                                placeholder="chad-analysts, soc-analysts"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Comma-separated values that grant Analyst role
+                              </p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="viewer-values">Viewer Claim Values</Label>
+                              <Input
+                                id="viewer-values"
+                                value={ssoViewerValues}
+                                onChange={(e) => setSsoViewerValues(e.target.value)}
+                                placeholder="chad-viewers, read-only"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Comma-separated values that grant Viewer role
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
+                              <strong>Note:</strong> Role mapping syncs on every login. If a user's groups change in the IdP, their CHAD role will update on next sign-in.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-4 border-t">
+                        <div className="p-3 bg-muted rounded-md">
+                          <p className="text-sm font-medium mb-1">Callback URL</p>
+                          <code className="text-xs bg-background px-2 py-1 rounded">
+                            {window.location.origin}/api/auth/sso/callback
+                          </code>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Register this URL in your identity provider
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <Button onClick={saveSso} disabled={isSaving}>
+                    <Save className="mr-2 h-4 w-4" />
+                    {isSaving ? 'Saving...' : 'Save'}
+                  </Button>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        </div>
+      )}
+
+      {/* AI Section */}
+      {activeTab === 'ai' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>AI Field Mapping</CardTitle>
+            <CardDescription>
+              Configure AI providers to suggest field mappings between Sigma rules and your log data
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Connection Status Indicator */}
+            {aiSettings.ai_provider !== 'disabled' && (
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  {aiTestLoading ? (
+                    <div className="h-3 w-3 rounded-full bg-gray-400 animate-pulse" />
+                  ) : aiTestResult?.success ? (
+                    <div className="h-3 w-3 rounded-full bg-green-500" />
+                  ) : aiTestResult ? (
+                    <div className="h-3 w-3 rounded-full bg-red-500" />
+                  ) : aiLastTestSuccess === true ? (
+                    <div className="h-3 w-3 rounded-full bg-green-500" />
+                  ) : aiLastTestSuccess === false ? (
+                    <div className="h-3 w-3 rounded-full bg-red-500" />
+                  ) : (
+                    <div className="h-3 w-3 rounded-full bg-gray-300" />
+                  )}
+                  <div>
+                    <p className="font-medium">
+                      {aiTestLoading
+                        ? 'Testing connection...'
+                        : aiTestResult?.success
+                        ? 'Connected'
+                        : aiTestResult
+                        ? 'Connection failed'
+                        : aiLastTestSuccess === true
+                        ? 'Connected'
+                        : aiLastTestSuccess === false
+                        ? 'Connection failed'
+                        : 'Not tested'}
+                    </p>
+                    {aiTestResult && !aiTestResult.success && (
+                      <p className="text-sm text-destructive">
+                        {aiTestResult.error || 'Unknown error'}
+                      </p>
+                    )}
+                    {aiLastTested && !aiTestLoading && (
+                      <p className="text-xs text-muted-foreground">
+                        Last tested: {new Date(aiLastTested).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={testAiConnection}
+                  disabled={aiTestLoading}
+                >
+                  {aiTestLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : null}
+                  Test Connection
+                </Button>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>AI Provider</Label>
+              <Select
+                value={aiSettings.ai_provider}
+                onValueChange={(value) =>
+                  setAiSettings({ ...aiSettings, ai_provider: value as AIProvider })
+                }
+              >
+                <SelectTrigger className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="z-50 bg-popover">
+                  <SelectItem value="disabled">Disabled</SelectItem>
+                  <SelectItem value="ollama">Ollama (Local)</SelectItem>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                  <SelectItem value="anthropic">Anthropic</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Choose an AI provider for generating field mapping suggestions
+              </p>
+            </div>
+
+            {aiSettings.ai_provider === 'ollama' && (
+              <div className="space-y-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <Label htmlFor="ollama-url">Ollama URL</Label>
+                  <Input
+                    id="ollama-url"
+                    value={aiSettings.ai_ollama_url}
+                    onChange={(e) =>
+                      setAiSettings({ ...aiSettings, ai_ollama_url: e.target.value })
+                    }
+                    placeholder="http://localhost:11434"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    URL of your local Ollama instance
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ollama-model">Model</Label>
+                  <Input
+                    id="ollama-model"
+                    value={aiSettings.ai_ollama_model}
+                    onChange={(e) =>
+                      setAiSettings({ ...aiSettings, ai_ollama_model: e.target.value })
+                    }
+                    placeholder="llama3"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Ollama model name (e.g., llama3, mistral, codellama)
+                  </p>
+                </div>
+                <div className="flex items-center justify-between pt-2">
+                  <div className="space-y-0.5">
+                    <Label>Allow Log Samples</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Include sample log data to improve mapping accuracy
+                    </p>
+                  </div>
+                  <Switch
+                    checked={aiSettings.ai_allow_log_samples}
+                    onCheckedChange={(checked) =>
+                      setAiSettings({ ...aiSettings, ai_allow_log_samples: checked })
+                    }
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Since Ollama runs locally, log samples stay on your machine
+                </p>
+              </div>
+            )}
+
+            {aiSettings.ai_provider === 'openai' && (
+              <div className="space-y-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="openai-key">API Key</Label>
+                    {aiOpenAIKeyConfigured ? (
+                      <span className="flex items-center text-xs text-green-600 dark:text-green-400">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="flex items-center text-xs text-muted-foreground">
+                        <XCircle className="h-3 w-3 mr-1" />
+                        Not configured
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    id="openai-key"
+                    type="password"
+                    value={aiOpenAIKey}
+                    onChange={(e) => setAiOpenAIKey(e.target.value)}
+                    placeholder={aiOpenAIKeyConfigured ? "Enter new key to change" : "Enter API key"}
+                  />
+                  {aiOpenAIKeyConfigured && (
+                    <p className="text-xs text-muted-foreground">
+                      Leave blank to keep existing key
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="openai-model">Model</Label>
+                  <Select
+                    value={aiSettings.ai_openai_model}
+                    onValueChange={(value) =>
+                      setAiSettings({ ...aiSettings, ai_openai_model: value })
+                    }
+                  >
+                    <SelectTrigger id="openai-model" className="w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-50 bg-popover">
+                      <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                      <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
+                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
+                  <strong>Privacy:</strong> Only field names are sent to OpenAI. Log samples are never sent to cloud providers.
+                </div>
+              </div>
+            )}
+
+            {aiSettings.ai_provider === 'anthropic' && (
+              <div className="space-y-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="anthropic-key">API Key</Label>
+                    {aiAnthropicKeyConfigured ? (
+                      <span className="flex items-center text-xs text-green-600 dark:text-green-400">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="flex items-center text-xs text-muted-foreground">
+                        <XCircle className="h-3 w-3 mr-1" />
+                        Not configured
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    id="anthropic-key"
+                    type="password"
+                    value={aiAnthropicKey}
+                    onChange={(e) => setAiAnthropicKey(e.target.value)}
+                    placeholder={aiAnthropicKeyConfigured ? "Enter new key to change" : "Enter API key"}
+                  />
+                  {aiAnthropicKeyConfigured && (
+                    <p className="text-xs text-muted-foreground">
+                      Leave blank to keep existing key
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="anthropic-model">Model</Label>
+                  <Select
+                    value={aiSettings.ai_anthropic_model}
+                    onValueChange={(value) =>
+                      setAiSettings({ ...aiSettings, ai_anthropic_model: value })
+                    }
+                  >
+                    <SelectTrigger id="anthropic-model" className="w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-50 bg-popover">
+                      <SelectItem value="claude-sonnet-4-20250514">Claude Sonnet 4</SelectItem>
+                      <SelectItem value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</SelectItem>
+                      <SelectItem value="claude-3-haiku-20240307">Claude 3 Haiku</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
+                  <strong>Privacy:</strong> Only field names are sent to Anthropic. Log samples are never sent to cloud providers.
+                </div>
+              </div>
+            )}
+
+            <Button onClick={saveAiSettings} disabled={isSaving}>
+              <Save className="mr-2 h-4 w-4" />
+              {isSaving ? 'Saving...' : 'Save'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Enrichment Section - combines geoip and threat-intel */}
+      {activeTab === 'enrichment' && (
+        <div className="space-y-6">
+          <GeoIPSettings />
+          <TISettings />
+        </div>
+      )}
+
+      {/* Queue Section - combines push-queue and pull-queue */}
+      {activeTab === 'queue' && (
+        <div className="space-y-6">
+          {/* Push Queue */}
+          <Collapsible defaultOpen>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Push Queue Configuration</CardTitle>
+                      <CardDescription>Configure log queue processing and backpressure settings for push mode detection</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
-                      <Label>Token Auth Method</Label>
-                      <Select value={ssoTokenAuthMethod} onValueChange={setSsoTokenAuthMethod}>
-                        <SelectTrigger>
+                      <Label htmlFor="max_queue_size">Max Queue Size</Label>
+                      <Input
+                        id="max_queue_size"
+                        type="number"
+                        min={1000}
+                        value={queueSettingsForm.max_queue_size}
+                        onChange={e => setQueueSettingsForm(prev => ({ ...prev, max_queue_size: parseInt(e.target.value) || 100000 }))}
+                      />
+                      <p className="text-xs text-muted-foreground">Maximum number of messages in queue</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="warning_threshold">Warning Threshold</Label>
+                      <Input
+                        id="warning_threshold"
+                        type="number"
+                        min={100}
+                        value={queueSettingsForm.warning_threshold}
+                        onChange={e => setQueueSettingsForm(prev => ({ ...prev, warning_threshold: parseInt(e.target.value) || 10000 }))}
+                      />
+                      <p className="text-xs text-muted-foreground">Queue depth warning threshold</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="critical_threshold">Critical Threshold</Label>
+                      <Input
+                        id="critical_threshold"
+                        type="number"
+                        min={1000}
+                        value={queueSettingsForm.critical_threshold}
+                        onChange={e => setQueueSettingsForm(prev => ({ ...prev, critical_threshold: parseInt(e.target.value) || 50000 }))}
+                      />
+                      <p className="text-xs text-muted-foreground">Queue depth critical threshold (triggers backpressure)</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="backpressure_mode">Backpressure Mode</Label>
+                      <Select
+                        value={queueSettingsForm.backpressure_mode}
+                        onValueChange={value => setQueueSettingsForm(prev => ({ ...prev, backpressure_mode: value as 'reject' | 'drop' }))}
+                      >
+                        <SelectTrigger id="backpressure_mode">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="z-50 bg-popover">
-                          <SelectItem value="client_secret_post">POST Body (Most Common)</SelectItem>
-                          <SelectItem value="client_secret_basic">HTTP Basic Auth</SelectItem>
+                        <SelectContent>
+                          <SelectItem value="reject">Reject (503 - shipper retries)</SelectItem>
+                          <SelectItem value="drop">Drop (202 - oldest messages evicted)</SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground">
-                        How credentials are sent to the token endpoint. Try switching if you get "Invalid client secret" errors.
-                      </p>
+                      <p className="text-xs text-muted-foreground">Behavior when critical threshold exceeded</p>
                     </div>
                   </div>
-
-                  {/* Role Mapping Section */}
-                  <div className="pt-4 border-t space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Enable Role Mapping</Label>
-                        <p className="text-sm text-muted-foreground">
-                          Automatically assign roles based on IdP claims
-                        </p>
-                      </div>
-                      <Switch
-                        checked={ssoRoleMappingEnabled}
-                        onCheckedChange={setSsoRoleMappingEnabled}
-                      />
-                    </div>
-
-                    {ssoRoleMappingEnabled && (
-                      <div className="space-y-4 pl-4 border-l-2 border-muted">
-                        <div className="space-y-2">
-                          <Label htmlFor="role-claim">Role Claim</Label>
-                          <Input
-                            id="role-claim"
-                            value={ssoRoleClaim}
-                            onChange={(e) => setSsoRoleClaim(e.target.value)}
-                            placeholder="groups"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            The claim name in the token containing user roles (e.g., "groups", "roles", "role")
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="admin-values">Admin Claim Values</Label>
-                          <Input
-                            id="admin-values"
-                            value={ssoAdminValues}
-                            onChange={(e) => setSsoAdminValues(e.target.value)}
-                            placeholder="chad-admins, security-team"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Comma-separated values that grant Admin role
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="analyst-values">Analyst Claim Values</Label>
-                          <Input
-                            id="analyst-values"
-                            value={ssoAnalystValues}
-                            onChange={(e) => setSsoAnalystValues(e.target.value)}
-                            placeholder="chad-analysts, soc-analysts"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Comma-separated values that grant Analyst role
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="viewer-values">Viewer Claim Values</Label>
-                          <Input
-                            id="viewer-values"
-                            value={ssoViewerValues}
-                            onChange={(e) => setSsoViewerValues(e.target.value)}
-                            placeholder="chad-viewers, read-only"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Comma-separated values that grant Viewer role
-                          </p>
-                        </div>
-
-                        <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
-                          <strong>Note:</strong> Role mapping syncs on every login. If a user's groups change in the IdP, their CHAD role will update on next sign-in.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                   <div className="pt-4 border-t">
-                    <div className="p-3 bg-muted rounded-md">
-                      <p className="text-sm font-medium mb-1">Callback URL</p>
-                      <code className="text-xs bg-background px-2 py-1 rounded">
-                        {window.location.origin}/api/auth/sso/callback
-                      </code>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Register this URL in your identity provider
-                      </p>
+                    <h4 className="font-medium mb-4">Worker Settings</h4>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="batch_size">Batch Size</Label>
+                        <Input
+                          id="batch_size"
+                          type="number"
+                          min={10}
+                          max={5000}
+                          value={queueSettingsForm.batch_size}
+                          onChange={e => setQueueSettingsForm(prev => ({ ...prev, batch_size: parseInt(e.target.value) || 500 }))}
+                        />
+                        <p className="text-xs text-muted-foreground">Logs per batch</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="batch_timeout">Batch Timeout (seconds)</Label>
+                        <Input
+                          id="batch_timeout"
+                          type="number"
+                          min={1}
+                          max={60}
+                          value={queueSettingsForm.batch_timeout_seconds}
+                          onChange={e => setQueueSettingsForm(prev => ({ ...prev, batch_timeout_seconds: parseInt(e.target.value) || 5 }))}
+                        />
+                        <p className="text-xs text-muted-foreground">Max wait for batch to fill</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="message_ttl">Message TTL (seconds)</Label>
+                        <Input
+                          id="message_ttl"
+                          type="number"
+                          min={60}
+                          value={queueSettingsForm.message_ttl_seconds}
+                          onChange={e => setQueueSettingsForm(prev => ({ ...prev, message_ttl_seconds: parseInt(e.target.value) || 1800 }))}
+                        />
+                        <p className="text-xs text-muted-foreground">Message TTL before dead-letter ({Math.round(queueSettingsForm.message_ttl_seconds / 60)} min)</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-
-              <Button onClick={saveSso} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? 'Saving...' : 'Save'}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="ai" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>AI Field Mapping</CardTitle>
-              <CardDescription>
-                Configure AI providers to suggest field mappings between Sigma rules and your log data
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Connection Status Indicator */}
-              {aiSettings.ai_provider !== 'disabled' && (
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    {aiTestLoading ? (
-                      <div className="h-3 w-3 rounded-full bg-gray-400 animate-pulse" />
-                    ) : aiTestResult?.success ? (
-                      <div className="h-3 w-3 rounded-full bg-green-500" />
-                    ) : aiTestResult ? (
-                      <div className="h-3 w-3 rounded-full bg-red-500" />
-                    ) : aiLastTestSuccess === true ? (
-                      <div className="h-3 w-3 rounded-full bg-green-500" />
-                    ) : aiLastTestSuccess === false ? (
-                      <div className="h-3 w-3 rounded-full bg-red-500" />
-                    ) : (
-                      <div className="h-3 w-3 rounded-full bg-gray-300" />
-                    )}
-                    <div>
-                      <p className="font-medium">
-                        {aiTestLoading
-                          ? 'Testing connection...'
-                          : aiTestResult?.success
-                          ? 'Connected'
-                          : aiTestResult
-                          ? 'Connection failed'
-                          : aiLastTestSuccess === true
-                          ? 'Connected'
-                          : aiLastTestSuccess === false
-                          ? 'Connection failed'
-                          : 'Not tested'}
-                      </p>
-                      {aiTestResult && !aiTestResult.success && (
-                        <p className="text-sm text-destructive">
-                          {aiTestResult.error || 'Unknown error'}
-                        </p>
-                      )}
-                      {aiLastTested && !aiTestLoading && (
-                        <p className="text-xs text-muted-foreground">
-                          Last tested: {new Date(aiLastTested).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={testAiConnection}
-                    disabled={aiTestLoading}
-                  >
-                    {aiTestLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                    ) : null}
-                    Test Connection
+                  <Button onClick={saveQueueSettings} disabled={isSavingQueueSettings}>
+                    {isSavingQueueSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save Settings
                   </Button>
-                </div>
-              )}
+                  <p className="text-sm text-muted-foreground mt-4">
+                    Queue statistics and dead letter management are available on the <a href="/health" className="text-primary underline">Health</a> page.
+                  </p>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
 
-              <div className="space-y-2">
-                <Label>AI Provider</Label>
-                <Select
-                  value={aiSettings.ai_provider}
-                  onValueChange={(value) =>
-                    setAiSettings({ ...aiSettings, ai_provider: value as AIProvider })
-                  }
-                >
-                  <SelectTrigger className="w-64">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 bg-popover">
-                    <SelectItem value="disabled">Disabled</SelectItem>
-                    <SelectItem value="ollama">Ollama (Local)</SelectItem>
-                    <SelectItem value="openai">OpenAI</SelectItem>
-                    <SelectItem value="anthropic">Anthropic</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Choose an AI provider for generating field mapping suggestions
-                </p>
-              </div>
+          {/* Pull Queue */}
+          <Collapsible defaultOpen>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Pull Queue Configuration</CardTitle>
+                      <CardDescription>Configure pull mode detection behavior including retry logic and health status thresholds</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="pull-max-retries">Max Retries</Label>
+                      <Input
+                        id="pull-max-retries"
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={pullModeSettingsForm.max_retries}
+                        onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, max_retries: parseInt(e.target.value) || 3})}
+                      />
+                      <p className="text-xs text-muted-foreground">Retry attempts for failed polls (default: 3)</p>
+                    </div>
 
-              {aiSettings.ai_provider === 'ollama' && (
-                <div className="space-y-4 pt-4 border-t">
-                  <div className="space-y-2">
-                    <Label htmlFor="ollama-url">Ollama URL</Label>
-                    <Input
-                      id="ollama-url"
-                      value={aiSettings.ai_ollama_url}
-                      onChange={(e) =>
-                        setAiSettings({ ...aiSettings, ai_ollama_url: e.target.value })
-                      }
-                      placeholder="http://localhost:11434"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      URL of your local Ollama instance
-                    </p>
+                    <div className="space-y-2">
+                      <Label htmlFor="pull-retry-delay">Retry Delay (seconds)</Label>
+                      <Input
+                        id="pull-retry-delay"
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={pullModeSettingsForm.retry_delay_seconds}
+                        onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, retry_delay_seconds: parseInt(e.target.value) || 5})}
+                      />
+                      <p className="text-xs text-muted-foreground">Delay between retries (default: 5)</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="pull-failures-warning">Failures Warning Threshold</Label>
+                      <Input
+                        id="pull-failures-warning"
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={pullModeSettingsForm.consecutive_failures_warning}
+                        onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_warning: parseInt(e.target.value) || 3})}
+                      />
+                      <p className="text-xs text-muted-foreground">Consecutive failures before warning (default: 3)</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="pull-failures-critical">Failures Critical Threshold</Label>
+                      <Input
+                        id="pull-failures-critical"
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={pullModeSettingsForm.consecutive_failures_critical}
+                        onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_critical: parseInt(e.target.value) || 10})}
+                      />
+                      <p className="text-xs text-muted-foreground">Consecutive failures before critical (default: 10)</p>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="ollama-model">Model</Label>
-                    <Input
-                      id="ollama-model"
-                      value={aiSettings.ai_ollama_model}
-                      onChange={(e) =>
-                        setAiSettings({ ...aiSettings, ai_ollama_model: e.target.value })
-                      }
-                      placeholder="llama3"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Ollama model name (e.g., llama3, mistral, codellama)
-                    </p>
+
+                  <div className="flex justify-end pt-4 border-t">
+                    <Button
+                      onClick={savePullModeSettings}
+                      disabled={isSavingPullModeSettings}
+                    >
+                      {isSavingPullModeSettings ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
+                    </Button>
                   </div>
-                  <div className="flex items-center justify-between pt-2">
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
+          {/* Alert Clustering */}
+          <Collapsible defaultOpen>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Alert Clustering</CardTitle>
+                      <CardDescription>Group alerts from the same detection rule within a time window to reduce noise</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6">
+                  <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>Allow Log Samples</Label>
+                      <Label>Enable Alert Clustering</Label>
                       <p className="text-sm text-muted-foreground">
-                        Include sample log data to improve mapping accuracy
+                        Group alerts from the same rule together
                       </p>
                     </div>
                     <Switch
-                      checked={aiSettings.ai_allow_log_samples}
+                      checked={alertClusteringForm.enabled}
                       onCheckedChange={(checked) =>
-                        setAiSettings({ ...aiSettings, ai_allow_log_samples: checked })
+                        setAlertClusteringForm({ ...alertClusteringForm, enabled: checked })
                       }
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Since Ollama runs locally, log samples stay on your machine
-                  </p>
-                </div>
-              )}
 
-              {aiSettings.ai_provider === 'openai' && (
-                <div className="space-y-4 pt-4 border-t">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="openai-key">API Key</Label>
-                      {aiOpenAIKeyConfigured ? (
-                        <span className="flex items-center text-xs text-green-600 dark:text-green-400">
-                          <CheckCircle2 className="h-3 w-3 mr-1" />
-                          Configured
-                        </span>
-                      ) : (
-                        <span className="flex items-center text-xs text-muted-foreground">
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Not configured
-                        </span>
-                      )}
+                  {alertClusteringForm.enabled && (
+                    <div className="space-y-4 pl-4 border-l-2 border-muted">
+                      <div className="space-y-2">
+                        <Label htmlFor="cluster-window">Time Window (minutes)</Label>
+                        <Input
+                          id="cluster-window"
+                          type="number"
+                          min={1}
+                          max={1440}
+                          className="w-32"
+                          value={alertClusteringForm.window_minutes}
+                          onChange={(e) =>
+                            setAlertClusteringForm({
+                              ...alertClusteringForm,
+                              window_minutes: parseInt(e.target.value) || 60,
+                            })
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Alerts from the same rule within this time window will be grouped (1-1440 minutes)
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-muted rounded-md">
+                        <p className="text-sm">
+                          <strong>How it works:</strong> Alerts from the same detection rule within the time window
+                          are grouped together. The cluster shows a representative alert with a count badge.
+                          Click to expand and see all alerts in the cluster.
+                        </p>
+                      </div>
                     </div>
-                    <Input
-                      id="openai-key"
-                      type="password"
-                      value={aiOpenAIKey}
-                      onChange={(e) => setAiOpenAIKey(e.target.value)}
-                      placeholder={aiOpenAIKeyConfigured ? "Enter new key to change" : "Enter API key"}
-                    />
-                    {aiOpenAIKeyConfigured && (
-                      <p className="text-xs text-muted-foreground">
-                        Leave blank to keep existing key
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="openai-model">Model</Label>
-                    <Select
-                      value={aiSettings.ai_openai_model}
-                      onValueChange={(value) =>
-                        setAiSettings({ ...aiSettings, ai_openai_model: value })
-                      }
-                    >
-                      <SelectTrigger id="openai-model" className="w-64">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="z-50 bg-popover">
-                        <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                        <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
-                        <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
-                    <strong>Privacy:</strong> Only field names are sent to OpenAI. Log samples are never sent to cloud providers.
-                  </div>
-                </div>
-              )}
-
-              {aiSettings.ai_provider === 'anthropic' && (
-                <div className="space-y-4 pt-4 border-t">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="anthropic-key">API Key</Label>
-                      {aiAnthropicKeyConfigured ? (
-                        <span className="flex items-center text-xs text-green-600 dark:text-green-400">
-                          <CheckCircle2 className="h-3 w-3 mr-1" />
-                          Configured
-                        </span>
-                      ) : (
-                        <span className="flex items-center text-xs text-muted-foreground">
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Not configured
-                        </span>
-                      )}
-                    </div>
-                    <Input
-                      id="anthropic-key"
-                      type="password"
-                      value={aiAnthropicKey}
-                      onChange={(e) => setAiAnthropicKey(e.target.value)}
-                      placeholder={aiAnthropicKeyConfigured ? "Enter new key to change" : "Enter API key"}
-                    />
-                    {aiAnthropicKeyConfigured && (
-                      <p className="text-xs text-muted-foreground">
-                        Leave blank to keep existing key
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="anthropic-model">Model</Label>
-                    <Select
-                      value={aiSettings.ai_anthropic_model}
-                      onValueChange={(value) =>
-                        setAiSettings({ ...aiSettings, ai_anthropic_model: value })
-                      }
-                    >
-                      <SelectTrigger id="anthropic-model" className="w-64">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="z-50 bg-popover">
-                        <SelectItem value="claude-sonnet-4-20250514">Claude Sonnet 4</SelectItem>
-                        <SelectItem value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</SelectItem>
-                        <SelectItem value="claude-3-haiku-20240307">Claude 3 Haiku</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
-                    <strong>Privacy:</strong> Only field names are sent to Anthropic. Log samples are never sent to cloud providers.
-                  </div>
-                </div>
-              )}
-
-              <Button onClick={saveAiSettings} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? 'Saving...' : 'Save'}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="geoip" className="mt-4">
-          <GeoIPSettings />
-        </TabsContent>
-
-        <TabsContent value="threat-intel" className="mt-4">
-          <TISettings />
-        </TabsContent>
-
-        <TabsContent value="alerts" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Alert Clustering</CardTitle>
-              <CardDescription>
-                Group alerts from the same detection rule within a time window to reduce noise.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Enable Alert Clustering</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Group alerts from the same rule together
-                  </p>
-                </div>
-                <Switch
-                  checked={alertClusteringForm.enabled}
-                  onCheckedChange={(checked) =>
-                    setAlertClusteringForm({ ...alertClusteringForm, enabled: checked })
-                  }
-                />
-              </div>
-
-              {alertClusteringForm.enabled && (
-                <div className="space-y-4 pl-4 border-l-2 border-muted">
-                  <div className="space-y-2">
-                    <Label htmlFor="cluster-window">Time Window (minutes)</Label>
-                    <Input
-                      id="cluster-window"
-                      type="number"
-                      min={1}
-                      max={1440}
-                      className="w-32"
-                      value={alertClusteringForm.window_minutes}
-                      onChange={(e) =>
-                        setAlertClusteringForm({
-                          ...alertClusteringForm,
-                          window_minutes: parseInt(e.target.value) || 60,
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Alerts from the same rule within this time window will be grouped (1-1440 minutes)
-                    </p>
-                  </div>
-
-                  <div className="p-3 bg-muted rounded-md">
-                    <p className="text-sm">
-                      <strong>How it works:</strong> Alerts from the same detection rule within the time window
-                      are grouped together. The cluster shows a representative alert with a count badge.
-                      Click to expand and see all alerts in the cluster.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end pt-4 border-t">
-                <Button
-                  onClick={saveAlertClusteringSettings}
-                  disabled={isSavingAlertClustering}
-                >
-                  {isSavingAlertClustering ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Settings
-                    </>
                   )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
-        <TabsContent value="opensearch" className="mt-4">
+                  <div className="flex justify-end pt-4 border-t">
+                    <Button
+                      onClick={saveAlertClusteringSettings}
+                      disabled={isSavingAlertClustering}
+                    >
+                      {isSavingAlertClustering ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4 mr-2" />
+                          Save Settings
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        </div>
+      )}
+
+      {/* OpenSearch Section */}
+      {activeTab === 'opensearch' && (
+        <div className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>OpenSearch Connection</CardTitle>
@@ -1575,7 +1776,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card className="mt-4">
+          <Card>
             <CardHeader>
               <CardTitle>Audit Log Storage</CardTitle>
               <CardDescription>
@@ -1610,9 +1811,12 @@ export default function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="health" className="mt-4 space-y-6">
+      {/* Health Section */}
+      {activeTab === 'health' && (
+        <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Health Monitoring Thresholds</CardTitle>
@@ -1834,195 +2038,12 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="push-queue" className="mt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Push Queue Configuration</CardTitle>
-              <CardDescription>
-                Configure log queue processing and backpressure settings for push mode detection.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="max_queue_size">Max Queue Size</Label>
-                  <Input
-                    id="max_queue_size"
-                    type="number"
-                    min={1000}
-                    value={queueSettingsForm.max_queue_size}
-                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, max_queue_size: parseInt(e.target.value) || 100000 }))}
-                  />
-                  <p className="text-xs text-muted-foreground">Maximum number of messages in queue</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="warning_threshold">Warning Threshold</Label>
-                  <Input
-                    id="warning_threshold"
-                    type="number"
-                    min={100}
-                    value={queueSettingsForm.warning_threshold}
-                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, warning_threshold: parseInt(e.target.value) || 10000 }))}
-                  />
-                  <p className="text-xs text-muted-foreground">Queue depth warning threshold</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="critical_threshold">Critical Threshold</Label>
-                  <Input
-                    id="critical_threshold"
-                    type="number"
-                    min={1000}
-                    value={queueSettingsForm.critical_threshold}
-                    onChange={e => setQueueSettingsForm(prev => ({ ...prev, critical_threshold: parseInt(e.target.value) || 50000 }))}
-                  />
-                  <p className="text-xs text-muted-foreground">Queue depth critical threshold (triggers backpressure)</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="backpressure_mode">Backpressure Mode</Label>
-                  <Select
-                    value={queueSettingsForm.backpressure_mode}
-                    onValueChange={value => setQueueSettingsForm(prev => ({ ...prev, backpressure_mode: value as 'reject' | 'drop' }))}
-                  >
-                    <SelectTrigger id="backpressure_mode">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="reject">Reject (503 - shipper retries)</SelectItem>
-                      <SelectItem value="drop">Drop (202 - oldest messages evicted)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">Behavior when critical threshold exceeded</p>
-                </div>
-              </div>
-              <div className="pt-4 border-t">
-                <h4 className="font-medium mb-4">Worker Settings</h4>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="batch_size">Batch Size</Label>
-                    <Input
-                      id="batch_size"
-                      type="number"
-                      min={10}
-                      max={5000}
-                      value={queueSettingsForm.batch_size}
-                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, batch_size: parseInt(e.target.value) || 500 }))}
-                    />
-                    <p className="text-xs text-muted-foreground">Logs per batch</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="batch_timeout">Batch Timeout (seconds)</Label>
-                    <Input
-                      id="batch_timeout"
-                      type="number"
-                      min={1}
-                      max={60}
-                      value={queueSettingsForm.batch_timeout_seconds}
-                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, batch_timeout_seconds: parseInt(e.target.value) || 5 }))}
-                    />
-                    <p className="text-xs text-muted-foreground">Max wait for batch to fill</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="message_ttl">Message TTL (seconds)</Label>
-                    <Input
-                      id="message_ttl"
-                      type="number"
-                      min={60}
-                      value={queueSettingsForm.message_ttl_seconds}
-                      onChange={e => setQueueSettingsForm(prev => ({ ...prev, message_ttl_seconds: parseInt(e.target.value) || 1800 }))}
-                    />
-                    <p className="text-xs text-muted-foreground">Message TTL before dead-letter ({Math.round(queueSettingsForm.message_ttl_seconds / 60)} min)</p>
-                  </div>
-                </div>
-              </div>
-              <Button onClick={saveQueueSettings} disabled={isSavingQueueSettings}>
-                {isSavingQueueSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Settings
-              </Button>
-              <p className="text-sm text-muted-foreground mt-4">
-                Queue statistics and dead letter management are available on the <a href="/health" className="text-primary underline">Health</a> page.
-              </p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="pull-queue" className="mt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Pull Queue Configuration</CardTitle>
-              <CardDescription>
-                Configure pull mode detection behavior including retry logic and health status thresholds.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="pull-max-retries">Max Retries</Label>
-                  <Input
-                    id="pull-max-retries"
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={pullModeSettingsForm.max_retries}
-                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, max_retries: parseInt(e.target.value) || 3})}
-                  />
-                  <p className="text-xs text-muted-foreground">Retry attempts for failed polls (default: 3)</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pull-retry-delay">Retry Delay (seconds)</Label>
-                  <Input
-                    id="pull-retry-delay"
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={pullModeSettingsForm.retry_delay_seconds}
-                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, retry_delay_seconds: parseInt(e.target.value) || 5})}
-                  />
-                  <p className="text-xs text-muted-foreground">Delay between retries (default: 5)</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pull-failures-warning">Failures Warning Threshold</Label>
-                  <Input
-                    id="pull-failures-warning"
-                    type="number"
-                    min="1"
-                    max="50"
-                    value={pullModeSettingsForm.consecutive_failures_warning}
-                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_warning: parseInt(e.target.value) || 3})}
-                  />
-                  <p className="text-xs text-muted-foreground">Consecutive failures before warning (default: 3)</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pull-failures-critical">Failures Critical Threshold</Label>
-                  <Input
-                    id="pull-failures-critical"
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={pullModeSettingsForm.consecutive_failures_critical}
-                    onChange={(e) => setPullModeSettingsForm({...pullModeSettingsForm, consecutive_failures_critical: parseInt(e.target.value) || 10})}
-                  />
-                  <p className="text-xs text-muted-foreground">Consecutive failures before critical (default: 10)</p>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-4 border-t">
-                <Button
-                  onClick={savePullModeSettings}
-                  disabled={isSavingPullModeSettings}
-                >
-                  {isSavingPullModeSettings ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="background-sync" className="mt-4 space-y-6">
+      {/* General Section - background-sync content */}
+      {activeTab === 'general' && (
+        <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>SigmaHQ Auto-Sync</CardTitle>
@@ -2239,9 +2260,12 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="export" className="mt-4 space-y-4">
+      {/* Backup Section - export content */}
+      {activeTab === 'backup' && (
+        <div className="space-y-4">
           {/* Export Section */}
           <Card>
             <CardHeader>
@@ -2513,123 +2537,8 @@ export default function SettingsPage() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="about" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>About CHAD</CardTitle>
-              <CardDescription>
-                Cyber Hunting And Detection - A Sigma rule management and alerting platform
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Version Info */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Current Version</p>
-                    <p className="text-2xl font-bold">
-                      {versionLoading ? (
-                        <Loader2 className="h-6 w-6 animate-spin" />
-                      ) : (
-                        `v${version || 'Unknown'}`
-                      )}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={checkForUpdates}
-                    disabled={versionLoading}
-                  >
-                    {versionLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    Check for Updates
-                  </Button>
-                </div>
-
-                {/* Update Available Banner */}
-                {updateAvailable && latestVersion && (
-                  <div className="p-4 border rounded-lg bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <p className="font-medium text-green-800 dark:text-green-200">
-                          Update Available
-                        </p>
-                        <p className="text-sm text-green-700 dark:text-green-300">
-                          Version {latestVersion} is now available. You are running {version}.
-                        </p>
-                      </div>
-                      {releaseUrl && (
-                        <Button variant="default" asChild>
-                          <a href={releaseUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            View Release
-                          </a>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* No Update Available */}
-                {!updateAvailable && !versionLoading && version && (
-                  <div className="p-4 border rounded-lg bg-muted/50">
-                    <p className="text-sm text-muted-foreground">
-                      You are running the latest version of CHAD.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Links */}
-              <div className="space-y-2 pt-4 border-t">
-                <h3 className="font-medium">Resources</h3>
-                <div className="grid gap-2">
-                  <a
-                    href="https://github.com/TerrifiedBug/chad"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    GitHub Repository
-                  </a>
-                  <a
-                    href="https://github.com/TerrifiedBug/chad/releases"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    Release Notes / Changelog
-                  </a>
-                  <a
-                    href="https://github.com/TerrifiedBug/chad/issues"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    Report an Issue
-                  </a>
-                </div>
-              </div>
-
-              {/* Credits */}
-              <div className="space-y-2 pt-4 border-t">
-                <h3 className="font-medium">Built With</h3>
-                <p className="text-sm text-muted-foreground">
-                  CHAD uses pySigma for Sigma rule processing and OpenSearch for detection and alerting.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   )
 }
