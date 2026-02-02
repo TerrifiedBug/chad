@@ -122,7 +122,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
 
         {/* Main content */}
-        <main className="flex-1 px-6 py-8">
+        <main className="flex-1 min-w-0 overflow-x-hidden px-6 py-8">
           <div className="mx-auto max-w-screen-2xl">
             {children}
           </div>

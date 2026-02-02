@@ -64,7 +64,7 @@ export default function SettingsPage() {
   const [force2FAOnSignup, setForce2FAOnSignup] = useState(false)
 
   // Active tab for programmatic navigation - read from URL param if present
-  const activeTab = searchParams.get('tab') || 'notifications'
+  const activeTab = searchParams.get('tab') || 'general'
 
   // SSO settings
   const [ssoEnabled, setSsoEnabled] = useState(false)
