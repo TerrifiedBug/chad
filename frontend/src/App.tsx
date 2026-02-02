@@ -22,6 +22,7 @@ import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
 import SigmaHQPage from '@/pages/SigmaHQ'
 import AuditLogPage from '@/pages/AuditLog'
+import SystemLogsPage from '@/pages/SystemLogs'
 import HealthPage from '@/pages/Health'
 import FieldMappingsPage from '@/pages/FieldMappings'
 import AttackMatrixPage from '@/pages/AttackMatrix'
@@ -196,6 +197,11 @@ function AppRoutes() {
       <Route path="/settings/audit" element={
         <ProtectedRoute permission="view_audit">
           <AppLayout><AuditLogPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/settings/system-logs" element={
+        <ProtectedRoute permission="view_system_logs">
+          <AppLayout><SystemLogsPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/change-password" element={

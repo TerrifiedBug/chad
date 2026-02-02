@@ -23,6 +23,7 @@ import {
   Users,
   FileText,
   Key,
+  ScrollText,
 } from 'lucide-react'
 
 type SettingsItem = {
@@ -84,6 +85,7 @@ type SettingsLink = {
 const adminLinks: SettingsLink[] = [
   { href: '/settings/users', label: 'Users', icon: Users, permission: 'manage_users' },
   { href: '/settings/audit', label: 'Audit Log', icon: FileText, permission: 'view_audit' },
+  { href: '/settings/system-logs', label: 'System Log', icon: ScrollText, permission: 'view_system_logs' },
   { href: '/settings/api-keys', label: 'API Keys', icon: Key, permission: 'manage_api_keys' },
 ]
 
