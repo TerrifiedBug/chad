@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   indexPatternsApi,
   IndexPattern,
@@ -16,6 +17,7 @@ import {
   HealthStatus,
 } from '@/lib/api'
 import { useMode } from '@/hooks/useMode'
+import { IndexPatternPanel, PanelTab } from '@/components/index-patterns/IndexPatternPanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -61,6 +63,14 @@ const HealthStatusIcon = ({ status }: { status: HealthStatus }) => {
 
 export default function IndexPatternsPage() {
   const { isPullOnly, supportsPush } = useMode()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Panel URL state
+  const panelId = searchParams.get('panel')
+  const panelTab = (searchParams.get('tab') as PanelTab) || 'settings'
+  const isPanelOpen = panelId !== null
+  const isNewPattern = panelId === 'new'
+
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -240,6 +250,38 @@ export default function IndexPatternsPage() {
       // Health data is optional, continue without it
     }
   }
+
+  // Panel control functions
+  const openPanel = (patternId: string, tab: PanelTab = 'settings') => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev)
+      newParams.set('panel', patternId)
+      newParams.set('tab', tab)
+      return newParams
+    }, { replace: true })
+  }
+
+  const closePanel = () => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev)
+      newParams.delete('panel')
+      newParams.delete('tab')
+      return newParams
+    }, { replace: true })
+  }
+
+  const handlePanelTabChange = (tab: PanelTab) => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev)
+      newParams.set('tab', tab)
+      return newParams
+    }, { replace: true })
+  }
+
+  // Get the selected pattern based on URL
+  const selectedPattern = panelId && panelId !== 'new'
+    ? patterns.find((p) => p.id === panelId) || null
+    : null
 
   const openCreateDialog = () => {
     setEditingPattern(null)
@@ -598,7 +640,11 @@ export default function IndexPatternsPage() {
             </TableHeader>
             <TableBody>
               {patterns.map((pattern) => (
-                <TableRow key={pattern.id}>
+                <TableRow
+                  key={pattern.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => openPanel(pattern.id)}
+                >
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       {healthData[pattern.id] && (
@@ -616,7 +662,7 @@ export default function IndexPatternsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       {pattern.mode === 'push' && (
                         <Button
                           variant="ghost"
@@ -1720,6 +1766,16 @@ export default function IndexPatternsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Index Pattern Panel */}
+      <IndexPatternPanel
+        pattern={selectedPattern}
+        isNew={isNewPattern}
+        isOpen={isPanelOpen}
+        activeTab={panelTab}
+        onClose={closePanel}
+        onTabChange={handlePanelTabChange}
+      />
     </div>
   )
 }
