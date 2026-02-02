@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import Editor from '@monaco-editor/react'
 import { useTheme } from '@/hooks/use-theme'
+import { registerSigmaLanguageFeatures } from '@/lib/sigma-language'
 
 interface EditorError {
   line: number
@@ -42,6 +43,9 @@ export function YamlEditor({
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor
     monacoRef.current = monaco
+
+    // Register Sigma-specific autocomplete and hover providers
+    registerSigmaLanguageFeatures(monaco)
 
     // Configure YAML language settings
     monaco.languages.setLanguageConfiguration('yaml', {
