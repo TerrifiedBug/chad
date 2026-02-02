@@ -1064,29 +1064,28 @@ export default function IndexPatternsPage() {
 
             {/* Dynamic Log Shipper Endpoint Info - only show for push mode */}
             {detectionMode === 'push' && formData.percolator_index && formData.percolator_index.startsWith('chad-percolator-') && (
-              <div className="space-y-2 p-3 bg-muted rounded-md">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Log Shipper Endpoint</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => {
-                      const suffix = getIndexSuffix(formData.percolator_index)
-                      navigator.clipboard.writeText(`${window.location.origin}/api/logs/${suffix}`)
-                    }}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
+              <div className="space-y-3 p-3 bg-muted rounded-md">
+                <Label className="text-sm font-medium">Log Shipper Endpoints (Preview)</Label>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs bg-background p-2 rounded font-mono break-all">
+                      POST {window.location.origin}/api/logs/{getIndexSuffix(formData.percolator_index)}
+                    </code>
+                    <span className="text-xs text-muted-foreground">sync</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs bg-background p-2 rounded font-mono break-all">
+                      POST {window.location.origin}/api/logs/{getIndexSuffix(formData.percolator_index)}/queue
+                    </code>
+                    <span className="text-xs text-green-600 dark:text-green-400 font-medium">recommended</span>
+                  </div>
                 </div>
-                <code className="block text-xs bg-background p-2 rounded font-mono break-all">
-                  POST {window.location.origin}/api/logs/{getIndexSuffix(formData.percolator_index)}
-                </code>
+
                 <p className="text-xs text-muted-foreground">
                   {editingPattern
-                    ? 'Use the auth token to authenticate requests to this endpoint.'
-                    : 'An auth token will be generated when you save this pattern.'}
+                    ? 'Use the auth token to authenticate requests. Use /queue for production.'
+                    : 'An auth token will be generated when you save. Use /queue for production.'}
                 </p>
               </div>
             )}
