@@ -36,7 +36,6 @@ const navItems: NavItem[] = [
   { href: '/rules', label: 'Rules' },
   { href: '/attack', label: 'ATT&CK' },
   { href: '/index-patterns', label: 'Index Patterns', permission: 'manage_index_config' },
-  { href: '/field-mappings', label: 'Field Mappings', permission: 'manage_index_config' },
   { href: '/health', label: 'Health' },
   { href: '/settings', label: 'Settings', permission: 'manage_settings' },
 ]
