@@ -173,6 +173,9 @@ class SchedulerService:
             # Add version cleanup job (runs daily at 3 AM)
             self._schedule_version_cleanup()
 
+            # Add system log cleanup job (runs daily at 3 AM)
+            self._schedule_system_log_cleanup()
+
             # Schedule pull polling jobs for pull-mode index patterns
             await self._schedule_pull_polling_jobs(session)
 
@@ -882,6 +885,52 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Scheduled version cleanup failed: {e}")
+            await session.rollback()
+        finally:
+            await session.close()
+
+    def _schedule_system_log_cleanup(self):
+        """Schedule the system log cleanup job (daily at 3 AM)."""
+        scheduler.add_job(
+            self._run_system_log_cleanup,
+            trigger=CronTrigger(hour=3, minute=0),
+            id="system_log_cleanup",
+            name="system log cleanup",
+            replace_existing=True,
+            misfire_grace_time=3600,  # 1 hour grace period
+        )
+        logger.info("Scheduled system_log_cleanup job (daily at 3:00 AM)")
+
+    async def _run_system_log_cleanup(self):
+        """Execute system log cleanup job with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:system_log_cleanup",
+            timeout=300,  # 5 minutes
+            job_func=self._execute_system_log_cleanup
+        )
+
+    async def _execute_system_log_cleanup(self):
+        """Purge old system logs based on retention setting."""
+        from app.services.settings import get_setting
+        from app.services.system_log import system_log_service
+
+        logger.debug("Running scheduled system log cleanup")
+        session = await self._get_session()
+        try:
+            # Get retention days from settings (default 14)
+            retention_setting = await get_setting(session, "system_log_retention_days")
+            retention_days = int(retention_setting) if retention_setting else 14
+
+            deleted = await system_log_service.purge_old_logs(session, retention_days=retention_days)
+            await session.commit()  # Commit since purge_old_logs doesn't commit
+
+            if deleted > 0:
+                logger.info(f"System log cleanup: purged {deleted} entries older than {retention_days} days")
+            else:
+                logger.debug("System log cleanup: no entries to purge")
+
+        except Exception as e:
+            logger.error(f"Scheduled system log cleanup failed: {e}")
             await session.rollback()
         finally:
             await session.close()
