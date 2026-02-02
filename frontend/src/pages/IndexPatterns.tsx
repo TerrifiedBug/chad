@@ -298,7 +298,8 @@ export default function IndexPatternsPage() {
     }
   }
 
-  const openCreateDialog = () => {
+  // Keep old dialog functions for fallback during transition - prefix with _ to suppress lint warning
+  const _openCreateDialog = () => {
     setEditingPattern(null)
     setFormData({
       name: '',
@@ -616,7 +617,7 @@ export default function IndexPatternsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Index Patterns</h1>
-        <Button onClick={openCreateDialog}>
+        <Button onClick={() => openPanel('new')}>
           <Plus className="h-4 w-4 mr-2" />
           Create Pattern
         </Button>
@@ -636,7 +637,7 @@ export default function IndexPatternsPage() {
           title="No index patterns"
           description="Create your first index pattern to start matching rules against your OpenSearch indices."
           action={
-            <Button onClick={openCreateDialog}>
+            <Button onClick={() => openPanel('new')}>
               <Plus className="h-4 w-4 mr-2" />
               Create Pattern
             </Button>
