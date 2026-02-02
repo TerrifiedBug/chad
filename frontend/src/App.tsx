@@ -13,6 +13,7 @@ import Dashboard from '@/pages/Dashboard'
 import RulesPage from '@/pages/Rules'
 import RuleEditorPage from '@/pages/RuleEditor'
 import IndexPatternsPage from '@/pages/IndexPatterns'
+import IndexPatternDetailPage from '@/pages/IndexPatternDetail'
 import AlertsPage from '@/pages/Alerts'
 import AlertDetailPage from '@/pages/AlertDetail'
 import SettingsPage from '@/pages/Settings'
@@ -153,6 +154,16 @@ function AppRoutes() {
       <Route path="/index-patterns" element={
         <ProtectedRoute permission="manage_index_config">
           <AppLayout><IndexPatternsPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/index-patterns/new" element={
+        <ProtectedRoute permission="manage_index_config">
+          <AppLayout><IndexPatternDetailPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/index-patterns/:id" element={
+        <ProtectedRoute permission="manage_index_config">
+          <AppLayout><IndexPatternDetailPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/alerts" element={
