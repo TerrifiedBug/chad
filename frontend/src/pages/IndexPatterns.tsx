@@ -686,28 +686,70 @@ export default function IndexPatternsPage() {
 
           {tokenDetailsPattern && tokenDetailsPattern.mode !== 'pull' && (
             <div className="space-y-4 py-4">
-              {/* Endpoint URL */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Endpoint URL</Label>
-                <div className="flex gap-2">
-                  <code className="flex-1 text-sm bg-muted p-2 rounded font-mono break-all">
-                    POST {window.location.origin}/api/logs/{getIndexSuffix(tokenDetailsPattern.percolator_index)}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => copyToClipboard(
-                      `${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}`,
-                      `${tokenDetailsPattern.id}-url`
-                    )}
-                  >
-                    {copiedToken === `${tokenDetailsPattern.id}-url` ? (
-                      <Check className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                  </Button>
+              {/* Fluentd Endpoints */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Fluentd Endpoints</Label>
+
+                {/* Standard (Synchronous) Endpoint */}
+                <div className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground font-medium">Standard (Synchronous)</div>
+                  <div className="flex gap-2">
+                    <code className="flex-1 text-sm bg-muted p-2 rounded font-mono break-all">
+                      POST {window.location.origin}/api/logs/{getIndexSuffix(tokenDetailsPattern.percolator_index)}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copyToClipboard(
+                        `${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}`,
+                        `${tokenDetailsPattern.id}-url-sync`
+                      )}
+                    >
+                      {copiedToken === `${tokenDetailsPattern.id}-url-sync` ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Returns 200 OK with match count after processing completes. Best for lower volume, real-time alerting, and testing.
+                  </p>
                 </div>
+
+                {/* Queue (Asynchronous) Endpoint - Recommended */}
+                <div className="space-y-1.5 p-3 border rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium">Queue (Asynchronous)</span>
+                    <span className="text-xs text-green-600 dark:text-green-400 font-medium">Recommended for Production</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <code className="flex-1 text-sm bg-muted p-2 rounded font-mono break-all">
+                      POST {window.location.origin}/api/logs/{getIndexSuffix(tokenDetailsPattern.percolator_index)}/queue
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copyToClipboard(
+                        `${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}/queue`,
+                        `${tokenDetailsPattern.id}-url-queue`
+                      )}
+                    >
+                      {copiedToken === `${tokenDetailsPattern.id}-url-queue` ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Returns 202 Accepted immediately, processes in background. Best for high volume production deployments with backpressure handling, dead letter queue, and retry logic.
+                  </p>
+                </div>
+
+                <p className="text-xs text-muted-foreground italic">
+                  Both endpoints accept the same payload format. Use /queue for production deployments to handle traffic spikes gracefully.
+                </p>
               </div>
 
               {/* Auth Token */}
