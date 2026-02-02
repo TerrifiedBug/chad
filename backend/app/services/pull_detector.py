@@ -18,6 +18,7 @@ from app.services.correlation import check_correlation
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
+from app.services.system_log import LogCategory, system_log_service
 
 logger = logging.getLogger(__name__)
 
@@ -630,6 +631,19 @@ class PullDetector:
             except Exception as e:
                 logger.error(f"Error polling rule {rule.id}: {e}")
                 errors.append({"rule_id": str(rule.id), "error": str(e)})
+                await system_log_service.log_error(
+                    db,
+                    category=LogCategory.PULL_MODE,
+                    service="pull_detector",
+                    message=f"Pull detection failed for rule {rule.title}",
+                    details={
+                        "rule_id": str(rule.id),
+                        "rule_title": rule.title,
+                        "index_pattern": index_pattern.pattern,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
 
         # Broadcast alerts via WebSocket (Redis pub/sub for cross-worker)
         if alerts_created:
@@ -894,6 +908,18 @@ async def run_poll_job(index_pattern_id: str) -> None:
 
         except Exception as e:
             logger.error(f"Poll job failed for {index_pattern_id}: {e}")
+            # Log to system log service
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.PULL_MODE,
+                service="pull_detector",
+                message="Pull poll job failed for index pattern",
+                details={
+                    "index_pattern_id": index_pattern_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
             # Try to update failure count even on exception
             try:
                 result = await session.execute(

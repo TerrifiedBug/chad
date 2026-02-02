@@ -22,6 +22,7 @@ from app.models.notification_settings import (
     Webhook,
 )
 from app.services.jira import JiraAPIError, create_jira_ticket_for_alert
+from app.services.system_log import LogCategory, system_log_service
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,19 @@ async def _send_alert_to_jira(
         }
     except JiraAPIError as e:
         logger.error(f"Failed to create Jira issue for alert {alert_id}: {e.message}")
+        await system_log_service.log_error(
+            db,
+            category=LogCategory.INTEGRATIONS,
+            service="notification",
+            message="Failed to create Jira issue for alert",
+            details={
+                "alert_id": str(alert_id),
+                "rule_title": rule_title,
+                "severity": severity,
+                "error": e.message,
+                "error_type": "JiraAPIError",
+            },
+        )
         return {
             "destination": "jira",
             "success": False,
@@ -232,6 +246,19 @@ async def _send_alert_to_jira(
         }
     except Exception as e:
         logger.error(f"Unexpected error creating Jira issue for alert {alert_id}: {e}")
+        await system_log_service.log_error(
+            db,
+            category=LogCategory.INTEGRATIONS,
+            service="notification",
+            message="Unexpected error creating Jira issue for alert",
+            details={
+                "alert_id": str(alert_id),
+                "rule_title": rule_title,
+                "severity": severity,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
         return {
             "destination": "jira",
             "success": False,

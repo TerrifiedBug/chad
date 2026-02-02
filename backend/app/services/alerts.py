@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.alert import Alert
 from app.models.rule_exception import ExceptionOperator
+from app.services.system_log import LogCategory, system_log_service
 
 
 def generate_deterministic_alert_id(rule_id: str, log_document: dict) -> str:
@@ -675,6 +676,17 @@ class AlertService:
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Failed to delete alert from OpenSearch: {e}")
+                await system_log_service.log_error(
+                    db,
+                    category=LogCategory.ALERTS,
+                    service="alerts",
+                    message="Failed to delete alert from OpenSearch",
+                    details={
+                        "alert_id": str(alert_id),
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
                 return False
 
         # Alert exists in database, delete from both places
@@ -700,6 +712,18 @@ class AlertService:
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Failed to delete alert from OpenSearch: {e}")
+            await system_log_service.log_warning(
+                db,
+                category=LogCategory.ALERTS,
+                service="alerts",
+                message="Failed to delete alert from OpenSearch (DB record will still be deleted)",
+                details={
+                    "alert_id": str(alert_id),
+                    "alert_index": alert.alert_index,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
 
         # Delete from database
         await db.execute(sql_delete(Alert).where(Alert.alert_id == str(alert_id)))
