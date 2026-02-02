@@ -234,10 +234,12 @@ class TestShouldSuppressAlert:
         assert should_suppress_alert(log, exceptions) is False
 
     def test_multiple_exceptions_any_match_suppresses(self):
+        """Test that exceptions in different groups are ORed - any match suppresses."""
         log = {"host": {"name": "DC01"}}
+        # Different group_ids means OR logic - any group match suppresses
         exceptions = [
-            {"field": "user.name", "operator": "equals", "value": "svc_backup", "is_active": True},
-            {"field": "host.name", "operator": "in_list", "value": '["DC01", "DC02"]', "is_active": True},
+            {"field": "user.name", "operator": "equals", "value": "svc_backup", "is_active": True, "group_id": "group1"},
+            {"field": "host.name", "operator": "in_list", "value": '["DC01", "DC02"]', "is_active": True, "group_id": "group2"},
         ]
         assert should_suppress_alert(log, exceptions) is True
 

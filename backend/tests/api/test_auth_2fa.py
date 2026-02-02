@@ -96,7 +96,7 @@ class TestVerify2FA:
     ):
         """2FA verify with valid code completes setup."""
         # First, initiate setup
-        setup_response = await authenticated_client.post("/api/auth/2fa/setup")
+        setup_response = await authenticated_client.post("/api/auth/2fa/setup", json={})
         assert setup_response.status_code == 200
         secret = setup_response.json()["secret"]
 
@@ -126,7 +126,7 @@ class TestVerify2FA:
     ):
         """2FA verify with invalid code fails."""
         # First, initiate setup
-        setup_response = await authenticated_client.post("/api/auth/2fa/setup")
+        setup_response = await authenticated_client.post("/api/auth/2fa/setup", json={})
         assert setup_response.status_code == 200
 
         # Verify with wrong code

@@ -94,8 +94,8 @@ class TestSigmaHQStatus:
     async def test_get_status_requires_auth(self, client: AsyncClient):
         """Status endpoint requires authentication."""
         response = await client.get("/api/sigmahq/status")
-        # HTTPBearer returns 403 when no credentials provided
-        assert response.status_code == 403
+        # HTTPBearer returns 401 when no credentials provided
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_get_status_not_cloned(self, authenticated_client: AsyncClient):
@@ -285,7 +285,8 @@ class TestSigmaHQRules:
     async def test_get_category_tree_requires_auth(self, client: AsyncClient):
         """Category tree endpoint requires authentication."""
         response = await client.get("/api/sigmahq/rules")
-        assert response.status_code == 403
+        # HTTPBearer returns 401 when no credentials provided
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_get_category_tree_not_cloned(self, authenticated_client: AsyncClient):
