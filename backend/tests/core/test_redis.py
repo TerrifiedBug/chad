@@ -1,8 +1,9 @@
 # backend/tests/core/test_redis.py
 """Tests for Redis client module."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 
 class TestGetRedis:

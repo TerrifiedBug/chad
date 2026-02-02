@@ -1,9 +1,10 @@
 """Tests for PullDetector service."""
 
-import pytest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
 from uuid import uuid4
+
+import pytest
 
 from app.services.pull_detector import PullDetector
 
@@ -23,8 +24,8 @@ class TestPullDetectorBuildQuery:
         detector = PullDetector(client=mock_client)
 
         base_query = {"bool": {"must": [{"match": {"event.code": "1"}}]}}
-        last_poll = datetime(2026, 2, 1, 10, 0, 0, tzinfo=timezone.utc)
-        now = datetime(2026, 2, 1, 10, 5, 0, tzinfo=timezone.utc)
+        last_poll = datetime(2026, 2, 1, 10, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 2, 1, 10, 5, 0, tzinfo=UTC)
 
         result = detector.build_time_filtered_query(base_query, last_poll, now)
 
@@ -46,7 +47,7 @@ class TestPullDetectorBuildQuery:
         detector = PullDetector(client=mock_client)
 
         base_query = {"bool": {"must": [{"match": {"event.code": "1"}}]}}
-        now = datetime(2026, 2, 1, 10, 5, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 2, 1, 10, 5, 0, tzinfo=UTC)
 
         # When last_poll is None, should default to 1 hour lookback
         result = detector.build_time_filtered_query(base_query, None, now)
@@ -90,7 +91,7 @@ class TestPollIndexPattern:
             "tags": [],
             "status": "new",
             "log_document": {},
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         })
         return service
 
@@ -148,7 +149,7 @@ class TestPollIndexPattern:
                 rules=[mock_rule],
                 sigma_service=mock_sigma_service,
                 alert_service=mock_alert_service,
-                last_poll=datetime.now(timezone.utc) - timedelta(minutes=5),
+                last_poll=datetime.now(UTC) - timedelta(minutes=5),
                 db=mock_db,
             )
 
@@ -191,7 +192,7 @@ class TestPollIndexPattern:
                 rules=[mock_rule],
                 sigma_service=mock_sigma_service,
                 alert_service=mock_alert_service,
-                last_poll=datetime.now(timezone.utc) - timedelta(minutes=5),
+                last_poll=datetime.now(UTC) - timedelta(minutes=5),
                 db=mock_db,
             )
 

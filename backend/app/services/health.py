@@ -6,11 +6,10 @@ from datetime import UTC, datetime, timedelta
 from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
-from app.models.poll_state import IndexPatternPollState
-from sqlalchemy.orm import selectinload
 
 
 def get_alert_count(

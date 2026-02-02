@@ -2,7 +2,7 @@
 """Tests for the Audit Log API endpoints."""
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -56,7 +56,7 @@ class TestIPAddressLogging:
         assert response.status_code == 201
 
         # Query audit log to verify IP was captured
-        from sqlalchemy import select, desc
+        from sqlalchemy import desc, select
         result = await test_session.execute(
             select(AuditLog)
             .where(AuditLog.action == "rule.create")
@@ -141,7 +141,7 @@ async def non_admin_client(test_session: AsyncSession, non_admin_token: str):
 async def sample_audit_logs(test_session: AsyncSession, test_user: User) -> list[AuditLog]:
     """Create sample audit log entries for testing."""
     logs = []
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
     # Create a variety of audit log entries
     log_data = [
@@ -300,7 +300,7 @@ class TestListAuditLogs:
         self, authenticated_client: AsyncClient, sample_audit_logs: list[AuditLog]
     ):
         """List can filter by date range."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Use a simple ISO format without timezone suffix for URL compatibility
         start_date = (now - timedelta(minutes=35)).strftime("%Y-%m-%dT%H:%M:%S")
         end_date = (now - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S")

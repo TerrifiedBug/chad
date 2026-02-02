@@ -125,6 +125,7 @@ async def update_index_pattern(
     current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     import logging
+
     from app.services.percolator import PercolatorService
 
     logger = logging.getLogger(__name__)

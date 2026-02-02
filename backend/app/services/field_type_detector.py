@@ -4,6 +4,7 @@ Detects when Sigma fields map to OpenSearch text fields that should use .keyword
 """
 
 import logging
+
 from opensearchpy import OpenSearch
 
 logger = logging.getLogger(__name__)

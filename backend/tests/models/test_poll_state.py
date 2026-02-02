@@ -1,10 +1,10 @@
 """Tests for IndexPatternPollState model."""
 
-import pytest
+from datetime import UTC, datetime
+
 import pytest_asyncio
-from datetime import datetime, timezone
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.index_pattern import IndexPattern
 from app.models.poll_state import IndexPatternPollState
@@ -30,7 +30,7 @@ class TestIndexPatternPollState:
         """Should create poll state for an index pattern."""
         poll_state = IndexPatternPollState(
             index_pattern_id=index_pattern.id,
-            last_poll_at=datetime.now(timezone.utc),
+            last_poll_at=datetime.now(UTC),
             last_poll_status="success",
         )
         test_session.add(poll_state)

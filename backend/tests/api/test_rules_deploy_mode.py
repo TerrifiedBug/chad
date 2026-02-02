@@ -1,6 +1,5 @@
 """Tests for mode-aware rule deployment."""
 
-import pytest
 from unittest.mock import MagicMock
 
 

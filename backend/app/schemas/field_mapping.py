@@ -31,6 +31,7 @@ class FieldMappingResponse(BaseModel):
     confidence: float | None
     created_by: UUID
     created_at: datetime
+    version: int = 1
 
     class Config:
         from_attributes = True

@@ -3,12 +3,12 @@
 
 import uuid
 from dataclasses import dataclass
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from unittest.mock import patch, MagicMock, AsyncMock, call
 
 from app.core.security import create_access_token, get_password_hash
 from app.db.session import get_db

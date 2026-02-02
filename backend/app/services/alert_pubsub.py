@@ -8,7 +8,7 @@ created by any other worker.
 import asyncio
 import json
 import logging
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 
 from app.core.redis import get_redis
 

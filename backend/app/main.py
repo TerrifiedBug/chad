@@ -8,20 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-
-from app.core.errors import http_error_handler, HTTPError
-from app.core.logging import setup_logging
 
 from app.api.alerts import router as alerts_router
 from app.api.api_keys import router as api_keys_router
 from app.api.attack import router as attack_router
-from app.api.circuit_breakers import router as circuit_breakers_router
-from app.api.deps import get_db
 from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
+from app.api.circuit_breakers import router as circuit_breakers_router
 from app.api.correlation_rules import router as correlation_rules_router
+from app.api.deps import get_db
 from app.api.export import router as export_router
 from app.api.external import router as external_router
 from app.api.field_mappings import router as field_mappings_router
@@ -29,22 +25,24 @@ from app.api.health import router as health_router
 from app.api.index_patterns import router as index_patterns_router
 from app.api.jira import router as jira_router
 from app.api.logs import router as logs_router
+from app.api.metrics import router as metrics_router
 from app.api.mode import router as mode_router
-from app.api.ti import router as ti_router
 from app.api.notifications import router as notifications_router
 from app.api.permissions import router as permissions_router
+from app.api.queue import router as queue_router
 from app.api.reports import router as reports_router
 from app.api.rules import router as rules_router
 from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
 from app.api.stats import router as stats_router
+from app.api.ti import router as ti_router
 from app.api.users import router as users_router
-from app.api.metrics import router as metrics_router
-from app.api.queue import router as queue_router
 from app.api.webhooks import router as webhooks_router
 from app.api.websocket import router as websocket_router
 from app.core.config import settings
 from app.core.csrf import CSRFMiddleware
+from app.core.errors import HTTPError, http_error_handler
+from app.core.logging import setup_logging
 from app.core.middleware import ErrorResponseMiddleware, RequestValidationMiddleware
 from app.core.redis import close_redis
 from app.services.scheduler import scheduler_service

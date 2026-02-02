@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +17,6 @@ from app.models.ti_config import TISourceConfig
 from app.models.user import User
 from app.services.health import get_all_indices_health, get_health_history, get_index_health
 from app.services.settings import get_setting, set_setting
-from opensearchpy import OpenSearch
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -365,7 +365,7 @@ async def get_health_status(
                         last_update = db_info["modified_at"]
 
                         # Check if database is recent (within 30 days)
-                        from datetime import datetime, timedelta, UTC
+                        from datetime import UTC, datetime
                         try:
                             # Parse ISO format string - handle both with and without timezone
                             if isinstance(last_update, str):
@@ -520,7 +520,7 @@ async def test_service_health(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Manually trigger health check for a service."""
-    from app.background.tasks.health_checks import check_jira_health, check_opensearch_health, check_ti_source_health
+    from app.background.tasks.health_checks import check_jira_health, check_opensearch_health
 
     if service_type == "jira":
         await check_jira_health(db)

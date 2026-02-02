@@ -1,6 +1,5 @@
 """Tests for mode-aware logs endpoint."""
 
-import pytest
 from unittest.mock import MagicMock
 
 

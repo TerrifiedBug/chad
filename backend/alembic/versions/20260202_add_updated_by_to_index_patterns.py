@@ -5,10 +5,10 @@ Revises: 20260201_detection_latency
 Create Date: 2026-02-02 14:45:00.000000
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260202_updated_by"

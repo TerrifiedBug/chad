@@ -1,10 +1,11 @@
 """Tests for MISP Threat Intelligence client."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.ti.misp import MISPClient
+import pytest
+
 from app.services.ti.base import TIIndicatorType, TIRiskLevel
+from app.services.ti.misp import MISPClient
 
 
 @pytest.fixture

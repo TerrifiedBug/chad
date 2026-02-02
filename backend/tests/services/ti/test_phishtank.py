@@ -1,10 +1,11 @@
 """Tests for PhishTank Threat Intelligence client."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.ti.phishtank import PhishTankClient
+import pytest
+
 from app.services.ti.base import TIIndicatorType, TIRiskLevel
+from app.services.ti.phishtank import PhishTankClient
 
 
 @pytest.fixture

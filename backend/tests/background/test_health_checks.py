@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from opensearchpy.exceptions import ConnectionError
+from sqlalchemy import select
 
 from app.background.tasks.health_checks import check_jira_health, check_opensearch_health
 from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
 from app.models.setting import Setting
-from sqlalchemy import select
 
 
 @pytest.mark.asyncio

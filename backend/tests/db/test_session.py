@@ -10,6 +10,7 @@ def test_pool_size_from_env():
     with patch.dict(os.environ, {"DATABASE_POOL_SIZE": "30"}):
         # Re-import to pick up new env
         import importlib
+
         from app.db import session
         importlib.reload(session)
 
@@ -23,6 +24,7 @@ def test_pool_size_default():
         os.environ.pop("DATABASE_POOL_SIZE", None)
 
         import importlib
+
         from app.db import session
         importlib.reload(session)
 
@@ -33,6 +35,7 @@ def test_max_overflow_from_env():
     """Max overflow should be configurable via DATABASE_MAX_OVERFLOW."""
     with patch.dict(os.environ, {"DATABASE_MAX_OVERFLOW": "50"}):
         import importlib
+
         from app.db import session
         importlib.reload(session)
 
@@ -45,6 +48,7 @@ def test_max_overflow_default():
         os.environ.pop("DATABASE_MAX_OVERFLOW", None)
 
         import importlib
+
         from app.db import session
         importlib.reload(session)
 

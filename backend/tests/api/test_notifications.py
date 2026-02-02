@@ -94,8 +94,9 @@ class TestMandatoryCommentsSettings:
     @pytest.mark.asyncio
     async def test_get_settings_requires_admin(self, client: AsyncClient, test_token, test_session):
         """Test that GET requires admin access."""
-        from app.models.user import User
         import uuid
+
+        from app.models.user import User
 
         # Create non-admin user
         user = User(
@@ -120,8 +121,9 @@ class TestMandatoryCommentsSettings:
     @pytest.mark.asyncio
     async def test_update_settings_requires_admin(self, client: AsyncClient, test_session):
         """Test that PUT requires admin access."""
-        from app.models.user import User
         import uuid
+
+        from app.models.user import User
 
         # Create non-admin user
         user = User(
@@ -152,8 +154,9 @@ class TestMandatoryCommentsSettings:
         self, authenticated_client: AsyncClient, test_session, test_user
     ):
         """Test that updating settings creates an audit log entry."""
-        from app.models.audit_log import AuditLog
         from sqlalchemy import select
+
+        from app.models.audit_log import AuditLog
 
         response = await authenticated_client.put(
             "/api/notifications/settings",

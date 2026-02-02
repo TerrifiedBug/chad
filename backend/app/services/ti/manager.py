@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.encryption import decrypt
 from app.models.ti_config import TISourceConfig, TISourceType
-from app.services.ti.abuseipdb import AbuseIPDBClient
 from app.services.ti.abuse_ch import AbuseCHClient
+from app.services.ti.abuseipdb import AbuseIPDBClient
 from app.services.ti.alienvault_otx import AlienVaultOTXClient
 from app.services.ti.base import (
     TIClient,

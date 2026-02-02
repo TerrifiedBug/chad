@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule
 from app.models.rule_exception import RuleException
-from app.services.alerts import AlertService, should_suppress_alert
 from app.services.alert_pubsub import publish_alert
+from app.services.alerts import AlertService, should_suppress_alert
 from app.services.batch_percolate import batch_percolate_logs
 from app.services.correlation import check_correlation
 from app.services.enrichment import enrich_alert

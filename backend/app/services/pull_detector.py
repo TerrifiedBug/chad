@@ -1,19 +1,19 @@
 """Pull-based detection service for querying OpenSearch on schedule."""
 
-from datetime import datetime, timezone, timedelta
-from typing import Any
-from uuid import UUID
 import asyncio
 import logging
-import yaml
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID
 
+import yaml
 from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rule_exception import RuleException
-from app.services.alerts import AlertService, should_suppress_alert
 from app.services.alert_pubsub import publish_alert
+from app.services.alerts import AlertService, should_suppress_alert
 from app.services.correlation import check_correlation
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
@@ -180,7 +180,6 @@ class PullDetector:
             if not triggered_correlations:
                 return
 
-            from app.models.rule import Rule
 
             for corr in triggered_correlations:
                 # Gather tags from both rules for the correlation alert
@@ -424,9 +423,10 @@ class PullDetector:
             Dict with poll results: {"matches": int, "errors": list, "events_scanned": int, "duration_ms": int, "truncated": bool}
         """
         import time as time_module
+
         from dateutil.parser import parse as parse_datetime
         start_time = time_module.monotonic()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         total_matches = 0
         total_events_scanned = 0
         errors = []
@@ -553,7 +553,7 @@ class PullDetector:
                                     if event_timestamp:
                                         # Ensure timezone awareness
                                         if event_timestamp.tzinfo is None:
-                                            event_timestamp = event_timestamp.replace(tzinfo=timezone.utc)
+                                            event_timestamp = event_timestamp.replace(tzinfo=UTC)
                                         latency_ms = (now - event_timestamp).total_seconds() * 1000
                                         if latency_ms >= 0:  # Sanity check (shouldn't be negative)
                                             detection_latencies_ms.append(latency_ms)
@@ -718,15 +718,16 @@ async def run_poll_job(index_pattern_id: str) -> None:
     Args:
         index_pattern_id: UUID of the index pattern to poll
     """
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
     from app.db.session import async_session_maker
     from app.models.index_pattern import IndexPattern
     from app.models.poll_state import IndexPatternPollState
     from app.models.rule import Rule, RuleStatus
-    from app.services.sigma import SigmaService
     from app.services.alerts import AlertService
     from app.services.opensearch import get_client_from_settings
-    from sqlalchemy import select, text
-    from sqlalchemy.orm import selectinload
+    from app.services.sigma import SigmaService
 
     logger.info(f"Running pull poll for index pattern {index_pattern_id}")
 
@@ -812,7 +813,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
             )
 
             # Update poll state with metrics
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             has_errors = len(poll_result["errors"]) > 0
             is_success = not has_errors
 
@@ -906,7 +907,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
                     pattern.poll_state.consecutive_failures += 1
                     pattern.poll_state.last_poll_status = "error"
                     pattern.poll_state.last_error = str(e)
-                    pattern.poll_state.updated_at = datetime.now(timezone.utc)
+                    pattern.poll_state.updated_at = datetime.now(UTC)
                     await session.commit()
             except Exception as update_error:
                 logger.error(f"Failed to update poll state on error: {update_error}")

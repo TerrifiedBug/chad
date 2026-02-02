@@ -4,7 +4,6 @@ SigmaHQ integration service for managing the SigmaHQ rule repository.
 Handles git operations (clone, pull) and file system access to rules.
 """
 import logging
-import re
 import subprocess
 from dataclasses import dataclass
 from enum import Enum
@@ -12,7 +11,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
-
 
 logger = logging.getLogger(__name__)
 

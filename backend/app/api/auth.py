@@ -13,7 +13,7 @@ from app.core.config import settings as app_settings
 from app.core.encryption import decrypt
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.session import get_db
-from app.models.user import User, UserRole, AuthMethod
+from app.models.user import AuthMethod, User, UserRole
 from app.schemas.auth import LoginRequest, SetupRequest, TokenResponse
 from app.schemas.totp import (
     TwoFactorDisableRequest,

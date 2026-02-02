@@ -1,6 +1,7 @@
 """Tests for threshold alerting logic."""
 
 import uuid
+from datetime import UTC
 
 import pytest
 import pytest_asyncio
@@ -232,11 +233,11 @@ class TestThresholdLogic:
         self, test_session: AsyncSession, threshold_rule: Rule
     ):
         """Old threshold matches should be cleaned up by periodic task."""
-        from datetime import datetime, timedelta, timezone
-        from sqlalchemy import select
+        from datetime import datetime, timedelta
+
 
         # Create some old matches manually
-        old_time = datetime.now(timezone.utc) - timedelta(hours=48)
+        old_time = datetime.now(UTC) - timedelta(hours=48)
         for i in range(3):
             match = ThresholdMatch(
                 rule_id=threshold_rule.id,

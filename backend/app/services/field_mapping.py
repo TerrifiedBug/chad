@@ -140,9 +140,11 @@ async def get_rules_using_mapping(
     mapping_id: UUID,
 ) -> list:
     """Get all rules that use a specific field mapping."""
-    from sqlalchemy.orm import selectinload
-    from app.models.rule import Rule
     import logging
+
+    from sqlalchemy.orm import selectinload
+
+    from app.models.rule import Rule
 
     logger = logging.getLogger(__name__)
 

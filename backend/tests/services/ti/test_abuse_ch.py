@@ -1,7 +1,8 @@
 """Tests for abuse.ch Threat Intelligence client."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.services.ti.abuse_ch import AbuseCHClient
 from app.services.ti.base import TIIndicatorType, TIRiskLevel

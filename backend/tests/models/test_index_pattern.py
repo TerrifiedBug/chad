@@ -1,6 +1,5 @@
 """Tests for IndexPattern model mode field."""
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -8,9 +8,9 @@ like dashboards, SIEM systems, and automation tools.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from opensearchpy import OpenSearch
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 

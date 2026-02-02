@@ -5,8 +5,8 @@ Uses Redis sorted sets for accurate sliding window rate limiting
 that works across multiple workers.
 """
 
-import time
 import logging
+import time
 
 from fastapi import HTTPException
 

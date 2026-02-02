@@ -1,13 +1,13 @@
 # backend/tests/services/test_attack_sync.py
 """Tests for ATT&CK sync service."""
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
-from app.models.rule import Rule, RuleSource, RuleStatus
 from app.models.index_pattern import IndexPattern
+from app.models.rule import Rule, RuleSource, RuleStatus
 from app.services.attack_sync import (
     AttackSyncService,
     extract_attack_tags,

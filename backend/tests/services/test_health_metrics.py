@@ -1,7 +1,7 @@
 """Tests for health metrics and ATT&CK coverage functionality."""
 
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest

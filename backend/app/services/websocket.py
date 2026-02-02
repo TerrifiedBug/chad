@@ -6,7 +6,6 @@ Uses Redis pub/sub for cross-worker broadcasting in multi-worker deployments.
 """
 
 import logging
-from typing import Dict, List, Set
 
 from fastapi import WebSocket
 from pydantic import BaseModel
@@ -36,9 +35,9 @@ class ConnectionManager:
 
     def __init__(self):
         # Store active connections by user ID
-        self.active_connections: Dict[str, List[WebSocket]] = {}
+        self.active_connections: dict[str, list[WebSocket]] = {}
         # Store all active connections for debugging
-        self._all_connections: Set[WebSocket] = set()
+        self._all_connections: set[WebSocket] = set()
         # Redis subscriber for cross-worker broadcasts
         self._subscriber: AlertSubscriber | None = None
 

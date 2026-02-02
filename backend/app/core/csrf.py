@@ -8,9 +8,9 @@ but this provides defense-in-depth protection.
 Uses Double Submit Cookie pattern with SameSite cookies and Origin/Referer validation.
 """
 
-import secrets
 import logging
-from typing import Callable
+import secrets
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 from fastapi import Request, Response

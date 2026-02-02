@@ -505,8 +505,12 @@ class SchedulerService:
 
     async def _execute_health_check(self):
         """Actual health check execution (extracted for testability)."""
+        from app.background.tasks.health_checks import (
+            check_jira_health,
+            check_opensearch_health,
+            check_ti_source_health,
+        )
         from app.services.health_monitor import check_index_health
-        from app.background.tasks.health_checks import check_opensearch_health, check_jira_health, check_ti_source_health
 
         logger.debug("Running scheduled health check")
         session = await self._get_session()
@@ -758,10 +762,10 @@ class SchedulerService:
         """
         from datetime import timedelta
 
-        from sqlalchemy import delete, func, and_
+        from sqlalchemy import and_, delete, func
 
-        from app.models.rule import RuleVersion
         from app.models.correlation_rule import CorrelationRuleVersion
+        from app.models.rule import RuleVersion
         from app.services.settings import get_setting
 
         logger.info("Running scheduled version cleanup")

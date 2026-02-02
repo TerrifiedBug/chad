@@ -1,7 +1,8 @@
 """Tests for queue settings service."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.schemas.queue import QueueSettings
 

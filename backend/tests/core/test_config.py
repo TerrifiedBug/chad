@@ -1,6 +1,5 @@
 """Tests for CHAD_MODE config setting."""
 
-import os
 import pytest
 
 
@@ -11,6 +10,7 @@ class TestChadModeConfig:
         monkeypatch.delenv("CHAD_MODE", raising=False)
         # Force re-import of settings
         import importlib
+
         from app.core import config
         importlib.reload(config)
         from app.core.config import Settings
@@ -21,6 +21,7 @@ class TestChadModeConfig:
         """Should accept 'pull' for pull-only deployment."""
         monkeypatch.setenv("CHAD_MODE", "pull")
         import importlib
+
         from app.core import config
         importlib.reload(config)
         from app.core.config import Settings
@@ -30,6 +31,7 @@ class TestChadModeConfig:
     def test_chad_mode_rejects_invalid(self, monkeypatch):
         """Should reject invalid mode values."""
         from pydantic_core import ValidationError
+
         from app.core.config import Settings
         # Create a Settings instance with invalid CHAD_MODE directly
         with pytest.raises(ValidationError, match="CHAD_MODE must be 'push' or 'pull'"):
@@ -39,6 +41,7 @@ class TestChadModeConfig:
         """is_pull_only should return False in push mode."""
         monkeypatch.delenv("CHAD_MODE", raising=False)
         import importlib
+
         from app.core import config
         importlib.reload(config)
         from app.core.config import Settings
@@ -49,6 +52,7 @@ class TestChadModeConfig:
         """is_pull_only should return True in pull-only deployment."""
         monkeypatch.setenv("CHAD_MODE", "pull")
         import importlib
+
         from app.core import config
         importlib.reload(config)
         from app.core.config import Settings

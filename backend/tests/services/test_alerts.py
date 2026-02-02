@@ -1,13 +1,12 @@
 """Tests for alert service exception matching."""
 
-import pytest
 
+from app.models.rule_exception import ExceptionOperator
 from app.services.alerts import (
     check_exception_match,
     get_nested_value,
     should_suppress_alert,
 )
-from app.models.rule_exception import ExceptionOperator
 
 
 class TestGetNestedValue:

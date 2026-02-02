@@ -200,7 +200,7 @@ async def normal_user(test_session: AsyncSession) -> User:
         id=uuid.uuid4(),
         email="user@example.com",
         password_hash=get_password_hash("userpassword"),
-        role=UserRole.USER,
+        role=UserRole.VIEWER,
         is_active=True,
     )
     test_session.add(user)
@@ -355,3 +355,71 @@ async def correlation_rule(test_session: AsyncSession, sample_rules):
     await test_session.commit()
     await test_session.refresh(rule)
     return rule
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_index_pattern(test_session: AsyncSession):
+    """Create a test index pattern."""
+    from app.models.index_pattern import IndexPattern
+
+    index_pattern = IndexPattern(
+        id=uuid.uuid4(),
+        name="test-logs",
+        pattern="test-logs-*",
+        percolator_index=".percolator-test-logs",
+    )
+    test_session.add(index_pattern)
+    await test_session.commit()
+    await test_session.refresh(index_pattern)
+    return index_pattern
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_rule(test_session: AsyncSession, test_index_pattern, test_user):
+    """Create a test rule."""
+    from app.models.rule import Rule, RuleSource, RuleStatus
+
+    yaml_content = """title: Test Detection Rule
+description: A test rule for unit testing
+logsource:
+    category: test
+detection:
+    selection:
+        process.executable|endswith: '.exe'
+    condition: selection
+level: medium
+"""
+    rule = Rule(
+        id=uuid.uuid4(),
+        title="Test Detection Rule",
+        description="A test rule for unit testing",
+        yaml_content=yaml_content,
+        severity="medium",
+        status=RuleStatus.DEPLOYED,
+        source=RuleSource.USER,
+        index_pattern_id=test_index_pattern.id,
+        created_by=test_user.id,
+    )
+    test_session.add(rule)
+    await test_session.commit()
+    await test_session.refresh(rule)
+    return rule
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_field_mapping(test_session: AsyncSession, test_index_pattern, test_user):
+    """Create a test field mapping."""
+    from app.models.field_mapping import FieldMapping, MappingOrigin
+
+    mapping = FieldMapping(
+        id=uuid.uuid4(),
+        index_pattern_id=test_index_pattern.id,
+        sigma_field="process.executable",
+        target_field="process.executable",
+        origin=MappingOrigin.MANUAL,
+        created_by=test_user.id,
+    )
+    test_session.add(mapping)
+    await test_session.commit()
+    await test_session.refresh(mapping)
+    return mapping

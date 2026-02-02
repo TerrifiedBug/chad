@@ -11,8 +11,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import validate_password_complexity
-from app.models.audit_log import AuditLog
 from app.api.deps import get_db, require_admin, require_permission_dep
+from app.models.audit_log import AuditLog
 from app.models.setting import Setting
 from app.models.user import User, UserRole
 from app.services.audit import audit_log

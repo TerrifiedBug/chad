@@ -11,7 +11,7 @@ Supports multiple providers with provider-specific payload formatting:
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -64,7 +64,7 @@ def format_generic_payload(alert: dict[str, Any], alert_url: str | None = None) 
 
     return {
         "event": "alert.created",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "alert": alert_data,
     }
 

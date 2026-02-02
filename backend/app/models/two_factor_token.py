@@ -5,7 +5,7 @@ Replaces in-memory storage with database-backed persistence.
 Supports both setup and login flows with automatic expiration.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import DateTime, Index, String, select
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,7 +38,7 @@ class TwoFactorToken(Base, TimestampMixin):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc) + timedelta(minutes=10)
+        default=lambda: datetime.now(UTC) + timedelta(minutes=10)
     )
 
     # Index for efficient cleanup of expired tokens
@@ -52,7 +52,7 @@ class TwoFactorToken(Base, TimestampMixin):
     @property
     def is_expired(self) -> bool:
         """Check if token has expired."""
-        return datetime.now(timezone.utc) > self.expires_at
+        return datetime.now(UTC) > self.expires_at
 
     @classmethod
     async def create_token(
@@ -88,7 +88,7 @@ class TwoFactorToken(Base, TimestampMixin):
             user_id=user_id,
             token_type=token_type,
             token_data=token_data,
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+            expires_at=datetime.now(UTC) + timedelta(minutes=expires_minutes)
         )
         db_session.add(token)
         await db_session.flush()
@@ -174,6 +174,6 @@ class TwoFactorToken(Base, TimestampMixin):
         """
         from sqlalchemy import delete
 
-        stmt = delete(cls).where(cls.expires_at < datetime.now(timezone.utc))
+        stmt = delete(cls).where(cls.expires_at < datetime.now(UTC))
         result = await db_session.execute(stmt)
         return result.rowcount

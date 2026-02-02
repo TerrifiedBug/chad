@@ -2,10 +2,8 @@
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.services.scheduler import scheduler_service
-from app.models.setting import Setting
 
 
 @pytest.mark.asyncio

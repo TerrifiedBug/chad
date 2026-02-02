@@ -3,18 +3,17 @@
 import ssl
 from datetime import UTC, datetime
 
+from opensearchpy import OpenSearch
 from opensearchpy.exceptions import ConnectionError, TransportError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.encryption import decrypt
-from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
-from app.models.ti_config import TISourceConfig
 from app.models.setting import Setting
+from app.models.ti_config import TISourceConfig
 from app.services.health_check import HealthCheckService
-from app.services.jira import JiraService, JiraAPIError
-from opensearchpy import OpenSearch
+from app.services.jira import JiraAPIError, JiraService
 
 
 async def check_opensearch_health(db: AsyncSession):
@@ -189,13 +188,14 @@ async def check_ti_source_health(db: AsyncSession):
     are cached for 5 minutes (300 seconds) to prevent excessive API calls.
     """
     import json
+
     from app.core.encryption import decrypt
     from app.core.redis import get_redis
     from app.services.ti import (
-        VirusTotalClient,
         AbuseIPDBClient,
         GreyNoiseClient,
         ThreatFoxClient,
+        VirusTotalClient,
     )
 
     service = HealthCheckService(db)

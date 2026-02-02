@@ -1,7 +1,8 @@
 """Tests for AlienVault OTX Threat Intelligence client."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.services.ti.alienvault_otx import AlienVaultOTXClient
 from app.services.ti.base import TIIndicatorType, TIRiskLevel

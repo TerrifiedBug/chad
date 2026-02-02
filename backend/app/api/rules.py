@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional, require_permission_dep
+from app.core.config import settings as app_settings
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.correlation_rule import CorrelationRule
@@ -48,18 +49,18 @@ from app.schemas.rule_exception import (
 )
 from app.services.attack_sync import update_rule_attack_mappings
 from app.services.audit import audit_log
-from app.core.config import settings as app_settings
-
-
-def get_settings():
-    """Get application settings (for easier mocking in tests)."""
-    return app_settings
 from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
 from app.services.rule_testing import run_historical_test
 from app.services.sigma import sigma_service
 from app.utils.request import get_client_ip
+
+
+def get_settings():
+    """Get application settings (for easier mocking in tests)."""
+    return app_settings
+
 
 router = APIRouter(prefix="/rules", tags=["rules"])
 
@@ -2290,7 +2291,7 @@ async def get_rule_fields(
 
         return RuleFieldsResponse(fields=correlation_fields)
 
-    except Exception as e:
+    except Exception:
         # If we can't get fields from OpenSearch, return empty list
         # This allows the UI to still function
         return RuleFieldsResponse(fields=[])

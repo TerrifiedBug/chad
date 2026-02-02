@@ -5,7 +5,7 @@ Handles counting matches and determining when threshold-based alerts should fire
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +64,7 @@ async def check_threshold(
     await db.flush()
 
     # Count matches in window
-    window_start = datetime.now(timezone.utc) - timedelta(minutes=threshold_window_minutes)
+    window_start = datetime.now(UTC) - timedelta(minutes=threshold_window_minutes)
 
     query = select(func.count(ThresholdMatch.id)).where(
         ThresholdMatch.rule_id == rule.id,
@@ -115,7 +115,7 @@ async def cleanup_old_matches(db: AsyncSession, hours: int = 24) -> int:
     Should be called by a scheduled task to prevent table growth.
     Returns the number of deleted rows.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
 
     result = await db.execute(
         delete(ThresholdMatch).where(ThresholdMatch.matched_at < cutoff)

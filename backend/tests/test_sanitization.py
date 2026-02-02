@@ -1,7 +1,6 @@
 """
 Tests for input sanitization.
 """
-import pytest
 
 from app.core.sanitization import (
     check_for_xss,

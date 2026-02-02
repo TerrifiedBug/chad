@@ -1,5 +1,6 @@
 """Field mappings API endpoints."""
 
+from datetime import UTC
 from typing import Annotated
 from uuid import UUID
 
@@ -12,8 +13,8 @@ from app.api.deps import get_current_user, get_db, get_opensearch_client_optiona
 from app.models.index_pattern import IndexPattern
 from app.models.user import User
 from app.schemas.field_mapping import (
-    AISuggestRequest,
     AISuggestionResponse,
+    AISuggestRequest,
     FieldMappingCreate,
     FieldMappingResponse,
     FieldMappingUpdate,
@@ -40,6 +41,22 @@ async def list_mappings(
 ):
     """List field mappings, optionally filtered by index pattern."""
     return await get_mappings(db, index_pattern_id)
+
+
+@router.get("/{mapping_id}", response_model=FieldMappingResponse)
+async def get_field_mapping(
+    mapping_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Get a single field mapping by ID."""
+    from app.models.field_mapping import FieldMapping
+
+    result = await db.execute(select(FieldMapping).where(FieldMapping.id == mapping_id))
+    mapping = result.scalar_one_or_none()
+    if mapping is None:
+        raise HTTPException(status_code=404, detail="Mapping not found")
+    return mapping
 
 
 @router.post("", response_model=FieldMappingResponse, status_code=status.HTTP_201_CREATED)
@@ -86,7 +103,7 @@ async def create_field_mapping(
                     )
 
                 # NEW: Validate field exists
-                from app.services.opensearch import get_index_fields, find_similar_fields
+                from app.services.opensearch import find_similar_fields, get_index_fields
 
                 available_fields = get_index_fields(
                     os_client, index_pattern.pattern, include_multi_fields=True
@@ -223,6 +240,7 @@ async def update_field_mapping(
     """
     # Get the mapping to find its index pattern
     from sqlalchemy import select
+
     from app.models.field_mapping import FieldMapping
 
     result = await db.execute(select(FieldMapping).where(FieldMapping.id == mapping_id))
@@ -259,7 +277,7 @@ async def update_field_mapping(
                     )
 
                 # NEW: Validate new target field if changed
-                from app.services.opensearch import get_index_fields, find_similar_fields
+                from app.services.opensearch import find_similar_fields, get_index_fields
 
                 available_fields = get_index_fields(
                     os_client, index_pattern.pattern, include_multi_fields=True
@@ -312,7 +330,8 @@ async def update_field_mapping(
         logger = logging.getLogger(__name__)
         logger.info("Found %d rules affected by field mapping change", len(affected_rules))
 
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         from app.models.rule import RuleVersion
 
         for rule in affected_rules:
@@ -327,7 +346,7 @@ async def update_field_mapping(
                 yaml_content=rule.yaml_content,
                 changed_by=current_user.id,
                 change_reason=f"Field mapping updated: {mapping.sigma_field} now maps to {data.target_field}",
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(UTC)
             )
             db.add(new_version)
 

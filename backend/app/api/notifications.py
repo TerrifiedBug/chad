@@ -303,8 +303,8 @@ async def get_recent_notifications(
     Returns current health issues including pull mode patterns.
     Note: Security alerts are stored in OpenSearch and not included here.
     """
-    from app.services.health import get_all_indices_health
     from app.api.health import get_pull_mode_health
+    from app.services.health import get_all_indices_health
 
     # Get health status for all indices (push mode)
     index_health = await get_all_indices_health(db, os_client)

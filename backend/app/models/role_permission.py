@@ -4,7 +4,7 @@ Role permissions configuration.
 Stores customizable permissions for each role (admin, analyst, viewer).
 """
 
-from sqlalchemy import String, Boolean, UniqueConstraint
+from sqlalchemy import Boolean, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base

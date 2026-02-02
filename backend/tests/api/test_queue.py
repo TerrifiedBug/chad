@@ -64,7 +64,7 @@ class TestDeadLetterAPI:
     @pytest.mark.asyncio
     async def test_dead_letter_response_model(self):
         """DeadLetterResponse should contain count and messages."""
-        from app.api.queue import DeadLetterResponse, DeadLetterMessage
+        from app.api.queue import DeadLetterMessage, DeadLetterResponse
 
         msg = DeadLetterMessage(
             id="1234-0",

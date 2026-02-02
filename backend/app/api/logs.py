@@ -24,13 +24,13 @@ Flow (Async mode - queue enabled):
 """
 
 import ipaddress
+import logging
 import secrets
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
 import yaml
-
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from opensearchpy import OpenSearch
 from pydantic import BaseModel
@@ -45,12 +45,14 @@ from app.models.rule import Rule
 from app.models.rule_exception import RuleException
 from app.services.alerts import AlertService, should_suppress_alert
 from app.services.correlation import check_correlation
-from app.services.redis_rate_limit import check_rate_limit_redis
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
+from app.services.redis_rate_limit import check_rate_limit_redis
 from app.services.settings import get_app_url
 from app.services.websocket import AlertBroadcast, manager
 from app.utils.request import get_client_ip
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -608,8 +610,8 @@ async def test_log_matching(
 
             # Check if suppressed and find matching exception
             for exc in exception_dicts:
-                from app.services.alerts import check_exception_match
                 from app.models.rule_exception import ExceptionOperator
+                from app.services.alerts import check_exception_match
                 if check_exception_match(log, exc["field"], ExceptionOperator(exc["operator"]), exc["value"]):
                     suppressed = True
                     matching_exception = exc

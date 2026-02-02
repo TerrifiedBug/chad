@@ -15,8 +15,8 @@ async def test_alert_delete_requires_manage_alerts(
 ):
     """Test that deleting an alert requires manage_alerts permission."""
     # Create a test user with only manage_rules permission
-    from app.models.user import User
     from app.core.security import get_password_hash
+    from app.models.user import User
 
     user = User(
         username="test_user_rules_only",
@@ -79,8 +79,8 @@ async def test_alert_delete_with_manage_alerts(
     test_session
 ):
     """Test that deleting an alert works with manage_alerts permission."""
+    from app.core.security import create_access_token, get_password_hash
     from app.models.user import User
-    from app.core.security import get_password_hash, create_access_token
 
     # Create a test user with only manage_alerts permission
     user = User(
@@ -139,8 +139,8 @@ async def test_bulk_status_update_requires_manage_alerts(
     test_session
 ):
     """Test that bulk status update requires manage_alerts permission."""
+    from app.core.security import create_access_token, get_password_hash
     from app.models.user import User
-    from app.core.security import get_password_hash, create_access_token
 
     # Create user without manage_alerts
     user = User(
@@ -184,8 +184,8 @@ async def test_bulk_delete_requires_manage_alerts(
     test_session
 ):
     """Test that bulk delete requires manage_alerts permission."""
+    from app.core.security import create_access_token, get_password_hash
     from app.models.user import User
-    from app.core.security import get_password_hash, create_access_token
 
     # Create user without manage_alerts
     user = User(
@@ -280,8 +280,8 @@ async def test_alert_status_update_requires_manage_alerts(
     test_session
 ):
     """Test that updating alert status requires manage_alerts permission."""
+    from app.core.security import create_access_token, get_password_hash
     from app.models.user import User
-    from app.core.security import get_password_hash, create_access_token
 
     # Create user with only manage_rules
     user = User(

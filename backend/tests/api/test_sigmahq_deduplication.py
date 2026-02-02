@@ -1,11 +1,11 @@
 import uuid
+from unittest.mock import MagicMock, patch
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from unittest.mock import patch, MagicMock
 
-from app.main import app
 from app.models.index_pattern import IndexPattern
 from app.models.user import User
 

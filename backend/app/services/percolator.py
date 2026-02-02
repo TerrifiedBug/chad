@@ -14,7 +14,7 @@ The percolator index stores:
 - enabled: Whether rule is active
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from opensearchpy import OpenSearch
@@ -132,7 +132,7 @@ class PercolatorService:
         Returns:
             None
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Check if rule already exists to preserve created_at
         existing = self.get_deployed_rule(percolator_index, rule_id)
@@ -188,7 +188,7 @@ class PercolatorService:
                 body={
                     "doc": {
                         "enabled": enabled,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
                 refresh=True,

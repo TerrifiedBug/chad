@@ -5,14 +5,14 @@ import pytest
 # Skip entire module if testcontainers is not installed
 pytest.importorskip("testcontainers", reason="testcontainers not installed")
 
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from testcontainers.postgres import PostgresContainer
 
+from app.api.deps import get_db
 from app.db.base import Base
 from app.main import app
-from app.api.deps import get_db
 from app.models.user import User, UserRole
 
 
@@ -60,7 +60,6 @@ async def db_session(db_engine):
 async def client(db_session):
     """Create an async HTTP client for testing."""
     # We need to override the get_db dependency
-    from unittest.mock import AsyncMock, patch
 
     async def override_get_db():
         return db_session

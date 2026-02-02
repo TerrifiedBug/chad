@@ -1,7 +1,8 @@
 """Tests for Prometheus metrics endpoint."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 
 class TestMetricsEndpoint:

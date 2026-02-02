@@ -7,7 +7,6 @@ from typing import Any
 
 from opensearchpy import OpenSearch
 
-
 logger = logging.getLogger(__name__)
 
 # Suppress urllib3 InsecureRequestWarning when verify_certs=False
@@ -94,8 +93,9 @@ async def get_client_from_settings(db_session) -> OpenSearch | None:
     Returns None if OpenSearch is not configured.
     """
     from sqlalchemy import select
-    from app.models.setting import Setting
+
     from app.core.encryption import decrypt
+    from app.models.setting import Setting
 
     result = await db_session.execute(
         select(Setting).where(Setting.key == "opensearch")

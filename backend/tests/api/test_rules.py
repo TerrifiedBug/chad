@@ -649,7 +649,8 @@ async def test_get_index_pattern_fields(
     test_session,
 ):
     """Test getting index pattern fields for exceptions dropdown."""
-    from unittest.mock import patch, Mock
+    from unittest.mock import Mock, patch
+
     from app.models.index_pattern import IndexPattern
 
     # Create index pattern directly (not using API to avoid permission issues)

@@ -1,7 +1,8 @@
 """Tests for mode API endpoint."""
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestModeEndpoint:

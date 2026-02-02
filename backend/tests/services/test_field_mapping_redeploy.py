@@ -1,6 +1,6 @@
 import pytest
-from app.services.field_mapping import get_rules_using_mapping
 
+from app.services.field_mapping import get_rules_using_mapping
 
 
 @pytest.mark.asyncio
@@ -18,25 +18,27 @@ async def test_get_rules_using_mapping(
 
 @pytest.mark.asyncio
 async def test_field_mapping_update_bumps_rule_version(
-    client,
+    authenticated_client,
     test_field_mapping,
     test_rule,
-    admin_token
 ):
     """Test that updating a field mapping bumps rule versions."""
     # Get initial version
-    result = await client.get(f"/api/field-mappings/{test_field_mapping.id}")
+    result = await authenticated_client.get(
+        f"/api/field-mappings/{test_field_mapping.id}"
+    )
     initial_version = result.json()["version"]
 
-    # Update field mapping
-    response = await client.patch(
+    # Update field mapping (API uses PUT, not PATCH)
+    response = await authenticated_client.put(
         f"/api/field-mappings/{test_field_mapping.id}",
         json={"target_field": "new_field"},
-        headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert response.status_code == 200
 
     # Check mapping version incremented
-    result = await client.get(f"/api/field-mappings/{test_field_mapping.id}")
+    result = await authenticated_client.get(
+        f"/api/field-mappings/{test_field_mapping.id}"
+    )
     new_version = result.json()["version"]
     assert new_version == initial_version + 1

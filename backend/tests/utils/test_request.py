@@ -1,5 +1,5 @@
-import pytest
 from unittest.mock import MagicMock
+
 from app.utils.request import get_client_ip
 
 

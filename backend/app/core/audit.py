@@ -6,13 +6,13 @@ ensuring compliance and security monitoring requirements are met.
 
 import functools
 import inspect
-from typing import Any, Callable, ParamSpec
+from collections.abc import Callable
+from typing import Any, ParamSpec
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
 from app.models.user import User
-
 
 P = ParamSpec("P")
 
