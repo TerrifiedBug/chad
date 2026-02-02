@@ -1,11 +1,24 @@
-import { useState, useEffect } from 'react'
-import { IndexPattern, indexPatternsApi, tiApi, TISourceConfig, TIConfig, TI_SOURCE_INFO } from '@/lib/api'
+import { useState, useEffect, useRef } from 'react'
+import {
+  IndexPattern,
+  indexPatternsApi,
+  tiApi,
+  TISourceConfig,
+  TIConfig,
+  TIFieldConfig,
+  TIIndicatorType,
+  TI_SOURCE_INFO,
+  TI_SOURCE_SUPPORTED_TYPES,
+  TI_INDICATOR_TYPE_INFO,
+  TISourceType,
+} from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, X } from 'lucide-react'
+import { Loader2, Save, X, Search } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -27,6 +40,12 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
   const [isSaving, setIsSaving] = useState(false)
   const [availableFields, setAvailableFields] = useState<string[]>([])
 
+  // Track pending field additions per source (field search text and selected field)
+  const [fieldSearches, setFieldSearches] = useState<Record<string, string>>({})
+  const [selectedFields, setSelectedFields] = useState<Record<string, string>>({})
+  const [showDropdowns, setShowDropdowns] = useState<Record<string, boolean>>({})
+  const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
   // Load TI sources and available fields
   useEffect(() => {
     const loadData = async () => {
@@ -38,7 +57,7 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
         ])
         // Filter to only enabled sources with API keys configured
         setTiSources(sourcesResponse.sources.filter(s => s.is_enabled && s.has_api_key))
-        setAvailableFields(fields)
+        setAvailableFields(fields.sort())
       } catch (err) {
         console.error('Failed to load TI data:', err)
       } finally {
@@ -52,6 +71,19 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
   useEffect(() => {
     setTiConfig(pattern.ti_config || {})
   }, [pattern.ti_config])
+
+  // Handle click outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      Object.entries(dropdownRefs.current).forEach(([sourceType, ref]) => {
+        if (ref && !ref.contains(event.target as Node)) {
+          setShowDropdowns(prev => ({ ...prev, [sourceType]: false }))
+        }
+      })
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -81,17 +113,43 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
     }
   }
 
-  const addField = (sourceType: string, field: string) => {
+  const selectField = (sourceType: string, field: string) => {
+    setSelectedFields(prev => ({ ...prev, [sourceType]: field }))
+    setFieldSearches(prev => ({ ...prev, [sourceType]: field }))
+    setShowDropdowns(prev => ({ ...prev, [sourceType]: false }))
+  }
+
+  const addFieldWithType = (sourceType: string, indicatorType: TIIndicatorType) => {
+    const field = selectedFields[sourceType]
+    if (!field) return
+
     const sourceConfig = tiConfig[sourceType] || { enabled: true, fields: [] }
-    if (!sourceConfig.fields.includes(field)) {
-      setTiConfig({
-        ...tiConfig,
-        [sourceType]: {
-          ...sourceConfig,
-          fields: [...sourceConfig.fields, field],
-        },
-      })
+    const fieldConfig: TIFieldConfig = { field, type: indicatorType }
+
+    // Check if field already exists
+    if (sourceConfig.fields.some(f => f.field === field)) {
+      return
     }
+
+    setTiConfig({
+      ...tiConfig,
+      [sourceType]: {
+        ...sourceConfig,
+        fields: [...sourceConfig.fields, fieldConfig],
+      },
+    })
+
+    // Clear selection
+    setSelectedFields(prev => {
+      const updated = { ...prev }
+      delete updated[sourceType]
+      return updated
+    })
+    setFieldSearches(prev => {
+      const updated = { ...prev }
+      delete updated[sourceType]
+      return updated
+    })
   }
 
   const removeField = (sourceType: string, field: string) => {
@@ -101,7 +159,7 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
         ...tiConfig,
         [sourceType]: {
           ...sourceConfig,
-          fields: sourceConfig.fields.filter(f => f !== field),
+          fields: sourceConfig.fields.filter(f => f.field !== field),
         },
       })
     }
@@ -111,6 +169,22 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
   const getSourceDisplayName = (sourceType: string): string => {
     const info = TI_SOURCE_INFO[sourceType as keyof typeof TI_SOURCE_INFO]
     return info?.name || sourceType
+  }
+
+  // Get supported indicator types for a source
+  const getSupportedTypes = (sourceType: string): TIIndicatorType[] => {
+    return TI_SOURCE_SUPPORTED_TYPES[sourceType as TISourceType] || []
+  }
+
+  // Get filtered fields for a source (excluding already configured)
+  const getFilteredFields = (sourceType: string) => {
+    const search = fieldSearches[sourceType] || ''
+    const sourceConfig = tiConfig[sourceType]
+    const configuredFields = sourceConfig?.fields?.map(f => f.field) || []
+
+    return availableFields
+      .filter(f => !configuredFields.includes(f))
+      .filter(f => f.toLowerCase().includes(search.toLowerCase()))
   }
 
   if (isLoading) {
@@ -127,6 +201,7 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
         <h3 className="text-lg font-medium">Threat Intelligence Enrichment</h3>
         <p className="text-sm text-muted-foreground">
           Configure which threat intelligence sources to use for enriching logs from this index pattern.
+          For each source, select fields and specify what type of indicator they contain.
         </p>
       </div>
 
@@ -138,66 +213,133 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
       ) : (
         <div className="space-y-4">
           {tiSources.map((source) => {
-            const sourceConfig = tiConfig[source.source_type]
+            const sourceType = source.source_type
+            const sourceConfig = tiConfig[sourceType]
             const isEnabled = !!sourceConfig?.enabled
-            const displayName = getSourceDisplayName(source.source_type)
+            const displayName = getSourceDisplayName(sourceType)
+            const supportedTypes = getSupportedTypes(sourceType)
+            const selectedField = selectedFields[sourceType]
+            const fieldSearch = fieldSearches[sourceType] || ''
+            const showDropdown = showDropdowns[sourceType]
+            const filteredFields = getFilteredFields(sourceType)
 
             return (
-              <div key={source.source_type} className="border rounded-lg p-4">
+              <div key={sourceType} className="border rounded-lg p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <Label className="font-medium">{displayName}</Label>
-                    <p className="text-xs text-muted-foreground capitalize">{source.source_type}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Supports: {supportedTypes.map(t => TI_INDICATOR_TYPE_INFO[t].label).join(', ')}
+                    </p>
                   </div>
                   <Switch
                     checked={isEnabled}
-                    onCheckedChange={(checked) => toggleSource(source.source_type, checked)}
+                    onCheckedChange={(checked) => toggleSource(sourceType, checked)}
                   />
                 </div>
 
                 {isEnabled && (
                   <div className="space-y-3 pt-3 border-t">
                     <Label className="text-sm">Fields to Check</Label>
+
+                    {/* Field Selection with Search */}
                     <div className="flex gap-2">
-                      <Select
-                        value=""
-                        onValueChange={(field) => addField(source.source_type, field)}
+                      <div
+                        ref={(el) => { dropdownRefs.current[sourceType] = el }}
+                        className="relative flex-1"
                       >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Add field to check..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableFields
-                            .filter(f => !sourceConfig?.fields?.includes(f))
-                            .map((field) => (
-                              <SelectItem key={field} value={field}>
-                                {field}
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            value={fieldSearch}
+                            onChange={(e) => {
+                              setFieldSearches(prev => ({ ...prev, [sourceType]: e.target.value }))
+                              setSelectedFields(prev => ({ ...prev, [sourceType]: e.target.value }))
+                              setShowDropdowns(prev => ({ ...prev, [sourceType]: true }))
+                            }}
+                            onFocus={() => setShowDropdowns(prev => ({ ...prev, [sourceType]: true }))}
+                            placeholder="Search fields..."
+                            className="pl-9"
+                          />
+                        </div>
+                        {showDropdown && availableFields.length > 0 && (
+                          <div className="absolute z-50 mt-1 w-full bg-popover border rounded-md shadow-md max-h-60 overflow-y-auto">
+                            {filteredFields.length === 0 ? (
+                              <div className="px-3 py-2 text-sm text-muted-foreground">
+                                No matching fields
+                              </div>
+                            ) : (
+                              filteredFields.slice(0, 100).map((field) => (
+                                <button
+                                  key={field}
+                                  type="button"
+                                  className="w-full px-3 py-2 text-left text-sm font-mono hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground outline-none"
+                                  onClick={() => selectField(sourceType, field)}
+                                >
+                                  {field}
+                                </button>
+                              ))
+                            )}
+                            {filteredFields.length > 100 && (
+                              <div className="px-3 py-2 text-xs text-muted-foreground border-t">
+                                Showing first 100 of {filteredFields.length} matches
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Indicator Type Selection - only show when field is selected */}
+                      {selectedField && (
+                        <Select
+                          value=""
+                          onValueChange={(type) => addFieldWithType(sourceType, type as TIIndicatorType)}
+                        >
+                          <SelectTrigger className="w-48">
+                            <SelectValue placeholder="Select type..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {supportedTypes.map((type) => (
+                              <SelectItem key={type} value={type}>
+                                {TI_INDICATOR_TYPE_INFO[type].label}
                               </SelectItem>
                             ))}
-                        </SelectContent>
-                      </Select>
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
 
+                    {/* Configured Fields List */}
                     {sourceConfig?.fields && sourceConfig.fields.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {sourceConfig.fields.map((field) => (
-                          <Badge key={field} variant="secondary" className="flex items-center gap-1 pr-1">
-                            {field}
+                      <div className="space-y-2">
+                        {sourceConfig.fields.map((fieldConfig) => (
+                          <div
+                            key={fieldConfig.field}
+                            className="flex items-center justify-between p-2 bg-muted/50 rounded"
+                          >
+                            <div className="flex items-center gap-2">
+                              <code className="text-sm font-mono">{fieldConfig.field}</code>
+                              <Badge variant="outline" className="text-xs">
+                                {TI_INDICATOR_TYPE_INFO[fieldConfig.type]?.label || fieldConfig.type}
+                              </Badge>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => removeField(source.source_type, field)}
-                              className="ml-1 hover:bg-muted rounded-full p-0.5"
+                              onClick={() => removeField(sourceType, fieldConfig.field)}
+                              className="hover:bg-muted rounded-full p-1"
                             >
-                              <X className="h-3 w-3" />
+                              <X className="h-3.5 w-3.5" />
                             </button>
-                          </Badge>
+                          </div>
                         ))}
                       </div>
                     )}
 
-                    <p className="text-xs text-muted-foreground">
-                      Select fields containing IPs, domains, or hashes to check against {displayName}.
-                    </p>
+                    {(!sourceConfig?.fields || sourceConfig.fields.length === 0) && (
+                      <p className="text-xs text-muted-foreground italic">
+                        No fields configured. Search and select a field, then choose its indicator type.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
