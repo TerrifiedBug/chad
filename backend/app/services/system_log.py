@@ -200,7 +200,7 @@ class SystemLogService:
         result = await db.execute(
             delete(SystemLog).where(SystemLog.timestamp < cutoff)
         )
-        await db.commit()
+        # Don't commit here - let caller manage transaction
         return result.rowcount
 
 
