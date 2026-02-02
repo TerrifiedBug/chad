@@ -17,12 +17,21 @@ import {
   Key,
   Loader2,
   AlertCircle,
+  Save,
+  Shield,
+  Globe,
+  Lock,
+  HeartPulse,
 } from 'lucide-react'
 import { SettingsTab } from '@/components/index-patterns/SettingsTab'
 import { FieldMappingsTab } from '@/components/index-patterns/FieldMappingsTab'
 import { EndpointTab } from '@/components/index-patterns/EndpointTab'
+import { TIEnrichmentTab } from '@/components/index-patterns/TIEnrichmentTab'
+import { GeoIPTab } from '@/components/index-patterns/GeoIPTab'
+import { SecurityTab } from '@/components/index-patterns/SecurityTab'
+import { HealthTab } from '@/components/index-patterns/HealthTab'
 
-type DetailTab = 'settings' | 'mappings' | 'endpoint'
+type DetailTab = 'settings' | 'mappings' | 'threat-intel' | 'geoip' | 'security' | 'health' | 'endpoint'
 
 export default function IndexPatternDetail() {
   const { id } = useParams<{ id: string }>()
@@ -30,7 +39,7 @@ export default function IndexPatternDetail() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { showToast } = useToast()
 
-  const isNew = id === 'new'
+  const isNew = !id || id === 'new'
   const activeTab = (searchParams.get('tab') as DetailTab) || 'settings'
 
   const [pattern, setPattern] = useState<IndexPattern | null>(null)
@@ -186,11 +195,34 @@ export default function IndexPatternDetail() {
             )}
           </div>
         </div>
+        {/* Save button - only show on Settings tab */}
+        {activeTab === 'settings' && (
+          <Button
+            onClick={() => {
+              // Trigger save from the settings form
+              const form = document.getElementById('settings-form') as HTMLFormElement
+              form?.requestSubmit()
+            }}
+            disabled={isSaving || !hasUnsavedChanges}
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-2" />
+                {isNew ? 'Create Pattern' : 'Save Changes'}
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
             Settings
@@ -204,6 +236,38 @@ export default function IndexPatternDetail() {
             Field Mappings
           </TabsTrigger>
           <TabsTrigger
+            value="threat-intel"
+            className="flex items-center gap-2"
+            disabled={isNew}
+          >
+            <Shield className="h-4 w-4" />
+            Threat Intel
+          </TabsTrigger>
+          <TabsTrigger
+            value="geoip"
+            className="flex items-center gap-2"
+            disabled={isNew}
+          >
+            <Globe className="h-4 w-4" />
+            GeoIP
+          </TabsTrigger>
+          <TabsTrigger
+            value="security"
+            className="flex items-center gap-2"
+            disabled={isNew || pattern?.mode !== 'push'}
+          >
+            <Lock className="h-4 w-4" />
+            Security
+          </TabsTrigger>
+          <TabsTrigger
+            value="health"
+            className="flex items-center gap-2"
+            disabled={isNew}
+          >
+            <HeartPulse className="h-4 w-4" />
+            Health
+          </TabsTrigger>
+          <TabsTrigger
             value="endpoint"
             className="flex items-center gap-2"
             disabled={isNew}
@@ -213,50 +277,108 @@ export default function IndexPatternDetail() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab Contents */}
-        <div className="max-w-4xl">
-          <TabsContent value="settings" className="mt-0">
-            <div className="rounded-lg border bg-card p-6">
-              <SettingsTab
-                pattern={pattern}
-                isNew={isNew}
-                onSave={handleSave}
-                isSaving={isSaving}
-                onDirtyChange={handleDirtyChange}
+        {/* Tab Contents - Full width */}
+        <TabsContent value="settings" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            <SettingsTab
+              pattern={pattern}
+              isNew={isNew}
+              onSave={handleSave}
+              isSaving={isSaving}
+              onDirtyChange={handleDirtyChange}
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="mappings" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            {pattern ? (
+              <FieldMappingsTab
+                patternId={pattern.id}
+                patternName={pattern.name}
               />
-            </div>
-          </TabsContent>
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                Save the pattern first to configure field mappings.
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
-          <TabsContent value="mappings" className="mt-0">
-            <div className="rounded-lg border bg-card p-6">
-              {pattern ? (
-                <FieldMappingsTab
-                  patternId={pattern.id}
-                  patternName={pattern.name}
-                />
-              ) : (
-                <div className="text-sm text-muted-foreground py-8 text-center">
-                  Save the pattern first to configure field mappings.
-                </div>
-              )}
-            </div>
-          </TabsContent>
+        <TabsContent value="threat-intel" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            {pattern ? (
+              <TIEnrichmentTab
+                pattern={pattern}
+                onPatternUpdated={handlePatternUpdated}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                Save the pattern first to configure threat intelligence enrichment.
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
-          <TabsContent value="endpoint" className="mt-0">
-            <div className="rounded-lg border bg-card p-6">
-              {pattern ? (
-                <EndpointTab
-                  pattern={pattern}
-                  onPatternUpdated={handlePatternUpdated}
-                />
-              ) : (
-                <div className="text-sm text-muted-foreground py-8 text-center">
-                  Save the pattern first to view endpoint configuration.
-                </div>
-              )}
-            </div>
-          </TabsContent>
-        </div>
+        <TabsContent value="geoip" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            {pattern ? (
+              <GeoIPTab
+                pattern={pattern}
+                onPatternUpdated={handlePatternUpdated}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                Save the pattern first to configure GeoIP enrichment.
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="security" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            {pattern ? (
+              <SecurityTab
+                pattern={pattern}
+                onPatternUpdated={handlePatternUpdated}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                Save the pattern first to configure security settings.
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="health" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            {pattern ? (
+              <HealthTab
+                pattern={pattern}
+                onPatternUpdated={handlePatternUpdated}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                Save the pattern first to configure health alerting.
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="endpoint" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            {pattern ? (
+              <EndpointTab
+                pattern={pattern}
+                onPatternUpdated={handlePatternUpdated}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                Save the pattern first to view endpoint configuration.
+              </div>
+            )}
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
   )

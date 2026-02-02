@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Plus, Trash2, Check, Loader2, Copy, Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle, Database } from 'lucide-react'
+import { Plus, Trash2, Check, Loader2, Copy, Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle, Database, Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -38,6 +38,24 @@ const HealthStatusIcon = ({ status }: { status: HealthStatus }) => {
     case 'critical':
       return <AlertCircle className="h-4 w-4 text-red-600" />
   }
+}
+
+// Format relative time (e.g., "2 hours ago", "3 days ago")
+const formatRelativeTime = (dateString: string): string => {
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
+
+  if (diffSec < 60) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffHour < 24) return `${diffHour}h ago`
+  if (diffDay < 7) return `${diffDay}d ago`
+
+  return date.toLocaleDateString()
 }
 
 export default function IndexPatternsPage() {
@@ -215,6 +233,7 @@ export default function IndexPatternsPage() {
                 <TableHead>Name</TableHead>
                 <TableHead>Pattern</TableHead>
                 <TableHead>Mode</TableHead>
+                <TableHead>Last Edited</TableHead>
                 <TableHead className="w-20">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -246,6 +265,12 @@ export default function IndexPatternsPage() {
                     >
                       {pattern.mode === 'push' ? 'Push' : `Pull (${pattern.poll_interval_minutes}m)`}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground" title={new Date(pattern.updated_at).toLocaleString()}>
+                      <Clock className="h-3.5 w-3.5" />
+                      {formatRelativeTime(pattern.updated_at)}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
