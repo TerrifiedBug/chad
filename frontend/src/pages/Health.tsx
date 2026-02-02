@@ -112,10 +112,6 @@ export default function HealthPage() {
     const saved = localStorage.getItem('health-pushmode-open')
     return saved ? JSON.parse(saved) : false
   })
-  const [queueDetailsOpen, setQueueDetailsOpen] = useState(() => {
-    const saved = localStorage.getItem('health-queue-details-open')
-    return saved ? JSON.parse(saved) : false
-  })
   const [deadLetterOpen, setDeadLetterOpen] = useState(() => {
     const saved = localStorage.getItem('health-dead-letter-open')
     return saved ? JSON.parse(saved) : false
@@ -156,9 +152,6 @@ export default function HealthPage() {
     localStorage.setItem('health-pushmode-open', JSON.stringify(pushModeOpen))
   }, [pushModeOpen])
 
-  useEffect(() => {
-    localStorage.setItem('health-queue-details-open', JSON.stringify(queueDetailsOpen))
-  }, [queueDetailsOpen])
 
   useEffect(() => {
     localStorage.setItem('health-dead-letter-open', JSON.stringify(deadLetterOpen))
@@ -592,7 +585,14 @@ export default function HealthPage() {
           >
             <div className="flex items-center gap-2">
               <Zap className="h-5 w-5" />
-              <CardTitle className="text-lg">Push Mode Detection</CardTitle>
+              <CardTitle className="text-lg">
+                Push Mode Detection
+                {queueStats?.queues && Object.keys(queueStats.queues).length > 0 && (
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    ({Object.keys(queueStats.queues).length})
+                  </span>
+                )}
+              </CardTitle>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -613,60 +613,44 @@ export default function HealthPage() {
         </CardHeader>
         {pushModeOpen && (
           <CardContent className="space-y-4">
-            {/* Queue Statistics */}
-            <div className="border rounded-lg p-4">
-              <div
-                className="flex items-center justify-between cursor-pointer"
-                onClick={() => setQueueDetailsOpen(!queueDetailsOpen)}
-              >
-                <div className="flex items-center gap-2">
-                  <Layers className="h-4 w-4" />
-                  <span className="font-medium">Queue Health</span>
+            {/* Queue Statistics - Displayed directly */}
+            {queueStats ? (
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="p-3 border rounded-lg">
+                    <div className="text-xl font-bold">{queueStats.total_depth.toLocaleString()}</div>
+                    <div className="text-sm text-muted-foreground">Total Queue Depth</div>
+                  </div>
+                  <div className="p-3 border rounded-lg">
+                    <div className="text-xl font-bold">{Object.keys(queueStats.queues).length}</div>
+                    <div className="text-sm text-muted-foreground">Active Streams</div>
+                  </div>
+                  <div className="p-3 border rounded-lg">
+                    <div className={`text-xl font-bold ${queueStats.dead_letter_count > 0 ? 'text-red-500' : ''}`}>
+                      {queueStats.dead_letter_count.toLocaleString()}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Dead Letter Count</div>
+                  </div>
                 </div>
-                {queueDetailsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                {Object.keys(queueStats.queues).length > 0 && (
+                  <div className="pt-4 border-t">
+                    <h4 className="font-medium mb-2 text-sm">Queue Depths by Index</h4>
+                    <div className="space-y-2">
+                      {Object.entries(queueStats.queues).map(([index, depth]) => (
+                        <div key={index} className="flex justify-between items-center text-sm">
+                          <span className="font-mono">{index}</span>
+                          <span className={depth > 10000 ? 'text-yellow-500 font-medium' : ''}>{depth.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              {queueDetailsOpen && (
-                <div className="mt-4">
-                  {queueStats ? (
-                    <div className="space-y-4">
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <div className="p-3 border rounded-lg">
-                          <div className="text-xl font-bold">{queueStats.total_depth.toLocaleString()}</div>
-                          <div className="text-sm text-muted-foreground">Total Queue Depth</div>
-                        </div>
-                        <div className="p-3 border rounded-lg">
-                          <div className="text-xl font-bold">{Object.keys(queueStats.queues).length}</div>
-                          <div className="text-sm text-muted-foreground">Active Streams</div>
-                        </div>
-                        <div className="p-3 border rounded-lg">
-                          <div className={`text-xl font-bold ${queueStats.dead_letter_count > 0 ? 'text-red-500' : ''}`}>
-                            {queueStats.dead_letter_count.toLocaleString()}
-                          </div>
-                          <div className="text-sm text-muted-foreground">Dead Letter Count</div>
-                        </div>
-                      </div>
-                      {Object.keys(queueStats.queues).length > 0 && (
-                        <div className="pt-4 border-t">
-                          <h4 className="font-medium mb-2 text-sm">Queue Depths by Index</h4>
-                          <div className="space-y-2">
-                            {Object.entries(queueStats.queues).map(([index, depth]) => (
-                              <div key={index} className="flex justify-between items-center text-sm">
-                                <span className="font-mono">{index}</span>
-                                <span className={depth > 10000 ? 'text-yellow-500 font-medium' : ''}>{depth.toLocaleString()}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 text-muted-foreground text-sm">
-                      {isLoadingQueueStats ? 'Loading...' : 'No queue statistics available. Redis may not be configured.'}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            ) : (
+              <div className="text-center py-4 text-muted-foreground text-sm">
+                {isLoadingQueueStats ? 'Loading...' : 'No queue statistics available. Redis may not be configured.'}
+              </div>
+            )}
 
             {/* Dead Letter Queue */}
             <div className="border rounded-lg p-4">
