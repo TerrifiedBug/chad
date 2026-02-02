@@ -39,26 +39,18 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
   return (
     <>
       <header className="sticky top-0 z-50 h-14 bg-background flex">
-        {/* Logo section - matches sidebar width */}
+        {/* Spacer to align with sidebar - hidden on mobile */}
         <div
           className={cn(
-            'flex items-center justify-center transition-all duration-200',
-            railExpanded ? 'w-[200px]' : 'w-14',
-            showMobileMenu && 'hidden md:flex'
+            'hidden md:block transition-all duration-200 flex-shrink-0',
+            railExpanded ? 'w-[200px]' : 'w-14'
           )}
-        >
-          <Link to="/" className="flex items-baseline gap-2">
-            <span className="text-xl font-bold">CHAD</span>
-            {railExpanded && version && (
-              <span className="text-xs text-muted-foreground">v{version}</span>
-            )}
-          </Link>
-        </div>
+        />
 
         {/* Main header area */}
         <div className="flex-1 flex h-full items-center justify-between px-4">
           <div className="flex items-center gap-3">
-            {/* Mobile menu button - only show on mobile when authenticated */}
+            {/* Mobile menu button */}
             {isAuthenticated && showMobileMenu !== undefined && (
               <Button
                 variant="ghost"
@@ -71,12 +63,13 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
               </Button>
             )}
 
-            {/* Mobile logo - show only on mobile */}
-            {showMobileMenu && (
-              <Link to="/" className="flex items-baseline gap-2 md:hidden">
-                <span className="text-xl font-bold">CHAD</span>
-              </Link>
-            )}
+            {/* Logo - always visible in main header area */}
+            <Link to="/" className="flex items-baseline gap-2">
+              <span className="text-xl font-bold">CHAD</span>
+              {version && (
+                <span className="text-xs text-muted-foreground">v{version}</span>
+              )}
+            </Link>
           </div>
 
           <div className="flex items-center gap-2">
