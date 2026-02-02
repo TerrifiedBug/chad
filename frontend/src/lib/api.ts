@@ -1298,7 +1298,18 @@ export const systemLogsApi = {
   },
 
   purge: async (before: string): Promise<{ deleted_count: number }> => {
-    return api.delete<{ deleted_count: number }>(`/system-logs?before=${encodeURIComponent(before)}`)
+    // Use fetch directly since api.delete returns void but this endpoint returns data
+    const response = await fetch(`${API_BASE}/system-logs?before=${encodeURIComponent(before)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    })
+    if (!response.ok) {
+      throw new Error('Failed to purge system logs')
+    }
+    return response.json()
   },
 }
 

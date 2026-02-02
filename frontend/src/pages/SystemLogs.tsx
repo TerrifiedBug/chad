@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { formatDistanceToNow } from 'date-fns'
 import { systemLogsApi, SystemLogEntry, SystemLogListResponse } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -103,7 +104,9 @@ function LogEntryRow({ entry, isNew }: LogEntryRowProps) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <TooltipProvider>
-                  <TimestampTooltip timestamp={entry.timestamp} />
+                  <TimestampTooltip timestamp={entry.timestamp}>
+                    <span>{formatDistanceToNow(new Date(entry.timestamp), { addSuffix: true })}</span>
+                  </TimestampTooltip>
                 </TooltipProvider>
                 <span className="text-muted-foreground/60">·</span>
                 <span>{entry.category}</span>
