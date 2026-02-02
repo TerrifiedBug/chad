@@ -115,6 +115,7 @@ class IndexPatternResponse(IndexPatternBase):
     timestamp_field: str
     created_at: datetime
     updated_at: datetime
+    last_edited_by: str | None = None  # Email of user who last edited
 
     class Config:
         from_attributes = True

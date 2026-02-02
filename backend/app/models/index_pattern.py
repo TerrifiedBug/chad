@@ -1,7 +1,8 @@
 import secrets
+import uuid
 
-from sqlalchemy import Boolean, Float, Integer, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
@@ -81,6 +82,11 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     # Timestamp field for pull mode time filtering (default: @timestamp)
     timestamp_field: Mapped[str] = mapped_column(String(255), default="@timestamp", nullable=False)
 
+    # Track who last updated this pattern
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
     # Relationships
     field_mappings = relationship(
         "FieldMapping", back_populates="index_pattern", cascade="all, delete-orphan"
@@ -94,3 +100,9 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
+
+    @property
+    def last_edited_by(self) -> str | None:
+        """Return the email of the user who last edited this pattern."""
+        return self.updated_by.email if self.updated_by else None

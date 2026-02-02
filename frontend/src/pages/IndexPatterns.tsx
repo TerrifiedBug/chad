@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Plus, Trash2, Check, Loader2, Copy, Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle, Database, Clock } from 'lucide-react'
+import { Plus, Trash2, Check, Loader2, Copy, Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle, Database } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -233,7 +233,8 @@ export default function IndexPatternsPage() {
                 <TableHead>Name</TableHead>
                 <TableHead>Pattern</TableHead>
                 <TableHead>Mode</TableHead>
-                <TableHead>Last Edited</TableHead>
+                <TableHead>Last Edited By</TableHead>
+                <TableHead>Updated</TableHead>
                 <TableHead className="w-20">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -267,10 +268,17 @@ export default function IndexPatternsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground" title={new Date(pattern.updated_at).toLocaleString()}>
-                      <Clock className="h-3.5 w-3.5" />
+                    <span className="text-sm text-muted-foreground">
+                      {pattern.last_edited_by || '—'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className="text-sm text-muted-foreground"
+                      title={new Date(pattern.updated_at).toLocaleString()}
+                    >
                       {formatRelativeTime(pattern.updated_at)}
-                    </div>
+                    </span>
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>

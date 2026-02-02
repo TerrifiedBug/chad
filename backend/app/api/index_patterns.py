@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_opensearch_client, require_admin, require_permission_dep
+from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
 from app.db.session import get_db
 from app.models.index_pattern import IndexPattern, generate_auth_token
 from app.models.rule import Rule
@@ -20,8 +21,8 @@ from app.schemas.index_pattern import (
     IndexPatternValidateResponse,
 )
 from app.services.audit import audit_log
-from app.utils.request import get_client_ip
 from app.services.opensearch import get_index_fields, get_time_fields, validate_index_pattern
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/index-patterns", tags=["index-patterns"])
 
@@ -31,7 +32,9 @@ async def list_index_patterns(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
 ):
-    result = await db.execute(select(IndexPattern))
+    result = await db.execute(
+        select(IndexPattern).options(selectinload(IndexPattern.updated_by))
+    )
     return result.scalars().all()
 
 
@@ -97,7 +100,11 @@ async def get_index_pattern(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
 ):
-    result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
+    result = await db.execute(
+        select(IndexPattern)
+        .where(IndexPattern.id == pattern_id)
+        .options(selectinload(IndexPattern.updated_by))
+    )
     pattern = result.scalar_one_or_none()
 
     if pattern is None:
@@ -114,7 +121,7 @@ async def update_index_pattern(
     pattern_data: IndexPatternUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
     opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
-    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     import logging
     from app.services.percolator import PercolatorService
@@ -194,6 +201,9 @@ async def update_index_pattern(
 
     for field, value in update_data.items():
         setattr(pattern, field, value)
+
+    # Track who made this update
+    pattern.updated_by_id = current_user.id
 
     await db.commit()
     await db.refresh(pattern)

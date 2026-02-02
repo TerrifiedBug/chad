@@ -680,6 +680,8 @@ export type IndexPattern = {
   poll_interval_minutes: number
   // Timestamp field for pull mode time filtering (must be a date field in the index)
   timestamp_field: string
+  // Audit: email of user who last edited this pattern
+  last_edited_by: string | null
 }
 
 export type IndexPatternCreate = {
