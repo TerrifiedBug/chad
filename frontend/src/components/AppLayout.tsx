@@ -96,6 +96,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <AppHeader
         onMobileMenuToggle={() => setMobileMenuOpen(true)}
         showMobileMenu={isMobile}
+        railExpanded={railExpanded}
       />
 
       <div className="flex">

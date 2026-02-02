@@ -14,14 +14,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, LogOut, Settings, Key, Lock, User, Info, Menu } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { LogOut, Settings, Key, Lock, User, Info, Menu } from 'lucide-react'
 
 interface AppHeaderProps {
   onMobileMenuToggle?: () => void
   showMobileMenu?: boolean
+  railExpanded?: boolean
 }
 
-export function AppHeader({ onMobileMenuToggle, showMobileMenu }: AppHeaderProps) {
+// Get user initial from email or username
+function getUserInitial(email: string): string {
+  // Try to get first letter of the part before @
+  const name = email.split('@')[0]
+  return name.charAt(0).toUpperCase()
+}
+
+export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = true }: AppHeaderProps) {
   const { isAuthenticated, user, logout, hasPermission } = useAuth()
   const { version, updateAvailable } = useVersion()
   const navigate = useNavigate()
@@ -29,8 +38,25 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu }: AppHeaderProps
 
   return (
     <>
-      <header className="sticky top-0 z-50 h-14 bg-background">
-        <div className="flex h-full items-center justify-between px-4">
+      <header className="sticky top-0 z-50 h-14 bg-background flex">
+        {/* Logo section - matches sidebar width */}
+        <div
+          className={cn(
+            'flex items-center justify-center border-r transition-all duration-200',
+            railExpanded ? 'w-[200px]' : 'w-14',
+            showMobileMenu && 'hidden md:flex'
+          )}
+        >
+          <Link to="/" className="flex items-baseline gap-2">
+            <span className="text-xl font-bold">CHAD</span>
+            {railExpanded && version && (
+              <span className="text-xs text-muted-foreground">v{version}</span>
+            )}
+          </Link>
+        </div>
+
+        {/* Main header area */}
+        <div className="flex-1 flex h-full items-center justify-between px-4">
           <div className="flex items-center gap-3">
             {/* Mobile menu button - only show on mobile when authenticated */}
             {isAuthenticated && showMobileMenu !== undefined && (
@@ -45,12 +71,12 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu }: AppHeaderProps
               </Button>
             )}
 
-            <Link to="/" className="flex items-baseline gap-2">
-              <span className="text-xl font-bold">CHAD</span>
-              {version && (
-                <span className="text-xs text-muted-foreground">v{version}</span>
-              )}
-            </Link>
+            {/* Mobile logo - show only on mobile */}
+            {showMobileMenu && (
+              <Link to="/" className="flex items-baseline gap-2 md:hidden">
+                <span className="text-xl font-bold">CHAD</span>
+              </Link>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -59,12 +85,10 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu }: AppHeaderProps
             {isAuthenticated && user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-1">
-                    <span className="hidden sm:inline">{user.email}</span>
-                    <span className="sm:hidden">
-                      <User className="h-4 w-4" />
-                    </span>
-                    <ChevronDown className="h-4 w-4" />
+                  <Button variant="ghost" size="icon" className="rounded-full h-9 w-9">
+                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium">
+                      {getUserInitial(user.email)}
+                    </div>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
