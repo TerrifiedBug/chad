@@ -4,7 +4,7 @@ import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import { ModeProvider } from '@/hooks/useMode'
 import { ToastProvider } from '@/components/ui/toast-provider'
 import { AppLayout } from '@/components/AppLayout'
-import { Header } from '@/components/Header'
+import { AppHeader } from '@/components/AppHeader'
 import { ProtectedRoute } from '@/components/protected-route'
 import SetupPage from '@/pages/Setup'
 import LoginPage from '@/pages/Login'
@@ -108,10 +108,12 @@ function AppRoutes() {
   if (isAuthenticated && !isOpenSearchConfigured) {
     return (
       <div className="min-h-screen bg-background">
-        <Header />
-        <Routes>
-          <Route path="*" element={<OpenSearchWizard />} />
-        </Routes>
+        <AppHeader />
+        <main className="px-6 py-8 mx-auto max-w-screen-2xl">
+          <Routes>
+            <Route path="*" element={<OpenSearchWizard />} />
+          </Routes>
+        </main>
       </div>
     )
   }
