@@ -699,7 +699,8 @@ export default function SettingsPage() {
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
           <TabsTrigger value="sso">SSO</TabsTrigger>
           <TabsTrigger value="ai">AI</TabsTrigger>
-          <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="geoip">GeoIP</TabsTrigger>
+          <TabsTrigger value="threat-intel">Threat Intel</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="opensearch">OpenSearch</TabsTrigger>
           <TabsTrigger value="health">Health Monitoring</TabsTrigger>
@@ -1401,11 +1402,12 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="integrations" className="mt-4">
-          <div className="space-y-6">
-            <GeoIPSettings />
-            <TISettings />
-          </div>
+        <TabsContent value="geoip" className="mt-4">
+          <GeoIPSettings />
+        </TabsContent>
+
+        <TabsContent value="threat-intel" className="mt-4">
+          <TISettings />
         </TabsContent>
 
         <TabsContent value="alerts" className="mt-4">

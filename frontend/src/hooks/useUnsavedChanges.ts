@@ -1,10 +1,10 @@
-import { useEffect, useCallback, useRef } from 'react'
-import { useBlocker } from 'react-router-dom'
+import { useEffect, useRef, useCallback } from 'react'
 
 /**
  * Hook to detect and warn about unsaved changes
- * - Blocks navigation with React Router
- * - Warns on browser refresh/close
+ * - Warns on browser refresh/close via beforeunload
+ * - Does NOT block React Router navigation (requires data router)
+ * - Use confirmNavigation() to check before programmatic navigation
  */
 export function useUnsavedChanges(
   hasUnsavedChanges: boolean,
@@ -16,24 +16,6 @@ export function useUnsavedChanges(
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges
   }, [hasUnsavedChanges])
-
-  // Block React Router navigation
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      hasUnsavedChanges && currentLocation.pathname !== nextLocation.pathname
-  )
-
-  // Handle blocker state
-  useEffect(() => {
-    if (blocker.state === 'blocked') {
-      const confirmed = window.confirm(message)
-      if (confirmed) {
-        blocker.proceed()
-      } else {
-        blocker.reset()
-      }
-    }
-  }, [blocker, message])
 
   // Block browser refresh/close
   useEffect(() => {
@@ -50,12 +32,13 @@ export function useUnsavedChanges(
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [message])
 
-  // Allow programmatic navigation bypass
-  const bypassBlock = useCallback(() => {
-    if (blocker.state === 'blocked') {
-      blocker.proceed()
+  // Helper for programmatic navigation checks
+  const confirmNavigation = useCallback(() => {
+    if (hasUnsavedChangesRef.current) {
+      return window.confirm(message)
     }
-  }, [blocker])
+    return true
+  }, [message])
 
-  return { blocker, bypassBlock }
+  return { confirmNavigation, hasUnsavedChanges }
 }

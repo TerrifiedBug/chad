@@ -39,8 +39,8 @@ export default function IndexPatternDetail() {
   const [error, setError] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
-  // Block navigation when there are unsaved changes
-  useUnsavedChanges(hasUnsavedChanges)
+  // Warn on browser refresh/close when there are unsaved changes
+  const { confirmNavigation } = useUnsavedChanges(hasUnsavedChanges)
 
   // Load pattern data
   const loadPattern = useCallback(async () => {
@@ -100,7 +100,9 @@ export default function IndexPatternDetail() {
 
   // Handle back navigation
   const handleBack = () => {
-    navigate('/index-patterns')
+    if (confirmNavigation()) {
+      navigate('/index-patterns')
+    }
   }
 
   // Handle pattern update from EndpointTab (for token regeneration)
