@@ -145,6 +145,10 @@ export default function SettingsPage() {
   const [versionCleanupMaxAgeDays, setVersionCleanupMaxAgeDays] = useState(90)
   const [isSavingVersionCleanup, setIsSavingVersionCleanup] = useState(false)
 
+  // System log retention settings
+  const [systemLogRetention, setSystemLogRetention] = useState(14)
+  const [isSavingSystemLogRetention, setIsSavingSystemLogRetention] = useState(false)
+
   // Audit to OpenSearch
   const [auditOpenSearchEnabled, setAuditOpenSearchEnabled] = useState(false)
 
@@ -359,6 +363,12 @@ export default function SettingsPage() {
         setVersionCleanupMaxAgeDays((cleanup.max_age_days as number) || 90)
       }
 
+      // System log retention settings
+      if (settings.system_log_retention && typeof settings.system_log_retention === 'object') {
+        const retention = settings.system_log_retention as Record<string, unknown>
+        setSystemLogRetention((retention.retention_days as number) || 14)
+      }
+
       // Audit OpenSearch settings
       if (settings.audit_opensearch_enabled && typeof settings.audit_opensearch_enabled === 'object') {
         const auditOs = settings.audit_opensearch_enabled as Record<string, unknown>
@@ -560,6 +570,20 @@ export default function SettingsPage() {
       showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
       setIsSavingVersionCleanup(false)
+    }
+  }
+
+  const saveSystemLogRetention = async () => {
+    setIsSavingSystemLogRetention(true)
+    try {
+      await settingsApiExtended.update('system_log_retention', {
+        retention_days: systemLogRetention,
+      })
+      showToast('System log retention settings saved')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
+    } finally {
+      setIsSavingSystemLogRetention(false)
     }
   }
 
@@ -2246,6 +2270,54 @@ export default function SettingsPage() {
               <div className="pt-4 border-t">
                 <Button onClick={saveVersionCleanup} disabled={isSavingVersionCleanup}>
                   {isSavingVersionCleanup ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>System Log Retention</CardTitle>
+              <CardDescription>
+                Configure how long system logs are kept before automatic cleanup.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center gap-4">
+                <Label htmlFor="system-log-retention">Keep logs for</Label>
+                <Select
+                  value={systemLogRetention.toString()}
+                  onValueChange={(v) => setSystemLogRetention(parseInt(v))}
+                >
+                  <SelectTrigger id="system-log-retention" className="w-[100px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover">
+                    <SelectItem value="7">7 days</SelectItem>
+                    <SelectItem value="14">14 days</SelectItem>
+                    <SelectItem value="30">30 days</SelectItem>
+                    <SelectItem value="60">60 days</SelectItem>
+                    <SelectItem value="90">90 days</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Logs older than this will be automatically purged daily at 3 AM.
+              </p>
+
+              <div className="pt-4 border-t">
+                <Button onClick={saveSystemLogRetention} disabled={isSavingSystemLogRetention}>
+                  {isSavingSystemLogRetention ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Saving...
