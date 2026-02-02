@@ -43,6 +43,18 @@ from app.utils.request import get_client_ip
 router = APIRouter(prefix="/correlation-rules", tags=["correlation"])
 
 
+def compute_correlation_status(rule: CorrelationRule) -> str:
+    """Compute the status of a correlation rule based on deployment and snooze state."""
+    now = datetime.now(UTC)
+    # Check if snoozed
+    if rule.snooze_indefinite or (rule.snooze_until and rule.snooze_until > now):
+        return "snoozed"
+    # Check if deployed
+    if rule.deployed_at is not None:
+        return "deployed"
+    return "undeployed"
+
+
 def build_correlation_response(
     rule: CorrelationRule,
     rule_a_title: str | None,
@@ -55,6 +67,8 @@ def build_correlation_response(
     return CorrelationRuleResponse(
         id=str(rule.id),
         name=rule.name,
+        description=None,  # Correlation rules don't have descriptions currently
+        status=compute_correlation_status(rule),
         entity_field_type=rule.entity_field_type,
         rule_a_id=str(rule.rule_a_id),
         rule_b_id=str(rule.rule_b_id),

@@ -650,6 +650,16 @@ export type TIConfig = {
 // Index Pattern mode types
 export type IndexPatternMode = 'push' | 'pull'
 
+// Health override thresholds for index patterns
+export type HealthOverridesConfig = {
+  detection_latency_warning_ms?: number
+  detection_latency_critical_ms?: number
+  error_rate_percent?: number
+  no_data_minutes?: number
+  queue_warning?: number
+  queue_critical?: number
+}
+
 // Index Pattern types
 export type IndexPattern = {
   id: string
@@ -665,6 +675,8 @@ export type IndexPattern = {
   health_error_rate_percent: number | null
   health_latency_ms: number | null
   health_alerting_enabled: boolean
+  // Per-pattern health overrides
+  health_overrides?: HealthOverridesConfig | null
   // GeoIP enrichment
   geoip_fields: string[]
   // TI enrichment config per source
@@ -688,12 +700,14 @@ export type IndexPatternCreate = {
   name: string
   pattern: string
   percolator_index: string
-  description?: string
+  description?: string | null
   // Health alerting thresholds
   health_no_data_minutes?: number | null
   health_error_rate_percent?: number | null
   health_latency_ms?: number | null
   health_alerting_enabled?: boolean
+  // Per-pattern health overrides
+  health_overrides?: HealthOverridesConfig | null
   // GeoIP enrichment
   geoip_fields?: string[]
   // TI enrichment config per source
@@ -1887,6 +1901,7 @@ export type EntityFieldType = 'sigma' | 'direct'
 export type CorrelationRule = {
   id: string
   name: string
+  description?: string | null
   rule_a_id: string
   rule_b_id: string
   rule_a_title?: string
@@ -1895,6 +1910,7 @@ export type CorrelationRule = {
   entity_field_type: EntityFieldType
   time_window_minutes: number
   severity: 'critical' | 'high' | 'medium' | 'low' | 'informational'
+  status: 'deployed' | 'undeployed' | 'snoozed'
   created_at: string
   updated_at: string
   created_by?: string

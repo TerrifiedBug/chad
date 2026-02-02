@@ -161,13 +161,14 @@ export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyC
     if (!formData.pattern) return
     setIsValidating(true)
     try {
-      const result = await indexPatternsApi.validate({ pattern: formData.pattern })
+      const result = await indexPatternsApi.validate(formData.pattern)
       setValidationResult(result)
     } catch (err) {
       setValidationResult({
         valid: false,
         indices: [],
         total_docs: 0,
+        sample_fields: [],
         error: err instanceof Error ? err.message : 'Validation failed',
       })
     } finally {
