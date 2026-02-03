@@ -6,6 +6,7 @@ import {
   TISourceConfigUpdate,
   TI_SOURCE_INFO,
 } from '@/lib/api'
+import { MISPSyncDashboard } from '@/components/ti/MISPSyncDashboard'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -422,6 +423,13 @@ export default function TISettings() {
           })}
         </CardContent>
       </Card>
+
+      {/* MISP IOC Sync Dashboard - only show if MISP is configured */}
+      {sources.find(s => s.source_type === 'misp' && s.is_enabled && s.has_api_key) && (
+        <div className="border rounded-lg">
+          <MISPSyncDashboard />
+        </div>
+      )}
     </div>
   )
 }
