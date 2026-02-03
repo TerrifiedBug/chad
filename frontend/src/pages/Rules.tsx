@@ -107,7 +107,7 @@ export default function RulesPage() {
       indexPattern: indexPattern ? indexPattern.split(',') : [],
       severity: severity ? severity.split(',').filter(s => SEVERITIES.includes(s as typeof SEVERITIES[number])) : [],
       status: status ? status.split(',').filter(s => RULE_STATUSES.includes(s as RuleStatus)) : [],
-      source: (source === 'user' || source === 'sigmahq') ? source : 'all',
+      source: (source === 'user' || source === 'sigmahq' || source === 'misp') ? source : 'all',
       search: search || '',
     }
   })
@@ -872,6 +872,13 @@ export default function RulesPage() {
             >
               SigmaHQ
             </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={filters.source === 'misp'}
+              onCheckedChange={() => setFilters((prev) => ({ ...prev, source: 'misp' }))}
+              onSelect={(e) => e.preventDefault()}
+            >
+              MISP
+            </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -935,12 +942,12 @@ export default function RulesPage() {
           ))}
           {filters.source !== 'all' && (
             <Badge variant="secondary" className="gap-1">
-              {filters.source === 'user' ? 'User-created' : 'SigmaHQ'}
+              {filters.source === 'user' ? 'User-created' : filters.source === 'sigmahq' ? 'SigmaHQ' : 'MISP'}
               <button
                 type="button"
                 onClick={() => setFilters((prev) => ({ ...prev, source: 'all' }))}
                 className="inline-flex items-center justify-center rounded-sm hover:bg-muted"
-                aria-label={`Remove source filter: ${filters.source === 'user' ? 'User-created' : 'SigmaHQ'}`}
+                aria-label={`Remove source filter: ${filters.source === 'user' ? 'User-created' : filters.source === 'sigmahq' ? 'SigmaHQ' : 'MISP'}`}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -1040,6 +1047,11 @@ export default function RulesPage() {
                           <>
                             <FileCode className="h-4 w-4 text-blue-500" />
                             <span className="text-xs text-muted-foreground">SigmaHQ</span>
+                          </>
+                        ) : rule.source === 'misp' ? (
+                          <>
+                            <ExternalLink className="h-4 w-4 text-purple-500" />
+                            <span className="text-xs text-muted-foreground">MISP</span>
                           </>
                         ) : (
                           <>

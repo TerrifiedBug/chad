@@ -325,7 +325,7 @@ export type RuleComment = {
 
 // Rule types
 export type RuleStatus = 'deployed' | 'undeployed' | 'snoozed'
-export type RuleSource = 'user' | 'sigmahq'
+export type RuleSource = 'user' | 'sigmahq' | 'misp'
 export type SigmaHQRuleType = 'detection' | 'threat_hunting' | 'emerging_threats'
 
 export type Rule = {
