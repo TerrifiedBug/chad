@@ -257,14 +257,6 @@ Get your auth token from: **Index Patterns → [Your Pattern] → Settings → A
 
 ---
 
-## Refactoring Rules
-- NEVER remove comments that explain "why" — ordering constraints,
-  external system behavior, non-obvious side effects, or business logic
-- Only remove comments that merely restate what the code does
-- When in doubt, keep the comment
-
----
-
 ## Configuration
 
 Most settings are managed through the web UI after initial setup.
