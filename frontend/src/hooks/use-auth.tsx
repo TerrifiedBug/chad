@@ -53,13 +53,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount
   }, [])
 
-  // Check if error is a connection/startup error (502, 503, network error)
+  // Check if error is a connection/startup error (502, 503, 504, network error)
   const isConnectionError = (error: unknown): boolean => {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       return true // Network error
     }
     const message = error instanceof Error ? error.message : String(error)
-    return message.includes('502') || message.includes('503') || message.includes('Failed to fetch')
+    // Check for gateway errors (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout)
+    // Also check for network-level failures
+    return (
+      message.includes('502') ||
+      message.includes('503') ||
+      message.includes('504') ||
+      message.includes('Failed to fetch') ||
+      message.includes('NetworkError') ||
+      message.includes('ECONNREFUSED')
+    )
   }
 
   // Retry auth check with exponential backoff during startup

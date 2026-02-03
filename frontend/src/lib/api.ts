@@ -66,10 +66,10 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${fetchPath}`, fetchOptions)
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'GET ' + path)
       throw new Error(getErrorMessage(error))
@@ -85,10 +85,10 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'POST ' + path)
       throw new Error(getErrorMessage(error))
@@ -104,10 +104,10 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'PATCH ' + path)
       throw new Error(getErrorMessage(error))
@@ -126,10 +126,10 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${path}`, options)
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'DELETE ' + path)
       throw new Error(getErrorMessage(error))
@@ -144,10 +144,10 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'PUT ' + path)
       throw new Error(getErrorMessage(error))
