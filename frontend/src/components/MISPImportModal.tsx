@@ -25,7 +25,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { ChevronRight, ChevronDown, AlertTriangle, Loader2, ExternalLink } from 'lucide-react'
+import { ChevronRight, ChevronDown, AlertTriangle, Loader2 } from 'lucide-react'
 
 type MISPImportModalProps = {
   open: boolean

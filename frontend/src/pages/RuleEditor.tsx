@@ -55,6 +55,7 @@ import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
+import { MISPOriginPanel } from '@/components/MISPOriginPanel'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -191,7 +192,7 @@ export default function RuleEditorPage() {
   const [isDeletingRule, setIsDeletingRule] = useState(false)
 
   // Rule source state (for existing rules)
-  const [ruleSource, setRuleSource] = useState<'user' | 'sigmahq'>('user')
+  const [ruleSource, setRuleSource] = useState<'user' | 'sigmahq' | 'misp'>('user')
   const [sigmahqPath, setSigmahqPath] = useState<string | null>(null)
 
   // Threshold alerting state
@@ -345,7 +346,7 @@ export default function RuleEditorPage() {
       setSnoozeIndefinite(rule.snooze_indefinite || false)
       setSnoozeUntil(rule.snooze_until)
       // Track rule source
-      setRuleSource(rule.source as 'user' | 'sigmahq' || 'user')
+      setRuleSource(rule.source as 'user' | 'sigmahq' | 'misp' || 'user')
       setSigmahqPath(rule.sigmahq_path || null)
       // Load threshold settings
       setThresholdEnabled(rule.threshold_enabled)
@@ -1188,6 +1189,12 @@ export default function RuleEditorPage() {
                   SigmaHQ
                 </div>
               )}
+              {!isNew && ruleSource === 'misp' && (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs">
+                  <FileCode className="h-3 w-3" />
+                  MISP
+                </div>
+              )}
               {!isNew && ruleSource === 'user' && (
                 <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded text-xs">
                   <FileText className="h-3 w-3" />
@@ -1620,6 +1627,9 @@ export default function RuleEditorPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* MISP Origin Panel - Only for MISP-sourced rules */}
+          {!isNew && ruleSource === 'misp' && <MISPOriginPanel ruleId={id!} />}
 
           {/* Test Card */}
           <Card>
