@@ -84,7 +84,7 @@ class SchedulerService:
         try:
             redis = await get_redis()
         except Exception as e:
-            logger.warning(f"Redis unavailable, running job without lock: {e}")
+            logger.warning("Redis unavailable, running job without lock: %s", e)
             await job_func()
             return
 
@@ -93,7 +93,7 @@ class SchedulerService:
         try:
             acquired = await lock.acquire(blocking=False)
             if not acquired:
-                logger.debug(f"Lock {lock_name} held by another worker, skipping")
+                logger.debug("Lock %s held by another worker, skipping", lock_name)
                 return
 
             try:
@@ -104,7 +104,7 @@ class SchedulerService:
                 except Exception:
                     pass  # Lock may have expired
         except Exception as e:
-            logger.error(f"Error in locked job {lock_name}: {e}")
+            logger.error("Error in locked job %s: %s", lock_name, e)
 
     async def sync_jobs_from_settings(self):
         """
@@ -230,7 +230,7 @@ class SchedulerService:
         from app.services.pull_detector import run_poll_job
 
         # Get index patterns that need polling based on deployment mode
-        logger.debug(f"Scheduling pull polling jobs (is_pull_only={app_settings.is_pull_only})")
+        logger.debug("Scheduling pull polling jobs (is_pull_only=%s)", app_settings.is_pull_only)
         if app_settings.is_pull_only:
             # In pull-only mode, schedule ALL patterns for polling
             result = await session.execute(select(IndexPattern))
@@ -241,9 +241,9 @@ class SchedulerService:
             )
         patterns = result.scalars().all()
 
-        logger.info(f"Found {len(patterns)} index pattern(s) for pull mode polling")
+        logger.info("Found %s index pattern(s) for pull mode polling", len(patterns))
         for pattern in patterns:
-            logger.debug(f"Processing pattern: {pattern.name} (mode={pattern.mode}, interval={pattern.poll_interval_minutes}min)")
+            logger.debug("Processing pattern: %s (mode=%s, interval=%smin)", pattern.name, pattern.mode, pattern.poll_interval_minutes)
 
             job_id = f"pull_poll_{pattern.id}"
 
@@ -294,7 +294,7 @@ class SchedulerService:
             replace_existing=True,
             misfire_grace_time=poll_interval_minutes * 60,
         )
-        logger.info(f"Scheduled pull polling job for {pattern_name} every {poll_interval_minutes} minutes")
+        logger.info("Scheduled pull polling job for %s every %s minutes", pattern_name, poll_interval_minutes)
 
     def remove_pull_poll_job(self, index_pattern_id: str):
         """
@@ -305,7 +305,7 @@ class SchedulerService:
         job_id = f"pull_poll_{index_pattern_id}"
         try:
             scheduler.remove_job(job_id)
-            logger.info(f"Removed pull poll job {job_id}")
+            logger.info("Removed pull poll job %s", job_id)
         except Exception:
             pass  # Job didn't exist
 
@@ -325,13 +325,13 @@ class SchedulerService:
             replace_existing=True,
             misfire_grace_time=3600,  # 1 hour grace period
         )
-        logger.info(f"Scheduled job {job_id} with frequency {frequency}")
+        logger.info("Scheduled job %s with frequency %s", job_id, frequency)
 
     def _remove_job(self, job_id: str):
         """Remove a scheduled job if it exists."""
         try:
             scheduler.remove_job(job_id)
-            logger.info(f"Removed job {job_id}")
+            logger.info("Removed job %s", job_id)
         except Exception:
             pass  # Job didn't exist
 
@@ -394,10 +394,10 @@ class SchedulerService:
                     },
                 )
 
-            logger.info(f"ATT&CK sync completed: {result.message}")
+            logger.info("ATT&CK sync completed: %s", result.message)
 
         except Exception as e:
-            logger.error(f"Scheduled ATT&CK sync failed: {e}")
+            logger.error("Scheduled ATT&CK sync failed: %s", e)
             # Log to system log
             await system_log_service.log_error(
                 session,
@@ -490,10 +490,10 @@ class SchedulerService:
                     },
                 )
 
-            logger.info(f"SigmaHQ sync completed: {result.message}")
+            logger.info("SigmaHQ sync completed: %s", result.message)
 
         except Exception as e:
-            logger.error(f"Scheduled SigmaHQ sync failed: {e}")
+            logger.error("Scheduled SigmaHQ sync failed: %s", e)
             # Log to system log
             await system_log_service.log_error(
                 session,
@@ -543,38 +543,38 @@ class SchedulerService:
             # Commit suppression state changes so escalation persists between runs
             await session.commit()
             if issues:
-                logger.info(f"Health check found {len(issues)} issues")
+                logger.info("Health check found %s issues", len(issues))
 
             # Check OpenSearch connectivity
             try:
                 await check_opensearch_health(session)
                 logger.debug("OpenSearch health check completed")
             except Exception as e:
-                logger.error(f"OpenSearch health check failed: {e}")
+                logger.error("OpenSearch health check failed: %s", e)
 
             # Check Jira connectivity
             try:
                 await check_jira_health(session)
                 logger.debug("Jira health check completed")
             except Exception as e:
-                logger.error(f"Jira health check failed: {e}")
+                logger.error("Jira health check failed: %s", e)
 
             # Check AI connectivity (free endpoints, no token cost)
             try:
                 await self._run_ai_ping()
                 logger.debug("AI health check completed")
             except Exception as e:
-                logger.error(f"AI health check failed: {e}")
+                logger.error("AI health check failed: %s", e)
 
             # Check TI sources connectivity
             try:
                 await check_ti_source_health(session)
                 logger.debug("TI source health check completed")
             except Exception as e:
-                logger.error(f"TI source health check failed: {e}")
+                logger.error("TI source health check failed: %s", e)
 
         except Exception as e:
-            logger.error(f"Scheduled health check failed: {e}")
+            logger.error("Scheduled health check failed: %s", e)
             await session.rollback()
         finally:
             await session.close()
@@ -651,12 +651,12 @@ class SchedulerService:
             await session.commit()
 
             if success:
-                logger.debug(f"AI connectivity ping successful for {provider}")
+                logger.debug("AI connectivity ping successful for %s", provider)
             else:
-                logger.warning(f"AI connectivity ping failed for {provider}")
+                logger.warning("AI connectivity ping failed for %s", provider)
 
         except Exception as e:
-            logger.error(f"AI connectivity ping failed: {e}")
+            logger.error("AI connectivity ping failed: %s", e)
         finally:
             await session.close()
 
@@ -728,10 +728,10 @@ class SchedulerService:
                 await session.commit()
                 logger.info("GeoIP database updated successfully")
             else:
-                logger.error(f"GeoIP database update failed: {result.get('error')}")
+                logger.error("GeoIP database update failed: %s", result.get('error'))
 
         except Exception as e:
-            logger.error(f"Scheduled GeoIP update failed: {e}")
+            logger.error("Scheduled GeoIP update failed: %s", e)
             # Log to system log
             await system_log_service.log_error(
                 session,
@@ -768,9 +768,9 @@ class SchedulerService:
             count = await cleanup_expired_states(session)
             await session.commit()
             if count > 0:
-                logger.info(f"Correlation cleanup: removed {count} expired states")
+                logger.info("Correlation cleanup: removed %s expired states", count)
         except Exception as e:
-            logger.error(f"Scheduled correlation cleanup failed: {e}")
+            logger.error("Scheduled correlation cleanup failed: %s", e)
             # Log to system log
             await system_log_service.log_error(
                 session,
@@ -904,7 +904,7 @@ class SchedulerService:
             await session.commit()
 
             if total_deleted > 0:
-                logger.info(f"Version cleanup: deleted {total_deleted} old versions")
+                logger.info("Version cleanup: deleted %s old versions", total_deleted)
                 # Audit log
                 from app.services.audit import audit_log
                 await audit_log(
@@ -920,7 +920,7 @@ class SchedulerService:
                 logger.debug("Version cleanup: no versions to delete")
 
         except Exception as e:
-            logger.error(f"Scheduled version cleanup failed: {e}")
+            logger.error("Scheduled version cleanup failed: %s", e)
             # Log to system log
             await system_log_service.log_error(
                 session,
@@ -969,12 +969,12 @@ class SchedulerService:
             await session.commit()  # Commit since purge_old_logs doesn't commit
 
             if deleted > 0:
-                logger.info(f"System log cleanup: purged {deleted} entries older than {retention_days} days")
+                logger.info("System log cleanup: purged %s entries older than %s days", deleted, retention_days)
             else:
                 logger.debug("System log cleanup: no entries to purge")
 
         except Exception as e:
-            logger.error(f"Scheduled system log cleanup failed: {e}")
+            logger.error("Scheduled system log cleanup failed: %s", e)
             # Log to system log (using a fresh session to avoid rollback issues)
             try:
                 await system_log_service.log_error(
@@ -1040,7 +1040,8 @@ class SchedulerService:
                                 latest_parts.append(0)
                             update_available = latest_parts > current_parts
                         except (ValueError, AttributeError):
-                            update_available = latest != APP_VERSION
+                            # We're inside `if latest != APP_VERSION`, so update is available
+                            update_available = True
 
                     # Cache the result
                     await set_setting(session, "version_check_cache", {
@@ -1051,13 +1052,14 @@ class SchedulerService:
                     })
                     await session.commit()
                     logger.info(
-                        f"Version check: current={APP_VERSION}, latest={latest}, update={update_available}"
+                        "Version check: current=%s, latest=%s, update=%s",
+                        APP_VERSION, latest, update_available
                     )
                 else:
-                    logger.warning(f"Version check failed: GitHub returned {response.status_code}")
+                    logger.warning("Version check failed: GitHub returned %s", response.status_code)
 
         except Exception as e:
-            logger.error(f"Scheduled version check failed: {e}")
+            logger.error("Scheduled version check failed: %s", e)
             await system_log_service.log_error(
                 session,
                 category=LogCategory.BACKGROUND,
@@ -1084,9 +1086,9 @@ class SchedulerService:
             from app.services.settings import set_setting
             await set_setting(session, "health_check_intervals", intervals)
             await session.commit()
-            logger.info(f"Health check intervals updated: {intervals}")
+            logger.info("Health check intervals updated: %s", intervals)
         except Exception as e:
-            logger.error(f"Failed to update health check intervals: {e}")
+            logger.error("Failed to update health check intervals: %s", e)
             await session.rollback()
             raise
         finally:
