@@ -2006,7 +2006,7 @@ export type MISPImportRequest = {
   event_id: string
   ioc_type: string
   ioc_values: string[]
-  index_pattern_id: string
+  index_pattern_id: string | null
 }
 
 export type MISPImportResponse = {

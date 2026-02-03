@@ -3,7 +3,7 @@ import { mispApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ExternalLink, RefreshCw } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { format } from 'date-fns'
 
 type MISPOriginPanelProps = {
@@ -70,16 +70,12 @@ export function MISPOriginPanel({ ruleId }: MISPOriginPanelProps) {
           {format(new Date(mispInfo.imported_at), 'PPp')}
         </div>
 
-        <div className="flex gap-2 pt-2">
+        <div className="pt-2">
           <Button variant="outline" size="sm" asChild>
             <a href={mispEventUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="h-4 w-4 mr-1" />
               View in MISP
             </a>
-          </Button>
-          <Button variant="outline" size="sm" disabled>
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Check for Updates
           </Button>
         </div>
       </CardContent>

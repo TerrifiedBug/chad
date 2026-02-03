@@ -58,7 +58,7 @@ class MISPImportRequest(BaseModel):
     event_id: str
     ioc_type: str
     ioc_values: list[str]
-    index_pattern_id: UUID
+    index_pattern_id: UUID | None = None
 
 
 class MISPImportResponse(BaseModel):

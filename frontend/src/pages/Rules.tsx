@@ -44,7 +44,6 @@ import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { RulesExportDialog } from '@/components/RulesExportDialog'
-import { MISPImportModal } from '@/components/MISPImportModal'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -133,8 +132,7 @@ export default function RulesPage() {
   // Export report state
   const [showExportDialog, setShowExportDialog] = useState(false)
 
-  // MISP import state
-  const [showMISPModal, setShowMISPModal] = useState(false)
+  // MISP connection status
   const { data: mispStatus } = useQuery({
     queryKey: ['misp-status'],
     queryFn: () => mispApi.getStatus(),
@@ -655,7 +653,7 @@ export default function RulesPage() {
                   <span tabIndex={0}>
                     <Button
                       variant="outline"
-                      onClick={() => setShowMISPModal(true)}
+                      onClick={() => navigate('/misp')}
                       disabled={!mispStatus?.configured}
                     >
                       MISP
@@ -1667,9 +1665,6 @@ export default function RulesPage() {
         onOpenChange={setShowExportDialog}
         onError={(msg) => setError(msg)}
       />
-
-      {/* MISP Import Modal */}
-      <MISPImportModal open={showMISPModal} onOpenChange={setShowMISPModal} />
     </div>
   )
 }
