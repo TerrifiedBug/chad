@@ -205,6 +205,7 @@ export default function SettingsPage() {
     loadHealthSettings()
     loadAlertClusteringSettings()
     loadQueueSettings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadSecuritySettings = async () => {

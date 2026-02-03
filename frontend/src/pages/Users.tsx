@@ -119,7 +119,7 @@ export default function UsersPage() {
           try {
             const status = await usersApi.getLockStatus(user.email)
             statuses[user.email] = status
-          } catch (err) {
+          } catch {
             // User doesn't exist or other error, skip
             statuses[user.email] = { locked: false, remaining_minutes: null }
           }

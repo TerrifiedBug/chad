@@ -239,21 +239,23 @@ export default function FieldMappingsPage() {
         setShowModal(false)
         loadMappings()
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Parse error response - handle object or string messages
       let errorMessage = 'Save failed'
+      const errorRecord = err as Record<string, unknown>
 
-      if (typeof err?.message === 'string') {
-        errorMessage = err.message
-      } else if (typeof err?.message === 'object') {
+      if (typeof errorRecord?.message === 'string') {
+        errorMessage = errorRecord.message
+      } else if (typeof errorRecord?.message === 'object') {
         // Extract from error object
-        errorMessage = err.message.detail || err.message.error || JSON.stringify(err.message)
-      } else if (err?.detail) {
-        errorMessage = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail)
+        const msgObj = errorRecord.message as Record<string, unknown>
+        errorMessage = String(msgObj.detail || msgObj.error || JSON.stringify(errorRecord.message))
+      } else if (errorRecord?.detail) {
+        errorMessage = typeof errorRecord.detail === 'string' ? errorRecord.detail : JSON.stringify(errorRecord.detail)
       }
 
       // Check if it's a field_not_found error
-      const errorObj = err as any & { detail?: { error?: string; field?: string; suggestions?: string[] } }
+      const errorObj = err as { detail?: { error?: string; field?: string; suggestions?: string[] } }
 
       if (errorObj.detail?.error === 'field_not_found') {
         const suggestions = errorObj.detail.suggestions || []

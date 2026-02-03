@@ -627,7 +627,7 @@ export default function CorrelationRuleEditorPage() {
       await correlationRulesApi.delete(id)
       showToast('Correlation rule deleted', 'success')
       navigate('/correlation')
-    } catch (err) {
+    } catch {
       showToast('Failed to delete correlation rule', 'error')
     } finally {
       setIsDeleting(false)

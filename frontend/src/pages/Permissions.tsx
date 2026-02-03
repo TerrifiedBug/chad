@@ -24,6 +24,7 @@ export default function PermissionsPage() {
 
   useEffect(() => {
     loadPermissions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadPermissions = async () => {

@@ -473,6 +473,7 @@ export default function RuleEditorPage() {
   // Load available fields when index pattern changes
   useEffect(() => {
     loadAvailableFields()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indexPatternId])
 
   // Load mandatory comments settings on mount
