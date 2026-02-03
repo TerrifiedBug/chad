@@ -28,6 +28,7 @@ class RuleStatus(str, Enum):
 class RuleSource(str, Enum):
     USER = "user"
     SIGMAHQ = "sigmahq"
+    MISP = "misp"
 
 
 class SigmaHQType(str, Enum):
