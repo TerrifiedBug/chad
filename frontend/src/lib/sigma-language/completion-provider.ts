@@ -67,6 +67,7 @@ function getContext(
 
   // Parse lines above to determine context
   let currentParent: string | null = null
+  let currentParentIndent: number = effectiveIndent
   let grandParent: string | null = null
   let detectedCategory: string | undefined
 
@@ -88,7 +89,8 @@ function getContext(
       if (lineIndentLevel < effectiveIndent) {
         if (!currentParent) {
           currentParent = key
-        } else if (!grandParent && lineIndentLevel < lineIndentLevel) {
+          currentParentIndent = lineIndentLevel
+        } else if (!grandParent && lineIndentLevel < currentParentIndent) {
           grandParent = key
         }
       }

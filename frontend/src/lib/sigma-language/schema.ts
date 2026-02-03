@@ -570,6 +570,10 @@ export function findDocumentation(word: string): SchemaItem | null {
   const service = SIGMA_SCHEMA.logsource.service.find((s) => s.value === word)
   if (service) return service
 
+  // Check detection keys (condition, selection, filter)
+  const detectionKey = SIGMA_SCHEMA.detection.keys.find((k) => k.key === word)
+  if (detectionKey) return detectionKey
+
   // Check modifiers
   const modifier = getAllModifiers().find((m) => m.name === word)
   if (modifier) return modifier
