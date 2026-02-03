@@ -4,6 +4,7 @@ Export API for rules and configuration backup/restore.
 
 import io
 import json
+import logging
 import uuid
 import zipfile
 from datetime import datetime
@@ -35,6 +36,8 @@ from app.models.rule_exception import RuleException
 from app.models.setting import Setting
 from app.models.ti_config import TISourceConfig
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/export", tags=["export"])
 

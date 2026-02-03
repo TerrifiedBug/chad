@@ -66,6 +66,21 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SETUP_COMPLETED: bool = False
 
+    # Deployment mode: 'push' (full deployment) or 'pull' (pull-only, no Redis/workers)
+    CHAD_MODE: str = "push"
+
+    @property
+    def is_pull_only(self) -> bool:
+        """Return True if running in pull-only deployment mode."""
+        return self.CHAD_MODE == "pull"
+
+    @field_validator("CHAD_MODE")
+    @classmethod
+    def validate_chad_mode(cls, v: str) -> str:
+        if v not in ("push", "pull"):
+            raise ValueError("CHAD_MODE must be 'push' or 'pull'")
+        return v
+
     # Logging
     LOG_LEVEL: str = "WARNING"
 

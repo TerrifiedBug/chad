@@ -2,8 +2,8 @@ from enum import Enum
 
 from sqlalchemy import Boolean, String
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
-from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import ENUM as SAEnum
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
 

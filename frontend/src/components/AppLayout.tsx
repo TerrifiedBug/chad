@@ -1,8 +1,18 @@
+// frontend/src/components/AppLayout.tsx
 import { useState, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Header } from '@/components/Header'
+import { cn } from '@/lib/utils'
+import { AppHeader } from '@/components/AppHeader'
+import { AppRail } from '@/components/AppRail'
+import { SettingsSidebar } from '@/components/SettingsSidebar'
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
+import { useLocalStorage } from '@/hooks/use-local-storage'
+import { useMediaQuery } from '@/hooks/use-media-query'
+import {
+  Sheet,
+  SheetContent,
+} from '@/components/ui/sheet'
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -12,9 +22,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
+  const [railExpanded, setRailExpanded] = useLocalStorage('rail-expanded', true)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const isMobile = useMediaQuery('(max-width: 767px)')
+
+  // Use SettingsSidebar for all settings pages
+  const useSettingsSidebar = location.pathname.startsWith('/settings')
 
   const focusSearch = useCallback(() => {
-    // Try to find and focus a search input on the page
     const searchInput = document.querySelector<HTMLInputElement>(
       'input[type="search"], input[placeholder*="Search"], input[placeholder*="search"]'
     )
@@ -25,12 +40,13 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, [])
 
   const refreshPage = useCallback(() => {
-    // Navigate to the same route to trigger a refresh
-    // This will cause React Query or useEffect hooks to re-fetch data
     navigate(location.pathname + location.search, { replace: true })
-    // Also dispatch a custom event that pages can listen for
     window.dispatchEvent(new CustomEvent('app:refresh'))
   }, [navigate, location.pathname, location.search])
+
+  const toggleRail = useCallback(() => {
+    setRailExpanded(prev => !prev)
+  }, [setRailExpanded])
 
   useKeyboardShortcuts({
     shortcuts: [
@@ -50,15 +66,74 @@ export function AppLayout({ children }: AppLayoutProps) {
         description: 'Refresh current page data',
         handler: refreshPage,
       },
+      {
+        key: '[',
+        description: 'Toggle navigation rail',
+        handler: toggleRail,
+      },
     ],
   })
 
+  // Render the appropriate sidebar
+  const renderSidebar = () => {
+    if (useSettingsSidebar) {
+      return (
+        <SettingsSidebar
+          expanded={railExpanded}
+          onExpandedChange={setRailExpanded}
+        />
+      )
+    }
+    return (
+      <AppRail
+        expanded={railExpanded}
+        onExpandedChange={setRailExpanded}
+      />
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background">
-      <Header />
-      <main className="px-6 py-8 mx-auto max-w-screen-2xl">
-        {children}
+      <AppHeader
+        onMobileMenuToggle={() => setMobileMenuOpen(true)}
+        showMobileMenu={isMobile}
+        railExpanded={railExpanded}
+      />
+
+      {/* Desktop sidebar (fixed position) */}
+      {!isMobile && renderSidebar()}
+
+      {/* Mobile sidebar (Sheet) */}
+      {isMobile && (
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetContent side="left" className="w-[200px] p-0">
+            {useSettingsSidebar ? (
+              <SettingsSidebar
+                expanded={true}
+                onExpandedChange={() => {}}
+              />
+            ) : (
+              <AppRail
+                expanded={true}
+                onExpandedChange={() => {}}
+              />
+            )}
+          </SheetContent>
+        </Sheet>
+      )}
+
+      {/* Main content - offset by sidebar width on desktop */}
+      <main
+        className={cn(
+          'min-w-0 overflow-x-hidden px-6 py-8 transition-all duration-200',
+          railExpanded ? 'md:ml-[200px]' : 'md:ml-14'
+        )}
+      >
+        <div className="mx-auto max-w-screen-2xl">
+          {children}
+        </div>
       </main>
+
       <KeyboardShortcutsHelp
         open={showShortcutsHelp}
         onOpenChange={setShowShortcutsHelp}

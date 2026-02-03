@@ -195,7 +195,7 @@ export function MapFieldsModal({
           sigma_field: mapping.sigmaField,
           target_field: mapping.targetField,
           index_pattern_id: indexPatternId,
-          origin: mapping.confidence !== undefined ? 'ai_suggested' : 'manual',
+          origin: mapping.confidence !== undefined ? 'AI_SUGGESTED' : 'MANUAL',
           confidence: mapping.confidence,
         })
       }
@@ -205,7 +205,7 @@ export function MapFieldsModal({
       const errorMessage = err instanceof Error ? err.message : 'Failed to save mappings'
 
       // Check if it's a field_not_found error
-      const errorObj = err as any & { detail?: { error?: string; suggestions?: string[] } }
+      const errorObj = err as { detail?: { error?: string; field?: string; suggestions?: string[] } }
 
       if (errorObj.detail?.error === 'field_not_found') {
         const suggestions = errorObj.detail.suggestions || []

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_admin, require_permission_dep
+from app.api.deps import get_current_user, require_permission_dep
 from app.db.session import get_db
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion, SigmaHQType
 from app.models.setting import Setting
@@ -23,8 +23,8 @@ from app.schemas.sigmahq import (
     SigmaHQStatusResponse,
     SigmaHQSyncResponse,
 )
-from app.services.audit import audit_log
 from app.services.attack_sync import update_rule_attack_mappings
+from app.services.audit import audit_log
 from app.services.notification import send_system_notification
 from app.services.sigmahq import RuleType, sigmahq_service
 
@@ -229,7 +229,6 @@ async def import_rule(
         )
 
     # Check if rule already imported from this SigmaHQ path
-    from app.models.rule import Rule
 
     existing_rule_result = await db.execute(
         select(Rule).where(
@@ -244,7 +243,7 @@ async def import_rule(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error": "rule_already_imported",
-                "message": f"This rule has already been imported from SigmaHQ",
+                "message": "This rule has already been imported from SigmaHQ",
                 "existing_rule": {
                     "id": str(existing_rule.id),
                     "title": existing_rule.title,

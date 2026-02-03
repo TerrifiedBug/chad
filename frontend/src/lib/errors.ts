@@ -61,7 +61,7 @@ export function getErrorMessage(error: unknown): string {
       return detail
     } else if (typeof detail === 'object' && detail !== null) {
       // Extract message from detail object
-      return (detail as any).message || JSON.stringify(detail)
+      return (detail as { message?: string }).message || JSON.stringify(detail)
     }
 
     // Fallback to message or default

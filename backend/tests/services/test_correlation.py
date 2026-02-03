@@ -1,21 +1,21 @@
 """Tests for correlation service."""
 
 import uuid
-import pytest
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from sqlalchemy import select
 
+from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
+from app.models.correlation_state import CorrelationState
+from app.models.index_pattern import IndexPattern
+from app.models.rule import Rule, RuleSource, RuleStatus
 from app.services.correlation import (
     check_correlation,
     cleanup_expired_states,
     get_nested_value,
 )
-from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
-from app.models.correlation_state import CorrelationState
-from app.models.rule import Rule, RuleStatus, RuleSource
-from app.models.index_pattern import IndexPattern
 
 
 class TestGetNestedValue:

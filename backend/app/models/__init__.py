@@ -11,7 +11,6 @@ from app.models.health_check import HealthCheckLog
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
 from app.models.jira_config import JiraConfig
-from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.login_attempt import LoginAttempt
 from app.models.notification_settings import (
     AlertNotificationSetting,
@@ -19,12 +18,15 @@ from app.models.notification_settings import (
     SystemNotificationSetting,
     Webhook,
 )
+from app.models.poll_state import IndexPatternPollState
 from app.models.role_permission import DEFAULT_ROLE_PERMISSIONS, RolePermission
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
 from app.models.rule_exception import ExceptionOperator, RuleException
 from app.models.setting import Setting
+from app.models.system_log import SystemLog
 from app.models.threshold_state import ThresholdMatch
+from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.two_factor_token import TwoFactorToken
 from app.models.user import User, UserRole
 
@@ -47,6 +49,7 @@ __all__ = [
     "DEFAULT_ROLE_PERMISSIONS",
     "ExceptionOperator",
     "IndexPattern",
+    "IndexPatternPollState",
     "LoginAttempt",
     "NotificationSettings",
     "RolePermission",
@@ -58,6 +61,7 @@ __all__ = [
     "RuleStatus",
     "RuleVersion",
     "Setting",
+    "SystemLog",
     "SystemNotificationSetting",
     "ThresholdMatch",
     "TISourceConfig",

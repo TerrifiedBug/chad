@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.main import app
-from app.models.index_pattern import IndexPattern
 
 
 class TestLogsEndpointAuth:

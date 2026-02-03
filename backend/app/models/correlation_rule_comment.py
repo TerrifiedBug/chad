@@ -36,4 +36,4 @@ class CorrelationRuleComment(Base):
     )
 
     # Relationships
-    user: Mapped["User | None"] = relationship("User", lazy="selectin")
+    user: Mapped[User | None] = relationship("User", lazy="selectin")

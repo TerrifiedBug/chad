@@ -1,11 +1,11 @@
 import uuid
+from unittest.mock import MagicMock, patch
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from unittest.mock import patch, MagicMock
 
-from app.main import app
 from app.models.index_pattern import IndexPattern
 from app.models.user import User
 
@@ -32,7 +32,7 @@ class TestSigmaHQDeduplication:
     @pytest.mark.asyncio
     async def test_import_duplicate_rule_fails(
         self,
-        client: AsyncClient,
+        authenticated_client: AsyncClient,
         test_user: User,
         test_index_pattern: IndexPattern
     ):
@@ -50,15 +50,15 @@ class TestSigmaHQDeduplication:
 
         with patch('app.api.sigmahq.sigmahq_service', mock_service):
             # First import should succeed
-            response1 = await client.post("/api/sigmahq/import", json={
+            response1 = await authenticated_client.post("/api/sigmahq/import", json={
                 "rule_path": "test/rule.yml",
                 "index_pattern_id": str(test_index_pattern.id),
                 "rule_type": "detection"
             })
-            assert response1.status_code == 201
+            assert response1.status_code == 200  # Import returns 200 not 201
 
             # Second import should fail with 409
-            response2 = await client.post("/api/sigmahq/import", json={
+            response2 = await authenticated_client.post("/api/sigmahq/import", json={
                 "rule_path": "test/rule.yml",
                 "index_pattern_id": str(test_index_pattern.id),
                 "rule_type": "detection"

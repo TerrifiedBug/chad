@@ -14,10 +14,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Shield, ShieldCheck, ShieldOff, User, Loader2, Bell } from 'lucide-react'
+import { Shield, ShieldCheck, ShieldOff, User, Loader2, Bell, Sun, Moon, Monitor } from 'lucide-react'
 import { TwoFactorSetup } from '@/components/TwoFactorSetup'
 import { authApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
+import { useTheme } from '@/hooks/use-theme'
 
 const SEVERITY_OPTIONS = [
   { value: 'critical', label: 'Critical', color: 'bg-red-500' },
@@ -30,6 +31,7 @@ const SEVERITY_OPTIONS = [
 export default function AccountPage() {
   const { user, refreshUser } = useAuth()
   const { showToast } = useToast()
+  const { theme, setTheme } = useTheme()
   const [showSetup, setShowSetup] = useState(false)
   const [showDisable, setShowDisable] = useState(false)
   const [disableCode, setDisableCode] = useState('')
@@ -131,78 +133,84 @@ export default function AccountPage() {
   if (!user) return null
 
   return (
-    <div className="container max-w-2xl py-8">
+    <div className="space-y-6">
       <h1 className="text-3xl font-bold mb-8">Account Settings</h1>
 
-      {/* Profile Info */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Profile
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label className="text-muted-foreground">Email</Label>
-            <p className="font-medium">{user.email}</p>
-          </div>
-          <div>
-            <Label className="text-muted-foreground">Role</Label>
-            <p className="font-medium capitalize">{user.role}</p>
-          </div>
-          <div>
-            <Label className="text-muted-foreground">Authentication Method</Label>
-            <p className="font-medium">{user.auth_method === 'sso' ? 'Single Sign-On (SSO)' : 'Local Account'}</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Security - 2FA */}
-      {user.auth_method === 'local' && (
-        <Card className="mb-6">
+      {/* Top row - Profile and Security side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* Profile Info */}
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Security
+              <User className="h-5 w-5" />
+              Profile
             </CardTitle>
-            <CardDescription>
-              Manage your account security settings
-            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
+          <CardContent className="space-y-4">
+            <div>
+              <Label className="text-muted-foreground">Email</Label>
+              <p className="font-medium">{user.email}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground">Role</Label>
+              <p className="font-medium capitalize">{user.role}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground">Authentication Method</Label>
+              <p className="font-medium">{user.auth_method === 'sso' ? 'Single Sign-On (SSO)' : 'Local Account'}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Security - 2FA */}
+        {user.auth_method === 'local' && (
+          <Card className="flex flex-col">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Security
+              </CardTitle>
+              <CardDescription>
+                Manage your account security settings
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               <div className="flex items-center gap-3">
                 {user.totp_enabled ? (
-                  <ShieldCheck className="h-8 w-8 text-green-500" />
+                  <ShieldCheck className="h-8 w-8 text-green-500 flex-shrink-0" />
                 ) : (
-                  <ShieldOff className="h-8 w-8 text-muted-foreground" />
+                  <ShieldOff className="h-8 w-8 text-muted-foreground flex-shrink-0" />
                 )}
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="font-medium">Two-Factor Authentication</p>
                   <p className="text-sm text-muted-foreground">
                     {user.totp_enabled
                       ? 'Your account is protected with 2FA'
-                      : 'Add an extra layer of security to your account'}
+                      : 'Add an extra layer of security'}
                   </p>
                 </div>
               </div>
-              {user.totp_enabled ? (
-                <Button variant="outline" onClick={() => setShowDisable(true)}>
-                  Disable 2FA
-                </Button>
-              ) : (
-                <Button onClick={() => setShowSetup(true)}>
-                  Enable 2FA
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              <div className="mt-4">
+                {user.totp_enabled ? (
+                  <Button variant="outline" onClick={() => setShowDisable(true)}>
+                    Disable 2FA
+                  </Button>
+                ) : (
+                  <Button onClick={() => setShowSetup(true)}>
+                    Enable 2FA
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Browser Notifications */}
-      <Card>
+      </div>
+
+      {/* Bottom row - Notifications and Appearance side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Browser Notifications */}
+        <Card className="flex flex-col">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
@@ -255,6 +263,54 @@ export default function AccountPage() {
           )}
         </CardContent>
       </Card>
+
+        {/* Appearance */}
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sun className="h-5 w-5" />
+              Appearance
+            </CardTitle>
+            <CardDescription>
+              Customize how CHAD looks on your device
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label>Theme</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant={theme === 'light' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTheme('light')}
+                  className="flex-1"
+                >
+                  <Sun className="h-4 w-4 mr-2" />
+                  Light
+                </Button>
+                <Button
+                  variant={theme === 'dark' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTheme('dark')}
+                  className="flex-1"
+                >
+                  <Moon className="h-4 w-4 mr-2" />
+                  Dark
+                </Button>
+                <Button
+                  variant={theme === 'system' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTheme('system')}
+                  className="flex-1"
+                >
+                  <Monitor className="h-4 w-4 mr-2" />
+                  System
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* 2FA Setup Dialog */}
       <TwoFactorSetup

@@ -6,13 +6,13 @@ python-multipart==0.0.22
 # Database
 sqlalchemy[asyncio]==2.0.30
 asyncpg==0.29.0
-alembic==1.18.1
+alembic==1.18.3
 psycopg2-binary==2.9.9
 
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.3.0
+bcrypt==4.3.0  # Pinned: 5.0.0 breaks passlib 1.7.4 compatibility (see PR #52)
 authlib==1.6.6
 itsdangerous==2.2.0
 pyotp>=2.9.0

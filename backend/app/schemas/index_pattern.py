@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class TIIndicatorType(str, Enum):
@@ -47,10 +47,27 @@ class IndexPatternBase(BaseModel):
     rate_limit_enabled: bool = False
     rate_limit_requests_per_minute: int | None = None
     rate_limit_events_per_minute: int | None = None
+    # Detection mode: 'push' (real-time) or 'pull' (scheduled queries)
+    mode: str = "push"
+    poll_interval_minutes: int = 5
+    # Timestamp field for pull mode time filtering (must be a date/timestamp field in the index)
+    timestamp_field: str = "@timestamp"
+
+    @field_validator("poll_interval_minutes")
+    @classmethod
+    def validate_poll_interval(cls, v: int) -> int:
+        if v < 1 or v > 1440:
+            raise ValueError("poll_interval_minutes must be between 1 and 1440 (24 hours)")
+        return v
 
 
 class IndexPatternCreate(IndexPatternBase):
-    pass
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in ("push", "pull"):
+            raise ValueError("mode must be 'push' or 'pull'")
+        return v
 
 
 class IndexPatternUpdate(BaseModel):
@@ -70,13 +87,37 @@ class IndexPatternUpdate(BaseModel):
     rate_limit_enabled: bool | None = None
     rate_limit_requests_per_minute: int | None = None
     rate_limit_events_per_minute: int | None = None
+    # Detection mode
+    mode: str | None = None
+    poll_interval_minutes: int | None = None
+    timestamp_field: str | None = None
+    # For audit logging
+    change_reason: str | None = None
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("push", "pull"):
+            raise ValueError("mode must be 'push' or 'pull'")
+        return v
+
+    @field_validator("poll_interval_minutes")
+    @classmethod
+    def validate_poll_interval(cls, v: int | None) -> int | None:
+        if v is not None and (v < 1 or v > 1440):
+            raise ValueError("poll_interval_minutes must be between 1 and 1440 (24 hours)")
+        return v
 
 
 class IndexPatternResponse(IndexPatternBase):
     id: UUID
     auth_token: str
+    mode: str
+    poll_interval_minutes: int
+    timestamp_field: str
     created_at: datetime
     updated_at: datetime
+    last_edited_by: str | None = None  # Email of user who last edited
 
     class Config:
         from_attributes = True

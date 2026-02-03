@@ -1,11 +1,9 @@
 """Tests for AI mapping service."""
 
-import pytest
 
 from app.services.ai_mapping import (
     build_prompt,
     parse_ai_response,
-    AISuggestion,
 )
 
 

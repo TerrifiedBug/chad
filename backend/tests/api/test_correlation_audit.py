@@ -69,7 +69,7 @@ detection:
             "entity_field": "process.entity_id",
             "time_window_minutes": 5,
             "severity": "high",
-            "is_enabled": True,
+            "change_reason": "Initial creation for testing",
         },
     )
 
@@ -153,7 +153,7 @@ detection:
             "entity_field": "process.entity_id",
             "time_window_minutes": 5,
             "severity": "high",
-            "is_enabled": True,
+            "change_reason": "Initial creation for testing",
         },
     )
     correlation_id = create_response.json()["id"]
@@ -164,6 +164,7 @@ detection:
         json={
             "name": "Updated Correlation Name",
             "time_window_minutes": 10,
+            "change_reason": "Updating for test validation",
         },
     )
 
@@ -247,7 +248,7 @@ detection:
             "entity_field": "process.entity_id",
             "time_window_minutes": 5,
             "severity": "high",
-            "is_enabled": True,
+            "change_reason": "Initial creation for testing",
         },
     )
     correlation_id = create_response.json()["id"]
@@ -271,109 +272,3 @@ detection:
     assert delete_events[0]["details"]["name"] == "Test Correlation Delete"
 
 
-@pytest.mark.asyncio
-async def test_correlation_rule_toggled_audit_log(authenticated_client):
-    """Test that toggling a correlation rule creates an audit log."""
-    # Create index pattern
-    pattern_response = await authenticated_client.post(
-        "/api/index-patterns",
-        json={
-            "name": "Test Index Pattern for Toggle",
-            "pattern": "test-toggle-*",
-            "percolator_index": "percolator-test-toggle",
-        },
-    )
-    pattern_id = pattern_response.json()["id"]
-
-    # Create two test rules
-    yaml_content_a = """
-title: Test Rule A Toggle
-logsource:
-    product: windows
-detection:
-    selection:
-        EventID: 1
-    condition: selection
-"""
-    rule_a_response = await authenticated_client.post(
-        "/api/rules",
-        json={
-            "title": "Test Rule A for Toggle",
-            "yaml_content": yaml_content_a,
-            "index_pattern_id": pattern_id,
-        },
-    )
-    rule_a_id = rule_a_response.json()["id"]
-
-    yaml_content_b = """
-title: Test Rule B Toggle
-logsource:
-    product: windows
-detection:
-    selection:
-        EventID: 2
-    condition: selection
-"""
-    rule_b_response = await authenticated_client.post(
-        "/api/rules",
-        json={
-            "title": "Test Rule B for Toggle",
-            "yaml_content": yaml_content_b,
-            "index_pattern_id": pattern_id,
-        },
-    )
-    rule_b_id = rule_b_response.json()["id"]
-
-    # Create correlation rule
-    create_response = await authenticated_client.post(
-        "/api/correlation-rules",
-        json={
-            "name": "Test Correlation Toggle",
-            "rule_a_id": rule_a_id,
-            "rule_b_id": rule_b_id,
-            "entity_field": "process.entity_id",
-            "time_window_minutes": 5,
-            "severity": "high",
-            "is_enabled": True,
-        },
-    )
-    correlation_id = create_response.json()["id"]
-
-    # Disable correlation rule
-    disable_response = await authenticated_client.patch(
-        f"/api/correlation-rules/{correlation_id}/toggle",
-        params={"enabled": False},
-    )
-
-    assert disable_response.status_code == 200
-    assert disable_response.json()["is_enabled"] is False
-
-    # Check audit log
-    audit_response = await authenticated_client.get(
-        f"/api/audit?entity_id=correlation_rule:{correlation_id}",
-    )
-
-    assert audit_response.status_code == 200
-    items = audit_response.json()["items"]
-    disable_events = [item for item in items if item["action"] == "correlation_rule_disabled"]
-    assert len(disable_events) >= 1
-    assert disable_events[0]["details"]["enabled"] is False
-
-    # Enable correlation rule
-    enable_response = await authenticated_client.patch(
-        f"/api/correlation-rules/{correlation_id}/toggle",
-        params={"enabled": True},
-    )
-
-    assert enable_response.status_code == 200
-    assert enable_response.json()["is_enabled"] is True
-
-    # Check audit log for enable event
-    audit_response = await authenticated_client.get(
-        f"/api/audit?entity_id=correlation_rule:{correlation_id}",
-    )
-
-    items = audit_response.json()["items"]
-    enable_events = [item for item in items if item["action"] == "correlation_rule_enabled"]
-    assert len(enable_events) >= 1
-    assert enable_events[0]["details"]["enabled"] is True

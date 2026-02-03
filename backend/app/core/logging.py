@@ -146,7 +146,6 @@ def redact_string(value: str) -> str:
     - API keys (long alphanumeric strings)
     - Tokens (JWT, etc.)
     """
-    import re
 
     # Redact email addresses
     if '@' in value and '.' in value.split('@')[-1]:

@@ -61,10 +61,6 @@ class SigmaService:
             rule = SigmaRule.from_yaml(yaml_content)
             return rule
         except yaml.YAMLError as e:
-            # Extract line number from YAML error if available
-            line = None
-            if hasattr(e, "problem_mark") and e.problem_mark:
-                line = e.problem_mark.line + 1
             raise ValueError(f"Invalid YAML syntax: {e}") from e
         except SigmaError as e:
             raise ValueError(f"Invalid Sigma rule: {e}") from e

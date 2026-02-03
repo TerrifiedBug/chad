@@ -76,7 +76,7 @@ def is_safe_webhook_url(url: str) -> tuple[bool, str | None]:
 
         return True, None
 
-    except Exception as e:
+    except Exception:
         return False, "Invalid URL format"
 
 

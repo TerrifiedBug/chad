@@ -4,8 +4,11 @@ import { api, authApi, settingsApi, CurrentUser } from '@/lib/api'
 interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
+  isStartingUp: boolean
+  connectionFailed: boolean
   setupCompleted: boolean
   isOpenSearchConfigured: boolean
+  backendReady: boolean
   user: CurrentUser | null
   isAdmin: boolean
   hasPermission: (permission: string) => boolean
@@ -21,6 +24,7 @@ interface AuthContextType {
   setup: (email: string, password: string) => Promise<void>
   setOpenSearchConfigured: (configured: boolean) => void
   refreshUser: () => Promise<void>
+  retryConnection: () => void
 }
 
 interface SetupStatusResponse {
@@ -36,68 +40,124 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
+  const [isStartingUp, setIsStartingUp] = useState(false)
+  const [connectionFailed, setConnectionFailed] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [setupCompleted, setSetupCompleted] = useState(false)
   const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
+  const [backendReady, setBackendReady] = useState(false)
   const [user, setUser] = useState<CurrentUser | null>(null)
 
   useEffect(() => {
-    checkAuth()
+    checkAuthWithRetry()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount
   }, [])
 
-  const checkAuth = async () => {
+  // Check if error is a connection/startup error (502, 503, 504, network error)
+  const isConnectionError = (error: unknown): boolean => {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      return true // Network error
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    // Check for gateway errors (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout)
+    // Also check for network-level failures
+    return (
+      message.includes('502') ||
+      message.includes('503') ||
+      message.includes('504') ||
+      message.includes('Failed to fetch') ||
+      message.includes('NetworkError') ||
+      message.includes('ECONNREFUSED')
+    )
+  }
+
+  // Retry auth check with exponential backoff during startup
+  const checkAuthWithRetry = async (retryCount = 0, maxRetries = 10) => {
+    const baseDelay = 2000 // 2 seconds
+
     try {
-      // Check for SSO exchange code in URL (returned from SSO callback)
-      const urlParams = new URLSearchParams(window.location.search)
-      const ssoCode = urlParams.get('sso_code')
-      if (ssoCode) {
-        // Exchange code for token via POST
-        try {
-          const response = await api.post<TokenResponse>('/auth/sso/exchange', { code: ssoCode })
-          localStorage.setItem('chad-token', response.access_token)
-        } catch {
-          // Exchange failed - clear the code
-          console.error('SSO code exchange failed')
-        }
-        // Clean up URL (remove the code from URL bar)
-        window.history.replaceState({}, '', '/')
-      }
-
-      const status = await api.get<SetupStatusResponse>('/auth/setup-status')
-      setSetupCompleted(status.setup_completed)
-
-      const token = localStorage.getItem('chad-token')
-
-      if (!token || !status.setup_completed) {
+      setConnectionFailed(false)
+      await checkAuth()
+    } catch (error) {
+      if (isConnectionError(error) && retryCount < maxRetries) {
+        setIsStartingUp(true)
+        const delay = Math.min(baseDelay * Math.pow(1.5, retryCount), 15000) // Max 15 seconds
+        console.log(`Backend starting up, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`)
+        setTimeout(() => checkAuthWithRetry(retryCount + 1, maxRetries), delay)
+      } else if (isConnectionError(error)) {
+        // Connection error and max retries exceeded - show connection failed state
+        setIsStartingUp(false)
+        setIsLoading(false)
+        setConnectionFailed(true)
         setIsAuthenticated(false)
-        setIsOpenSearchConfigured(false)
-        return
+      } else {
+        // Not a connection error - could be a real error, treat as setup not completed
+        setIsStartingUp(false)
+        setIsLoading(false)
+        setSetupCompleted(false)
+        setIsAuthenticated(false)
       }
+    }
+  }
 
-      // Validate token, get user info, and check OpenSearch status
-      // This will throw if the token is invalid
+  // Allow manual retry of connection
+  const retryConnection = () => {
+    setIsLoading(true)
+    setConnectionFailed(false)
+    setBackendReady(false)  // Reset backend ready state
+    checkAuthWithRetry(0, 10)
+  }
+
+  const checkAuth = async () => {
+    // Check for SSO exchange code in URL (returned from SSO callback)
+    const urlParams = new URLSearchParams(window.location.search)
+    const ssoCode = urlParams.get('sso_code')
+    if (ssoCode) {
+      // Exchange code for token via POST
       try {
-        const [userData, osStatus] = await Promise.all([
-          authApi.getMe(),
-          settingsApi.getOpenSearchStatus(),
-        ])
-        setUser(userData)
-        setIsOpenSearchConfigured(osStatus.configured)
-        setIsAuthenticated(true)
+        const response = await api.post<TokenResponse>('/auth/sso/exchange', { code: ssoCode })
+        localStorage.setItem('chad-token', response.access_token)
       } catch {
-        // Token is invalid or expired - clear it
-        localStorage.removeItem('chad-token')
-        setIsAuthenticated(false)
-        setIsOpenSearchConfigured(false)
-        setUser(null)
+        // Exchange failed - clear the code
+        console.error('SSO code exchange failed')
       }
-    } catch {
-      setSetupCompleted(false)
+      // Clean up URL (remove the code from URL bar)
+      window.history.replaceState({}, '', '/')
+    }
+
+    // This call will throw if backend is unavailable (502/503/network error)
+    const status = await api.get<SetupStatusResponse>('/auth/setup-status')
+    setSetupCompleted(status.setup_completed)
+    setBackendReady(true)
+    setIsStartingUp(false)
+
+    const token = localStorage.getItem('chad-token')
+
+    if (!token || !status.setup_completed) {
       setIsAuthenticated(false)
       setIsOpenSearchConfigured(false)
-    } finally {
       setIsLoading(false)
+      return
     }
+
+    // Validate token, get user info, and check OpenSearch status
+    // This will throw if the token is invalid
+    try {
+      const [userData, osStatus] = await Promise.all([
+        authApi.getMe(),
+        settingsApi.getOpenSearchStatus(),
+      ])
+      setUser(userData)
+      setIsOpenSearchConfigured(osStatus.configured)
+      setIsAuthenticated(true)
+    } catch {
+      // Token is invalid or expired - clear it
+      localStorage.removeItem('chad-token')
+      setIsAuthenticated(false)
+      setIsOpenSearchConfigured(false)
+      setUser(null)
+    }
+    setIsLoading(false)
   }
 
   const login = async (email: string, password: string) => {
@@ -164,8 +224,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider value={{
       isAuthenticated,
       isLoading,
+      isStartingUp,
+      connectionFailed,
       setupCompleted,
       isOpenSearchConfigured,
+      backendReady,
       user,
       isAdmin: user?.role === 'admin',
       hasPermission,
@@ -181,6 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setup,
       setOpenSearchConfigured: setIsOpenSearchConfigured,
       refreshUser,
+      retryConnection,
     }}>
       {children}
     </AuthContext.Provider>

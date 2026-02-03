@@ -4,7 +4,7 @@ Standardized error response system.
 Provides consistent error responses across all API endpoints.
 """
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -50,8 +50,8 @@ class ErrorResponse:
         code: str,
         message: str,
         status_code: int = 500,
-        details: Optional[Dict[str, Any]] = None,
-        request_id: Optional[str] = None,
+        details: dict[str, Any] | None = None,
+        request_id: str | None = None,
     ) -> JSONResponse:
         """
         Create a standardized error response.
@@ -66,7 +66,7 @@ class ErrorResponse:
         Returns:
             JSONResponse with standard error format
         """
-        error_data: Dict[str, Any] = {
+        error_data: dict[str, Any] = {
             "error": {
                 "code": code,
                 "message": message,
@@ -100,7 +100,7 @@ class HTTPError(HTTPException):
         status_code: int,
         code: str,
         message: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         """
         Initialize HTTPError.
@@ -137,7 +137,7 @@ async def http_error_handler(request: Request, exc: HTTPError) -> JSONResponse:
 
 # Convenience functions for common errors
 
-def not_found(resource: str, details: Optional[Dict[str, Any]] = None) -> HTTPError:
+def not_found(resource: str, details: dict[str, Any] | None = None) -> HTTPError:
     """Create a 404 NOT_FOUND error."""
     return HTTPError(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -147,7 +147,7 @@ def not_found(resource: str, details: Optional[Dict[str, Any]] = None) -> HTTPEr
     )
 
 
-def unauthorized(message: str = "Unauthorized", details: Optional[Dict[str, Any]] = None) -> HTTPError:
+def unauthorized(message: str = "Unauthorized", details: dict[str, Any] | None = None) -> HTTPError:
     """Create a 401 UNAUTHORIZED error."""
     return HTTPError(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -157,7 +157,7 @@ def unauthorized(message: str = "Unauthorized", details: Optional[Dict[str, Any]
     )
 
 
-def forbidden(message: str = "Forbidden", details: Optional[Dict[str, Any]] = None) -> HTTPError:
+def forbidden(message: str = "Forbidden", details: dict[str, Any] | None = None) -> HTTPError:
     """Create a 403 FORBIDDEN error."""
     return HTTPError(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -167,7 +167,7 @@ def forbidden(message: str = "Forbidden", details: Optional[Dict[str, Any]] = No
     )
 
 
-def validation_error(message: str, details: Optional[Dict[str, Any]] = None) -> HTTPError:
+def validation_error(message: str, details: dict[str, Any] | None = None) -> HTTPError:
     """Create a 400 VALIDATION_ERROR error."""
     return HTTPError(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -177,7 +177,7 @@ def validation_error(message: str, details: Optional[Dict[str, Any]] = None) -> 
     )
 
 
-def conflict(message: str, details: Optional[Dict[str, Any]] = None) -> HTTPError:
+def conflict(message: str, details: dict[str, Any] | None = None) -> HTTPError:
     """Create a 409 CONFLICT error."""
     return HTTPError(
         status_code=status.HTTP_409_CONFLICT,
@@ -187,7 +187,7 @@ def conflict(message: str, details: Optional[Dict[str, Any]] = None) -> HTTPErro
     )
 
 
-def internal_error(message: str = "Internal server error", details: Optional[Dict[str, Any]] = None) -> HTTPError:
+def internal_error(message: str = "Internal server error", details: dict[str, Any] | None = None) -> HTTPError:
     """Create a 500 INTERNAL_ERROR error."""
     return HTTPError(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

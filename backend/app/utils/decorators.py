@@ -6,13 +6,14 @@ Provides common patterns for:
 - Permission checking
 - Error handling
 """
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import ParamSpec, TypeVar
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user
 from app.models.user import User
 from app.services.audit import audit_log
 

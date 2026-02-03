@@ -1,7 +1,8 @@
 """Tests for AlienVault OTX Threat Intelligence client."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.services.ti.alienvault_otx import AlienVaultOTXClient
 from app.services.ti.base import TIIndicatorType, TIRiskLevel
@@ -197,13 +198,14 @@ async def test_otx_test_connection_success(otx_client):
 
 @pytest.mark.asyncio
 async def test_otx_test_connection_failure(otx_client):
-    """Test failed connection to OTX."""
+    """Test failed connection to OTX raises exception."""
     with patch.object(otx_client._client, 'get', new_callable=AsyncMock) as mock_get:
         mock_get.side_effect = Exception("Authentication failed")
 
-        result = await otx_client.test_connection()
+        with pytest.raises(Exception) as exc_info:
+            await otx_client.test_connection()
 
-        assert result is False
+        assert "Authentication failed" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

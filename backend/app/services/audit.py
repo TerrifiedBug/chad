@@ -6,7 +6,7 @@ Usage:
     await audit_log(db, user_id, "rule.create", "rule", rule.id, {"title": rule.title})
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -116,7 +116,7 @@ async def audit_log(
             os_client.index(
                 index="chad-audit-logs",
                 body={
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "user_id": str(user_id) if user_id else None,
                     "user_email": user_email,
                     "action": action,

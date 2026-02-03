@@ -7,7 +7,7 @@ Handles role-based permission checks and permission management.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.role_permission import RolePermission, DEFAULT_ROLE_PERMISSIONS
+from app.models.role_permission import DEFAULT_ROLE_PERMISSIONS, RolePermission
 from app.models.user import User
 
 

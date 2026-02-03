@@ -1,10 +1,17 @@
 import secrets
+import uuid
 
-from sqlalchemy import Boolean, Float, Integer, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
+
+
+class DetectionMode:
+    """Constants for detection modes."""
+    PUSH = "push"
+    PULL = "pull"
 
 
 def generate_auth_token() -> str:
@@ -66,6 +73,20 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     rate_limit_requests_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True, default=100)
     rate_limit_events_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True, default=50000)
 
+    # Detection mode: 'push' (real-time via /logs) or 'pull' (scheduled OpenSearch queries)
+    mode: Mapped[str] = mapped_column(String(10), default="push", nullable=False)
+
+    # Pull mode polling configuration (only used when mode='pull')
+    poll_interval_minutes: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+
+    # Timestamp field for pull mode time filtering (default: @timestamp)
+    timestamp_field: Mapped[str] = mapped_column(String(255), default="@timestamp", nullable=False)
+
+    # Track who last updated this pattern
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
     # Relationships
     field_mappings = relationship(
         "FieldMapping", back_populates="index_pattern", cascade="all, delete-orphan"
@@ -73,3 +94,15 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     health_suppressions = relationship(
         "HealthAlertSuppression", back_populates="index_pattern", cascade="all, delete-orphan"
     )
+    poll_state = relationship(
+        "IndexPatternPollState",
+        back_populates="index_pattern",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
+
+    @property
+    def last_edited_by(self) -> str | None:
+        """Return the email of the user who last edited this pattern."""
+        return self.updated_by.email if self.updated_by else None

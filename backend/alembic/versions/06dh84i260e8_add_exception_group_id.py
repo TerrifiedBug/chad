@@ -5,17 +5,17 @@ Revises: 05cg73h159d7
 Create Date: 2026-01-29
 
 """
-from typing import Union
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '06dh84i260e8'
-down_revision: Union[str, None] = '05cg73h159d7'
-branch_labels: Union[str, None] = None
-depends_on: Union[str, None] = None
+down_revision: str | None = '05cg73h159d7'
+branch_labels: str | None = None
+depends_on: str | None = None
 
 
 def upgrade() -> None:

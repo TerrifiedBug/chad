@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { statsApi, DashboardStats } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +32,7 @@ import { ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -74,11 +75,24 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Overview of your detection system
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Overview of your detection system
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          className="gap-2 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+          onClick={() => navigate('/live')}
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+          </span>
+          Live Feed
+        </Button>
       </div>
 
       {/* Stats Cards */}

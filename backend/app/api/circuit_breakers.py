@@ -3,9 +3,8 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_admin
+from app.api.deps import get_current_user, require_admin
 from app.core.circuit_breaker import _circuit_breakers, get_circuit_breaker
 from app.models.user import User
 

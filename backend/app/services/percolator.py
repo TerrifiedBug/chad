@@ -14,7 +14,7 @@ The percolator index stores:
 - enabled: Whether rule is active
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from opensearchpy import OpenSearch
@@ -132,7 +132,7 @@ class PercolatorService:
         Returns:
             None
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Check if rule already exists to preserve created_at
         existing = self.get_deployed_rule(percolator_index, rule_id)
@@ -188,7 +188,7 @@ class PercolatorService:
                 body={
                     "doc": {
                         "enabled": enabled,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
                 refresh=True,
@@ -213,3 +213,37 @@ class PercolatorService:
             return self.client.exists(index=percolator_index, id=rule_id)
         except Exception:
             return False
+
+    def undeploy_all_rules(self, percolator_index: str) -> int:
+        """
+        Remove all rules from a percolator index.
+
+        Used when transitioning an index pattern from push to pull mode.
+
+        Returns:
+            Number of rules deleted.
+        """
+        try:
+            # Check if index exists
+            if not self.client.indices.exists(index=percolator_index):
+                return 0
+
+            # Delete all documents using delete_by_query
+            result = self.client.delete_by_query(
+                index=percolator_index,
+                body={"query": {"match_all": {}}},
+                refresh=True,
+            )
+            return result.get("deleted", 0)
+        except Exception:
+            return 0
+
+    def get_deployed_rule_count(self, percolator_index: str) -> int:
+        """Get the number of deployed rules in a percolator index."""
+        try:
+            if not self.client.indices.exists(index=percolator_index):
+                return 0
+            result = self.client.count(index=percolator_index)
+            return result.get("count", 0)
+        except Exception:
+            return 0

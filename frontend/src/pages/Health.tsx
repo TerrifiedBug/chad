@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
-import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse, DeadLetterMessage } from '@/lib/api'
+import { healthApi, IndexHealth, HealthStatus, queueApi, QueueStatsResponse, DeadLetterMessage, PullModeHealth } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers, XCircle, Loader2, ChevronUp } from 'lucide-react'
-import { TooltipProvider } from '@/components/ui/tooltip'
+import { AlertCircle, CheckCircle2, AlertTriangle, Activity, Clock, Zap, Bell, ChevronDown, RefreshCw, Server, ChevronRight, Database, Layers, XCircle, Loader2, ChevronUp, Info } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useToast } from '@/components/ui/toast-provider'
 import { LoadingState } from '@/components/ui/loading-state'
 import {
@@ -95,11 +100,31 @@ export default function HealthPage() {
   const [deadLetterCount, setDeadLetterCount] = useState(0)
   const [isClearingDeadLetter, setIsClearingDeadLetter] = useState(false)
 
-  // Collapsible sections state
-  const [externalServicesOpen, setExternalServicesOpen] = useState(false)
-  const [queueDetailsOpen, setQueueDetailsOpen] = useState(false)
-  const [deadLetterOpen, setDeadLetterOpen] = useState(false)
-  const [indexesOpen, setIndexesOpen] = useState(false)
+  // Pull mode health state
+  const [pullModeHealth, setPullModeHealth] = useState<PullModeHealth | null>(null)
+  const [isLoadingPullMode, setIsLoadingPullMode] = useState(false)
+
+  // Collapsible sections state with localStorage persistence
+  const [pullModeOpen, setPullModeOpen] = useState(() => {
+    const saved = localStorage.getItem('health-pullmode-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [externalServicesOpen, setExternalServicesOpen] = useState(() => {
+    const saved = localStorage.getItem('health-external-services-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [pushModeOpen, setPushModeOpen] = useState(() => {
+    const saved = localStorage.getItem('health-pushmode-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [deadLetterOpen, setDeadLetterOpen] = useState(() => {
+    const saved = localStorage.getItem('health-dead-letter-open')
+    return saved ? JSON.parse(saved) : false
+  })
+  const [indexesOpen, setIndexesOpen] = useState(() => {
+    const saved = localStorage.getItem('health-indexes-open')
+    return saved ? JSON.parse(saved) : false
+  })
 
   // Status popover state
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false)
@@ -108,14 +133,38 @@ export default function HealthPage() {
     loadHealth()
     loadServiceHealth()
     loadQueueStats()
+    loadPullModeHealth()
     // Refresh every 30 seconds
     const interval = setInterval(() => {
       loadHealth()
       loadServiceHealth()
       loadQueueStats()
+      loadPullModeHealth()
     }, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  // Persist accordion states to localStorage
+  useEffect(() => {
+    localStorage.setItem('health-pullmode-open', JSON.stringify(pullModeOpen))
+  }, [pullModeOpen])
+
+  useEffect(() => {
+    localStorage.setItem('health-external-services-open', JSON.stringify(externalServicesOpen))
+  }, [externalServicesOpen])
+
+  useEffect(() => {
+    localStorage.setItem('health-pushmode-open', JSON.stringify(pushModeOpen))
+  }, [pushModeOpen])
+
+
+  useEffect(() => {
+    localStorage.setItem('health-dead-letter-open', JSON.stringify(deadLetterOpen))
+  }, [deadLetterOpen])
+
+  useEffect(() => {
+    localStorage.setItem('health-indexes-open', JSON.stringify(indexesOpen))
+  }, [indexesOpen])
 
   const loadHealth = async (isRefresh = false) => {
     if (isRefresh) {
@@ -165,6 +214,19 @@ export default function HealthPage() {
     }
   }
 
+  const loadPullModeHealth = async () => {
+    setIsLoadingPullMode(true)
+    try {
+      const data = await healthApi.getPullModeHealth()
+      setPullModeHealth(data)
+    } catch (err) {
+      // Pull mode health may not be available
+      console.error('Failed to load pull mode health:', err)
+    } finally {
+      setIsLoadingPullMode(false)
+    }
+  }
+
   const clearDeadLetterQueue = async () => {
     if (!confirm('Are you sure you want to permanently delete all messages in the dead letter queue? This action cannot be undone.')) {
       return
@@ -185,29 +247,29 @@ export default function HealthPage() {
     }
   }
 
-  const deleteDeadLetterMessage = async (messageId: string) => {
-    try {
-      await queueApi.deleteDeadLetterMessage(messageId)
-      setDeadLetterMessages(prev => prev.filter(m => m.id !== messageId))
-      setDeadLetterCount(prev => prev - 1)
-      if (queueStats) {
-        setQueueStats({ ...queueStats, dead_letter_count: queueStats.dead_letter_count - 1 })
-      }
-      showToast('Message deleted')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to delete message', 'error')
-    }
-  }
+  // Calculate overall status (includes pull mode health when patterns exist)
+  const overallStatus: HealthStatus = (() => {
+    // Start with index pattern health
+    let worst: HealthStatus = health.reduce((acc, h) => {
+      if (h.status === 'critical') return 'critical'
+      if (h.status === 'warning' && acc !== 'critical') return 'warning'
+      return acc
+    }, 'healthy' as HealthStatus)
 
-  // Calculate overall status
-  const overallStatus: HealthStatus = health.reduce((worst, h) => {
-    if (h.status === 'critical') return 'critical'
-    if (h.status === 'warning' && worst !== 'critical') return 'warning'
+    // Include pull mode health if there are pull patterns
+    if (pullModeHealth && pullModeHealth.patterns.length > 0) {
+      if (pullModeHealth.overall_status === 'critical') worst = 'critical'
+      else if (pullModeHealth.overall_status === 'warning' && worst !== 'critical') worst = 'warning'
+    }
+
     return worst
-  }, 'healthy' as HealthStatus)
+  })()
 
   // Get problematic index patterns for the popover
   const problematicPatterns = health.filter(h => h.status === 'warning' || h.status === 'critical')
+
+  // Get problematic pull mode patterns for the popover
+  const problematicPullPatterns = pullModeHealth?.patterns.filter(p => p.status === 'warning' || p.status === 'critical') || []
 
   // Get problematic external services for the popover
   const problematicServices = serviceHealth?.services.filter(s => s.status === 'warning' || s.status === 'unhealthy') || []
@@ -244,13 +306,13 @@ export default function HealthPage() {
               <span className={`font-medium capitalize ${statusColors[overallStatus]}`}>
                 {overallStatus === 'healthy' ? 'All Systems Healthy' : `System ${overallStatus}`}
               </span>
-              {(problematicPatterns.length > 0 || problematicServices.length > 0) && (
+              {(problematicPatterns.length > 0 || problematicPullPatterns.length > 0 || problematicServices.length > 0) && (
                 <ChevronDown className={`h-4 w-4 transition-transform ${statusPopoverOpen ? 'rotate-180' : ''}`} />
               )}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-80" align="end">
-            {(problematicPatterns.length === 0 && problematicServices.length === 0) ? (
+            {(problematicPatterns.length === 0 && problematicPullPatterns.length === 0 && problematicServices.length === 0) ? (
               <div className="text-sm text-muted-foreground">All systems operating normally</div>
             ) : (
               <div className="space-y-3">
@@ -263,6 +325,28 @@ export default function HealthPage() {
                     <div className="space-y-1">
                       {problematicPatterns.map((pattern, index) => (
                         <div key={`${pattern.index_pattern_id}-${index}`} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <StatusIcon status={pattern.status} />
+                            <span className="truncate font-medium">{pattern.index_pattern_name}</span>
+                          </div>
+                          <span className={`text-xs capitalize ${statusColors[pattern.status as HealthStatus]}`}>
+                            {pattern.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {problematicPullPatterns.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-yellow-600" />
+                      Pull Mode Detection
+                    </h4>
+                    <div className="space-y-1">
+                      {problematicPullPatterns.map((pattern, index) => (
+                        <div key={`pull-${pattern.index_pattern_id}-${index}`} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             <StatusIcon status={pattern.status} />
                             <span className="truncate font-medium">{pattern.index_pattern_name}</span>
@@ -342,7 +426,7 @@ export default function HealthPage() {
                 <Activity className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Logs (24h)</p>
+                <p className="text-sm text-muted-foreground">Push Logs (24h)</p>
                 <p className="text-2xl font-bold">{formatNumber(totals.logs)}</p>
               </div>
             </div>
@@ -497,154 +581,284 @@ export default function HealthPage() {
           )}
         </Card>
 
-      {/* Queue Health Section - visible to all authenticated users */}
-      <div className="space-y-4">
-          {/* Queue Statistics Card */}
-          <Card>
-            <CardHeader className="pb-2">
-              <div
-                className="flex items-center justify-between cursor-pointer"
-                onClick={() => setQueueDetailsOpen(!queueDetailsOpen)}
+      {/* Push Mode Detection Section */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setPushModeOpen(!pushModeOpen)}
+          >
+            <div className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              <CardTitle className="text-lg">
+                Push Mode Detection
+                {queueStats?.queues && Object.keys(queueStats.queues).length > 0 && (
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    ({Object.keys(queueStats.queues).length})
+                  </span>
+                )}
+              </CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  loadQueueStats()
+                }}
+                disabled={isLoadingQueueStats}
               >
-                <div className="flex items-center gap-2">
-                  <Layers className="h-5 w-5" />
-                  <CardTitle className="text-lg">Queue Health</CardTitle>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      loadQueueStats()
-                    }}
-                    disabled={isLoadingQueueStats}
-                  >
-                    <RefreshCw className={`h-4 w-4 ${isLoadingQueueStats ? 'animate-spin' : ''}`} />
-                  </Button>
-                  {queueDetailsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </div>
-              </div>
-              <CardDescription>Real-time metrics for the async log processing queue.</CardDescription>
-            </CardHeader>
-            {queueDetailsOpen && (
-              <CardContent>
-                {queueStats ? (
-                  <div className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div className="p-4 border rounded-lg">
-                        <div className="text-2xl font-bold">{queueStats.total_depth.toLocaleString()}</div>
-                        <div className="text-sm text-muted-foreground">Total Queue Depth</div>
-                      </div>
-                      <div className="p-4 border rounded-lg">
-                        <div className="text-2xl font-bold">{Object.keys(queueStats.queues).length}</div>
-                        <div className="text-sm text-muted-foreground">Active Streams</div>
-                      </div>
-                      <div className="p-4 border rounded-lg">
-                        <div className={`text-2xl font-bold ${queueStats.dead_letter_count > 0 ? 'text-red-500' : ''}`}>
-                          {queueStats.dead_letter_count.toLocaleString()}
-                        </div>
-                        <div className="text-sm text-muted-foreground">Dead Letter Count</div>
-                      </div>
-                    </div>
-                    {Object.keys(queueStats.queues).length > 0 && (
-                      <div className="pt-4 border-t">
-                        <h4 className="font-medium mb-2">Queue Depths by Index</h4>
-                        <div className="space-y-2">
-                          {Object.entries(queueStats.queues).map(([index, depth]) => (
-                            <div key={index} className="flex justify-between items-center text-sm">
-                              <span className="font-mono">{index}</span>
-                              <span className={depth > 10000 ? 'text-yellow-500 font-medium' : ''}>{depth.toLocaleString()}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                <RefreshCw className={`h-4 w-4 ${isLoadingQueueStats ? 'animate-spin' : ''}`} />
+              </Button>
+              {pushModeOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </div>
+          <CardDescription>Queue health and dead letter monitoring for push-mode log ingestion.</CardDescription>
+        </CardHeader>
+        {pushModeOpen && (
+          <CardContent className="space-y-4">
+            {/* Queue Statistics - Displayed directly */}
+            {queueStats ? (
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="p-3 border rounded-lg">
+                    <div className="text-xl font-bold">{queueStats.total_depth.toLocaleString()}</div>
+                    <div className="text-sm text-muted-foreground">Total Queue Depth</div>
                   </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {isLoadingQueueStats ? 'Loading...' : 'No queue statistics available. Redis may not be configured.'}
+                  <div className="p-3 border rounded-lg">
+                    <div className="text-xl font-bold">{Object.keys(queueStats.queues).length}</div>
+                    <div className="text-sm text-muted-foreground">Active Streams</div>
+                  </div>
+                  <div className="p-3 border rounded-lg">
+                    <div className={`text-xl font-bold ${queueStats.dead_letter_count > 0 ? 'text-red-500' : ''}`}>
+                      {queueStats.dead_letter_count.toLocaleString()}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Dead Letter Count</div>
+                  </div>
+                </div>
+                {Object.keys(queueStats.queues).length > 0 && (
+                  <div className="pt-4 border-t">
+                    <h4 className="font-medium mb-2 text-sm">Queue Depths by Index</h4>
+                    <div className="space-y-2">
+                      {Object.entries(queueStats.queues).map(([index, depth]) => (
+                        <div key={index} className="flex justify-between items-center text-sm">
+                          <span className="font-mono">{index}</span>
+                          <span className={depth > 10000 ? 'text-yellow-500 font-medium' : ''}>{depth.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-              </CardContent>
+              </div>
+            ) : (
+              <div className="text-center py-4 text-muted-foreground text-sm">
+                {isLoadingQueueStats ? 'Loading...' : 'No queue statistics available. Redis may not be configured.'}
+              </div>
             )}
-          </Card>
 
-          {/* Dead Letter Queue Card */}
-          <Card>
-            <CardHeader className="pb-2">
+            {/* Dead Letter Queue */}
+            <div className="border rounded-lg p-4">
               <div
                 className="flex items-center justify-between cursor-pointer"
                 onClick={() => setDeadLetterOpen(!deadLetterOpen)}
               >
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className={`h-5 w-5 ${deadLetterCount > 0 ? 'text-orange-500' : 'text-muted-foreground'}`} />
-                  <CardTitle className="text-lg">Dead Letter Queue</CardTitle>
+                  <XCircle className="h-4 w-4" />
+                  <span className="font-medium">Dead Letter Queue</span>
                   {deadLetterCount > 0 && (
-                    <span className="text-sm text-orange-500 font-medium">({deadLetterCount})</span>
+                    <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 px-2 py-0.5 rounded-full">
+                      {deadLetterCount}
+                    </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  {deadLetterCount > 0 && hasPermission('manage_settings') && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        clearDeadLetterQueue()
-                      }}
-                      disabled={isClearingDeadLetter}
-                    >
-                      {isClearingDeadLetter ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
-                      Clear All
-                    </Button>
+                {deadLetterOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+              {deadLetterOpen && (
+                <div className="mt-4">
+                  {deadLetterMessages.length > 0 ? (
+                    <div className="space-y-4">
+                      {hasPermission('manage_health') && (
+                        <div className="flex justify-end">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={clearDeadLetterQueue}
+                            disabled={isClearingDeadLetter}
+                          >
+                            {isClearingDeadLetter ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Clearing...
+                              </>
+                            ) : (
+                              'Clear All'
+                            )}
+                          </Button>
+                        </div>
+                      )}
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {deadLetterMessages.map((msg, i) => (
+                          <div key={i} className="p-3 border rounded-lg text-sm">
+                            <div className="flex justify-between mb-1">
+                              <span className="font-mono text-muted-foreground">{msg.original_stream}</span>
+                              <span className="text-xs text-muted-foreground">ID: {msg.original_id}</span>
+                            </div>
+                            <p className="text-destructive">{msg.reason}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-muted-foreground text-sm">
+                      No messages in dead letter queue
+                    </div>
                   )}
-                  {deadLetterOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Pull Mode Health Section */}
+      {pullModeHealth && pullModeHealth.patterns.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div
+              className="flex items-center justify-between cursor-pointer"
+              onClick={() => setPullModeOpen(!pullModeOpen)}
+            >
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                <CardTitle className="text-lg">Pull Mode Detection</CardTitle>
+                <span className="text-sm font-normal text-muted-foreground">
+                  ({pullModeHealth.patterns.length})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    loadPullModeHealth()
+                  }}
+                  disabled={isLoadingPullMode}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingPullMode ? 'animate-spin' : ''}`} />
+                </Button>
+                {pullModeOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+            </div>
+            <CardDescription>Health metrics for pull-mode index patterns that query OpenSearch on a schedule.</CardDescription>
+          </CardHeader>
+          {pullModeOpen && (
+            <CardContent>
+              {/* Summary Stats */}
+              <div className="grid gap-4 md:grid-cols-4 mb-6">
+                <div className="p-4 border rounded-lg">
+                  <div className="text-2xl font-bold">{pullModeHealth.summary.total_polls.toLocaleString()}</div>
+                  <div className="text-sm text-muted-foreground">Total Polls</div>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <div className="text-2xl font-bold">{pullModeHealth.summary.total_matches.toLocaleString()}</div>
+                  <div className="text-sm text-muted-foreground">Total Matches</div>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <div className="text-2xl font-bold">{formatNumber(pullModeHealth.summary.total_events_scanned)}</div>
+                  <div className="text-sm text-muted-foreground">Events Scanned</div>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <StatusIcon status={pullModeHealth.overall_status} />
+                    <div>
+                      <div className="text-lg font-bold capitalize">{pullModeHealth.overall_status}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {pullModeHealth.summary.healthy_patterns} healthy, {pullModeHealth.summary.warning_patterns + pullModeHealth.summary.critical_patterns} issues
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <CardDescription>Messages that failed processing and require manual review or retry.</CardDescription>
-            </CardHeader>
-            {deadLetterOpen && (
-              <CardContent>
-                {deadLetterMessages.length > 0 ? (
-                  <div className="space-y-2">
-                    {deadLetterMessages.map((message) => (
-                      <div key={message.id} className="p-3 border rounded-lg text-sm">
-                        <div className="flex justify-between items-start">
-                          <div className="space-y-1">
-                            <div className="font-mono text-xs text-muted-foreground">{message.id}</div>
-                            <div className="text-red-500">{message.reason}</div>
-                            <div className="text-muted-foreground">
-                              From: <span className="font-mono">{message.original_stream}</span>
+
+              {/* Pattern Table - similar to Queue Depths by Index */}
+              <div className="border rounded-lg">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="text-left p-3 font-medium">Index</th>
+                      <th className="text-left p-3 font-medium">Last Poll</th>
+                      <th className="text-left p-3 font-medium">Data Freshness</th>
+                      <th className="text-right p-3 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pullModeHealth.patterns.map((pattern) => (
+                      <tr key={pattern.index_pattern_id} className="border-b last:border-0">
+                        <td className="p-3">
+                          <div className="font-medium">{pattern.index_pattern_name}</div>
+                          <div className="text-xs text-muted-foreground font-mono">{pattern.pattern}</div>
+                        </td>
+                        <td className="p-3 text-muted-foreground">
+                          {pattern.last_poll_at ? (
+                            <TimestampTooltip timestamp={pattern.last_poll_at}>
+                              <span>{formatDateTime(pattern.last_poll_at)}</span>
+                            </TimestampTooltip>
+                          ) : 'Never'}
+                        </td>
+                        <td className="p-3">
+                          {pattern.data_freshness ? (
+                            <div className="flex items-center gap-1">
+                              {pattern.data_freshness.status === 'fresh' ? (
+                                <>
+                                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                  <span className="text-green-600 dark:text-green-500">
+                                    Fresh ({pattern.data_freshness.age_minutes}m ago)
+                                  </span>
+                                </>
+                              ) : pattern.data_freshness.status === 'stale' ? (
+                                <>
+                                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                                  <span className="text-yellow-600 dark:text-yellow-500">
+                                    Stale ({pattern.data_freshness.age_minutes}m ago)
+                                  </span>
+                                </>
+                              ) : pattern.data_freshness.status === 'no_data' ? (
+                                <>
+                                  <AlertCircle className="h-4 w-4 text-red-600" />
+                                  <span className="text-red-600 dark:text-red-500">No events</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">
+                                    {pattern.data_freshness.message || 'Unknown'}
+                                  </span>
+                                </>
+                              )}
                             </div>
-                          </div>
-                          {hasPermission('manage_settings') && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => deleteDeadLetterMessage(message.id)}
-                            >
-                              <XCircle className="h-4 w-4" />
-                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
                           )}
-                        </div>
-                      </div>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <StatusIcon status={pattern.status} />
+                            <span className={`capitalize ${statusColors[pattern.status]}`}>
+                              {pattern.status}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
                     ))}
-                    {deadLetterCount > deadLetterMessages.length && (
-                      <div className="text-center text-sm text-muted-foreground pt-2">
-                        Showing {deadLetterMessages.length} of {deadLetterCount} messages
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No messages in dead letter queue
-                  </div>
-                )}
-              </CardContent>
-            )}
-          </Card>
-        </div>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {/* Index Pattern Health Cards */}
       <Card>
@@ -691,79 +905,238 @@ export default function HealthPage() {
                   No index patterns configured. Add index patterns to see health data.
                 </div>
               ) : (
-                health.map((h) => (
-                  <Card key={h.index_pattern_id} className={statusBgColors[h.status]}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">{h.index_pattern_name}</CardTitle>
-                        <StatusIcon status={h.status} />
-                      </div>
-                      <p className="text-sm text-muted-foreground font-mono">{h.pattern}</p>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {/* Issues */}
-                      {h.issues.length > 0 && (
-                        <div className="space-y-1">
-                          {h.issues.map((issue, i) => (
-                            <p key={i} className="text-sm text-destructive flex items-center gap-1">
-                              <AlertCircle className="h-3 w-3" />
-                              {issue}
-                            </p>
-                          ))}
-                        </div>
-                      )}
+                health.map((h) => {
+                  // For pull mode, get the pull mode metrics
+                  const pullData = h.mode === 'pull'
+                    ? pullModeHealth?.patterns.find(p => p.index_pattern_id === h.index_pattern_id)
+                    : null
 
-                      {/* Metrics Grid */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Activity className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="text-muted-foreground">Logs/min</p>
-                            <p className="font-medium">{formatNumber(h.latest.logs_per_minute)}</p>
+                  return (
+                    <Card key={h.index_pattern_id} className={statusBgColors[h.status]}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CardTitle className="text-lg">{h.index_pattern_name}</CardTitle>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              h.mode === 'push'
+                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                                : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                            }`}>
+                              {h.mode}
+                            </span>
                           </div>
+                          {h.issues.length > 0 ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help">
+                                  <StatusIcon status={h.status} />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="max-w-xs">
+                                <ul className="list-disc list-inside text-sm space-y-1">
+                                  {h.issues.map((issue, i) => (
+                                    <li key={i}>{issue}</li>
+                                  ))}
+                                </ul>
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <StatusIcon status={h.status} />
+                          )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="text-muted-foreground">Detection Latency</p>
-                            <p className="font-medium">{((h.latest.avg_detection_latency_ms || 0) / 1000).toFixed(1)}s</p>
+                        <p className="text-sm text-muted-foreground font-mono">{h.pattern}</p>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {/* Issues */}
+                        {h.issues.length > 0 && (
+                          <div className="space-y-1">
+                            {h.issues.map((issue, i) => (
+                              <p key={i} className="text-sm text-destructive flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                {issue}
+                              </p>
+                            ))}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="text-muted-foreground">OpenSearch Query</p>
-                            <p className="font-medium">{((h.latest.avg_opensearch_query_latency_ms || 0) / 1000).toFixed(1)}s</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Bell className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="text-muted-foreground">Alerts/hr</p>
-                            <p className="font-medium">{formatNumber(h.latest.alerts_per_hour)}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Zap className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="text-muted-foreground">Queue</p>
-                            <p className="font-medium">{formatNumber(h.latest.queue_depth)}</p>
-                          </div>
-                        </div>
-                      </div>
+                        )}
 
-                      {/* 24h Totals */}
-                      <div className="pt-2 border-t text-xs text-muted-foreground">
-                        <span>24h: </span>
-                        <span>{formatNumber(h.totals_24h.logs_received)} logs</span>
-                        <span className="mx-1">|</span>
-                        <span>{formatNumber(h.totals_24h.logs_errored)} errors</span>
-                        <span className="mx-1">|</span>
-                        <span>{formatNumber(h.totals_24h.alerts_generated)} alerts</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
+                        {/* Notes (informational, not warnings) */}
+                        {'notes' in h && (h as { notes?: string[] }).notes && (h as { notes?: string[] }).notes!.length > 0 && (
+                          <div className="space-y-1">
+                            {(h as { notes?: string[] }).notes!.map((note, i) => (
+                              <p key={i} className="text-sm text-muted-foreground flex items-center gap-1">
+                                <Info className="h-3 w-3" />
+                                {note}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Mode-specific Metrics Grid */}
+                        {h.mode === 'push' ? (
+                          // Push Mode Metrics
+                          <>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                              <div className="flex items-center gap-2">
+                                <Activity className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Logs/min</p>
+                                  <p className="font-medium">{formatNumber(h.latest.logs_per_minute)}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Detection Latency</p>
+                                  <p className="font-medium">{((h.latest.avg_detection_latency_ms || 0) / 1000).toFixed(1)}s</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">OpenSearch Query</p>
+                                  <p className="font-medium">{((h.latest.avg_opensearch_query_latency_ms || 0) / 1000).toFixed(1)}s</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Bell className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Alerts/hr</p>
+                                  <p className="font-medium">{formatNumber(h.latest.alerts_per_hour)}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Zap className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Queue</p>
+                                  <p className="font-medium">{formatNumber(h.latest.queue_depth)}</p>
+                                </div>
+                              </div>
+                            </div>
+                            {/* 24h Totals - Push Mode */}
+                            <div className="pt-2 border-t text-xs text-muted-foreground">
+                              <span>24h: </span>
+                              <span>{formatNumber(h.totals_24h.logs_received)} logs</span>
+                              <span className="mx-1">|</span>
+                              <span>{formatNumber(h.totals_24h.logs_errored)} errors</span>
+                              <span className="mx-1">|</span>
+                              <span>{formatNumber(h.totals_24h.alerts_generated)} alerts</span>
+                            </div>
+                          </>
+                        ) : (
+                          // Pull Mode Metrics
+                          <>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                              <div className="flex items-center gap-2">
+                                <Activity className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Matches/poll</p>
+                                  <p className="font-medium">
+                                    {pullData?.metrics.total_polls
+                                      ? formatNumber(Math.round(pullData.metrics.total_matches / pullData.metrics.total_polls))
+                                      : '-'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Detection Latency</p>
+                                  <p className="font-medium">{((h.latest.avg_detection_latency_ms || 0) / 1000).toFixed(1)}s</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">OpenSearch Query</p>
+                                  <p className="font-medium">
+                                    {pullData?.metrics.avg_poll_duration_ms
+                                      ? `${(pullData.metrics.avg_poll_duration_ms / 1000).toFixed(1)}s`
+                                      : '-'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Bell className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Alerts/hr</p>
+                                  <p className="font-medium">{formatNumber(h.latest.alerts_per_hour)}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Last Poll</p>
+                                  <p className="font-medium">
+                                    {pullData?.last_poll_at ? (
+                                      <TimestampTooltip timestamp={pullData.last_poll_at}>
+                                        <span>{formatDateTime(pullData.last_poll_at)}</span>
+                                      </TimestampTooltip>
+                                    ) : 'Never'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="text-muted-foreground">Success Rate</p>
+                                  <p className="font-medium">{pullData?.metrics.success_rate ?? 0}%</p>
+                                </div>
+                              </div>
+                            </div>
+                            {/* Data Freshness Status */}
+                            {pullData?.data_freshness && (
+                              <div className="pt-2 border-t">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Data Freshness:</span>
+                                  {pullData.data_freshness.status === 'fresh' ? (
+                                    <>
+                                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                      <span className="text-sm text-green-600 dark:text-green-500">
+                                        Fresh (last event {pullData.data_freshness.age_minutes}m ago)
+                                      </span>
+                                    </>
+                                  ) : pullData.data_freshness.status === 'stale' ? (
+                                    <>
+                                      <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                                      <span className="text-sm text-yellow-600 dark:text-yellow-500">
+                                        Stale - Last event was {pullData.data_freshness.age_minutes} minutes ago
+                                      </span>
+                                    </>
+                                  ) : pullData.data_freshness.status === 'no_data' ? (
+                                    <>
+                                      <AlertCircle className="h-4 w-4 text-red-600" />
+                                      <span className="text-sm text-red-600 dark:text-red-500">No events found in index</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                                      <span className="text-sm text-muted-foreground">{pullData.data_freshness.message || 'Unknown status'}</span>
+                                    </>
+                                  )}
+                                </div>
+                                {/* Helper text when stale */}
+                                {pullData.data_freshness.status === 'stale' && (
+                                  <p className="text-xs text-muted-foreground ml-6 mt-1">
+                                    Polling is working but no new events in index. Check your log shipper configuration.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                            {/* 24h Totals - Pull Mode */}
+                            <div className="pt-2 border-t text-xs text-muted-foreground">
+                              <span>Total: </span>
+                              <span>{formatNumber(pullData?.metrics.total_polls ?? 0)} polls</span>
+                              <span className="mx-1">|</span>
+                              <span>{formatNumber(pullData?.metrics.failed_polls ?? 0)} failures</span>
+                              <span className="mx-1">|</span>
+                              <span>{formatNumber(h.totals_24h.alerts_generated)} alerts</span>
+                            </div>
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )
+                })
               )}
             </div>
           </CardContent>

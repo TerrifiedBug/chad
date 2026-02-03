@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.index_pattern import IndexPattern
 from app.services.geoip import geoip_service
 from app.services.settings import get_setting
+from app.services.system_log import LogCategory, system_log_service
 from app.services.ti import TIEnrichmentManager, TIIndicatorType
 
 logger = logging.getLogger(__name__)
@@ -309,6 +310,13 @@ async def _enrich_ti(
                         ti_enrichment["indicators"].append(result_dict)
                 except Exception as e:
                     logger.warning(f"TI enrichment failed for {value}: {e}")
+                    await system_log_service.log_warning(
+                        db,
+                        category=LogCategory.INTEGRATIONS,
+                        service="enrichment",
+                        message=f"TI enrichment failed for indicator: {value}",
+                        details={"error": str(e), "error_type": type(e).__name__, "indicator": value}
+                    )
 
             # Track which sources were used
             if source_name not in ti_enrichment["sources_used"]:
@@ -320,3 +328,10 @@ async def _enrich_ti(
 
     except Exception as e:
         logger.error(f"TI enrichment error: {e}")
+        await system_log_service.log_error(
+            db,
+            category=LogCategory.INTEGRATIONS,
+            service="enrichment",
+            message=f"TI enrichment operation failed: {str(e)}",
+            details={"error": str(e), "error_type": type(e).__name__}
+        )

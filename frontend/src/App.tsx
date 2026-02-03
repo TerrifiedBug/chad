@@ -1,9 +1,10 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
+import { ModeProvider } from '@/hooks/useMode'
 import { ToastProvider } from '@/components/ui/toast-provider'
 import { AppLayout } from '@/components/AppLayout'
-import { Header } from '@/components/Header'
+import { AppHeader } from '@/components/AppHeader'
 import { ProtectedRoute } from '@/components/protected-route'
 import SetupPage from '@/pages/Setup'
 import LoginPage from '@/pages/Login'
@@ -12,19 +13,21 @@ import Dashboard from '@/pages/Dashboard'
 import RulesPage from '@/pages/Rules'
 import RuleEditorPage from '@/pages/RuleEditor'
 import IndexPatternsPage from '@/pages/IndexPatterns'
+import IndexPatternDetailPage from '@/pages/IndexPatternDetail'
 import AlertsPage from '@/pages/Alerts'
 import AlertDetailPage from '@/pages/AlertDetail'
 import SettingsPage from '@/pages/Settings'
 import UsersPage from '@/pages/Users'
+import PermissionsPage from '@/pages/Permissions'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
 import SigmaHQPage from '@/pages/SigmaHQ'
 import AuditLogPage from '@/pages/AuditLog'
+import SystemLogsPage from '@/pages/SystemLogs'
 import HealthPage from '@/pages/Health'
 import FieldMappingsPage from '@/pages/FieldMappings'
 import AttackMatrixPage from '@/pages/AttackMatrix'
 import AccountPage from '@/pages/Account'
-import CorrelationRulesPage from '@/pages/CorrelationRules'
 import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
 import LiveAlertFeedPage from '@/pages/LiveAlertFeed'
 
@@ -49,10 +52,49 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-  const { setupCompleted, isLoading, isAuthenticated, isOpenSearchConfigured } = useAuth()
+  const { setupCompleted, isLoading, isStartingUp, connectionFailed, isAuthenticated, isOpenSearchConfigured, retryConnection } = useAuth()
 
-  if (isLoading) {
-    return <div className="flex h-screen items-center justify-center">Loading...</div>
+  if (isLoading || isStartingUp) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
+          <p className="text-muted-foreground">
+            {isStartingUp ? 'Application starting up...' : 'Loading...'}
+          </p>
+          {isStartingUp && (
+            <p className="text-sm text-muted-foreground">
+              Please wait while the backend initializes
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Connection failed after all retries - show error with retry button
+  if (connectionFailed) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-center space-y-4 max-w-md px-4">
+          <div className="h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <svg className="h-6 w-6 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold">Unable to Connect</h2>
+          <p className="text-muted-foreground">
+            Could not connect to the backend server. The server may still be starting up or may be unavailable.
+          </p>
+          <button
+            onClick={retryConnection}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    )
   }
 
   // Step 1: Initial setup (create admin account)
@@ -68,10 +110,12 @@ function AppRoutes() {
   if (isAuthenticated && !isOpenSearchConfigured) {
     return (
       <div className="min-h-screen bg-background">
-        <Header />
-        <Routes>
-          <Route path="*" element={<OpenSearchWizard />} />
-        </Routes>
+        <AppHeader />
+        <main className="px-6 py-8 mx-auto max-w-screen-2xl">
+          <Routes>
+            <Route path="*" element={<OpenSearchWizard />} />
+          </Routes>
+        </main>
       </div>
     )
   }
@@ -99,11 +143,8 @@ function AppRoutes() {
           <AppLayout><RuleEditorPage /></AppLayout>
         </AuthRoute>
       } />
-      <Route path="/correlation" element={
-        <AuthRoute>
-          <AppLayout><CorrelationRulesPage /></AppLayout>
-        </AuthRoute>
-      } />
+      {/* Redirect old /correlation URL to unified Rules page with tab */}
+      <Route path="/correlation" element={<Navigate to="/rules?tab=correlation" replace />} />
       <Route path="/correlation/new" element={
         <ProtectedRoute permission="manage_correlation">
           <AppLayout><CorrelationRuleEditorPage /></AppLayout>
@@ -117,6 +158,16 @@ function AppRoutes() {
       <Route path="/index-patterns" element={
         <ProtectedRoute permission="manage_index_config">
           <AppLayout><IndexPatternsPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/index-patterns/new" element={
+        <ProtectedRoute permission="manage_index_config">
+          <AppLayout><IndexPatternDetailPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/index-patterns/:id" element={
+        <ProtectedRoute permission="manage_index_config">
+          <AppLayout><IndexPatternDetailPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/alerts" element={
@@ -144,9 +195,19 @@ function AppRoutes() {
           <AppLayout><UsersPage /></AppLayout>
         </ProtectedRoute>
       } />
+      <Route path="/settings/permissions" element={
+        <ProtectedRoute permission="manage_settings">
+          <AppLayout><PermissionsPage /></AppLayout>
+        </ProtectedRoute>
+      } />
       <Route path="/settings/audit" element={
         <ProtectedRoute permission="view_audit">
           <AppLayout><AuditLogPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/settings/system-logs" element={
+        <ProtectedRoute permission="view_system_logs">
+          <AppLayout><SystemLogsPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/change-password" element={
@@ -199,7 +260,9 @@ export default function App() {
     <ThemeProvider defaultTheme="system" storageKey="chad-ui-theme">
       <ToastProvider>
         <AuthProvider>
-          <AppRoutes />
+          <ModeProvider>
+            <AppRoutes />
+          </ModeProvider>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>

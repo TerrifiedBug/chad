@@ -1,0 +1,41 @@
+name: Cleanup Container Images
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'  # Weekly on Sunday at 3 AM UTC
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    strategy:
+      matrix:
+        package: [chad-frontend, chad-backend]
+
+    steps:
+      - name: Delete untagged images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ matrix.package }}
+          package-type: container
+          delete-only-untagged-versions: true
+
+      - name: Delete old dev/RC/SHA builds (keep last 5)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ matrix.package }}
+          package-type: container
+          min-versions-to-keep: 5
+          # Keep release tags only (v1.2.3, 1.2.3, 1.2)
+          ignore-versions: '^(v?\d+\.\d+\.\d+|\d+\.\d+)$'
+
+      - name: Summary
+        run: |
+          echo "## Cleanup complete for ${{ matrix.package }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Deleted all untagged images" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Kept all release tags (v*.*.*, *.*.*)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Kept last 5 dev/custom builds" >> $GITHUB_STEP_SUMMARY

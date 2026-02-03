@@ -1,7 +1,7 @@
 """Tests for health metrics and ATT&CK coverage functionality."""
 
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -34,9 +34,9 @@ class TestAlertCountQueries:
         # Verify OpenSearch count was called
         mock_os.count.assert_called_once()
 
-        # Get the query that was passed
+        # Get the query that was passed (uses keyword arguments)
         call_args = mock_os.count.call_args
-        query_body = call_args[1][1]  # Second positional arg is the body dict
+        query_body = call_args.kwargs["body"]
 
         # Verify it queries created_at, not @timestamp
         assert "query" in query_body
@@ -57,7 +57,7 @@ class TestAlertCountQueries:
 
         # Verify the query uses naive datetime (no timezone suffix)
         call_args = mock_os.count.call_args
-        query_body = call_args[1][1]
+        query_body = call_args.kwargs["body"]
         gte_value = query_body["query"]["range"]["created_at"]["gte"]
 
         # Naive datetime doesn't have +00:00 suffix

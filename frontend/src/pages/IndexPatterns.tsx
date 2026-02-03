@@ -1,21 +1,13 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   indexPatternsApi,
   IndexPattern,
-  IndexPatternValidateResponse,
-  TIConfig,
-  TI_SOURCE_INFO,
-  TI_INDICATOR_TYPE_INFO,
-  TI_SOURCE_SUPPORTED_TYPES,
-  TISourceType,
-  TIIndicatorType,
-  TISourceConfigForPattern,
-  tiApi,
   healthApi,
+  IndexHealth,
   HealthStatus,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Table,
@@ -33,15 +25,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Switch } from '@/components/ui/switch'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Plus, Pencil, Trash2, Check, X, Loader2, Copy, Eye, EyeOff, RefreshCw, Key, ChevronDown, ChevronUp, Globe, Shield, HeartPulse, CheckCircle2, AlertTriangle, AlertCircle, Database } from 'lucide-react'
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { Plus, Trash2, Check, Loader2, Copy, Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle, Database } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -57,81 +47,31 @@ const HealthStatusIcon = ({ status }: { status: HealthStatus }) => {
   }
 }
 
+// Format relative time (e.g., "2 hours ago", "3 days ago")
+const formatRelativeTime = (dateString: string): string => {
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
+
+  if (diffSec < 60) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffHour < 24) return `${diffHour}h ago`
+  if (diffDay < 7) return `${diffDay}d ago`
+
+  return date.toLocaleDateString()
+}
+
 export default function IndexPatternsPage() {
+  const navigate = useNavigate()
+
   const [patterns, setPatterns] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
-  const [healthData, setHealthData] = useState<Record<string, HealthStatus>>({})
-
-  // Dialog state
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingPattern, setEditingPattern] = useState<IndexPattern | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
-
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    pattern: '',
-    percolator_index: '',
-    description: '',
-  })
-
-  // Health alerting form state
-  const [healthAlerting, setHealthAlerting] = useState({
-    enabled: true,
-    noDataMinutes: null as number | null,
-    errorRatePercent: null as number | null,
-    latencyMs: null as number | null,
-  })
-
-  // Health monitoring overrides state
-  const [enableHealthAlerting, setEnableHealthAlerting] = useState(true)
-  const [healthOverrides, setHealthOverrides] = useState({
-    detection_latency_warning_seconds: '',
-    detection_latency_critical_seconds: '',
-    error_rate_percent: '',
-    no_data_minutes: '',
-    queue_warning: '',
-    queue_critical: '',
-  })
-  const [globalDefaults, setGlobalDefaults] = useState({
-    detection_latency_warning: 2,
-    detection_latency_critical: 10,
-    error_rate_percent: 5,
-    no_data_minutes: 15,
-    queue_warning: 10000,
-    queue_critical: 100000,
-  })
-
-  // GeoIP enrichment state
-  const [geoipFields, setGeoipFields] = useState<string[]>([])
-
-  // TI enrichment state
-  const [tiConfig, setTiConfig] = useState<TIConfig>({})
-  const [tiFieldInputs, setTiFieldInputs] = useState<Record<string, { field: string; type: TIIndicatorType }>>({})
-  const [availableTiSources, setAvailableTiSources] = useState<TISourceType[]>([])
-
-  // Toggle for health settings section
-  const [showHealthSettings, setShowHealthSettings] = useState(false)
-  const [showGeoipSettings, setShowGeoipSettings] = useState(false)
-  const [showTiSettings, setShowTiSettings] = useState(false)
-  const [showSecuritySettings, setShowSecuritySettings] = useState(false)
-
-  // IP Allowlist state
-  const [allowedIps, setAllowedIps] = useState<string[]>([])
-  const [newIpEntry, setNewIpEntry] = useState('')
-  const [ipError, setIpError] = useState('')
-
-  // Rate limiting state
-  const [rateLimitEnabled, setRateLimitEnabled] = useState(false)
-  const [rateLimitRequests, setRateLimitRequests] = useState<number | null>(100)
-  const [rateLimitEvents, setRateLimitEvents] = useState<number | null>(50000)
-
-  // Validation state
-  const [isValidating, setIsValidating] = useState(false)
-  const [validationResult, setValidationResult] =
-    useState<IndexPatternValidateResponse | null>(null)
+  const [healthData, setHealthData] = useState<Record<string, IndexHealth>>({})
 
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -149,24 +89,6 @@ export default function IndexPatternsPage() {
   // Token details dialog
   const [tokenDetailsPattern, setTokenDetailsPattern] = useState<IndexPattern | null>(null)
 
-  // Track if user has manually edited percolator_index
-  const [percolatorIndexManuallyEdited, setPercolatorIndexManuallyEdited] = useState(false)
-
-  // Load functions - must be declared before useEffect that uses them
-  const loadTiSources = useCallback(async () => {
-    try {
-      const status = await tiApi.listSources()
-      // Get sources that have API keys configured (sources is an array)
-      const configuredSources = status.sources
-        .filter(s => s.has_api_key)
-        .map(s => s.source_type as TISourceType)
-      setAvailableTiSources(configuredSources)
-    } catch {
-      // If TI sources fail to load, continue without them
-      setAvailableTiSources([])
-    }
-  }, [])
-
   const loadPatterns = useCallback(async () => {
     setIsLoading(true)
     setError('')
@@ -183,34 +105,14 @@ export default function IndexPatternsPage() {
 
   useEffect(() => {
     loadPatterns()
-    loadTiSources()
-    loadGlobalDefaults()
-  }, [loadPatterns, loadTiSources])
-
-  // Load global health defaults
-  const loadGlobalDefaults = async () => {
-    try {
-      const settings = await healthApi.getSettings()
-      setGlobalDefaults({
-        detection_latency_warning: settings.detection_latency_warning_ms / 1000, // Convert ms to seconds
-        detection_latency_critical: settings.detection_latency_critical_ms / 1000,
-        error_rate_percent: settings.error_rate_percent,
-        no_data_minutes: settings.no_data_minutes,
-        queue_warning: settings.queue_warning,
-        queue_critical: settings.queue_critical,
-      })
-    } catch (err) {
-      console.error('Failed to load global health defaults:', err)
-      // Continue with hardcoded defaults
-    }
-  }
+  }, [loadPatterns])
 
   const loadHealthData = async () => {
     try {
       const health = await healthApi.listIndices()
-      const healthMap: Record<string, HealthStatus> = {}
+      const healthMap: Record<string, IndexHealth> = {}
       for (const h of health) {
-        healthMap[h.index_pattern_id] = h.status
+        healthMap[h.index_pattern_id] = h
       }
       setHealthData(healthMap)
     } catch {
@@ -218,200 +120,13 @@ export default function IndexPatternsPage() {
     }
   }
 
-  const openCreateDialog = () => {
-    setEditingPattern(null)
-    setFormData({
-      name: '',
-      pattern: '',
-      percolator_index: '',
-      description: '',
-    })
-    setHealthAlerting({
-      enabled: true,
-      noDataMinutes: null,
-      errorRatePercent: null,
-      latencyMs: null,
-    })
-    setEnableHealthAlerting(true)
-    setHealthOverrides({
-      detection_latency_warning_seconds: '',
-      detection_latency_critical_seconds: '',
-      error_rate_percent: '',
-      no_data_minutes: '',
-      queue_warning: '',
-      queue_critical: '',
-    })
-    setGeoipFields([])
-    setTiConfig({})
-    setTiFieldInputs({})
-    setShowHealthSettings(false)
-    setShowGeoipSettings(false)
-    setShowTiSettings(false)
-    setShowSecuritySettings(false)
-    setAllowedIps([])
-    setNewIpEntry('')
-    setIpError('')
-    setRateLimitEnabled(false)
-    setRateLimitRequests(100)
-    setRateLimitEvents(50000)
-    setValidationResult(null)
-    setPercolatorIndexManuallyEdited(false)
-    setSaveError('')
-    setIsDialogOpen(true)
+  // Navigation handlers
+  const handleCreatePattern = () => {
+    navigate('/index-patterns/new')
   }
 
-  const openEditDialog = async (pattern: IndexPattern) => {
-    setEditingPattern(pattern)
-    setFormData({
-      name: pattern.name,
-      pattern: pattern.pattern,
-      percolator_index: pattern.percolator_index,
-      description: pattern.description || '',
-    })
-    setHealthAlerting({
-      enabled: pattern.health_alerting_enabled,
-      noDataMinutes: pattern.health_no_data_minutes,
-      errorRatePercent: pattern.health_error_rate_percent,
-      latencyMs: pattern.health_latency_ms,
-    })
-    setEnableHealthAlerting(pattern.health_alerting_enabled || false)
-    // TODO: Load health_overrides from pattern when backend integration is ready
-    setHealthOverrides({
-      detection_latency_warning_seconds: '',
-      detection_latency_critical_seconds: '',
-      error_rate_percent: '',
-      no_data_minutes: '',
-      queue_warning: '',
-      queue_critical: '',
-    })
-    setGeoipFields(pattern.geoip_fields || [])
-    // Load TI config from pattern
-    const patternTiConfig: TIConfig = {}
-    if (pattern.ti_config) {
-      for (const [source, config] of Object.entries(pattern.ti_config)) {
-        patternTiConfig[source] = {
-          enabled: config.enabled ?? false,
-          fields: config.fields ?? [],
-        }
-      }
-    }
-    setTiConfig(patternTiConfig)
-    setTiFieldInputs({})
-    setShowHealthSettings(false)
-    setShowGeoipSettings(pattern.geoip_fields && pattern.geoip_fields.length > 0)
-    // Show TI settings if any source is enabled
-    const hasTiEnabled = Object.values(patternTiConfig).some(c => c.enabled)
-    setShowTiSettings(hasTiEnabled)
-    // Security settings (IP allowlist and rate limiting)
-    setAllowedIps(pattern.allowed_ips || [])
-    setNewIpEntry('')
-    setIpError('')
-    setRateLimitEnabled(pattern.rate_limit_enabled || false)
-    setRateLimitRequests(pattern.rate_limit_requests_per_minute || 100)
-    setRateLimitEvents(pattern.rate_limit_events_per_minute || 50000)
-    // Show security settings if any are configured
-    const hasSecuritySettings = (pattern.allowed_ips && pattern.allowed_ips.length > 0) || pattern.rate_limit_enabled
-    setShowSecuritySettings(hasSecuritySettings || false)
-    setValidationResult(null)
-    setPercolatorIndexManuallyEdited(true) // Don't auto-generate for existing patterns
-    setSaveError('')
-    setIsDialogOpen(true)
-
-    // Auto-validate to load available fields for enrichment configuration
-    if (pattern.pattern) {
-      setIsValidating(true)
-      try {
-        const result = await indexPatternsApi.validate(pattern.pattern)
-        setValidationResult(result)
-      } catch {
-        // Silently fail - user can manually validate if needed
-      } finally {
-        setIsValidating(false)
-      }
-    }
-  }
-
-  const handleValidate = async () => {
-    if (!formData.pattern) return
-
-    setIsValidating(true)
-    try {
-      const result = await indexPatternsApi.validate(formData.pattern)
-      setValidationResult(result)
-    } catch (err) {
-      setValidationResult({
-        valid: false,
-        indices: [],
-        total_docs: 0,
-        sample_fields: [],
-        error: err instanceof Error ? err.message : 'Validation failed',
-      })
-    } finally {
-      setIsValidating(false)
-    }
-  }
-
-  const handleSave = async () => {
-    if (!formData.name || !formData.pattern || !formData.percolator_index) {
-      return
-    }
-
-    setIsSaving(true)
-    setSaveError('')
-    try {
-      const healthData = {
-        health_alerting_enabled: enableHealthAlerting,
-        health_no_data_minutes: healthAlerting.noDataMinutes,
-        health_error_rate_percent: healthAlerting.errorRatePercent,
-        health_latency_ms: healthAlerting.latencyMs,
-      }
-
-      // Build TI config - only include sources with fields configured
-      const tiConfigToSave: TIConfig = {}
-      for (const [source, config] of Object.entries(tiConfig)) {
-        if (config.enabled || config.fields.length > 0) {
-          tiConfigToSave[source] = config
-        }
-      }
-
-      // Security settings
-      const securityData = {
-        allowed_ips: allowedIps.length > 0 ? allowedIps : null,
-        rate_limit_enabled: rateLimitEnabled,
-        rate_limit_requests_per_minute: rateLimitEnabled ? rateLimitRequests : null,
-        rate_limit_events_per_minute: rateLimitEnabled ? rateLimitEvents : null,
-      }
-
-      if (editingPattern) {
-        await indexPatternsApi.update(editingPattern.id, {
-          name: formData.name,
-          pattern: formData.pattern,
-          percolator_index: formData.percolator_index,
-          description: formData.description || undefined,
-          ...healthData,
-          geoip_fields: geoipFields,
-          ti_config: Object.keys(tiConfigToSave).length > 0 ? tiConfigToSave : null,
-          ...securityData,
-        })
-      } else {
-        await indexPatternsApi.create({
-          name: formData.name,
-          pattern: formData.pattern,
-          percolator_index: formData.percolator_index,
-          description: formData.description || undefined,
-          ...healthData,
-          geoip_fields: geoipFields,
-          ti_config: Object.keys(tiConfigToSave).length > 0 ? tiConfigToSave : null,
-          ...securityData,
-        })
-      }
-      setIsDialogOpen(false)
-      loadPatterns()
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Save failed')
-    } finally {
-      setIsSaving(false)
-    }
+  const handleOpenPattern = (patternId: string) => {
+    navigate(`/index-patterns/${patternId}`)
   }
 
   const handleDelete = async () => {
@@ -483,28 +198,16 @@ export default function IndexPatternsPage() {
     }
   }
 
-  // Auto-generate percolator index name from pattern
-  const handlePatternChange = (value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      pattern: value,
-      // Only auto-generate if user hasn't manually edited percolator_index
-      percolator_index: percolatorIndexManuallyEdited
-        ? prev.percolator_index
-        : `chad-percolator-${value.replace(/\*/g, '').replace(/-$/, '')}`,
-    }))
-    setValidationResult(null)
-  }
-
   const getIndexSuffix = (percolatorIndex: string) => {
     return percolatorIndex.replace(/^chad-percolator-/, '')
   }
 
   return (
+    <TooltipProvider>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Index Patterns</h1>
-        <Button onClick={openCreateDialog}>
+        <Button onClick={handleCreatePattern}>
           <Plus className="h-4 w-4 mr-2" />
           Create Pattern
         </Button>
@@ -524,7 +227,7 @@ export default function IndexPatternsPage() {
           title="No index patterns"
           description="Create your first index pattern to start matching rules against your OpenSearch indices."
           action={
-            <Button onClick={openCreateDialog}>
+            <Button onClick={handleCreatePattern}>
               <Plus className="h-4 w-4 mr-2" />
               Create Pattern
             </Button>
@@ -537,17 +240,40 @@ export default function IndexPatternsPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Pattern</TableHead>
-                <TableHead>Percolator Index</TableHead>
-                <TableHead className="w-32">Actions</TableHead>
+                <TableHead>Mode</TableHead>
+                <TableHead>Last Edited By</TableHead>
+                <TableHead>Updated</TableHead>
+                <TableHead className="w-20">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {patterns.map((pattern) => (
-                <TableRow key={pattern.id}>
+                <TableRow
+                  key={pattern.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => handleOpenPattern(pattern.id)}
+                >
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       {healthData[pattern.id] && (
-                        <HealthStatusIcon status={healthData[pattern.id]} />
+                        healthData[pattern.id].issues.length > 0 ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="cursor-help">
+                                <HealthStatusIcon status={healthData[pattern.id].status} />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs">
+                              <ul className="list-disc list-inside text-sm space-y-1">
+                                {healthData[pattern.id].issues.map((issue, i) => (
+                                  <li key={i}>{issue}</li>
+                                ))}
+                              </ul>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <HealthStatusIcon status={healthData[pattern.id].status} />
+                        )
                       )}
                       {pattern.name}
                     </div>
@@ -555,27 +281,32 @@ export default function IndexPatternsPage() {
                   <TableCell className="font-mono text-sm">
                     {pattern.pattern}
                   </TableCell>
-                  <TableCell className="font-mono text-sm">
-                    {pattern.percolator_index}
+                  <TableCell>
+                    <Badge
+                      className={
+                        pattern.mode === 'push'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                          : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
+                      }
+                    >
+                      {pattern.mode === 'push' ? 'Push' : `Pull (${pattern.poll_interval_minutes}m)`}
+                    </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="View token & endpoint"
-                        onClick={() => setTokenDetailsPattern(pattern)}
-                      >
-                        <Key className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Edit pattern"
-                        onClick={() => openEditDialog(pattern)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {pattern.last_edited_by || '—'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className="text-sm text-muted-foreground"
+                      title={new Date(pattern.updated_at).toLocaleString()}
+                    >
+                      {formatRelativeTime(pattern.updated_at)}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -597,36 +328,100 @@ export default function IndexPatternsPage() {
       <Dialog open={!!tokenDetailsPattern} onOpenChange={() => setTokenDetailsPattern(null)}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Log Shipping Configuration</DialogTitle>
+            <DialogTitle>
+              {tokenDetailsPattern?.mode === 'pull' ? 'Pull Mode Configuration' : 'Log Shipping Configuration'}
+            </DialogTitle>
             <DialogDescription>
-              Use this token to authenticate log shipping requests for "{tokenDetailsPattern?.name}"
+              {tokenDetailsPattern?.mode === 'pull'
+                ? `This pattern polls OpenSearch every ${tokenDetailsPattern?.poll_interval_minutes} minutes for new logs.`
+                : `Use this token to authenticate log shipping requests for "${tokenDetailsPattern?.name}"`}
             </DialogDescription>
           </DialogHeader>
 
-          {tokenDetailsPattern && (
+          {tokenDetailsPattern && tokenDetailsPattern.mode === 'pull' && (
             <div className="space-y-4 py-4">
-              {/* Endpoint URL */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Endpoint URL</Label>
-                <div className="flex gap-2">
-                  <code className="flex-1 text-sm bg-muted p-2 rounded font-mono break-all">
-                    POST {window.location.origin}/api/logs/{getIndexSuffix(tokenDetailsPattern.percolator_index)}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => copyToClipboard(
-                      `${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}`,
-                      `${tokenDetailsPattern.id}-url`
-                    )}
-                  >
-                    {copiedToken === `${tokenDetailsPattern.id}-url` ? (
-                      <Check className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                  </Button>
+              <div className="p-3 bg-muted rounded-md space-y-2">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4" />
+                  <span className="font-medium text-sm">Pull Mode Active</span>
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  CHAD automatically queries OpenSearch for logs matching the pattern "{tokenDetailsPattern.pattern}"
+                  every {tokenDetailsPattern.poll_interval_minutes} minutes. No log shipping configuration is needed.
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                To change to push mode, edit this index pattern and select "Push" as the detection mode.
+              </p>
+            </div>
+          )}
+
+          {tokenDetailsPattern && tokenDetailsPattern.mode !== 'pull' && (
+            <div className="space-y-4 py-4">
+              {/* Fluentd Endpoints */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Fluentd Endpoints</Label>
+
+                {/* Standard (Synchronous) Endpoint */}
+                <div className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground font-medium">Standard (Synchronous)</div>
+                  <div className="flex gap-2">
+                    <code className="flex-1 text-sm bg-muted p-2 rounded font-mono break-all">
+                      POST {window.location.origin}/api/logs/{getIndexSuffix(tokenDetailsPattern.percolator_index)}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copyToClipboard(
+                        `${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}`,
+                        `${tokenDetailsPattern.id}-url-sync`
+                      )}
+                    >
+                      {copiedToken === `${tokenDetailsPattern.id}-url-sync` ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Returns 200 OK with match count after processing completes. Best for lower volume, real-time alerting, and testing.
+                  </p>
+                </div>
+
+                {/* Queue (Asynchronous) Endpoint - Recommended */}
+                <div className="space-y-1.5 p-3 border rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium">Queue (Asynchronous)</span>
+                    <span className="text-xs text-green-600 dark:text-green-400 font-medium">Recommended for Production</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <code className="flex-1 text-sm bg-muted p-2 rounded font-mono break-all">
+                      POST {window.location.origin}/api/logs/{getIndexSuffix(tokenDetailsPattern.percolator_index)}/queue
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copyToClipboard(
+                        `${window.location.origin}/api/logs/${getIndexSuffix(tokenDetailsPattern.percolator_index)}/queue`,
+                        `${tokenDetailsPattern.id}-url-queue`
+                      )}
+                    >
+                      {copiedToken === `${tokenDetailsPattern.id}-url-queue` ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Returns 202 Accepted immediately, processes in background. Best for high volume production deployments with backpressure handling, dead letter queue, and retry logic.
+                  </p>
+                </div>
+
+                <p className="text-xs text-muted-foreground italic">
+                  Both endpoints accept the same payload format. Use /queue for production deployments to handle traffic spikes gracefully.
+                </p>
               </div>
 
               {/* Auth Token */}
@@ -717,703 +512,6 @@ export default function IndexPatternsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>
-              {editingPattern ? 'Edit Index Pattern' : 'Create Index Pattern'}
-            </DialogTitle>
-            <DialogDescription>
-              Index patterns define which OpenSearch indices rules will match against.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4 overflow-y-auto flex-1">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="Windows Sysmon Logs"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="pattern">Index Pattern</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="pattern"
-                  value={formData.pattern}
-                  onChange={(e) => handlePatternChange(e.target.value)}
-                  placeholder="logs-windows-*"
-                  className="font-mono"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleValidate}
-                  disabled={isValidating || !formData.pattern}
-                >
-                  {isValidating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    'Validate'
-                  )}
-                </Button>
-              </div>
-              {validationResult && (
-                <div
-                  className={`text-sm p-2 rounded ${
-                    validationResult.valid
-                      ? 'bg-green-500/10 text-green-600'
-                      : 'bg-destructive/10 text-destructive'
-                  }`}
-                >
-                  {validationResult.valid ? (
-                    <div className="flex items-center gap-2">
-                      <Check className="h-4 w-4" />
-                      Found {validationResult.indices.length} indices,{' '}
-                      {validationResult.total_docs.toLocaleString()} documents
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <X className="h-4 w-4" />
-                      {validationResult.error || 'No matching indices found'}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="percolator">Percolator Index</Label>
-              <Input
-                id="percolator"
-                value={formData.percolator_index}
-                onChange={(e) => {
-                  setFormData({ ...formData, percolator_index: e.target.value })
-                  setPercolatorIndexManuallyEdited(true)
-                }}
-                placeholder="chad-percolator-windows"
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Where deployed rules will be stored in OpenSearch. Must start with "chad-percolator-".
-              </p>
-            </div>
-
-            {/* Dynamic Log Shipper Endpoint Info */}
-            {formData.percolator_index && formData.percolator_index.startsWith('chad-percolator-') && (
-              <div className="space-y-2 p-3 bg-muted rounded-md">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Log Shipper Endpoint</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => {
-                      const suffix = getIndexSuffix(formData.percolator_index)
-                      navigator.clipboard.writeText(`${window.location.origin}/api/logs/${suffix}`)
-                    }}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-                <code className="block text-xs bg-background p-2 rounded font-mono break-all">
-                  POST {window.location.origin}/api/logs/{getIndexSuffix(formData.percolator_index)}
-                </code>
-                <p className="text-xs text-muted-foreground">
-                  {editingPattern
-                    ? 'Use the auth token to authenticate requests to this endpoint.'
-                    : 'An auth token will be generated when you save this pattern.'}
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Input
-                id="description"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                placeholder="Windows event logs from Sysmon"
-              />
-            </div>
-
-            {/* Health Alerting Section */}
-            <div className="border rounded-lg">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
-                onClick={() => setShowHealthSettings(!showHealthSettings)}
-              >
-                <div className="flex items-center gap-2">
-                  <HeartPulse className="h-4 w-4" />
-                  <span className="font-medium text-sm">Health Alerting</span>
-                </div>
-                {showHealthSettings ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-              </button>
-
-              {showHealthSettings && (
-                <div className="p-3 pt-0 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="health-enabled" className="font-normal">Enable Health Alerting</Label>
-                      <p className="text-xs text-muted-foreground">Send alerts when thresholds are exceeded</p>
-                    </div>
-                    <Switch
-                      id="health-enabled"
-                      checked={enableHealthAlerting}
-                      onCheckedChange={setEnableHealthAlerting}
-                    />
-                  </div>
-
-                  {enableHealthAlerting && (
-                    <div className="space-y-6 pt-4 border-t">
-                      <p className="text-xs text-muted-foreground">
-                        Leave empty to use global defaults from the Health page.
-                      </p>
-
-                      {/* Detection Latency */}
-                      <div>
-                        <h4 className="text-sm font-medium mb-3">Detection Latency</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="detection-warning">Warning (seconds)</Label>
-                            <Input
-                              id="detection-warning"
-                              type="number"
-                              min="1"
-                              step="0.1"
-                              placeholder={`Global: ${globalDefaults.detection_latency_warning}`}
-                              value={healthOverrides.detection_latency_warning_seconds}
-                              onChange={(e) => setHealthOverrides({...healthOverrides, detection_latency_warning_seconds: e.target.value})}
-                            />
-                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.detection_latency_warning} seconds</p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="detection-critical">Critical (seconds)</Label>
-                            <Input
-                              id="detection-critical"
-                              type="number"
-                              min="1"
-                              step="0.1"
-                              placeholder={`Global: ${globalDefaults.detection_latency_critical}`}
-                              value={healthOverrides.detection_latency_critical_seconds}
-                              onChange={(e) => setHealthOverrides({...healthOverrides, detection_latency_critical_seconds: e.target.value})}
-                            />
-                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.detection_latency_critical} seconds</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Other Thresholds */}
-                      <div>
-                        <h4 className="text-sm font-medium mb-3">Other Thresholds</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="error-rate">Error Rate (%)</Label>
-                            <Input
-                              id="error-rate"
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              placeholder={`Global: ${globalDefaults.error_rate_percent}`}
-                              value={healthOverrides.error_rate_percent}
-                              onChange={(e) => setHealthOverrides({...healthOverrides, error_rate_percent: e.target.value})}
-                            />
-                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.error_rate_percent}%</p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="no-data">No Data (minutes)</Label>
-                            <Input
-                              id="no-data"
-                              type="number"
-                              min="1"
-                              placeholder={`Global: ${globalDefaults.no_data_minutes}`}
-                              value={healthOverrides.no_data_minutes}
-                              onChange={(e) => setHealthOverrides({...healthOverrides, no_data_minutes: e.target.value})}
-                            />
-                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.no_data_minutes} min</p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="queue-warning">Queue Warning</Label>
-                            <Input
-                              id="queue-warning"
-                              type="number"
-                              min="1"
-                              placeholder={`Global: ${globalDefaults.queue_warning}`}
-                              value={healthOverrides.queue_warning}
-                              onChange={(e) => setHealthOverrides({...healthOverrides, queue_warning: e.target.value})}
-                            />
-                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.queue_warning}</p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="queue-critical">Queue Critical</Label>
-                            <Input
-                              id="queue-critical"
-                              type="number"
-                              min="1"
-                              placeholder={`Global: ${globalDefaults.queue_critical}`}
-                              value={healthOverrides.queue_critical}
-                              onChange={(e) => setHealthOverrides({...healthOverrides, queue_critical: e.target.value})}
-                            />
-                            <p className="text-xs text-muted-foreground">Global: {globalDefaults.queue_critical}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* GeoIP Enrichment Section */}
-            <div className="border rounded-lg">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
-                onClick={() => setShowGeoipSettings(!showGeoipSettings)}
-              >
-                <div className="flex items-center gap-2">
-                  <Globe className="h-4 w-4" />
-                  <span className="font-medium text-sm">GeoIP Enrichment</span>
-                  {geoipFields.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {geoipFields.length} field{geoipFields.length > 1 ? 's' : ''}
-                    </Badge>
-                  )}
-                </div>
-                {showGeoipSettings ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-              </button>
-
-              {showGeoipSettings && (
-                <div className="p-3 pt-0 space-y-4">
-                  <p className="text-xs text-muted-foreground">
-                    Select IP address fields to enrich with geographic data. Click a field to add it.
-                  </p>
-
-                  <Select
-                    value=""
-                    onValueChange={(value) => {
-                      if (value && !geoipFields.includes(value)) {
-                        setGeoipFields([...geoipFields, value])
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="Click to add IP fields..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {validationResult?.sample_fields && validationResult.sample_fields.length > 0 ? (
-                        validationResult.sample_fields
-                          .filter(f => !geoipFields.includes(f))
-                          .map(field => (
-                            <SelectItem key={field} value={field}>
-                              {field}
-                            </SelectItem>
-                          ))
-                      ) : (
-                        <div className="p-2 text-xs text-muted-foreground">
-                          Validate pattern to see available fields
-                        </div>
-                      )}
-                    </SelectContent>
-                  </Select>
-
-                  {!validationResult?.sample_fields?.length && (
-                    <p className="text-xs text-amber-600">
-                      Validate the index pattern above to see available fields
-                    </p>
-                  )}
-
-                  {geoipFields.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {geoipFields.map((field) => (
-                        <Badge
-                          key={field}
-                          variant="outline"
-                          className="flex items-center gap-1 pr-1"
-                        >
-                          {field}
-                          <button
-                            type="button"
-                            onClick={() => setGeoipFields(geoipFields.filter(f => f !== field))}
-                            className="ml-1 hover:bg-muted rounded-full p-0.5"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-
-                  <p className="text-xs text-muted-foreground">
-                    Common fields: source.ip, destination.ip, client.ip, server.ip
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* TI Enrichment Section */}
-            <div className="border rounded-lg">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
-                onClick={() => setShowTiSettings(!showTiSettings)}
-              >
-                <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  <span className="font-medium text-sm">Threat Intelligence Enrichment</span>
-                  {Object.values(tiConfig).filter(c => c.enabled).length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {Object.values(tiConfig).filter(c => c.enabled).length} source{Object.values(tiConfig).filter(c => c.enabled).length > 1 ? 's' : ''}
-                    </Badge>
-                  )}
-                </div>
-                {showTiSettings ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-              </button>
-
-              {showTiSettings && (
-                <div className="p-3 pt-0 space-y-4">
-                  <p className="text-xs text-muted-foreground">
-                    Enable TI sources for this index pattern and specify which fields to enrich.
-                    TI sources must first be configured in Settings &gt; Integrations.
-                  </p>
-
-                  {availableTiSources.length === 0 ? (
-                    <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded">
-                      No TI sources configured. Configure API keys in Settings &gt; Integrations &gt; Threat Intelligence.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {availableTiSources.map((source) => {
-                        const sourceInfo = TI_SOURCE_INFO[source]
-                        const config: TISourceConfigForPattern = tiConfig[source] || { enabled: false, fields: [] }
-                        const supportedTypes = TI_SOURCE_SUPPORTED_TYPES[source] || ['ip']
-                        const defaultType = supportedTypes[0]
-                        const fieldInput = tiFieldInputs[source] || { field: '', type: defaultType }
-
-                        return (
-                          <div key={source} className="border rounded p-3 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <div className="font-medium text-sm">{sourceInfo.name}</div>
-                                <p className="text-xs text-muted-foreground">{sourceInfo.description}</p>
-                              </div>
-                              <Switch
-                                checked={config.enabled}
-                                onCheckedChange={(checked) => {
-                                  setTiConfig({
-                                    ...tiConfig,
-                                    [source]: { ...config, enabled: checked },
-                                  })
-                                }}
-                              />
-                            </div>
-
-                            {config.enabled && (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <Label className="text-xs">Add as:</Label>
-                                  {/* Type selector - sets the type for next added field */}
-                                  <Select
-                                    value={fieldInput.type}
-                                    onValueChange={(value) => setTiFieldInputs({
-                                      ...tiFieldInputs,
-                                      [source]: { ...fieldInput, type: value as TIIndicatorType },
-                                    })}
-                                  >
-                                    <SelectTrigger className="w-32 h-7 text-xs">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {(TI_SOURCE_SUPPORTED_TYPES[source] || []).map(type => (
-                                        <SelectItem key={type} value={type}>
-                                          {TI_INDICATOR_TYPE_INFO[type].label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                {/* Field selector - clicking adds immediately with selected type */}
-                                <Select
-                                  value=""
-                                  onValueChange={(value) => {
-                                    if (value && !config.fields.some(f => f.field === value)) {
-                                      setTiConfig({
-                                        ...tiConfig,
-                                        [source]: {
-                                          ...config,
-                                          fields: [...config.fields, { field: value, type: fieldInput.type }],
-                                        },
-                                      })
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 text-sm">
-                                    <SelectValue placeholder="Click to add fields..." />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {validationResult?.sample_fields && validationResult.sample_fields.length > 0 ? (
-                                      validationResult.sample_fields
-                                        .filter(f => !config.fields.some(fc => fc.field === f))
-                                        .map(field => (
-                                          <SelectItem key={field} value={field}>
-                                            {field}
-                                          </SelectItem>
-                                        ))
-                                    ) : (
-                                      <div className="p-2 text-xs text-muted-foreground">
-                                        Validate pattern to see available fields
-                                      </div>
-                                    )}
-                                  </SelectContent>
-                                </Select>
-
-                                {config.fields.length > 0 && (
-                                  <div className="flex flex-wrap gap-1">
-                                    {config.fields.map((fieldConfig, idx) => (
-                                      <Badge
-                                        key={`${fieldConfig.field}-${idx}`}
-                                        variant="outline"
-                                        className="flex items-center gap-1 pr-1 text-xs"
-                                      >
-                                        <span className="font-mono">{fieldConfig.field}</span>
-                                        <span className="text-muted-foreground">
-                                          ({TI_INDICATOR_TYPE_INFO[fieldConfig.type]?.label || fieldConfig.type})
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => setTiConfig({
-                                            ...tiConfig,
-                                            [source]: {
-                                              ...config,
-                                              fields: config.fields.filter((_, i) => i !== idx),
-                                            },
-                                          })}
-                                          className="ml-1 hover:bg-muted rounded-full p-0.5"
-                                        >
-                                          <X className="h-2.5 w-2.5" />
-                                        </button>
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {!validationResult?.sample_fields?.length && (
-                                  <p className="text-xs text-amber-600">
-                                    Validate the index pattern above to see available fields
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  <p className="text-xs text-muted-foreground">
-                    Common fields: source.ip, destination.ip, file.hash.md5, file.hash.sha256, url.domain
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Security Settings Section (IP Allowlist & Rate Limiting) */}
-            <div className="border rounded-lg">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
-                onClick={() => setShowSecuritySettings(!showSecuritySettings)}
-              >
-                <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  <span className="font-medium text-sm">Security Settings</span>
-                  {(allowedIps.length > 0 || rateLimitEnabled) && (
-                    <Badge variant="secondary" className="text-xs">
-                      {allowedIps.length > 0 && `${allowedIps.length} IP${allowedIps.length > 1 ? 's' : ''}`}
-                      {allowedIps.length > 0 && rateLimitEnabled && ' + '}
-                      {rateLimitEnabled && 'Rate limit'}
-                    </Badge>
-                  )}
-                </div>
-                {showSecuritySettings ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-              </button>
-
-              {showSecuritySettings && (
-                <div className="p-3 pt-0 space-y-6">
-                  {/* IP Allowlist Section */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-medium">IP Allowlist</h4>
-                    <p className="text-xs text-muted-foreground">
-                      Restrict which IP addresses can ship logs to this index. Leave empty to allow all IPs.
-                    </p>
-
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="IP or CIDR (e.g., 10.10.40.1 or 10.10.40.0/24)"
-                        value={newIpEntry}
-                        onChange={(e) => {
-                          setNewIpEntry(e.target.value)
-                          setIpError('')
-                        }}
-                        className="font-mono text-sm"
-                      />
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          const entry = newIpEntry.trim()
-                          if (!entry) return
-
-                          // Basic validation for IP or CIDR
-                          const ipPattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/
-                          if (!ipPattern.test(entry)) {
-                            setIpError('Invalid IP or CIDR format')
-                            return
-                          }
-
-                          if (allowedIps.includes(entry)) {
-                            setIpError('IP already in list')
-                            return
-                          }
-
-                          setAllowedIps([...allowedIps, entry])
-                          setNewIpEntry('')
-                          setIpError('')
-                        }}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    {ipError && (
-                      <p className="text-xs text-destructive">{ipError}</p>
-                    )}
-
-                    {allowedIps.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {allowedIps.map((ip) => (
-                          <Badge
-                            key={ip}
-                            variant="outline"
-                            className="flex items-center gap-1 pr-1 font-mono"
-                          >
-                            {ip}
-                            <button
-                              type="button"
-                              onClick={() => setAllowedIps(allowedIps.filter(i => i !== ip))}
-                              className="ml-1 hover:bg-muted rounded-full p-0.5"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Rate Limiting Section */}
-                  <div className="space-y-3 pt-3 border-t">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-medium">Rate Limiting</h4>
-                        <p className="text-xs text-muted-foreground">
-                          Limit log shipping requests to prevent abuse
-                        </p>
-                      </div>
-                      <Switch
-                        checked={rateLimitEnabled}
-                        onCheckedChange={setRateLimitEnabled}
-                      />
-                    </div>
-
-                    {rateLimitEnabled && (
-                      <div className="grid grid-cols-2 gap-4 pt-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="rate-requests">Requests per minute</Label>
-                          <Input
-                            id="rate-requests"
-                            type="number"
-                            min="1"
-                            value={rateLimitRequests || ''}
-                            onChange={(e) => setRateLimitRequests(e.target.value ? parseInt(e.target.value) : null)}
-                            placeholder="100"
-                          />
-                          <p className="text-xs text-muted-foreground">Max API calls/min</p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="rate-events">Events per minute</Label>
-                          <Input
-                            id="rate-events"
-                            type="number"
-                            min="1"
-                            value={rateLimitEvents || ''}
-                            onChange={(e) => setRateLimitEvents(e.target.value ? parseInt(e.target.value) : null)}
-                            placeholder="50000"
-                          />
-                          <p className="text-xs text-muted-foreground">Max log events/min</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {saveError && (
-              <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
-                {saveError}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={
-                isSaving ||
-                !formData.name ||
-                !formData.pattern ||
-                !formData.percolator_index
-              }
-            >
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <DialogContent>
@@ -1478,5 +576,6 @@ export default function IndexPatternsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   )
 }

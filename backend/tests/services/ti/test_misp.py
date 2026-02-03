@@ -1,10 +1,11 @@
 """Tests for MISP Threat Intelligence client."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.ti.misp import MISPClient
+import pytest
+
 from app.services.ti.base import TIIndicatorType, TIRiskLevel
+from app.services.ti.misp import MISPClient
 
 
 @pytest.fixture
@@ -177,13 +178,14 @@ async def test_misp_test_connection_success(misp_client):
 
 @pytest.mark.asyncio
 async def test_misp_test_connection_failure(misp_client):
-    """Test failed connection to MISP."""
+    """Test failed connection to MISP raises exception."""
     with patch.object(misp_client._client, 'get', new_callable=AsyncMock) as mock_get:
         mock_get.side_effect = Exception("Connection failed")
 
-        result = await misp_client.test_connection()
+        with pytest.raises(Exception) as exc_info:
+            await misp_client.test_connection()
 
-        assert result is False
+        assert "Connection failed" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

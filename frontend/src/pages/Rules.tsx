@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { rulesApi, indexPatternsApi, reportsApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult } from '@/lib/api'
+import { rulesApi, indexPatternsApi, correlationRulesApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult, CorrelationRule } from '@/lib/api'
 import yaml from 'js-yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, Clock, Download, FileCode, FileText, FolderTree, Plus, RotateCcw, Rocket, Search, Table as TableIcon, Trash2, X } from 'lucide-react'
+import { ChevronDown, Clock, Download, ExternalLink, FileCode, FileText, Link2, Plus, RotateCcw, Rocket, Search, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -34,22 +34,15 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { RulesTreeView } from '@/components/RulesTreeView'
 import { cn } from '@/lib/utils'
 import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { FileSpreadsheet, Loader2 } from 'lucide-react'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { RulesExportDialog } from '@/components/RulesExportDialog'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -69,12 +62,36 @@ type Filters = {
 export default function RulesPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { canManageRules, canDeployRules } = useAuth()
+  const { canManageRules, canDeployRules, hasPermission } = useAuth()
+
+  // Tab state from URL
+  const activeTab = searchParams.get('tab') || 'sigma'
+  const setActiveTab = (tab: string) => {
+    const newParams = new URLSearchParams(searchParams)
+    if (tab === 'sigma') {
+      newParams.delete('tab')
+    } else {
+      newParams.set('tab', tab)
+    }
+    setSearchParams(newParams, { replace: true })
+    // Clear selections when switching tabs
+    setSelectedRules(new Set())
+    setSelectedCorrelationRules(new Set())
+  }
+
+  // Sigma rules state
   const [rules, setRules] = useState<Rule[]>([])
   const [indexPatterns, setIndexPatterns] = useState<Record<string, IndexPattern>>({})
   const [indexPatternsList, setIndexPatternsList] = useState<IndexPattern[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // Correlation rules state
+  const [correlationRules, setCorrelationRules] = useState<CorrelationRule[]>([])
+  const [correlationLoading, setCorrelationLoading] = useState(false)
+  const [correlationError, setCorrelationError] = useState('')
+  const [correlationLoaded, setCorrelationLoaded] = useState(false)
+  const [selectedCorrelationRules, setSelectedCorrelationRules] = useState<Set<string>>(new Set())
 
   // Initialize filters from URL params
   const [filters, setFilters] = useState<Filters>(() => {
@@ -92,10 +109,6 @@ export default function RulesPage() {
       search: search || '',
     }
   })
-  const [viewMode, setViewMode] = useState<'tree' | 'table'>(() => {
-    return (localStorage.getItem('rules-view-mode') as 'tree' | 'table') || 'table'
-  })
-
   // Selection state
   const [selectedRules, setSelectedRules] = useState<Set<string>>(new Set())
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
@@ -117,8 +130,6 @@ export default function RulesPage() {
 
   // Export report state
   const [showExportDialog, setShowExportDialog] = useState(false)
-  const [exportFormat, setExportFormat] = useState<'csv' | 'pdf'>('pdf')
-  const [isExporting, setIsExporting] = useState(false)
 
   // Deployment eligibility state
   const [deploymentEligibility, setDeploymentEligibility] = useState<DeploymentEligibilityResult | null>(null)
@@ -128,22 +139,23 @@ export default function RulesPage() {
     loadData()
   }, [])
 
-  // Persist view mode changes
+  // Sync filters to URL (preserve tab param)
   useEffect(() => {
-    localStorage.setItem('rules-view-mode', viewMode)
-  }, [viewMode])
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams()
 
-  // Sync filters to URL
-  useEffect(() => {
-    const newParams = new URLSearchParams()
+      // Preserve the tab parameter
+      const currentTab = prev.get('tab')
+      if (currentTab) newParams.set('tab', currentTab)
 
-    if (filters.search) newParams.set('search', filters.search)
-    if (filters.indexPattern.length > 0) newParams.set('indexPattern', filters.indexPattern.join(','))
-    if (filters.severity.length > 0) newParams.set('severity', filters.severity.join(','))
-    if (filters.status.length > 0) newParams.set('status', filters.status.join(','))
-    if (filters.source !== 'all') newParams.set('source', filters.source)
+      if (filters.search) newParams.set('search', filters.search)
+      if (filters.indexPattern.length > 0) newParams.set('indexPattern', filters.indexPattern.join(','))
+      if (filters.severity.length > 0) newParams.set('severity', filters.severity.join(','))
+      if (filters.status.length > 0) newParams.set('status', filters.status.join(','))
+      if (filters.source !== 'all') newParams.set('source', filters.source)
 
-    setSearchParams(newParams, { replace: true })
+      return newParams
+    }, { replace: true })
   }, [filters, setSearchParams])
 
   // Check deployment eligibility when selection changes
@@ -195,9 +207,10 @@ export default function RulesPage() {
     setIsLoading(true)
     setError('')
     try {
-      const [rulesData, patternsData] = await Promise.all([
+      const [rulesData, patternsData, correlationData] = await Promise.all([
         rulesApi.list(),
         indexPatternsApi.list(),
+        correlationRulesApi.list(true),
       ])
       setRules(rulesData)
       // Create lookup map for index patterns
@@ -207,12 +220,37 @@ export default function RulesPage() {
       })
       setIndexPatterns(patternsMap)
       setIndexPatternsList(patternsData)
+      // Set correlation rules
+      setCorrelationRules(correlationData.correlation_rules)
+      setCorrelationLoaded(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rules')
     } finally {
       setIsLoading(false)
     }
   }
+
+  // Load correlation rules
+  const loadCorrelationRules = async () => {
+    setCorrelationLoading(true)
+    setCorrelationError('')
+    try {
+      const response = await correlationRulesApi.list(true)
+      setCorrelationRules(response.correlation_rules)
+      setCorrelationLoaded(true)
+    } catch (err) {
+      setCorrelationError(err instanceof Error ? err.message : 'Failed to load correlation rules')
+    } finally {
+      setCorrelationLoading(false)
+    }
+  }
+
+  // Load correlation rules when switching to correlation tab
+  useEffect(() => {
+    if (activeTab === 'correlation' && !correlationLoaded && !correlationLoading) {
+      loadCorrelationRules()
+    }
+  }, [activeTab, correlationLoaded, correlationLoading])
 
   // Memoized filtered rules based on all filters
   const filteredRules = useMemo(() => {
@@ -262,6 +300,30 @@ export default function RulesPage() {
       return true
     })
   }, [rules, filters])
+
+  // Memoized filtered correlation rules
+  const filteredCorrelationRules = useMemo(() => {
+    return correlationRules.filter((rule) => {
+      // Severity filter
+      if (filters.severity.length > 0 && !filters.severity.includes(rule.severity)) {
+        return false
+      }
+      // Status filter
+      if (filters.status.length > 0 && !filters.status.includes(rule.status)) {
+        return false
+      }
+      // Search filter
+      if (filters.search && filters.search.trim()) {
+        const searchLower = filters.search.trim().toLowerCase()
+        const matchesName = rule.name?.toLowerCase().includes(searchLower)
+        const matchesDescription = rule.description?.toLowerCase().includes(searchLower)
+        if (!matchesName && !matchesDescription) {
+          return false
+        }
+      }
+      return true
+    })
+  }, [correlationRules, filters])
 
   // Check if any filters are active
   const hasActiveFilters = useMemo(() => {
@@ -561,49 +623,72 @@ export default function RulesPage() {
     }
   }
 
-  // Handler for Rule Coverage report export
-  const handleExportReport = async () => {
-    setIsExporting(true)
-    try {
-      const blob = await reportsApi.generateRuleCoverage({
-        format: exportFormat,
-      })
-
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      const dateStr = new Date().toISOString().slice(0, 10)
-      a.download = `rule-coverage-${dateStr}.${exportFormat}`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
-      setShowExportDialog(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed')
-    } finally {
-      setIsExporting(false)
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Rules</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Rules</h1>
+          <p className="text-muted-foreground">
+            Manage your Sigma rules and correlation rules
+          </p>
+        </div>
         <div className="flex gap-2">
+          {activeTab === 'sigma' && hasPermission('manage_sigmahq') && (
+            <Button variant="outline" onClick={() => navigate('/sigmahq')}>
+              <ExternalLink className="h-4 w-4 mr-2" />
+              SigmaHQ
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setShowExportDialog(true)}>
             <Download className="h-4 w-4 mr-2" />
             Export Report
           </Button>
-          <Button onClick={() => navigate('/rules/new')} disabled={!canManageRules()}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Rule
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button disabled={!canManageRules()}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Rule
+                <ChevronDown className="h-4 w-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={() => navigate('/rules/new')} className="flex items-center gap-2">
+                <FileCode className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">Sigma Rule</span>
+                <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Detection logic</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/correlation/new')} className="flex items-center gap-2">
+                <Link2 className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">Correlation Rule</span>
+                <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Multi-event</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex flex-wrap gap-3 items-center">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList>
+          <TabsTrigger value="sigma" className="gap-2">
+            <FileCode className="h-4 w-4" />
+            Sigma Rules
+            <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+              {rules.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="correlation" className="gap-2">
+            <Link2 className="h-4 w-4" />
+            Correlation Rules
+            <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+              {correlationRules.length}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="sigma" className="mt-4 space-y-4">
+          {/* Filter Bar */}
+          <div className="flex flex-wrap gap-3 items-center">
         {/* Search input */}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -759,29 +844,6 @@ export default function RulesPage() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* View mode toggle */}
-        <div className="flex items-center gap-1 ml-auto">
-          <Button
-            variant={viewMode === 'tree' ? 'default' : 'outline'}
-            size="icon"
-            onClick={() => setViewMode('tree')}
-            title="Tree view"
-            aria-label="Tree view"
-            aria-pressed={viewMode === 'tree'}
-          >
-            <FolderTree className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'table' ? 'default' : 'outline'}
-            size="icon"
-            onClick={() => setViewMode('table')}
-            title="Table view"
-            aria-label="Table view"
-            aria-pressed={viewMode === 'table'}
-          >
-            <TableIcon className="h-4 w-4" />
-          </Button>
-        </div>
       </div>
 
       {/* Active filters display */}
@@ -875,13 +937,30 @@ export default function RulesPage() {
             ? 'Try adjusting your filters to see more results.'
             : 'Create your first rule to start detecting threats.'}
           action={!hasActiveFilters && canManageRules() ? (
-            <Button onClick={() => navigate('/rules/new')}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Rule
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Rule
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-64">
+                <DropdownMenuItem onClick={() => navigate('/rules/new')} className="flex items-center gap-2">
+                  <FileCode className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">Sigma Rule</span>
+                  <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Detection logic</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/correlation/new')} className="flex items-center gap-2">
+                  <Link2 className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">Correlation Rule</span>
+                  <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Multi-event</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : undefined}
         />
-      ) : viewMode === 'table' ? (
+      ) : (
         <TooltipProvider>
           <div className="border rounded-lg">
             <Table>
@@ -973,7 +1052,19 @@ export default function RulesPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {indexPatterns[rule.index_pattern_id]?.name || 'Unknown'}
+                      <div className="flex items-center gap-2">
+                        {indexPatterns[rule.index_pattern_id]?.name || 'Unknown'}
+                        {indexPatterns[rule.index_pattern_id]?.mode && (
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                            indexPatterns[rule.index_pattern_id]?.mode === 'push'
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                              : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                          )}>
+                            {indexPatterns[rule.index_pattern_id]?.mode}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {rule.last_edited_by || '-'}
@@ -987,14 +1078,6 @@ export default function RulesPage() {
             </Table>
           </div>
         </TooltipProvider>
-      ) : (
-        <RulesTreeView
-          rules={filteredRules}
-          indexPatterns={indexPatterns}
-          onRuleClick={(rule) => navigate(`/rules/${rule.id}`)}
-          selectedRules={selectedRules}
-          onRuleSelect={toggleRuleSelection}
-        />
       )}
 
       {/* Bulk Action Bar - shown when items are selected */}
@@ -1094,6 +1177,232 @@ export default function RulesPage() {
           </div>
         </TooltipProvider>
       )}
+        </TabsContent>
+
+        <TabsContent value="correlation" className="mt-4 space-y-4">
+          {/* Correlation Filter Bar */}
+          <div className="flex flex-wrap gap-3 items-center">
+            {/* Search input */}
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search title or description..."
+                value={filters.search}
+                onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+                className="pl-10"
+                aria-label="Search correlation rules"
+              />
+            </div>
+
+            {/* Severity multi-select */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  Severity
+                  {filters.severity.length > 0 && (
+                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                      {filters.severity.length}
+                    </Badge>
+                  )}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Severity Levels</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {SEVERITIES.map((severity) => (
+                  <DropdownMenuCheckboxItem
+                    key={severity}
+                    checked={filters.severity.includes(severity)}
+                    onCheckedChange={() => toggleFilter('severity', severity)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    <span
+                      className={cn(
+                        'mr-2 inline-block w-2 h-2 rounded-full',
+                        severity === 'critical' && 'bg-red-500',
+                        severity === 'high' && 'bg-orange-500',
+                        severity === 'medium' && 'bg-yellow-500',
+                        severity === 'low' && 'bg-blue-500',
+                        severity === 'informational' && 'bg-gray-500'
+                      )}
+                    />
+                    {capitalize(severity)}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Status multi-select */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  Status
+                  {filters.status.length > 0 && (
+                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                      {filters.status.length}
+                    </Badge>
+                  )}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Rule Status</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {RULE_STATUSES.map((status) => (
+                  <DropdownMenuCheckboxItem
+                    key={status}
+                    checked={filters.status.includes(status)}
+                    onCheckedChange={() => toggleFilter('status', status)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {capitalize(status)}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Clear filters */}
+            {(filters.search || filters.severity.length > 0 || filters.status.length > 0) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFilters(prev => ({ ...prev, search: '', severity: [], status: [] }))}
+                className="h-8 px-2"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
+
+          {correlationError && (
+            <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
+              {correlationError}
+            </div>
+          )}
+
+          {correlationLoading ? (
+            <LoadingState message="Loading correlation rules..." />
+          ) : filteredCorrelationRules.length === 0 ? (
+            <EmptyState
+              icon={<Link2 className="h-12 w-12" />}
+              title={filters.search || filters.severity.length > 0 || filters.status.length > 0 ? 'No rules match your filters' : 'No correlation rules found'}
+              description={filters.search || filters.severity.length > 0 || filters.status.length > 0
+                ? 'Try adjusting your filters to see more results.'
+                : 'Create your first correlation rule to detect multi-event patterns.'}
+              action={!(filters.search || filters.severity.length > 0 || filters.status.length > 0) && canManageRules() ? (
+                <Button onClick={() => navigate('/correlation/new')}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Correlation Rule
+                </Button>
+              ) : undefined}
+            />
+          ) : (
+            <TooltipProvider>
+              <div className="border rounded-lg">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedCorrelationRules.size === filteredCorrelationRules.length && filteredCorrelationRules.length > 0}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedCorrelationRules(new Set(filteredCorrelationRules.map(r => r.id)))
+                            } else {
+                              setSelectedCorrelationRules(new Set())
+                            }
+                          }}
+                          aria-label="Select all correlation rules"
+                        />
+                      </TableHead>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Severity</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Edited By</TableHead>
+                      <TableHead>Updated</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCorrelationRules.map((rule) => (
+                      <TableRow
+                        key={rule.id}
+                        className={cn(
+                          'cursor-pointer hover:bg-muted/50',
+                          selectedCorrelationRules.has(rule.id) && 'bg-muted/50'
+                        )}
+                        onClick={() => navigate(`/correlation/${rule.id}`)}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedCorrelationRules.has(rule.id)}
+                            onCheckedChange={(checked) => {
+                              const newSet = new Set(selectedCorrelationRules)
+                              if (checked) {
+                                newSet.add(rule.id)
+                              } else {
+                                newSet.delete(rule.id)
+                              }
+                              setSelectedCorrelationRules(newSet)
+                            }}
+                            aria-label={`Select ${rule.name}`}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">{rule.name}</TableCell>
+                        <TableCell>
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium ${
+                              SEVERITY_COLORS[rule.severity] || 'bg-gray-500 text-white'
+                            }`}
+                          >
+                            {capitalize(rule.severity)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
+                              rule.status === 'deployed'
+                                ? 'bg-green-600 text-white'
+                                : rule.status === 'snoozed'
+                                ? 'bg-yellow-500 text-white'
+                                : 'bg-gray-500 text-white'
+                            }`}
+                          >
+                            {rule.status === 'deployed'
+                              ? 'Deployed'
+                              : rule.status === 'snoozed'
+                              ? 'Snoozed'
+                              : 'Undeployed'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {rule.last_edited_by || '-'}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <RelativeTime date={rule.updated_at} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </TooltipProvider>
+          )}
+
+          {/* Correlation Bulk Action Bar */}
+          {selectedCorrelationRules.size > 0 && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg p-4 flex items-center gap-4 z-50">
+              <span className="text-sm font-medium">
+                {selectedCorrelationRules.size} rule{selectedCorrelationRules.size > 1 ? 's' : ''} selected
+              </span>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedCorrelationRules(new Set())}>
+                Cancel
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Bulk Deploy Reason Dialog */}
       <Dialog open={showBulkDeployReason} onOpenChange={setShowBulkDeployReason}>
@@ -1310,59 +1619,11 @@ export default function RulesPage() {
       </Dialog>
 
       {/* Export Report Dialog */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Export Rule Coverage Report</DialogTitle>
-            <DialogDescription>
-              Generate a report showing rule coverage by severity, status, and index pattern.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Format</Label>
-              <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as 'csv' | 'pdf')}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pdf">
-                    <span className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      PDF
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="csv">
-                    <span className="flex items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4" />
-                      CSV
-                    </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleExportReport} disabled={isExporting}>
-              {isExporting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RulesExportDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        onError={(msg) => setError(msg)}
+      />
     </div>
   )
 }

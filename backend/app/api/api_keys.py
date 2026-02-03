@@ -4,27 +4,27 @@ API Key management endpoints.
 Users can create and manage their own API keys for external API access.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID as PyUUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_permission_dep
 from app.core.security import get_password_hash, verify_password
-from app.utils.request import get_client_ip
 from app.db.session import get_db
 from app.models.api_key import APIKey, generate_api_key
 from app.models.user import User
-from app.services.audit import audit_log
 from app.schemas.api_key import (
     APIKeyCreate,
     APIKeyCreateResponse,
     APIKeyResponse,
     APIKeyUpdate,
 )
+from app.services.audit import audit_log
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 
@@ -186,7 +186,7 @@ async def validate_api_key(key: str, db: AsyncSession) -> User | None:
 
     result = await db.execute(
         select(APIKey)
-        .where(APIKey.key_prefix == key_prefix, APIKey.is_active == True)
+        .where(APIKey.key_prefix == key_prefix, APIKey.is_active.is_(True))
     )
     api_key = result.scalar_one_or_none()
 
@@ -198,12 +198,12 @@ async def validate_api_key(key: str, db: AsyncSession) -> User | None:
         return None
 
     # Check expiration
-    if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
+    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
         return None
 
     # Get the user
     user_result = await db.execute(
-        select(User).where(User.id == api_key.user_id, User.is_active == True)
+        select(User).where(User.id == api_key.user_id, User.is_active.is_(True))
     )
     user = user_result.scalar_one_or_none()
 
@@ -211,7 +211,7 @@ async def validate_api_key(key: str, db: AsyncSession) -> User | None:
         return None
 
     # Update last used timestamp
-    api_key.last_used_at = datetime.now(timezone.utc)
+    api_key.last_used_at = datetime.now(UTC)
     await db.commit()
 
     return user

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
@@ -97,9 +98,11 @@ async def get_index_health(
     # Convert to naive datetime for OpenSearch query consistency
     since_naive = since.replace(tzinfo=None)
 
-    # Get index pattern settings for thresholds
+    # Get index pattern settings for thresholds (with poll_state for pull mode)
     pattern_result = await db.execute(
-        select(IndexPattern).where(IndexPattern.id == index_pattern_id)
+        select(IndexPattern)
+        .where(IndexPattern.id == index_pattern_id)
+        .options(selectinload(IndexPattern.poll_state))
     )
     index_pattern = pattern_result.scalar_one_or_none()
 
@@ -111,9 +114,9 @@ async def get_index_health(
     )
     no_data_critical_minutes = no_data_warning_minutes * 2  # Critical is 2x the warning threshold
 
-    # Query actual alert counts from OpenSearch
-    # Use wildcard to catch all alerts indices (pattern-specific and date-based)
-    alerts_index = "chad-alerts-*"
+    # Query actual alert counts from OpenSearch for this specific index pattern
+    # Alerts index follows naming convention: chad-alerts-{index_pattern_name}
+    alerts_index = f"chad-alerts-{index_pattern.name}" if index_pattern else "chad-alerts-*"
 
     # Per-hour count (last hour)
     one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
@@ -133,12 +136,68 @@ async def get_index_health(
     latest = result.scalar_one_or_none()
 
     if not latest:
-        # No metrics at all - this is a warning state (index may not be configured or receiving logs)
-        # But we still have OpenSearch query results for alert counts
+        # No IndexHealthMetrics records - check if pull mode with poll_state
+        is_pull_mode = index_pattern and index_pattern.mode == "pull"
+
+        if is_pull_mode and index_pattern.poll_state:
+            # Pull mode with poll_state - use poll_state for health status
+            ps = index_pattern.poll_state
+
+            # Determine status from consecutive failures
+            if ps.consecutive_failures == 0 and ps.total_polls > 0:
+                status = HealthStatus.HEALTHY
+                issues = []
+            elif ps.consecutive_failures >= 10:  # Critical threshold
+                status = HealthStatus.CRITICAL
+                issues = [f"Pull mode has {ps.consecutive_failures} consecutive failures"]
+            elif ps.consecutive_failures >= 3:  # Warning threshold
+                status = HealthStatus.WARNING
+                issues = [f"Pull mode has {ps.consecutive_failures} consecutive failures"]
+            elif ps.total_polls == 0:
+                status = HealthStatus.WARNING
+                issues = ["No polls executed yet - check pull mode configuration and scheduler status"]
+            else:
+                status = HealthStatus.HEALTHY
+                issues = []
+
+            # Use real detection latency from poll_state if available
+            # This is calculated from actual event timestamps vs alert creation time
+            # Fallback to poll_interval / 2 estimate if no real data yet
+            if ps.avg_detection_latency_ms is not None:
+                avg_detection_latency_ms = ps.avg_detection_latency_ms
+            else:
+                # Estimate based on poll interval (average time from event to next poll)
+                poll_interval_ms = index_pattern.poll_interval_minutes * 60 * 1000
+                avg_detection_latency_ms = poll_interval_ms / 2
+
+            return {
+                "status": status,
+                "message": "Pull mode active",
+                "issues": issues,
+                "latest": {
+                    "queue_depth": 0,
+                    "avg_detection_latency_ms": avg_detection_latency_ms,
+                    "avg_opensearch_query_latency_ms": ps.avg_poll_duration_ms or 0,
+                    "logs_per_minute": 0,
+                    "alerts_per_hour": alerts_per_hour,
+                },
+                "totals_24h": {
+                    "logs_received": ps.total_events_scanned or 0,
+                    "logs_errored": ps.failed_polls or 0,
+                    "alerts_generated": alerts_24h,
+                },
+            }
+
+        # Push mode or pull mode without poll_state
+        if is_pull_mode:
+            issue_msg = "No polls executed yet - check pull mode configuration and scheduler status"
+        else:
+            issue_msg = "No data received - index may not be configured or receiving logs"
+
         return {
             "status": HealthStatus.WARNING,
-            "message": "No data received",
-            "issues": ["No data received - index may not be configured or receiving logs"],
+            "message": "No metrics",
+            "issues": [issue_msg],
             "latest": {
                 "queue_depth": 0,
                 "avg_detection_latency_ms": 0,
@@ -157,17 +216,24 @@ async def get_index_health(
     status = HealthStatus.HEALTHY
     issues = []
 
-    # Check time since last data
+    # Check time since last data - mode-specific messages
     now = datetime.now(UTC)
     time_since_last = now - latest.timestamp.replace(tzinfo=UTC)
     minutes_since_last = time_since_last.total_seconds() / 60
+    is_pull_mode = index_pattern and index_pattern.mode == "pull"
 
     if minutes_since_last >= no_data_critical_minutes:
         status = HealthStatus.CRITICAL
-        issues.append(f"No data received for {int(minutes_since_last)} minutes")
+        if is_pull_mode:
+            issues.append(f"No successful polls for {int(minutes_since_last)} minutes - check index accessibility and query errors")
+        else:
+            issues.append(f"No data received for {int(minutes_since_last)} minutes")
     elif minutes_since_last >= no_data_warning_minutes:
         status = _max_status(status, HealthStatus.WARNING)
-        issues.append(f"No data received for {int(minutes_since_last)} minutes")
+        if is_pull_mode:
+            issues.append(f"No successful polls for {int(minutes_since_last)} minutes")
+        else:
+            issues.append(f"No data received for {int(minutes_since_last)} minutes")
 
     if latest.queue_depth >= QUEUE_CRITICAL_THRESHOLD:
         status = HealthStatus.CRITICAL
@@ -207,6 +273,18 @@ async def get_index_health(
         status = _max_status(status, HealthStatus.WARNING)
         issues.append(f"Error rate elevated: {error_rate:.1%}")
 
+    # For pull mode, use consecutive_failures as the primary health indicator
+    # This ensures consistency with the Pull Mode Detection section
+    if is_pull_mode and index_pattern.poll_state:
+        ps = index_pattern.poll_state
+        # If no consecutive failures, the system is healthy (override any warning from success rate)
+        if ps.consecutive_failures == 0 and ps.last_poll_status == "success":
+            # Only override to healthy if not critical due to other factors
+            if status == HealthStatus.WARNING:
+                status = HealthStatus.HEALTHY
+                # Remove any "No data/polls" issues since we're currently healthy
+                issues = [i for i in issues if "No successful polls" not in i and "No data received" not in i]
+
     return {
         "status": status,
         "issues": issues,
@@ -241,6 +319,7 @@ async def get_all_indices_health(
                 "index_pattern_id": str(pattern.id),
                 "index_pattern_name": pattern.name,
                 "pattern": pattern.pattern,
+                "mode": pattern.mode,
                 **health,
             }
         )

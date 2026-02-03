@@ -10,13 +10,13 @@ import time
 
 from sqlalchemy import select
 
-from app.core.redis import get_redis, close_redis
-from app.services.log_processor import LogProcessor
-from app.services.queue_settings import get_queue_settings
-from app.services.opensearch import get_client_from_settings
+from app.core.redis import close_redis, get_redis
 from app.db.session import async_session_maker
-from app.models.index_pattern import IndexPattern
 from app.models.health_metrics import IndexHealthMetrics
+from app.models.index_pattern import IndexPattern
+from app.services.log_processor import LogProcessor
+from app.services.opensearch import get_client_from_settings
+from app.services.queue_settings import get_queue_settings
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +218,7 @@ class Worker:
             except Exception as e:
                 # XAUTOCLAIM may not exist in older Redis versions
                 if "unknown command" in str(e).lower():
-                    logger.debug(f"XAUTOCLAIM not available, skipping pending claim")
+                    logger.debug("XAUTOCLAIM not available, skipping pending claim")
                 else:
                     logger.warning(f"Failed to claim pending from {stream}: {e}")
 

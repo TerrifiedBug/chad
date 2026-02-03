@@ -5,11 +5,12 @@ Tracks failed login attempts per account and enforces lockout policy.
 """
 
 from datetime import datetime, timedelta
-from sqlalchemy import select, func, delete
+
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.login_attempt import LoginAttempt
-from app.services.settings import get_setting, RATE_LIMIT_DEFAULTS
+from app.services.settings import RATE_LIMIT_DEFAULTS, get_setting
 
 
 async def get_rate_limit_settings(db: AsyncSession) -> dict:

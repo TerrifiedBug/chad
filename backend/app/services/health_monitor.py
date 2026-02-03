@@ -16,13 +16,16 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from dateutil.parser import parse as parse_timestamp
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
+from app.models.rule import Rule, RuleStatus
 from app.services.notification import send_health_notification
+from app.services.opensearch import get_client_from_settings
 from app.services.settings import get_setting
 
 logger = logging.getLogger(__name__)
@@ -88,7 +91,135 @@ async def _get_thresholds(db: AsyncSession) -> dict:
     }
 
 
-async def check_index_health(db: AsyncSession) -> list[dict]:
+def _get_nested_field(doc: dict, field_path: str):
+    """
+    Get a value from a nested dictionary using dot notation.
+
+    Args:
+        doc: The document dictionary
+        field_path: Dot-separated field path (e.g., "event.created")
+
+    Returns:
+        The value at the path, or None if not found
+    """
+    parts = field_path.split(".")
+    current = doc
+    for part in parts:
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+async def check_index_data_freshness(
+    os_client,
+    index_pattern,
+    threshold_minutes: int = 15,
+) -> tuple[bool, dict]:
+    """
+    Check if data in an OpenSearch index is fresh or stale.
+
+    This function queries OpenSearch for the most recent event timestamp in an index
+    to determine if data is being received. This is useful for pull mode health checks
+    where CHAD polling works fine but the upstream log shipper may have stopped
+    sending data to OpenSearch.
+
+    Args:
+        os_client: OpenSearch client (async)
+        index_pattern: IndexPattern object with 'pattern' and 'timestamp_field' attributes
+        threshold_minutes: Maximum age of data in minutes before considered stale (default 15)
+
+    Returns:
+        Tuple of (is_fresh: bool, details: dict)
+        - is_fresh: True if data is within threshold, False otherwise
+        - details: Dict with status and additional information:
+            - status: "fresh", "stale", "no_data", "no_timestamp", or "error"
+            - Additional fields depend on status
+    """
+    index = index_pattern.pattern
+    timestamp_field = getattr(index_pattern, "timestamp_field", "@timestamp") or "@timestamp"
+
+    try:
+        # Query for the single most recent document sorted by timestamp
+        # Note: OpenSearch client is synchronous
+        response = os_client.search(
+            index=index,
+            body={
+                "size": 1,
+                "sort": [{timestamp_field: {"order": "desc"}}],
+                "_source": [timestamp_field],
+            },
+        )
+
+        hits = response.get("hits", {}).get("hits", [])
+
+        # Handle no documents found
+        if not hits:
+            return (False, {
+                "status": "no_data",
+                "message": "No events found in index",
+                "index": index,
+            })
+
+        # Get the latest document
+        latest_doc = hits[0].get("_source", {})
+
+        # Extract timestamp using the configured field (handle nested fields)
+        timestamp_value = _get_nested_field(latest_doc, timestamp_field)
+
+        # Handle missing timestamp field
+        if timestamp_value is None:
+            return (False, {
+                "status": "no_timestamp",
+                "message": f"Latest event missing {timestamp_field} field",
+                "index": index,
+            })
+
+        # Parse the timestamp and calculate age
+        # Handle numeric timestamps (Unix epoch seconds or milliseconds)
+        if isinstance(timestamp_value, (int, float)):
+            # Assume milliseconds if value > 10 billion (after year 2001 in ms)
+            if timestamp_value > 1e10:
+                timestamp_value = timestamp_value / 1000
+            last_event_time = datetime.fromtimestamp(timestamp_value, tz=UTC)
+        else:
+            last_event_time = parse_timestamp(timestamp_value)
+            # Ensure timezone-aware comparison
+            if last_event_time.tzinfo is None:
+                last_event_time = last_event_time.replace(tzinfo=UTC)
+
+        now = datetime.now(UTC)
+        age = now - last_event_time
+        age_minutes = int(age.total_seconds() / 60)
+
+        # Determine if data is fresh or stale
+        if age_minutes <= threshold_minutes:
+            return (True, {
+                "status": "fresh",
+                "last_event_at": last_event_time.isoformat(),
+                "age_minutes": age_minutes,
+                "threshold_minutes": threshold_minutes,
+                "index": index,
+            })
+        else:
+            return (False, {
+                "status": "stale",
+                "last_event_at": last_event_time.isoformat(),
+                "age_minutes": age_minutes,
+                "threshold_minutes": threshold_minutes,
+                "index": index,
+            })
+
+    except Exception as e:
+        logger.error(f"Failed to check data freshness for {index}: {e}")
+        return (False, {
+            "status": "error",
+            "message": f"Failed to query index: {e}",
+            "index": index,
+        })
+
+
+async def check_index_health(db: AsyncSession, os_client=None) -> list[dict]:
     """
     Check health of all index patterns and send notifications for issues.
 
@@ -113,7 +244,30 @@ async def check_index_health(db: AsyncSession) -> list[dict]:
     )
     patterns = result.scalars().all()
 
+    # Get OpenSearch client for data freshness checks (only for pull mode)
+    pull_patterns = [p for p in patterns if p.mode == "pull"]
+    if pull_patterns and os_client is None:
+        try:
+            os_client = await get_client_from_settings(db)
+        except Exception as e:
+            logger.warning(f"Could not get OpenSearch client for data freshness checks: {e}")
+
     for pattern in patterns:
+        # For pull-mode patterns, skip health checks if no deployed rules exist
+        # This prevents false "no data" alerts when all rules are disabled
+        if pattern.mode == "pull":
+            deployed_rules_count = await db.scalar(
+                select(func.count(Rule.id))
+                .where(Rule.index_pattern_id == pattern.id)
+                .where(Rule.status == RuleStatus.DEPLOYED)
+            )
+            if deployed_rules_count == 0:
+                logger.debug(
+                    f"Skipping health check for {pattern.name}: "
+                    f"no deployed rules (pull mode)"
+                )
+                continue
+
         # Track which conditions had issues for this pattern
         # If a condition is not in this set at the end, its suppression should be cleared
         conditions_with_issues: set[str] = set()
@@ -246,6 +400,32 @@ async def check_index_health(db: AsyncSession) -> list[dict]:
 
         if queue_healthy:
             await _clear_suppression(db, pattern.id, "queue_depth")
+
+        # For pull mode, also check actual index data freshness
+        if pattern.mode == "pull" and os_client:
+            is_fresh, freshness_details = await check_index_data_freshness(
+                os_client,
+                pattern,
+                threshold_minutes=no_data_minutes  # Reuse no_data threshold
+            )
+
+            if not is_fresh and freshness_details["status"] in ("stale", "no_data"):
+                conditions_with_issues.add("stale_data")
+                issue = await _handle_issue(
+                    db,
+                    pattern,
+                    "warning",
+                    "stale_data",
+                    f"Index data is stale - last event was {freshness_details.get('age_minutes', '?')} minutes ago"
+                    if freshness_details["status"] == "stale"
+                    else "No events found in index",
+                    freshness_details,
+                )
+                if issue:
+                    issues.append(issue)
+            elif is_fresh:
+                # Data is fresh - clear stale_data suppression
+                await _clear_suppression(db, pattern.id, "stale_data")
 
     return issues
 

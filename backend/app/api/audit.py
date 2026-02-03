@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_admin, require_permission_dep, get_current_user
+from app.api.deps import get_current_user, require_permission_dep
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User

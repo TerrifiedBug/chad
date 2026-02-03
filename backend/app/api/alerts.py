@@ -73,9 +73,9 @@ class BulkAlertDelete(BaseModel):
 
 @router.get("", response_model=AlertListResponse | ClusteredAlertListResponse)
 async def list_alerts(
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     status: str | None = Query(None, description="Filter by status"),
     severity: str | None = Query(None, description="Filter by severity"),
     rule_id: str | None = Query(None, description="Filter by rule ID"),
@@ -295,9 +295,9 @@ async def update_alert_status(
     alert_id: str,
     update: AlertStatusUpdate,
     request: Request,
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     index_pattern: str = Query("chad-alerts-*"),
 ):
     """Update alert status (acknowledge, resolve, mark as false positive)."""
@@ -418,8 +418,9 @@ async def bulk_delete_alerts(
     failed = []
 
     # Convert string IDs to UUIDs and strings for comparison
+    # Use validated UUIDs for strings to prevent log injection
     alert_ids = [UUID(aid) for aid in data.alert_ids]
-    alert_id_strs = [str(aid) for aid in data.alert_ids]
+    alert_id_strs = [str(aid) for aid in alert_ids]
 
     # Query database by alert_id (OpenSearch document ID), not database id
     result = await db.execute(select(Alert).where(Alert.alert_id.in_(alert_id_strs)))
@@ -472,10 +473,10 @@ async def bulk_delete_alerts(
                                   ip_address=get_client_ip(request))
                     success.append(alert_id_str)
                 except Exception as e:
-                    logger.warning(f"Failed to delete alert {alert_id_str}: {e}")
+                    logger.warning("Failed to delete alert %s: %s", alert_id_str, e)
                     failed.append({"id": alert_id_str, "error": "Failed to delete alert"})
         except Exception as e:
-            logger.warning(f"Failed to delete alert {alert_id_str}: {e}")
+            logger.warning("Failed to delete alert %s: %s", alert_id_str, e)
             failed.append({"id": alert_id_str, "error": "Failed to delete alert"})
 
     await db.commit()
@@ -636,8 +637,8 @@ async def assign_alert(
     alert_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Assign alert to current user. Requires manage_alerts permission (viewers cannot take ownership)."""
     try:
@@ -683,8 +684,8 @@ async def unassign_alert(
     alert_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Release ownership of alert. Requires manage_alerts permission."""
     try:

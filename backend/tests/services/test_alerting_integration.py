@@ -162,16 +162,6 @@ class TestFullAlertingFlow:
         assert "created_at" in alert
         assert "updated_at" in alert
 
-    @pytest.mark.skip(reason="Enabled/disabled state no longer stored in percolator - managed via deploy/undeploy")
-    def test_disabled_rules_not_matched(self, mock_opensearch_client):
-        """Verify that disabled rules don't generate alerts.
-
-        Note: This test is skipped because the enabled/disabled state is now managed
-        at the database level through deploy/undeploy operations, not as a field in
-        the percolator document. A disabled rule is simply not deployed to the percolator.
-        """
-        pass
-
     def test_multiple_rules_match(self, mock_opensearch_client):
         """Test that multiple rules can match a single log."""
         percolator = PercolatorService(mock_opensearch_client)

@@ -5,11 +5,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
-from opensearchpy import OpenSearch
 
 from app.api.deps import get_current_user, get_db, get_opensearch_client, require_permission_dep
 from app.models.audit_log import AuditLog
@@ -43,6 +42,18 @@ from app.utils.request import get_client_ip
 router = APIRouter(prefix="/correlation-rules", tags=["correlation"])
 
 
+def compute_correlation_status(rule: CorrelationRule) -> str:
+    """Compute the status of a correlation rule based on deployment and snooze state."""
+    now = datetime.now(UTC)
+    # Check if snoozed
+    if rule.snooze_indefinite or (rule.snooze_until and rule.snooze_until > now):
+        return "snoozed"
+    # Check if deployed
+    if rule.deployed_at is not None:
+        return "deployed"
+    return "undeployed"
+
+
 def build_correlation_response(
     rule: CorrelationRule,
     rule_a_title: str | None,
@@ -55,6 +66,8 @@ def build_correlation_response(
     return CorrelationRuleResponse(
         id=str(rule.id),
         name=rule.name,
+        description=None,  # Correlation rules don't have descriptions currently
+        status=compute_correlation_status(rule),
         entity_field_type=rule.entity_field_type,
         rule_a_id=str(rule.rule_a_id),
         rule_b_id=str(rule.rule_b_id),
@@ -137,7 +150,7 @@ async def get_common_log_fields(
     if not rule_a:
         raise HTTPException(404, f"Rule A (ID: {rule_a_id}) not found")
     if not rule_a.index_pattern:
-        raise HTTPException(400, f"Rule A has no index pattern")
+        raise HTTPException(400, "Rule A has no index pattern")
 
     rule_b_result = await db.execute(
         select(Rule).options(selectinload(Rule.index_pattern)).where(Rule.id == UUID(rule_b_id))
@@ -146,7 +159,7 @@ async def get_common_log_fields(
     if not rule_b:
         raise HTTPException(404, f"Rule B (ID: {rule_b_id}) not found")
     if not rule_b.index_pattern:
-        raise HTTPException(400, f"Rule B has no index pattern")
+        raise HTTPException(400, "Rule B has no index pattern")
 
     # Get fields from both index patterns (exclude multi-fields like .keyword)
     fields_a = get_index_fields(opensearch, rule_a.index_pattern.pattern, include_multi_fields=False)

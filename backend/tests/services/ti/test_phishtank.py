@@ -1,10 +1,11 @@
 """Tests for PhishTank Threat Intelligence client."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.ti.phishtank import PhishTankClient
+import pytest
+
 from app.services.ti.base import TIIndicatorType, TIRiskLevel
+from app.services.ti.phishtank import PhishTankClient
 
 
 @pytest.fixture
@@ -140,13 +141,14 @@ async def test_phishtank_test_connection_success(phishtank_client):
 
 @pytest.mark.asyncio
 async def test_phishtank_test_connection_failure(phishtank_client):
-    """Test failed connection to PhishTank."""
+    """Test failed connection to PhishTank raises exception."""
     with patch.object(phishtank_client._client, 'get', new_callable=AsyncMock) as mock_get:
         mock_get.side_effect = Exception("Connection failed")
 
-        result = await phishtank_client.test_connection()
+        with pytest.raises(Exception) as exc_info:
+            await phishtank_client.test_connection()
 
-        assert result is False
+        assert "Connection failed" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

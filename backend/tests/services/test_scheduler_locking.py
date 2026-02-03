@@ -1,8 +1,9 @@
 # backend/tests/services/test_scheduler_locking.py
 """Tests for scheduler distributed locking."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestSchedulerLocking:

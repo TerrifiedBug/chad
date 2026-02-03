@@ -5,16 +5,13 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token, get_password_hash
-from app.db.session import get_db
-from app.main import app
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleStatus
-from app.models.rule_exception import RuleException, ExceptionOperator
-from app.models.user import User, UserRole
+from app.models.rule_exception import ExceptionOperator, RuleException
+from app.models.user import User
 
 
 @pytest_asyncio.fixture(scope="function")

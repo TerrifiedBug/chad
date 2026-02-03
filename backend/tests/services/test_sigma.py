@@ -1,6 +1,7 @@
 """Tests for the Sigma translation service."""
 
 import pytest
+
 from app.services.sigma import sigma_service
 
 

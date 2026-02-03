@@ -4,7 +4,6 @@ Input sanitization for security.
 Provides HTML sanitization to prevent XSS attacks in user-generated content.
 """
 import re
-from typing import Optional
 
 try:
     import nh3
@@ -26,7 +25,7 @@ DANGEROUS_PATTERNS = [
 COMPILED_PATTERNS = [re.compile(pattern, re.IGNORECASE | re.DOTALL) for pattern in DANGEROUS_PATTERNS]
 
 
-def sanitize_html(html: Optional[str], allow_tags: Optional[list[str]] = None) -> str:
+def sanitize_html(html: str | None, allow_tags: list[str] | None = None) -> str:
     """
     Sanitize HTML to prevent XSS attacks.
 
@@ -70,7 +69,7 @@ def sanitize_html(html: Optional[str], allow_tags: Optional[list[str]] = None) -
     return sanitized
 
 
-def sanitize_text(text: Optional[str]) -> str:
+def sanitize_text(text: str | None) -> str:
     """
     Sanitize plain text (remove all HTML).
 
@@ -96,7 +95,7 @@ def sanitize_text(text: Optional[str]) -> str:
     return clean_text.strip()
 
 
-def sanitize_markdown(markdown: Optional[str]) -> str:
+def sanitize_markdown(markdown: str | None) -> str:
     """
     Sanitize markdown content.
 
@@ -124,7 +123,7 @@ def sanitize_markdown(markdown: Optional[str]) -> str:
     return sanitized
 
 
-def check_for_xss(content: Optional[str]) -> list[str]:
+def check_for_xss(content: str | None) -> list[str]:
     """
     Check content for potential XSS attacks.
 
@@ -163,7 +162,7 @@ def check_for_xss(content: Optional[str]) -> list[str]:
 
 
 def sanitize_user_input(
-    value: Optional[str],
+    value: str | None,
     field_type: str = "text"
 ) -> str:
     """

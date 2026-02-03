@@ -23,6 +23,7 @@ interface NotificationPreferences {
 
 interface UseWebSocketOptions {
   notificationPreferences?: NotificationPreferences
+  enabled?: boolean  // Defaults to true - set to false to delay connection (e.g., backend not ready)
 }
 
 function showBrowserNotification(alert: AlertData) {
@@ -187,14 +188,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     setAlerts([])
   }, [])
 
-  // Auto-connect on mount
+  // Auto-connect on mount (when enabled)
   useEffect(() => {
+    // Don't connect if explicitly disabled (e.g., backend not ready)
+    if (options.enabled === false) {
+      return
+    }
+
     connect()
 
     return () => {
       disconnect()
     }
-  }, [connect, disconnect])
+  }, [connect, disconnect, options.enabled])
 
   // Send ping/pong to keep connection alive
   useEffect(() => {

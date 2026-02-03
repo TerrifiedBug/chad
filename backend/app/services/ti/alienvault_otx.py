@@ -143,7 +143,6 @@ class AlienVaultOTXClient(TIClient):
                 )
 
             pulse_count, tags, _ = self._extract_pulse_info(data)
-            reputation = data.get("reputation", {})
 
             return TILookupResult(
                 source=self.source_name,
@@ -178,7 +177,6 @@ class AlienVaultOTXClient(TIClient):
                 )
 
             pulse_count, tags, _ = self._extract_pulse_info(data)
-            whois = data.get("whois", "")
 
             return TILookupResult(
                 source=self.source_name,

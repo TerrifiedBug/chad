@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +17,6 @@ from app.models.ti_config import TISourceConfig
 from app.models.user import User
 from app.services.health import get_all_indices_health, get_health_history, get_index_health
 from app.services.settings import get_setting, set_setting
-from opensearchpy import OpenSearch
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -26,6 +26,12 @@ DEFAULT_ERROR_RATE_PERCENT = 5.0
 DEFAULT_LATENCY_MS = 1000
 DEFAULT_QUEUE_WARNING = 10000
 DEFAULT_QUEUE_CRITICAL = 100000
+
+# Pull mode default values
+DEFAULT_PULL_MAX_RETRIES = 3
+DEFAULT_PULL_RETRY_DELAY_SECONDS = 5
+DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING = 3
+DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL = 10
 
 
 class HealthSettingsResponse(BaseModel):
@@ -146,11 +152,11 @@ async def update_health_settings(
 class HealthIntervalConfig(BaseModel):
     """Health check interval configuration."""
 
-    jira_interval_seconds: int = Field(ge=60, le=3600, default=900, description="Jira health check interval (15 min default)")
-    sigmahq_interval_seconds: int = Field(ge=60, le=3600, default=3600, description="SigmaHQ health check interval (60 min default)")
-    mitre_attack_interval_seconds: int = Field(ge=60, le=3600, default=3600, description="MITRE ATT&CK health check interval (60 min default)")
-    opensearch_interval_seconds: int = Field(ge=30, le=600, default=300, description="OpenSearch health check interval (5 min default)")
-    ti_interval_seconds: int = Field(ge=60, le=3600, default=1800, description="TI sources health check interval (30 min default)")
+    jira_interval_seconds: int = Field(ge=60, le=86400, default=900)
+    sigmahq_interval_seconds: int = Field(ge=60, le=86400, default=3600)
+    mitre_attack_interval_seconds: int = Field(ge=60, le=86400, default=3600)
+    opensearch_interval_seconds: int = Field(ge=30, le=600, default=300)
+    ti_interval_seconds: int = Field(ge=60, le=86400, default=3600)
 
 
 class HealthIntervalResponse(BaseModel):
@@ -201,6 +207,78 @@ async def update_health_intervals(
         mitre_attack_interval_seconds=config.mitre_attack_interval_seconds,
         opensearch_interval_seconds=config.opensearch_interval_seconds,
         ti_interval_seconds=config.ti_interval_seconds,
+    )
+
+
+# Pull Mode Settings
+class PullModeSettingsResponse(BaseModel):
+    """Response for pull mode settings."""
+
+    max_retries: int
+    retry_delay_seconds: int
+    consecutive_failures_warning: int
+    consecutive_failures_critical: int
+
+
+class PullModeSettingsUpdate(BaseModel):
+    """Request for updating pull mode settings."""
+
+    max_retries: int = Field(default=3, ge=1, le=10, description="Max retry attempts for failed polls")
+    retry_delay_seconds: int = Field(default=5, ge=1, le=60, description="Delay between retries in seconds")
+    consecutive_failures_warning: int = Field(default=3, ge=1, le=50, description="Consecutive failures before warning status")
+    consecutive_failures_critical: int = Field(default=10, ge=1, le=100, description="Consecutive failures before critical status")
+
+    @field_validator("consecutive_failures_critical")
+    @classmethod
+    def critical_greater_than_warning(cls, v: int, info) -> int:
+        """Ensure critical threshold is greater than warning threshold."""
+        warning = info.data.get("consecutive_failures_warning", 3)
+        if v <= warning:
+            raise ValueError("consecutive_failures_critical must be greater than consecutive_failures_warning")
+        return v
+
+
+@router.get("/pull-mode/settings", response_model=PullModeSettingsResponse)
+async def get_pull_mode_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Get pull mode detection settings."""
+    setting = await get_setting(db, "pull_mode")
+    pull_settings = setting or {}
+
+    return PullModeSettingsResponse(
+        max_retries=pull_settings.get("max_retries", DEFAULT_PULL_MAX_RETRIES),
+        retry_delay_seconds=pull_settings.get("retry_delay_seconds", DEFAULT_PULL_RETRY_DELAY_SECONDS),
+        consecutive_failures_warning=pull_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING),
+        consecutive_failures_critical=pull_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL),
+    )
+
+
+@router.put("/pull-mode/settings", response_model=PullModeSettingsResponse)
+async def update_pull_mode_settings(
+    data: PullModeSettingsUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+):
+    """Update pull mode detection settings."""
+    # Get current settings
+    current = await get_setting(db, "pull_mode")
+    pull_settings = current or {}
+
+    # Apply updates
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        pull_settings[key] = value
+
+    # Save
+    await set_setting(db, "pull_mode", pull_settings)
+
+    return PullModeSettingsResponse(
+        max_retries=pull_settings.get("max_retries", DEFAULT_PULL_MAX_RETRIES),
+        retry_delay_seconds=pull_settings.get("retry_delay_seconds", DEFAULT_PULL_RETRY_DELAY_SECONDS),
+        consecutive_failures_warning=pull_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING),
+        consecutive_failures_critical=pull_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL),
     )
 
 
@@ -287,7 +365,7 @@ async def get_health_status(
                         last_update = db_info["modified_at"]
 
                         # Check if database is recent (within 30 days)
-                        from datetime import datetime, timedelta, UTC
+                        from datetime import UTC, datetime
                         try:
                             # Parse ISO format string - handle both with and without timezone
                             if isinstance(last_update, str):
@@ -372,7 +450,7 @@ async def get_health_status(
 
     # TI sources - show all enabled
     result = await db.execute(
-        select(TISourceConfig).where(TISourceConfig.is_enabled == True)
+        select(TISourceConfig).where(TISourceConfig.is_enabled.is_(True))
     )
     ti_configs = result.scalars().all()
     for config in ti_configs:
@@ -442,7 +520,7 @@ async def test_service_health(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Manually trigger health check for a service."""
-    from app.background.tasks.health_checks import check_jira_health, check_opensearch_health, check_ti_source_health
+    from app.background.tasks.health_checks import check_jira_health, check_opensearch_health
 
     if service_type == "jira":
         await check_jira_health(db)
@@ -457,3 +535,195 @@ async def test_service_health(
         return {"message": "AI connectivity check triggered"}
 
     return {"error": "Unknown service"}, 400
+
+
+# Pull mode health schema
+class PullModeHealthResponse(BaseModel):
+    """Health status for pull mode index patterns."""
+
+    index_pattern_id: str
+    index_pattern_name: str
+    pattern: str
+    mode: str
+    poll_interval_minutes: int
+    last_poll_at: str | None
+    last_poll_status: str | None
+    last_error: str | None
+    status: str  # healthy, warning, critical
+    issues: list[str]
+    metrics: dict
+
+
+@router.get("/pull-mode")
+async def get_pull_mode_health(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Get health status for all pull mode index patterns."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func
+    from sqlalchemy.orm import selectinload
+
+    from app.models.index_pattern import IndexPattern
+    from app.models.rule import Rule, RuleStatus
+    from app.services.health_monitor import check_index_data_freshness
+
+    # Load configurable thresholds
+    pull_mode_settings = await get_setting(db, "pull_mode") or {}
+    failures_warning = pull_mode_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING)
+    failures_critical = pull_mode_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL)
+
+    # Load health thresholds for data freshness check
+    health_thresholds = await get_setting(db, "health_thresholds") or {}
+    no_data_minutes = health_thresholds.get("no_data_minutes", DEFAULT_NO_DATA_MINUTES)
+
+    # Get all index patterns with poll state
+    result = await db.execute(
+        select(IndexPattern)
+        .options(selectinload(IndexPattern.poll_state))
+    )
+    patterns = result.scalars().all()
+
+    # Get count of deployed rules per index pattern
+    deployed_rules_result = await db.execute(
+        select(Rule.index_pattern_id, func.count(Rule.id).label("count"))
+        .where(Rule.status == RuleStatus.DEPLOYED)
+        .group_by(Rule.index_pattern_id)
+    )
+    deployed_rules_by_pattern = {row[0]: row[1] for row in deployed_rules_result}
+
+    pull_patterns = []
+    for pattern in patterns:
+        # Skip push-only patterns unless in pull-only deployment
+        from app.core.config import settings
+        if not settings.is_pull_only and pattern.mode != "pull":
+            continue
+
+        ps = pattern.poll_state
+        status = "healthy"
+        issues = []
+        notes = []
+
+        # Check if there are any deployed rules for this pattern
+        has_deployed_rules = deployed_rules_by_pattern.get(pattern.id, 0) > 0
+
+        if ps:
+            # Check poll status
+            if ps.last_poll_status == "error":
+                status = "warning" if ps.consecutive_failures < failures_warning else "critical"
+                issues.append(f"Last poll failed: {ps.last_error}")
+
+            # Check consecutive failures against configurable thresholds
+            if ps.consecutive_failures >= failures_critical:
+                status = "critical"
+                issues.append(f"{ps.consecutive_failures} consecutive poll failures")
+            elif ps.consecutive_failures >= failures_warning:
+                if status != "critical":
+                    status = "warning"
+                issues.append(f"{ps.consecutive_failures} consecutive poll failures")
+
+            # Check time since last poll
+            if ps.last_poll_at:
+                time_since = datetime.now(UTC) - ps.last_poll_at.replace(tzinfo=UTC)
+                expected_interval = pattern.poll_interval_minutes * 60 * 2  # 2x expected interval
+                if time_since.total_seconds() > expected_interval:
+                    if has_deployed_rules:
+                        # Only warn if there are enabled rules that should be polling
+                        if status != "critical":
+                            status = "warning"
+                        issues.append(f"No poll in {int(time_since.total_seconds() / 60)} minutes (expected every {pattern.poll_interval_minutes})")
+                    else:
+                        # No enabled rules - polling paused is expected, not a warning
+                        notes.append("Polling paused - no enabled rules")
+
+            metrics = {
+                "total_polls": ps.total_polls,
+                "successful_polls": ps.successful_polls,
+                "failed_polls": ps.failed_polls,
+                "success_rate": round(ps.successful_polls / ps.total_polls * 100, 1) if ps.total_polls > 0 else 0,
+                "total_matches": ps.total_matches,
+                "total_events_scanned": ps.total_events_scanned,
+                "last_poll_duration_ms": ps.last_poll_duration_ms,
+                "avg_poll_duration_ms": round(ps.avg_poll_duration_ms, 1) if ps.avg_poll_duration_ms else None,
+                "consecutive_failures": ps.consecutive_failures,
+            }
+        else:
+            # No poll state yet - pattern hasn't been polled
+            if has_deployed_rules:
+                status = "warning"
+                issues.append("Pattern not yet polled")
+            else:
+                # No enabled rules - no polling expected
+                notes.append("Polling paused - no enabled rules")
+            metrics = {
+                "total_polls": 0,
+                "successful_polls": 0,
+                "failed_polls": 0,
+                "success_rate": 0,
+                "total_matches": 0,
+                "total_events_scanned": 0,
+                "last_poll_duration_ms": None,
+                "avg_poll_duration_ms": None,
+                "consecutive_failures": 0,
+            }
+
+        # Check data freshness for this pattern
+        data_freshness = None
+        try:
+            # Use pattern-specific threshold if set, otherwise global
+            threshold = pattern.health_no_data_minutes or no_data_minutes
+            _, freshness_details = await check_index_data_freshness(
+                os_client,
+                pattern,
+                threshold_minutes=threshold
+            )
+            data_freshness = freshness_details
+        except Exception as e:
+            data_freshness = {
+                "status": "error",
+                "message": f"Failed to check data freshness: {e}",
+                "index": pattern.pattern,
+            }
+
+        pull_patterns.append({
+            "index_pattern_id": str(pattern.id),
+            "index_pattern_name": pattern.name,
+            "pattern": pattern.pattern,
+            "mode": pattern.mode,
+            "poll_interval_minutes": pattern.poll_interval_minutes,
+            "last_poll_at": ps.last_poll_at.isoformat() if ps and ps.last_poll_at else None,
+            "last_poll_status": ps.last_poll_status if ps else None,
+            "last_error": ps.last_error if ps else None,
+            "status": status,
+            "issues": issues,
+            "notes": notes,
+            "has_enabled_rules": has_deployed_rules,
+            "metrics": metrics,
+            "data_freshness": data_freshness,
+        })
+
+    # Calculate overall status
+    overall_status = "healthy"
+    if any(p["status"] == "critical" for p in pull_patterns):
+        overall_status = "critical"
+    elif any(p["status"] == "warning" for p in pull_patterns):
+        overall_status = "warning"
+
+    # Aggregate metrics
+    total_metrics = {
+        "total_patterns": len(pull_patterns),
+        "healthy_patterns": sum(1 for p in pull_patterns if p["status"] == "healthy"),
+        "warning_patterns": sum(1 for p in pull_patterns if p["status"] == "warning"),
+        "critical_patterns": sum(1 for p in pull_patterns if p["status"] == "critical"),
+        "total_polls": sum(p["metrics"]["total_polls"] for p in pull_patterns),
+        "total_matches": sum(p["metrics"]["total_matches"] for p in pull_patterns),
+        "total_events_scanned": sum(p["metrics"]["total_events_scanned"] for p in pull_patterns),
+    }
+
+    return {
+        "overall_status": overall_status,
+        "summary": total_metrics,
+        "patterns": pull_patterns,
+    }

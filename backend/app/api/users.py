@@ -11,8 +11,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import validate_password_complexity
-from app.models.audit_log import AuditLog
 from app.api.deps import get_db, require_admin, require_permission_dep
+from app.models.audit_log import AuditLog
 from app.models.setting import Setting
 from app.models.user import User, UserRole
 from app.services.audit import audit_log
@@ -216,7 +216,7 @@ async def delete_user(
     # Prevent deleting the last admin user
     if user.role == UserRole.ADMIN:
         admin_count_result = await db.execute(
-            select(User).where(User.role == UserRole.ADMIN, User.is_active == True)
+            select(User).where(User.role == UserRole.ADMIN, User.is_active.is_(True))
         )
         admin_count = len(admin_count_result.scalars().all())
         if admin_count <= 1:

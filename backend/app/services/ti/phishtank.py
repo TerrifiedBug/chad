@@ -125,7 +125,6 @@ class PhishTankClient(TIClient):
                 )
 
             verified = data.get("verified", False)
-            phish_detail_url = data.get("phish_detail_url")
             submit_time = data.get("submit_time")
 
             return TILookupResult(

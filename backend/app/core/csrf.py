@@ -8,9 +8,9 @@ but this provides defense-in-depth protection.
 Uses Double Submit Cookie pattern with SameSite cookies and Origin/Referer validation.
 """
 
-import secrets
 import logging
-from typing import Callable
+import secrets
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 from fastapi import Request, Response
@@ -135,7 +135,15 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     # delegate authentication to external providers
     EXEMPT_PATHS = {
         "/api/auth/sso/exchange",  # SSO exchange uses short-lived code (30s, single-use)
+        "/api/auth/login",  # Login creates session (no CSRF cookie exists before login)
+        "/api/auth/login/2fa",  # 2FA login uses short-lived 2fa_token from prior login
     }
+
+    # Path prefixes that are exempt from CSRF (for external integrations)
+    EXEMPT_PREFIXES = (
+        "/api/logs/",  # Log ingestion uses per-index-pattern auth tokens
+        "/api/external/",  # External API uses API keys
+    )
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
@@ -149,8 +157,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             - Validate Origin/Referer/Host headers
         """
         # Check if path is exempt from CSRF protection
-        if str(request.url.path) in self.EXEMPT_PATHS:
-            logger.info(f"CSRF: Exempted path {request.url.path} from validation")
+        path = str(request.url.path)
+        if path in self.EXEMPT_PATHS or path.startswith(self.EXEMPT_PREFIXES):
+            logger.debug(f"CSRF: Exempted path {path} from validation")
             return await call_next(request)
 
         # For API requests with JWT authentication, CSRF is less critical

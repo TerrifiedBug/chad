@@ -5,8 +5,9 @@ Revises: 7d8cb2f0c87b
 Create Date: 2026-01-27
 
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers
 revision = '20260127_auth_method'

@@ -38,6 +38,8 @@ class CorrelationRuleResponse(CorrelationRuleBase):
     """Schema for correlation rule response."""
 
     id: str
+    description: str | None = None  # Optional description for the correlation rule
+    status: str = "undeployed"  # Computed: 'deployed', 'undeployed', or 'snoozed'
     created_at: datetime
     updated_at: datetime
     created_by: str | None

@@ -138,7 +138,7 @@ class RuleTestResponse(BaseModel):
 class RuleDeployResponse(BaseModel):
     success: bool
     rule_id: UUID
-    percolator_index: str
+    percolator_index: str | None = None  # None for pull mode (no percolator)
     deployed_version: int
     deployed_at: datetime
 

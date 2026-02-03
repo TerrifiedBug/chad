@@ -5,9 +5,9 @@ Revises: 07ip_allowlist_ratelimit_add
 Create Date: 2026-01-29
 
 """
-from alembic import op
-import sqlalchemy as sa
 from sqlalchemy import text
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "08jq_add_rule_title_unique"

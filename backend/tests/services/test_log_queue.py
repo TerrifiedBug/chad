@@ -1,7 +1,8 @@
 """Tests for log queue service."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 
 class TestLogQueueService:

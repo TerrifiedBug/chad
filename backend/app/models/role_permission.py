@@ -4,7 +4,7 @@ Role permissions configuration.
 Stores customizable permissions for each role (admin, analyst, viewer).
 """
 
-from sqlalchemy import String, Boolean, UniqueConstraint
+from sqlalchemy import Boolean, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -37,6 +37,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "view_audit": True,
         "manage_sigmahq": True,
         "manage_correlation": True,
+        "view_system_logs": True,
     },
     "analyst": {
         "manage_users": False,
@@ -49,6 +50,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "view_audit": True,
         "manage_sigmahq": True,
         "manage_correlation": True,
+        "view_system_logs": True,
     },
     "viewer": {
         "manage_users": False,
@@ -61,6 +63,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "view_audit": False,
         "manage_sigmahq": False,
         "manage_correlation": False,
+        "view_system_logs": False,
     },
 }
 
@@ -75,4 +78,5 @@ PERMISSION_DESCRIPTIONS = {
     "view_audit": "Access the audit log viewer",
     "manage_sigmahq": "Sync and import SigmaHQ rules",
     "manage_correlation": "Create, edit, and delete correlation rules",
+    "view_system_logs": "Access the system log viewer",
 }

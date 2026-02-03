@@ -37,5 +37,5 @@ class AlertComment(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", foreign_keys=[user_id], lazy="selectin")
-    deleted_by: Mapped["User | None"] = relationship("User", foreign_keys=[deleted_by_id], lazy="selectin")
+    user: Mapped[User] = relationship("User", foreign_keys=[user_id], lazy="selectin")
+    deleted_by: Mapped[User | None] = relationship("User", foreign_keys=[deleted_by_id], lazy="selectin")

@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from opensearchpy.exceptions import ConnectionError
+from sqlalchemy import select
 
 from app.background.tasks.health_checks import check_jira_health, check_opensearch_health
 from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
 from app.models.setting import Setting
-from sqlalchemy import select
 
 
 @pytest.mark.asyncio
@@ -31,7 +31,13 @@ async def test_opensearch_healthy(db_session):
     db_session.add(setting)
     await db_session.commit()
 
-    with patch("app.background.tasks.health_checks.OpenSearch") as mock_os_class:
+    # Mock Redis to return no cached value (forces actual health check)
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+    mock_redis.set = AsyncMock()
+
+    with patch("app.background.tasks.health_checks.OpenSearch") as mock_os_class, \
+         patch("app.core.redis.get_redis", return_value=mock_redis):
         mock_os = MagicMock()
         mock_os.cluster.health.return_value = {"status": "green"}
         mock_os_class.return_value = mock_os
@@ -66,7 +72,13 @@ async def test_opensearch_yellow_warning(db_session):
     db_session.add(setting)
     await db_session.commit()
 
-    with patch("app.background.tasks.health_checks.OpenSearch") as mock_os_class:
+    # Mock Redis to return no cached value
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+    mock_redis.set = AsyncMock()
+
+    with patch("app.background.tasks.health_checks.OpenSearch") as mock_os_class, \
+         patch("app.core.redis.get_redis", return_value=mock_redis):
         mock_os = MagicMock()
         mock_os.cluster.health.return_value = {"status": "yellow"}
         mock_os_class.return_value = mock_os
@@ -99,7 +111,13 @@ async def test_opensearch_red_unhealthy(db_session):
     db_session.add(setting)
     await db_session.commit()
 
-    with patch("app.background.tasks.health_checks.OpenSearch") as mock_os_class:
+    # Mock Redis to return no cached value
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+    mock_redis.set = AsyncMock()
+
+    with patch("app.background.tasks.health_checks.OpenSearch") as mock_os_class, \
+         patch("app.core.redis.get_redis", return_value=mock_redis):
         mock_os = MagicMock()
         mock_os.cluster.health.return_value = {"status": "red"}
         mock_os_class.return_value = mock_os
@@ -132,7 +150,13 @@ async def test_opensearch_connection_error(db_session):
     db_session.add(setting)
     await db_session.commit()
 
-    with patch("app.background.tasks.health_checks.OpenSearch") as mock_os_class:
+    # Mock Redis to return no cached value
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+    mock_redis.set = AsyncMock()
+
+    with patch("app.background.tasks.health_checks.OpenSearch") as mock_os_class, \
+         patch("app.core.redis.get_redis", return_value=mock_redis):
         # Use proper opensearchpy ConnectionError (400, "Connection refused")
         mock_os_class.side_effect = ConnectionError(400, "Connection refused")
 
@@ -152,8 +176,13 @@ async def test_opensearch_connection_error(db_session):
 @pytest.mark.asyncio
 async def test_opensearch_not_configured(db_session):
     """Test OpenSearch health check when OpenSearch is not configured."""
-    # Don't create any setting - should handle gracefully
-    await check_opensearch_health(db_session)
+    # Mock Redis to return no cached value
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+
+    with patch("app.core.redis.get_redis", return_value=mock_redis):
+        # Don't create any setting - should handle gracefully
+        await check_opensearch_health(db_session)
 
     result = await db_session.execute(
         select(HealthCheckLog).filter_by(service_type="opensearch")
@@ -179,7 +208,13 @@ async def test_jira_healthy(db_session):
     db_session.add(config)
     await db_session.commit()
 
-    with patch("app.background.tasks.health_checks.JiraService") as mock_jira_class:
+    # Mock Redis to return no cached value
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+    mock_redis.set = AsyncMock()
+
+    with patch("app.background.tasks.health_checks.JiraService") as mock_jira_class, \
+         patch("app.core.redis.get_redis", return_value=mock_redis):
         mock_jira = MagicMock()
         mock_jira.test_connection = AsyncMock(return_value=True)
         mock_jira_class.return_value = mock_jira
@@ -216,7 +251,12 @@ async def test_jira_disabled(db_session):
     db_session.add(config)
     await db_session.commit()
 
-    await check_jira_health(db_session)
+    # Mock Redis to return no cached value
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+
+    with patch("app.core.redis.get_redis", return_value=mock_redis):
+        await check_jira_health(db_session)
 
     result = await db_session.execute(
         select(HealthCheckLog).filter_by(service_type="jira")
@@ -244,7 +284,13 @@ async def test_jira_connection_error(db_session):
     db_session.add(config)
     await db_session.commit()
 
-    with patch("app.background.tasks.health_checks.JiraService") as mock_jira_class:
+    # Mock Redis to return no cached value
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+    mock_redis.set = AsyncMock()
+
+    with patch("app.background.tasks.health_checks.JiraService") as mock_jira_class, \
+         patch("app.core.redis.get_redis", return_value=mock_redis):
         mock_jira = MagicMock()
         mock_jira.test_connection = AsyncMock(
             side_effect=JiraAPIError(message="Authentication failed")

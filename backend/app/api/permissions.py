@@ -10,10 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
 from app.db.session import get_db
-from app.models.user import User
 from app.models.role_permission import PERMISSION_DESCRIPTIONS
-from app.services.permissions import get_all_role_permissions, set_role_permission
+from app.models.user import User
 from app.services.audit import audit_log
+from app.services.permissions import get_all_role_permissions, set_role_permission
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/permissions", tags=["permissions"])

@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_opensearch_client, require_admin, require_permission_dep
+from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
 from app.db.session import get_db
 from app.models.index_pattern import IndexPattern, generate_auth_token
 from app.models.rule import Rule
@@ -20,8 +21,8 @@ from app.schemas.index_pattern import (
     IndexPatternValidateResponse,
 )
 from app.services.audit import audit_log
+from app.services.opensearch import get_index_fields, get_time_fields, validate_index_pattern
 from app.utils.request import get_client_ip
-from app.services.opensearch import get_index_fields, validate_index_pattern
 
 router = APIRouter(prefix="/index-patterns", tags=["index-patterns"])
 
@@ -31,15 +32,18 @@ async def list_index_patterns(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
 ):
-    result = await db.execute(select(IndexPattern))
+    result = await db.execute(
+        select(IndexPattern).options(selectinload(IndexPattern.updated_by))
+    )
     return result.scalars().all()
 
 
 @router.post("", response_model=IndexPatternResponse, status_code=status.HTTP_201_CREATED)
 async def create_index_pattern(
     pattern_data: IndexPatternCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     # Check for duplicate name
     result = await db.execute(
@@ -75,6 +79,30 @@ async def create_index_pattern(
     db.add(pattern)
     await db.commit()
     await db.refresh(pattern)
+
+    # Audit log the creation
+    await audit_log(
+        db,
+        current_user.id,
+        "index_pattern.create",
+        "index_pattern",
+        str(pattern.id),
+        {"name": pattern.name, "pattern": pattern.pattern, "mode": pattern.mode},
+        ip_address=get_client_ip(request),
+    )
+
+    # Schedule pull poll job if this is a pull mode index
+    if pattern.mode == "pull":
+        try:
+            from app.services.scheduler import scheduler_service
+            scheduler_service.schedule_pull_poll_job(
+                str(pattern.id),
+                pattern.name,
+                pattern.poll_interval_minutes,
+            )
+        except Exception:
+            pass  # Scheduler may not be available during tests
+
     return pattern
 
 
@@ -84,7 +112,11 @@ async def get_index_pattern(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
 ):
-    result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
+    result = await db.execute(
+        select(IndexPattern)
+        .where(IndexPattern.id == pattern_id)
+        .options(selectinload(IndexPattern.updated_by))
+    )
     pattern = result.scalar_one_or_none()
 
     if pattern is None:
@@ -99,9 +131,17 @@ async def get_index_pattern(
 async def update_index_pattern(
     pattern_id: UUID,
     pattern_data: IndexPatternUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
+    opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
+    import logging
+
+    from app.services.percolator import PercolatorService
+
+    logger = logging.getLogger(__name__)
+
     result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
 
@@ -112,6 +152,9 @@ async def update_index_pattern(
         )
 
     update_data = pattern_data.model_dump(exclude_unset=True)
+
+    # Extract change_reason for audit logging (don't set it on the model)
+    change_reason = update_data.pop("change_reason", None)
 
     # Check for duplicate name if name is being updated
     if "name" in update_data:
@@ -155,19 +198,77 @@ async def update_index_pattern(
                 detail="An index pattern with this percolator index already exists",
             )
 
+    # Handle mode transition: push -> pull
+    # When switching to pull mode, percolator queries are no longer needed
+    # (pull mode queries OpenSearch directly instead of using percolate API)
+    old_mode = pattern.mode
+    new_mode = update_data.get("mode")
+
+    if new_mode == "pull" and old_mode == "push":
+        try:
+            percolator_service = PercolatorService(opensearch)
+            deleted_count = percolator_service.undeploy_all_rules(pattern.percolator_index)
+            if deleted_count > 0:
+                logger.info(
+                    "Mode transition (push -> pull): Removed %s percolator queries from %s",
+                    deleted_count, pattern.percolator_index
+                )
+        except Exception as e:
+            logger.warning("Failed to cleanup percolator queries during mode transition: %s", e)
+
     for field, value in update_data.items():
         setattr(pattern, field, value)
 
+    # Track who made this update
+    pattern.updated_by_id = current_user.id
+
     await db.commit()
     await db.refresh(pattern)
+
+    # Create audit log entry if change_reason provided
+    if change_reason:
+        await audit_log(
+            db,
+            current_user.id,
+            "index_pattern.update",
+            "index_pattern",
+            str(pattern.id),
+            {
+                "name": pattern.name,
+                "change_reason": change_reason,
+                "changed_fields": list(pattern_data.model_dump(exclude_unset=True, exclude={"change_reason"}).keys()),
+            },
+            ip_address=get_client_ip(request),
+        )
+        await db.commit()
+
+    # Update scheduler for pull mode changes
+    try:
+        from app.services.scheduler import scheduler_service
+
+        if pattern.mode == "pull":
+            # Schedule or update pull poll job
+            scheduler_service.schedule_pull_poll_job(
+                str(pattern.id),
+                pattern.name,
+                pattern.poll_interval_minutes,
+            )
+        elif old_mode == "pull" and new_mode == "push":
+            # Switching from pull to push - remove the poll job
+            scheduler_service.remove_pull_poll_job(str(pattern.id))
+    except Exception as e:
+        # Scheduler may not be available during tests
+        logger.debug("Could not update scheduler: %s", e)
+
     return pattern
 
 
 @router.delete("/{pattern_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_index_pattern(
     pattern_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
@@ -190,8 +291,31 @@ async def delete_index_pattern(
             detail=f"Cannot delete index pattern: {rule_count} rule{'s' if rule_count != 1 else ''} {'are' if rule_count != 1 else 'is'} using this pattern. Reassign or delete the rules first.",
         )
 
+    # Remove any pull poll job if this was a pull mode index
+    if pattern.mode == "pull":
+        try:
+            from app.services.scheduler import scheduler_service
+            scheduler_service.remove_pull_poll_job(str(pattern.id))
+        except Exception:
+            pass  # Scheduler may not be available during tests
+
+    # Capture details before deletion for audit log
+    pattern_name = pattern.name
+    pattern_pattern = pattern.pattern
+
     await db.delete(pattern)
     await db.commit()
+
+    # Audit log the deletion
+    await audit_log(
+        db,
+        current_user.id,
+        "index_pattern.delete",
+        "index_pattern",
+        str(pattern_id),
+        {"name": pattern_name, "pattern": pattern_pattern},
+        ip_address=get_client_ip(request),
+    )
 
 
 @router.post("/{pattern_id}/regenerate-token", response_model=IndexPatternTokenResponse)
@@ -268,6 +392,36 @@ async def get_index_pattern_fields(
         raise HTTPException(
             status_code=503,
             detail=f"Failed to get index fields: {e}",
+        )
+
+
+@router.get("/{pattern_id}/time-fields", response_model=list[str])
+async def get_index_pattern_time_fields(
+    pattern_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    opensearch: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Get available date/timestamp fields from an index pattern's OpenSearch index.
+
+    Returns a list of field names that can be used as the timestamp_field for pull mode.
+    Only returns fields with date or date_nanos type.
+    """
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == pattern_id)
+    )
+    pattern = result.scalar_one_or_none()
+    if pattern is None:
+        raise HTTPException(status_code=404, detail="Index pattern not found")
+
+    try:
+        fields = get_time_fields(opensearch, pattern.pattern)
+        return fields
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to get time fields: {e}",
         )
 
 

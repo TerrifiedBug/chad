@@ -66,10 +66,10 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${fetchPath}`, fetchOptions)
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'GET ' + path)
       throw new Error(getErrorMessage(error))
@@ -85,10 +85,10 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'POST ' + path)
       throw new Error(getErrorMessage(error))
@@ -104,10 +104,10 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'PATCH ' + path)
       throw new Error(getErrorMessage(error))
@@ -126,10 +126,10 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${path}`, options)
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'DELETE ' + path)
       throw new Error(getErrorMessage(error))
@@ -144,10 +144,10 @@ export class ApiClient {
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
-      let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
-        error = { detail: 'Request failed' }
+        error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'PUT ' + path)
       throw new Error(getErrorMessage(error))
@@ -196,6 +196,20 @@ export type WebhookTestResponse = {
   error?: string | null
 }
 
+// Mode types (deployment mode: push, pull, or hybrid)
+export type ModeResponse = {
+  mode: string  // 'push' or 'pull'
+  is_pull_only: boolean  // True if CHAD_MODE=pull
+  supports_push: boolean  // True in full deployment
+  supports_pull: boolean  // Always True
+}
+
+// Mode API
+export const modeApi = {
+  getMode: () =>
+    api.get<ModeResponse>('/mode'),
+}
+
 // Version types
 export type VersionResponse = {
   version: string
@@ -232,6 +246,8 @@ export const settingsApi = {
     api.get<VersionResponse>('/settings/version'),
   checkForUpdates: () =>
     api.get<UpdateCheckResponse>('/settings/version/check'),
+  checkForUpdatesNow: () =>
+    api.post<UpdateCheckResponse>('/settings/version/check-now', {}),
   // Security settings
   getSecuritySettings: () =>
     api.get<SecuritySettings>('/settings/security'),
@@ -633,6 +649,19 @@ export type TIConfig = {
   [sourceName: string]: TISourceConfigForPattern
 }
 
+// Index Pattern mode types
+export type IndexPatternMode = 'push' | 'pull'
+
+// Health override thresholds for index patterns
+export type HealthOverridesConfig = {
+  detection_latency_warning_ms?: number
+  detection_latency_critical_ms?: number
+  error_rate_percent?: number
+  no_data_minutes?: number
+  queue_warning?: number
+  queue_critical?: number
+}
+
 // Index Pattern types
 export type IndexPattern = {
   id: string
@@ -648,6 +677,8 @@ export type IndexPattern = {
   health_error_rate_percent: number | null
   health_latency_ms: number | null
   health_alerting_enabled: boolean
+  // Per-pattern health overrides
+  health_overrides?: HealthOverridesConfig | null
   // GeoIP enrichment
   geoip_fields: string[]
   // TI enrichment config per source
@@ -658,18 +689,27 @@ export type IndexPattern = {
   rate_limit_enabled: boolean
   rate_limit_requests_per_minute: number | null
   rate_limit_events_per_minute: number | null
+  // Detection mode: 'push' (real-time via /logs) or 'pull' (scheduled queries)
+  mode: IndexPatternMode
+  poll_interval_minutes: number
+  // Timestamp field for pull mode time filtering (must be a date field in the index)
+  timestamp_field: string
+  // Audit: email of user who last edited this pattern
+  last_edited_by: string | null
 }
 
 export type IndexPatternCreate = {
   name: string
   pattern: string
   percolator_index: string
-  description?: string
+  description?: string | null
   // Health alerting thresholds
   health_no_data_minutes?: number | null
   health_error_rate_percent?: number | null
   health_latency_ms?: number | null
   health_alerting_enabled?: boolean
+  // Per-pattern health overrides
+  health_overrides?: HealthOverridesConfig | null
   // GeoIP enrichment
   geoip_fields?: string[]
   // TI enrichment config per source
@@ -680,9 +720,15 @@ export type IndexPatternCreate = {
   rate_limit_enabled?: boolean
   rate_limit_requests_per_minute?: number | null
   rate_limit_events_per_minute?: number | null
+  // Detection mode
+  mode?: IndexPatternMode
+  poll_interval_minutes?: number
+  timestamp_field?: string
 }
 
-export type IndexPatternUpdate = Partial<IndexPatternCreate>
+export type IndexPatternUpdate = Partial<IndexPatternCreate> & {
+  change_reason?: string  // For audit logging
+}
 
 export type IndexPatternValidateResponse = {
   valid: boolean
@@ -710,6 +756,8 @@ export const indexPatternsApi = {
     api.post<{ auth_token: string }>(`/index-patterns/${id}/regenerate-token`),
   getFields: (id: string) =>
     api.get<string[]>(`/index-patterns/${id}/fields`),
+  getTimeFields: (id: string) =>
+    api.get<string[]>(`/index-patterns/${id}/time-fields`),
 }
 
 // Alert types
@@ -1150,6 +1198,31 @@ export type AuditLogListResponse = {
   offset: number
 }
 
+// System Log types
+export type SystemLogEntry = {
+  id: string
+  timestamp: string
+  level: 'ERROR' | 'WARNING'
+  category: 'opensearch' | 'alerts' | 'pull_mode' | 'integrations' | 'background'
+  service: string
+  message: string
+  details: Record<string, unknown> | null
+  created_at: string
+}
+
+export type SystemLogListResponse = {
+  items: SystemLogEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type SystemLogStatsResponse = {
+  errors_24h: number
+  warnings_24h: number
+  by_category: Record<string, { errors: number; warnings: number }>
+}
+
 export const auditApi = {
   list: (params?: {
     user_id?: string
@@ -1198,6 +1271,50 @@ export const auditApi = {
   },
 }
 
+// System Logs API
+export const systemLogsApi = {
+  list: async (params?: {
+    start_time?: string
+    end_time?: string
+    level?: string
+    category?: string
+    search?: string
+    limit?: number
+    offset?: number
+  }): Promise<SystemLogListResponse> => {
+    const searchParams = new URLSearchParams()
+    if (params?.start_time) searchParams.set('start_time', params.start_time)
+    if (params?.end_time) searchParams.set('end_time', params.end_time)
+    if (params?.level) searchParams.set('level', params.level)
+    if (params?.category) searchParams.set('category', params.category)
+    if (params?.search) searchParams.set('search', params.search)
+    if (params?.limit) searchParams.set('limit', params.limit.toString())
+    if (params?.offset) searchParams.set('offset', params.offset.toString())
+
+    const query = searchParams.toString()
+    return api.get<SystemLogListResponse>(`/system-logs${query ? `?${query}` : ''}`)
+  },
+
+  getStats: async (): Promise<SystemLogStatsResponse> => {
+    return api.get<SystemLogStatsResponse>('/system-logs/stats')
+  },
+
+  purge: async (before: string): Promise<{ deleted_count: number }> => {
+    // Use fetch directly since api.delete returns void but this endpoint returns data
+    const response = await fetch(`${API_BASE}/system-logs?before=${encodeURIComponent(before)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    })
+    if (!response.ok) {
+      throw new Error('Failed to purge system logs')
+    }
+    return response.json()
+  },
+}
+
 // Permissions types
 export type PermissionsResponse = {
   roles: Record<string, Record<string, boolean>>
@@ -1240,7 +1357,7 @@ export type AITestResponse = {
 }
 
 // Field Mapping types
-export type MappingOrigin = 'manual' | 'ai_suggested'
+export type MappingOrigin = 'MANUAL' | 'AI_SUGGESTED'
 
 export type FieldMapping = {
   id: string
@@ -1328,6 +1445,7 @@ export type IndexHealth = {
   index_pattern_id: string
   index_pattern_name: string
   pattern: string
+  mode: 'push' | 'pull'
   status: HealthStatus
   issues: string[]
   latest: {
@@ -1409,6 +1527,67 @@ export const alertClusteringApi = {
     api.put<AlertClusteringSettings>('/settings/alert-clustering', data),
 }
 
+// Data freshness types for pull mode
+export type DataFreshnessStatus = 'fresh' | 'stale' | 'no_data' | 'no_timestamp' | 'error'
+
+export type DataFreshness = {
+  status: DataFreshnessStatus
+  last_event_at?: string
+  age_minutes?: number
+  threshold_minutes?: number
+  message?: string
+  index?: string
+}
+
+// Pull mode health types
+export type PullModePatternHealth = {
+  index_pattern_id: string
+  index_pattern_name: string
+  pattern: string
+  mode: string
+  poll_interval_minutes: number
+  last_poll_at: string | null
+  last_poll_status: string | null
+  last_error: string | null
+  status: HealthStatus
+  issues: string[]
+  notes: string[]
+  has_enabled_rules: boolean
+  metrics: {
+    total_polls: number
+    successful_polls: number
+    failed_polls: number
+    success_rate: number
+    total_matches: number
+    total_events_scanned: number
+    last_poll_duration_ms: number | null
+    avg_poll_duration_ms: number | null
+    consecutive_failures: number
+  }
+  data_freshness?: DataFreshness
+}
+
+export type PullModeHealth = {
+  overall_status: HealthStatus
+  summary: {
+    total_patterns: number
+    healthy_patterns: number
+    warning_patterns: number
+    critical_patterns: number
+    total_polls: number
+    total_matches: number
+    total_events_scanned: number
+  }
+  patterns: PullModePatternHealth[]
+}
+
+export type PullModeSettings = {
+  max_retries: number
+  retry_delay_seconds: number
+  consecutive_failures_warning: number
+  consecutive_failures_critical: number
+}
+
 // Health API
 export const healthApi = {
   listIndices: () =>
@@ -1425,6 +1604,12 @@ export const healthApi = {
     api.get<HealthIntervals>('/health/intervals'),
   updateIntervals: (data: HealthIntervals) =>
     api.put<HealthIntervals>('/health/intervals', data),
+  getPullModeHealth: () =>
+    api.get<PullModeHealth>('/health/pull-mode'),
+  getPullModeSettings: () =>
+    api.get<PullModeSettings>('/health/pull-mode/settings'),
+  updatePullModeSettings: (data: PullModeSettings) =>
+    api.put<PullModeSettings>('/health/pull-mode/settings', data),
 }
 
 // Notification settings types
@@ -1787,6 +1972,7 @@ export type EntityFieldType = 'sigma' | 'direct'
 export type CorrelationRule = {
   id: string
   name: string
+  description?: string | null
   rule_a_id: string
   rule_b_id: string
   rule_a_title?: string
@@ -1795,6 +1981,7 @@ export type CorrelationRule = {
   entity_field_type: EntityFieldType
   time_window_minutes: number
   severity: 'critical' | 'high' | 'medium' | 'low' | 'informational'
+  status: 'deployed' | 'undeployed' | 'snoozed'
   created_at: string
   updated_at: string
   created_by?: string

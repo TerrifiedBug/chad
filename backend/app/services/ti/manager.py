@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.encryption import decrypt
 from app.models.ti_config import TISourceConfig, TISourceType
-from app.services.ti.abuseipdb import AbuseIPDBClient
+from app.services.system_log import LogCategory, system_log_service
 from app.services.ti.abuse_ch import AbuseCHClient
+from app.services.ti.abuseipdb import AbuseIPDBClient
 from app.services.ti.alienvault_otx import AlienVaultOTXClient
 from app.services.ti.base import (
     TIClient,
@@ -103,6 +104,13 @@ class TIEnrichmentManager:
                     logger.info(f"Initialized TI client: {config.source_type}")
             except Exception as e:
                 logger.error(f"Failed to initialize TI client {config.source_type}: {e}")
+                await system_log_service.log_error(
+                    db,
+                    category=LogCategory.INTEGRATIONS,
+                    service="ti_manager",
+                    message=f"TI feed sync failed: {str(e)}",
+                    details={"error": str(e), "error_type": type(e).__name__, "source_type": config.source_type}
+                )
 
     def _create_client(self, config: TISourceConfig) -> TIClient | None:
         """Create a TI client from configuration.

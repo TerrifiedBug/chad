@@ -14,6 +14,14 @@ from app.schemas.rule import (
     RuleUpdate,
     RuleVersionResponse,
 )
+from app.schemas.system_log import (
+    LogCategory,
+    LogLevel,
+    SystemLogEntry,
+    SystemLogListResponse,
+    SystemLogPurgeResponse,
+    SystemLogStatsResponse,
+)
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 __all__ = [
@@ -26,11 +34,17 @@ __all__ = [
     "TIFieldConfig",
     "TIIndicatorType",
     "TISourceConfig",
+    "LogCategory",
+    "LogLevel",
     "RuleCreate",
     "RuleDetailResponse",
     "RuleResponse",
     "RuleUpdate",
     "RuleVersionResponse",
+    "SystemLogEntry",
+    "SystemLogListResponse",
+    "SystemLogPurgeResponse",
+    "SystemLogStatsResponse",
     "UserCreate",
     "UserResponse",
     "UserUpdate",
