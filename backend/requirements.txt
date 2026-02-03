@@ -6,7 +6,7 @@ python-multipart==0.0.22
 # Database
 sqlalchemy[asyncio]==2.0.30
 asyncpg==0.29.0
-alembic==1.18.1
+alembic==1.18.3
 psycopg2-binary==2.9.9
 
 # Authentication
