@@ -1,11 +1,10 @@
 """Tests for MISP IOC sync service."""
 
-from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.ti.ioc_types import IOCType, IOCRecord
+from app.services.ti.ioc_types import IOCRecord, IOCType
 from app.services.ti.misp_sync import MISPIOCFetcher
 
 
@@ -25,34 +24,36 @@ async def test_fetch_iocs_returns_records(misp_fetcher):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "Attribute": [
-            {
-                "id": "1",
-                "uuid": "attr-uuid-1",
-                "event_id": "100",
-                "type": "ip-dst",
-                "value": "192.168.1.100",
-                "Event": {
-                    "uuid": "event-uuid-1",
-                    "info": "APT29 Infrastructure",
-                    "threat_level_id": "1",
-                    "Tag": [{"name": "apt29"}, {"name": "tlp:amber"}],
+        "response": {
+            "Attribute": [
+                {
+                    "id": "1",
+                    "uuid": "attr-uuid-1",
+                    "event_id": "100",
+                    "type": "ip-dst",
+                    "value": "192.168.1.100",
+                    "Event": {
+                        "uuid": "event-uuid-1",
+                        "info": "APT29 Infrastructure",
+                        "threat_level_id": "1",
+                        "Tag": [{"name": "apt29"}, {"name": "tlp:amber"}],
+                    },
                 },
-            },
-            {
-                "id": "2",
-                "uuid": "attr-uuid-2",
-                "event_id": "101",
-                "type": "domain",
-                "value": "evil.com",
-                "Event": {
-                    "uuid": "event-uuid-2",
-                    "info": "Phishing Campaign",
-                    "threat_level_id": "2",
-                    "Tag": [{"name": "phishing"}],
+                {
+                    "id": "2",
+                    "uuid": "attr-uuid-2",
+                    "event_id": "101",
+                    "type": "domain",
+                    "value": "evil.com",
+                    "Event": {
+                        "uuid": "event-uuid-2",
+                        "info": "Phishing Campaign",
+                        "threat_level_id": "2",
+                        "Tag": [{"name": "phishing"}],
+                    },
                 },
-            },
-        ]
+            ]
+        }
     }
 
     with patch.object(misp_fetcher._client, "post", new_callable=AsyncMock) as mock_post:
@@ -77,7 +78,7 @@ async def test_fetch_iocs_filters_by_to_ids(misp_fetcher):
     """Test that only to_ids=True attributes are fetched."""
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {"Attribute": []}
+    mock_response.json.return_value = {"response": {"Attribute": []}}
 
     with patch.object(misp_fetcher._client, "post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = mock_response
@@ -95,7 +96,7 @@ async def test_fetch_iocs_handles_empty_response(misp_fetcher):
     """Test handling of empty MISP response."""
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {"Attribute": []}
+    mock_response.json.return_value = {"response": {"Attribute": []}}
 
     with patch.object(misp_fetcher._client, "post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = mock_response

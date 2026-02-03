@@ -127,7 +127,7 @@ class MISPIOCFetcher:
             logger.error("Failed to fetch IOCs from MISP: %s", e)
             raise
 
-        attributes = data.get("Attribute", [])
+        attributes = data.get("response", {}).get("Attribute", [])
         records: list[IOCRecord] = []
         expires_at = datetime.now(UTC) + timedelta(days=ttl_days)
 
