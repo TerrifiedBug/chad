@@ -24,6 +24,11 @@ from app.core.encryption import decrypt
 from app.core.redis import get_redis
 from app.models.setting import Setting
 from app.services.system_log import LogCategory, system_log_service
+from app.services.ti.ioc_types import IOCType
+from app.services.ti.misp_sync import MISPIOCFetcher
+from app.services.ti.ioc_cache import IOCCache
+from app.services.ti.ioc_index import IOCIndexService
+from app.services.ti.misp_sync_service import MISPSyncService
 
 logger = logging.getLogger(__name__)
 
@@ -1093,6 +1098,130 @@ class SchedulerService:
             raise
         finally:
             await session.close()
+
+    async def _get_misp_sync_settings(self) -> dict:
+        """Get MISP sync settings from database."""
+        session = await self._get_session()
+        try:
+            result = await session.execute(
+                select(Setting).where(Setting.key == "misp_sync")
+            )
+            setting = result.scalar_one_or_none()
+            if setting and setting.value:
+                return setting.value
+            return {"enabled": False}
+        finally:
+            await session.close()
+
+    async def _create_misp_sync_service(self, session) -> MISPSyncService | None:
+        """Create MISP sync service from configuration."""
+        from app.models.ti_config import TISourceConfig, TISourceType
+        from app.core.encryption import decrypt
+        from app.core.opensearch import get_os_client
+
+        result = await session.execute(
+            select(TISourceConfig).where(
+                TISourceConfig.source_type == TISourceType.MISP,
+                TISourceConfig.is_enabled.is_(True),
+            )
+        )
+        config = result.scalar_one_or_none()
+
+        if not config:
+            logger.warning("MISP sync enabled but no MISP source configured")
+            return None
+
+        api_key = decrypt(config.api_key_encrypted) if config.api_key_encrypted else None
+        if not api_key:
+            logger.error("MISP API key not configured")
+            return None
+
+        verify_tls = config.config.get("verify_tls", True) if config.config else True
+
+        fetcher = MISPIOCFetcher(
+            api_key=api_key,
+            instance_url=config.instance_url,
+            verify_tls=verify_tls,
+        )
+        cache = IOCCache()
+        os_client = get_os_client()
+        index_service = IOCIndexService(os_client)
+
+        return MISPSyncService(fetcher, cache, index_service)
+
+    async def _run_misp_sync_job(self) -> None:
+        """Run MISP IOC sync job."""
+        settings = await self._get_misp_sync_settings()
+
+        if not settings.get("enabled", False):
+            logger.debug("MISP sync is disabled, skipping")
+            return
+
+        session = await self._get_session()
+        try:
+            service = await self._create_misp_sync_service(session)
+            if not service:
+                return
+
+            # Get sync parameters from settings
+            threat_levels = settings.get("threat_levels", ["high", "medium"])
+            max_age_days = settings.get("max_age_days", 30)
+            ttl_days = settings.get("ttl_days", 30)
+            tags = settings.get("tags")
+
+            # Map threat level strings to IOC types if specified
+            ioc_types = None
+            if settings.get("ioc_types"):
+                ioc_types = [IOCType(t) for t in settings["ioc_types"]]
+
+            result = await service.sync_iocs(
+                threat_levels=threat_levels,
+                ioc_types=ioc_types,
+                max_age_days=max_age_days,
+                tags=tags,
+                ttl_days=ttl_days,
+            )
+
+            if result.success:
+                logger.info(
+                    "MISP sync completed: %d fetched, %d cached, %d indexed in %dms",
+                    result.iocs_fetched,
+                    result.iocs_cached,
+                    result.iocs_indexed,
+                    result.duration_ms,
+                )
+            else:
+                logger.error("MISP sync failed: %s", result.error)
+                await system_log_service.log_error(
+                    session,
+                    category=LogCategory.INTEGRATIONS,
+                    service="misp_sync",
+                    message=f"MISP sync failed: {result.error}",
+                    details={"error": result.error},
+                )
+        finally:
+            await session.close()
+
+    def _add_misp_sync_job(self, interval_minutes: int = 10) -> None:
+        """Add MISP sync job to scheduler."""
+        job_id = "misp_ioc_sync"
+
+        # Remove existing job if present
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+
+        scheduler.add_job(
+            lambda: self._run_with_lock(
+                "scheduler:misp_sync",
+                timeout=300,  # 5 minute lock timeout
+                job_func=self._run_misp_sync_job,
+            ),
+            trigger=IntervalTrigger(minutes=interval_minutes),
+            id=job_id,
+            name="MISP IOC Sync",
+            replace_existing=True,
+        )
+        logger.info("Added MISP sync job with %d minute interval", interval_minutes)
 
 
 # Singleton instance
