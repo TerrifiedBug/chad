@@ -27,6 +27,7 @@ from app.api.jira import router as jira_router
 from app.api.logs import router as logs_router
 from app.api.metrics import router as metrics_router
 from app.api.misp import router as misp_router
+from app.api.misp_feedback import router as misp_feedback_router
 from app.api.misp_sync import router as misp_sync_router
 from app.api.mode import router as mode_router
 from app.api.notifications import router as notifications_router
@@ -370,6 +371,7 @@ app.include_router(notifications_router, prefix="/api")
 app.include_router(jira_router, prefix="/api")
 app.include_router(ti_router, prefix="/api")
 app.include_router(misp_router, prefix="/api")
+app.include_router(misp_feedback_router, prefix="/api")
 app.include_router(misp_sync_router, prefix="/api")
 app.include_router(correlation_rules_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
