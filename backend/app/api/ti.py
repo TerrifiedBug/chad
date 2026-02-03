@@ -14,8 +14,12 @@ from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.user import User
 from app.services.audit import audit_log
 from app.services.ti import (
+    AbuseCHClient,
     AbuseIPDBClient,
+    AlienVaultOTXClient,
     GreyNoiseClient,
+    MISPClient,
+    PhishTankClient,
     ThreatFoxClient,
     VirusTotalClient,
 )
@@ -269,6 +273,28 @@ async def test_ti_source(
                 # ThreatFox doesn't require an API key
                 client = ThreatFoxClient(data.api_key)
 
+            case TISourceType.MISP.value:
+                if not data.api_key:
+                    return TITestResponse(success=False, error="API key required")
+                if not data.instance_url:
+                    return TITestResponse(success=False, error="Instance URL required")
+                # Get verify_tls from config, default True
+                verify_tls = data.config.get("verify_tls", True) if data.config else True
+                client = MISPClient(data.api_key, data.instance_url, verify_tls=verify_tls)
+
+            case TISourceType.ABUSE_CH.value:
+                # abuse.ch doesn't require an API key
+                client = AbuseCHClient(data.api_key)
+
+            case TISourceType.ALIENVAULT_OTX.value:
+                if not data.api_key:
+                    return TITestResponse(success=False, error="API key required")
+                client = AlienVaultOTXClient(data.api_key)
+
+            case TISourceType.PHISHTANK.value:
+                # PhishTank API key is optional
+                client = PhishTankClient(data.api_key)
+
             case _:
                 return TITestResponse(success=False, error=f"Unknown source: {source_type}")
 
@@ -326,6 +352,28 @@ async def test_saved_ti_source(
 
             case TISourceType.THREATFOX.value:
                 client = ThreatFoxClient(api_key)
+
+            case TISourceType.MISP.value:
+                if not api_key:
+                    return TITestResponse(success=False, error="API key not configured")
+                if not config.instance_url:
+                    return TITestResponse(success=False, error="Instance URL not configured")
+                # Get verify_tls from config, default True
+                verify_tls = config.config.get("verify_tls", True) if config.config else True
+                client = MISPClient(api_key, config.instance_url, verify_tls=verify_tls)
+
+            case TISourceType.ABUSE_CH.value:
+                # abuse.ch doesn't require an API key
+                client = AbuseCHClient(api_key)
+
+            case TISourceType.ALIENVAULT_OTX.value:
+                if not api_key:
+                    return TITestResponse(success=False, error="API key not configured")
+                client = AlienVaultOTXClient(api_key)
+
+            case TISourceType.PHISHTANK.value:
+                # PhishTank API key is optional
+                client = PhishTankClient(api_key)
 
             case _:
                 return TITestResponse(success=False, error=f"Unknown source: {source_type}")

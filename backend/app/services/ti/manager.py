@@ -158,7 +158,9 @@ class TIEnrichmentManager:
                 if not instance_url:
                     logger.warning("MISP requires an instance URL")
                     return None
-                return MISPClient(api_key, instance_url)
+                # Get verify_tls from config, default True
+                verify_tls = config.config.get("verify_tls", True) if config.config else True
+                return MISPClient(api_key, instance_url, verify_tls=verify_tls)
 
             case TISourceType.ABUSE_CH.value:
                 # abuse.ch (URLhaus) doesn't require an API key

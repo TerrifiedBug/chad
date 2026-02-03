@@ -32,17 +32,19 @@ class MISPClient(TIClient):
         TIIndicatorType.HASH_SHA256,
     ]
 
-    def __init__(self, api_key: str, instance_url: str, timeout: int = 30):
+    def __init__(self, api_key: str, instance_url: str, timeout: int = 30, verify_tls: bool = True):
         """Initialize the MISP client.
 
         Args:
             api_key: MISP API key.
             instance_url: Base URL of MISP instance (e.g., https://misp.example.com).
             timeout: Request timeout in seconds.
+            verify_tls: Whether to verify TLS certificates. Set False for internal instances with self-signed certs.
         """
         self.api_key = api_key
         self.instance_url = instance_url.rstrip("/")
         self.timeout = timeout
+        self.verify_tls = verify_tls
         self._client = httpx.AsyncClient(
             base_url=self.instance_url,
             headers={
@@ -50,6 +52,7 @@ class MISPClient(TIClient):
                 "Accept": "application/json",
             },
             timeout=timeout,
+            verify=verify_tls,
         )
 
     def _map_indicator_type(self, indicator_type: TIIndicatorType) -> str:
