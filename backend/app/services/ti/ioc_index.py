@@ -1,6 +1,7 @@
 """OpenSearch indicator index service for Pull Mode detection."""
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from app.services.ti.ioc_types import IOCRecord
@@ -22,6 +23,7 @@ INDICATOR_INDEX_MAPPING = {
             "misp.tags": {"type": "keyword"},
             "first_seen": {"type": "date"},
             "expires_at": {"type": "date"},
+            "synced_at": {"type": "date"},
         }
     },
     "settings": {
@@ -69,6 +71,7 @@ class IOCIndexService:
 
         # Build bulk request body
         bulk_body = []
+        sync_time = datetime.now(UTC).isoformat()
         for record in records:
             # Use attribute UUID as document ID for idempotent updates
             action = {
@@ -78,7 +81,9 @@ class IOCIndexService:
                 }
             }
             bulk_body.append(action)
-            bulk_body.append(record.to_opensearch_doc())
+            doc = record.to_opensearch_doc()
+            doc["synced_at"] = sync_time
+            bulk_body.append(doc)
 
         response = self.client.bulk(body=bulk_body)
 
