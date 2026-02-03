@@ -1117,7 +1117,7 @@ class SchedulerService:
         """Create MISP sync service from configuration."""
         from app.models.ti_config import TISourceConfig, TISourceType
         from app.core.encryption import decrypt
-        from app.core.opensearch import get_os_client
+        from app.services.opensearch import get_client_from_settings
 
         result = await session.execute(
             select(TISourceConfig).where(
@@ -1136,6 +1136,11 @@ class SchedulerService:
             logger.error("MISP API key not configured")
             return None
 
+        os_client = await get_client_from_settings(session)
+        if not os_client:
+            logger.error("OpenSearch not configured for MISP sync")
+            return None
+
         verify_tls = config.config.get("verify_tls", True) if config.config else True
 
         fetcher = MISPIOCFetcher(
@@ -1144,7 +1149,6 @@ class SchedulerService:
             verify_tls=verify_tls,
         )
         cache = IOCCache()
-        os_client = get_os_client()
         index_service = IOCIndexService(os_client)
 
         return MISPSyncService(fetcher, cache, index_service)
