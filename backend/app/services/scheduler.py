@@ -177,6 +177,9 @@ class SchedulerService:
             # Add system log cleanup job (runs daily at 3 AM)
             self._schedule_system_log_cleanup()
 
+            # Add version check job (runs daily at 4 AM)
+            self._schedule_version_check()
+
             # Schedule pull polling jobs for pull-mode index patterns
             await self._schedule_pull_polling_jobs(session)
 
@@ -983,6 +986,85 @@ class SchedulerService:
                 )
             except Exception:
                 pass  # Avoid recursive issues if logging itself fails
+            await session.rollback()
+        finally:
+            await session.close()
+
+    def _schedule_version_check(self):
+        """Schedule the version check job (daily at 4 AM)."""
+        scheduler.add_job(
+            self._run_version_check,
+            trigger=CronTrigger(hour=4, minute=0),
+            id="version_check",
+            name="version check",
+            replace_existing=True,
+            misfire_grace_time=3600,  # 1 hour grace period
+        )
+        logger.info("Scheduled version_check job (daily at 4:00 AM)")
+
+    async def _run_version_check(self):
+        """Execute version check job with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:version_check",
+            timeout=60,  # 1 minute
+            job_func=self._execute_version_check
+        )
+
+    async def _execute_version_check(self):
+        """Check GitHub for latest version and cache result."""
+        import httpx
+
+        from app.core.config import APP_VERSION
+        from app.services.settings import set_setting
+
+        logger.debug("Running scheduled version check")
+        session = await self._get_session()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    "https://api.github.com/repos/TerrifiedBug/chad/releases/latest",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    latest = data.get("tag_name", "").lstrip("v")
+                    # Simple version comparison
+                    update_available = False
+                    if latest and latest != APP_VERSION:
+                        try:
+                            current_parts = [int(x) for x in APP_VERSION.split("-")[0].split(".")]
+                            latest_parts = [int(x) for x in latest.split("-")[0].split(".")]
+                            while len(current_parts) < 3:
+                                current_parts.append(0)
+                            while len(latest_parts) < 3:
+                                latest_parts.append(0)
+                            update_available = latest_parts > current_parts
+                        except (ValueError, AttributeError):
+                            update_available = latest != APP_VERSION
+
+                    # Cache the result
+                    await set_setting(session, "version_check_cache", {
+                        "latest": latest,
+                        "update_available": update_available,
+                        "release_url": data.get("html_url"),
+                        "checked_at": datetime.now(UTC).isoformat(),
+                    })
+                    await session.commit()
+                    logger.info(
+                        f"Version check: current={APP_VERSION}, latest={latest}, update={update_available}"
+                    )
+                else:
+                    logger.warning(f"Version check failed: GitHub returned {response.status_code}")
+
+        except Exception as e:
+            logger.error(f"Scheduled version check failed: {e}")
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="version_check",
+                message=f"Scheduled version check failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__}
+            )
             await session.rollback()
         finally:
             await session.close()

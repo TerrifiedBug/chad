@@ -2037,7 +2037,7 @@ export default function SettingsPage() {
                     value={healthCheckIntervalsForm.ti_interval_seconds}
                     onChange={(e) => setHealthCheckIntervalsForm({...healthCheckIntervalsForm, ti_interval_seconds: parseInt(e.target.value) || 0})}
                   />
-                  <p className="text-xs text-muted-foreground">Default: 1800 (30 minutes)</p>
+                  <p className="text-xs text-muted-foreground">Default: 3600 (1 hour)</p>
                 </div>
               </div>
 

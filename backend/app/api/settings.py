@@ -86,8 +86,42 @@ async def get_version():
 
 
 @router.get("/version/check", response_model=UpdateCheckResponse)
-async def check_for_updates():
-    """Check GitHub for latest version."""
+async def check_for_updates(
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Get cached version check result.
+
+    Returns the most recent cached check from the scheduler.
+    Use /version/check-now to force a fresh check.
+    """
+    cached = await get_setting(db, "version_check_cache")
+    if cached:
+        return UpdateCheckResponse(
+            current=APP_VERSION,
+            latest=cached.get("latest"),
+            update_available=cached.get("update_available", False),
+            release_url=cached.get("release_url"),
+        )
+
+    # No cached result yet, return unknown
+    return UpdateCheckResponse(
+        current=APP_VERSION,
+        latest=None,
+        update_available=False,
+    )
+
+
+@router.post("/version/check-now", response_model=UpdateCheckResponse)
+async def check_for_updates_now(
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Force a fresh version check against GitHub.
+
+    Use sparingly - GitHub rate limits unauthenticated requests to 60/hour.
+    Results are cached for future /version/check calls.
+    """
     import httpx
 
     try:
@@ -115,6 +149,16 @@ async def check_for_updates():
                     except (ValueError, AttributeError):
                         # If parsing fails, just check if they're different
                         update_available = latest != APP_VERSION
+
+                # Cache the result
+                await set_setting(db, "version_check_cache", {
+                    "latest": latest,
+                    "update_available": update_available,
+                    "release_url": data.get("html_url"),
+                    "checked_at": datetime.now(UTC).isoformat(),
+                })
+                await db.commit()
+
                 return UpdateCheckResponse(
                     current=APP_VERSION,
                     latest=latest,

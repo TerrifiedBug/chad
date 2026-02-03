@@ -152,11 +152,11 @@ async def update_health_settings(
 class HealthIntervalConfig(BaseModel):
     """Health check interval configuration."""
 
-    jira_interval_seconds: int = Field(ge=60, le=3600, default=900, description="Jira health check interval (15 min default)")
-    sigmahq_interval_seconds: int = Field(ge=60, le=3600, default=3600, description="SigmaHQ health check interval (60 min default)")
-    mitre_attack_interval_seconds: int = Field(ge=60, le=3600, default=3600, description="MITRE ATT&CK health check interval (60 min default)")
-    opensearch_interval_seconds: int = Field(ge=30, le=600, default=300, description="OpenSearch health check interval (5 min default)")
-    ti_interval_seconds: int = Field(ge=60, le=3600, default=1800, description="TI sources health check interval (30 min default)")
+    jira_interval_seconds: int = Field(ge=60, le=86400, default=900)
+    sigmahq_interval_seconds: int = Field(ge=60, le=86400, default=3600)
+    mitre_attack_interval_seconds: int = Field(ge=60, le=86400, default=3600)
+    opensearch_interval_seconds: int = Field(ge=30, le=600, default=300)
+    ti_interval_seconds: int = Field(ge=60, le=86400, default=3600)
 
 
 class HealthIntervalResponse(BaseModel):

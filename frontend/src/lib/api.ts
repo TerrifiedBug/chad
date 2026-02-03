@@ -246,6 +246,8 @@ export const settingsApi = {
     api.get<VersionResponse>('/settings/version'),
   checkForUpdates: () =>
     api.get<UpdateCheckResponse>('/settings/version/check'),
+  checkForUpdatesNow: () =>
+    api.post<UpdateCheckResponse>('/settings/version/check-now', {}),
   // Security settings
   getSecuritySettings: () =>
     api.get<SecuritySettings>('/settings/security'),

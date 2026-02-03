@@ -17,8 +17,32 @@ from app.services.jira import JiraAPIError, JiraService
 
 
 async def check_opensearch_health(db: AsyncSession):
-    """Check OpenSearch cluster health."""
+    """
+    Check OpenSearch cluster health.
+
+    Uses Redis caching to respect configured health check intervals.
+    """
+    import json
+
+    from app.core.redis import get_redis
+    from app.services.settings import get_setting
+
     service = HealthCheckService(db)
+    OPENSEARCH_HEALTH_CACHE_KEY = "health:opensearch"
+
+    # Get OpenSearch health check interval from settings (default 5 minutes)
+    intervals = await get_setting(db, "health_check_intervals") or {}
+    opensearch_cache_ttl = intervals.get("opensearch_interval_seconds", 300)
+
+    # Check cache first
+    try:
+        redis = await get_redis()
+        cached = await redis.get(OPENSEARCH_HEALTH_CACHE_KEY)
+        if cached:
+            # Use cached result, skip actual check
+            return
+    except Exception:
+        redis = None
 
     try:
         # Get OpenSearch configuration from settings
@@ -98,6 +122,14 @@ async def check_opensearch_health(db: AsyncSession):
                 response_time_ms=response_time
             )
 
+        # Cache the result
+        if redis:
+            try:
+                cache_data = json.dumps({"status": status_str})
+                await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
+            except Exception:
+                pass
+
     except (ConnectionError, TransportError) as e:
         # Safely extract error message - opensearchpy exceptions can have complex __str__
         try:
@@ -116,6 +148,15 @@ async def check_opensearch_health(db: AsyncSession):
             status="unhealthy",
             error_message=error_msg
         )
+
+        # Cache the failed result
+        if redis:
+            try:
+                cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
+                await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
+            except Exception:
+                pass
+
     except Exception as e:
         await service.log_health_check(
             service_type="opensearch",
@@ -124,10 +165,46 @@ async def check_opensearch_health(db: AsyncSession):
             error_message=f"Unexpected error: {str(e)}"
         )
 
+        # Cache the failed result
+        if redis:
+            try:
+                cache_data = json.dumps({"status": "unhealthy", "error": str(e)})
+                await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
+            except Exception:
+                pass
+
 
 async def check_jira_health(db: AsyncSession):
-    """Check Jira Cloud API connectivity."""
+    """
+    Check Jira Cloud API connectivity.
+
+    Uses Redis caching to respect configured health check intervals.
+    """
+    import json
+
+    from app.core.redis import get_redis
+    from app.services.settings import get_setting
+
     service = HealthCheckService(db)
+    JIRA_HEALTH_CACHE_KEY = "health:jira"
+
+    # Get Jira health check interval from settings (default 15 minutes)
+    intervals = await get_setting(db, "health_check_intervals") or {}
+    jira_cache_ttl = intervals.get("jira_interval_seconds", 900)
+
+    # Check cache first
+    try:
+        redis = await get_redis()
+        cached = await redis.get(JIRA_HEALTH_CACHE_KEY)
+        if cached:
+            cached_data = json.loads(cached)
+            await service.update_jira_health(
+                status=cached_data.get("status", "unknown"),
+                error=cached_data.get("error")
+            )
+            return
+    except Exception:
+        redis = None
 
     # Get Jira config
     result = await db.execute(select(JiraConfig).limit(1))
@@ -160,6 +237,14 @@ async def check_jira_health(db: AsyncSession):
         )
         await service.update_jira_health(status="healthy", error=None)
 
+        # Cache the result
+        if redis:
+            try:
+                cache_data = json.dumps({"status": "healthy", "error": None})
+                await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
+            except Exception:
+                pass
+
     except JiraAPIError as e:
         error_msg = str(e) if e.message else "Jira API error"
         await service.log_health_check(
@@ -170,6 +255,14 @@ async def check_jira_health(db: AsyncSession):
         )
         await service.update_jira_health(status="unhealthy", error=error_msg)
 
+        # Cache the failed result
+        if redis:
+            try:
+                cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
+                await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
+            except Exception:
+                pass
+
     except Exception as e:
         await service.log_health_check(
             service_type="jira",
@@ -179,18 +272,27 @@ async def check_jira_health(db: AsyncSession):
         )
         await service.update_jira_health(status="unhealthy", error=str(e))
 
+        # Cache the failed result
+        if redis:
+            try:
+                cache_data = json.dumps({"status": "unhealthy", "error": str(e)})
+                await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
+            except Exception:
+                pass
+
 
 async def check_ti_source_health(db: AsyncSession):
     """
     Check health of all enabled TI sources.
 
-    Uses Redis caching to avoid hitting rate limits. TI source health checks
-    are cached for 5 minutes (300 seconds) to prevent excessive API calls.
+    Uses Redis caching to respect configured health check intervals.
+    The cache TTL is read from settings (default 3600 seconds / 1 hour).
     """
     import json
 
     from app.core.encryption import decrypt
     from app.core.redis import get_redis
+    from app.services.settings import get_setting
     from app.services.ti import (
         AbuseIPDBClient,
         GreyNoiseClient,
@@ -200,8 +302,9 @@ async def check_ti_source_health(db: AsyncSession):
 
     service = HealthCheckService(db)
 
-    # TI health check cache TTL (5 minutes)
-    TI_HEALTH_CACHE_TTL = 300
+    # Get TI health check interval from settings (default 1 hour)
+    intervals = await get_setting(db, "health_check_intervals") or {}
+    ti_health_cache_ttl = intervals.get("ti_interval_seconds", 3600)
     TI_HEALTH_CACHE_PREFIX = "health:ti:"
 
     # Get Redis for caching
@@ -276,7 +379,7 @@ async def check_ti_source_health(db: AsyncSession):
             if redis:
                 try:
                     cache_data = json.dumps({"status": "healthy", "error": None})
-                    await redis.set(cache_key, cache_data, ex=TI_HEALTH_CACHE_TTL)
+                    await redis.set(cache_key, cache_data, ex=ti_health_cache_ttl)
                 except Exception:
                     pass  # Cache write failure is non-critical
 
@@ -299,7 +402,7 @@ async def check_ti_source_health(db: AsyncSession):
             if redis:
                 try:
                     cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
-                    await redis.set(cache_key, cache_data, ex=TI_HEALTH_CACHE_TTL)
+                    await redis.set(cache_key, cache_data, ex=ti_health_cache_ttl)
                 except Exception:
                     pass  # Cache write failure is non-critical
 
