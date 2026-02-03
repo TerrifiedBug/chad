@@ -221,6 +221,10 @@ jobs:
           FRONTEND_AMD64: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_frontend }}:${{ github.sha }}-amd64
           FRONTEND_ARM64: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_frontend }}:${{ github.sha }}-arm64
         run: |
+          if [ -z "$FRONTEND_TAGS" ]; then
+            echo "No manifest tags to create (main branch push without release tag)"
+            exit 0
+          fi
           echo "$FRONTEND_TAGS" | while read -r TAG; do
             echo "Creating manifest for: $TAG"
             docker buildx imagetools create -t "$TAG" "$FRONTEND_AMD64" "$FRONTEND_ARM64"
@@ -232,6 +236,10 @@ jobs:
           BACKEND_AMD64: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_backend }}:${{ github.sha }}-amd64
           BACKEND_ARM64: ${{ env.REGISTRY }}/${{ needs.changes.outputs.image_backend }}:${{ github.sha }}-arm64
         run: |
+          if [ -z "$BACKEND_TAGS" ]; then
+            echo "No manifest tags to create (main branch push without release tag)"
+            exit 0
+          fi
           echo "$BACKEND_TAGS" | while read -r TAG; do
             echo "Creating manifest for: $TAG"
             docker buildx imagetools create -t "$TAG" "$BACKEND_AMD64" "$BACKEND_ARM64"
