@@ -128,7 +128,7 @@ async def check_opensearch_health(db: AsyncSession):
                 cache_data = json.dumps({"status": status_str})
                 await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
             except Exception:
-                pass
+                pass  # Cache failures are non-critical; health check result still valid
 
     except (ConnectionError, TransportError) as e:
         # Safely extract error message - opensearchpy exceptions can have complex __str__
@@ -155,7 +155,7 @@ async def check_opensearch_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
                 await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
             except Exception:
-                pass
+                pass  # Cache failures are non-critical; health check result still valid
 
     except Exception as e:
         await service.log_health_check(
@@ -171,7 +171,7 @@ async def check_opensearch_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "unhealthy", "error": str(e)})
                 await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
             except Exception:
-                pass
+                pass  # Cache failures are non-critical; health check result still valid
 
 
 async def check_jira_health(db: AsyncSession):
@@ -243,7 +243,7 @@ async def check_jira_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "healthy", "error": None})
                 await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
             except Exception:
-                pass
+                pass  # Cache failures are non-critical; health check result still valid
 
     except JiraAPIError as e:
         error_msg = str(e) if e.message else "Jira API error"
@@ -261,7 +261,7 @@ async def check_jira_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
                 await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
             except Exception:
-                pass
+                pass  # Cache failures are non-critical; health check result still valid
 
     except Exception as e:
         await service.log_health_check(
@@ -278,7 +278,7 @@ async def check_jira_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "unhealthy", "error": str(e)})
                 await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
             except Exception:
-                pass
+                pass  # Cache failures are non-critical; health check result still valid
 
 
 async def check_ti_source_health(db: AsyncSession):
@@ -418,6 +418,6 @@ async def check_ti_source_health(db: AsyncSession):
                 try:
                     await client.close()
                 except Exception:
-                    pass
+                    pass  # Best-effort cleanup; connection may already be closed
 
     await db.commit()

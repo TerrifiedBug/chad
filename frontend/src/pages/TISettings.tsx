@@ -61,7 +61,7 @@ export default function TISettings() {
       // Initialize form state with saved config values (e.g., verify_tls)
       response.sources.forEach((source) => {
         const sourceType = source.source_type as TISourceType
-        const verifyTls = source.config?.verify_tls ?? true
+        const verifyTls = typeof source.config?.verify_tls === 'boolean' ? source.config.verify_tls : true
         updateFormState(sourceType, { verifyTls })
       })
     } catch {

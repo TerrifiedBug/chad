@@ -251,7 +251,7 @@ class SchedulerService:
             try:
                 scheduler.remove_job(job_id)
             except Exception:
-                pass
+                pass  # Job may not exist; safe to ignore
 
             # Add new job with pattern's poll interval
             scheduler.add_job(
@@ -282,7 +282,7 @@ class SchedulerService:
         try:
             scheduler.remove_job(job_id)
         except Exception:
-            pass
+            pass  # Job may not exist; safe to ignore
 
         # Add new job
         scheduler.add_job(

@@ -711,7 +711,7 @@ async def schedule_pull_jobs(scheduler, index_patterns: list) -> None:
         try:
             scheduler.remove_job(job_id)
         except Exception:
-            pass
+            pass  # Job may not exist; safe to ignore
 
         # Add new job with pattern's poll interval
         scheduler.add_job(
