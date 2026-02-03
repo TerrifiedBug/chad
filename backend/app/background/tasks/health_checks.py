@@ -1,6 +1,9 @@
 """Background health check tasks for monitoring external services."""
 
+import logging
 import ssl
+
+logger = logging.getLogger(__name__)
 from datetime import UTC, datetime
 
 from opensearchpy import OpenSearch
@@ -128,7 +131,7 @@ async def check_opensearch_health(db: AsyncSession):
                 cache_data = json.dumps({"status": status_str})
                 await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
             except Exception:
-                pass  # Cache failures are non-critical; health check result still valid
+                logger.debug("Redis cache write failed, continuing without cache")
 
     except (ConnectionError, TransportError) as e:
         # Safely extract error message - opensearchpy exceptions can have complex __str__
@@ -155,7 +158,7 @@ async def check_opensearch_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
                 await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
             except Exception:
-                pass  # Cache failures are non-critical; health check result still valid
+                logger.debug("Redis cache write failed, continuing without cache")
 
     except Exception as e:
         await service.log_health_check(
@@ -171,7 +174,7 @@ async def check_opensearch_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "unhealthy", "error": str(e)})
                 await redis.set(OPENSEARCH_HEALTH_CACHE_KEY, cache_data, ex=opensearch_cache_ttl)
             except Exception:
-                pass  # Cache failures are non-critical; health check result still valid
+                logger.debug("Redis cache write failed, continuing without cache")
 
 
 async def check_jira_health(db: AsyncSession):
@@ -243,7 +246,7 @@ async def check_jira_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "healthy", "error": None})
                 await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
             except Exception:
-                pass  # Cache failures are non-critical; health check result still valid
+                logger.debug("Redis cache write failed, continuing without cache")
 
     except JiraAPIError as e:
         error_msg = str(e) if e.message else "Jira API error"
@@ -261,7 +264,7 @@ async def check_jira_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
                 await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
             except Exception:
-                pass  # Cache failures are non-critical; health check result still valid
+                logger.debug("Redis cache write failed, continuing without cache")
 
     except Exception as e:
         await service.log_health_check(
@@ -278,7 +281,7 @@ async def check_jira_health(db: AsyncSession):
                 cache_data = json.dumps({"status": "unhealthy", "error": str(e)})
                 await redis.set(JIRA_HEALTH_CACHE_KEY, cache_data, ex=jira_cache_ttl)
             except Exception:
-                pass  # Cache failures are non-critical; health check result still valid
+                logger.debug("Redis cache write failed, continuing without cache")
 
 
 async def check_ti_source_health(db: AsyncSession):
@@ -333,7 +336,7 @@ async def check_ti_source_health(db: AsyncSession):
                     config.health_check_error = cached_data.get("error")
                     continue  # Skip to next source
             except Exception:
-                pass  # Cache miss or error, proceed with check
+                logger.debug("Cache miss or error for TI health check, proceeding with check")
         client = None
         try:
             start_time = datetime.now(UTC)
@@ -381,7 +384,7 @@ async def check_ti_source_health(db: AsyncSession):
                     cache_data = json.dumps({"status": "healthy", "error": None})
                     await redis.set(cache_key, cache_data, ex=ti_health_cache_ttl)
                 except Exception:
-                    pass  # Cache write failure is non-critical
+                    logger.debug("Redis cache write failed for TI health, continuing")
 
             # Log health check
             service_name = config.source_type.replace("_", " ").title()
@@ -404,7 +407,7 @@ async def check_ti_source_health(db: AsyncSession):
                     cache_data = json.dumps({"status": "unhealthy", "error": error_msg})
                     await redis.set(cache_key, cache_data, ex=ti_health_cache_ttl)
                 except Exception:
-                    pass  # Cache write failure is non-critical
+                    logger.debug("Redis cache write failed for TI health, continuing")
 
             service_name = config.source_type.replace("_", " ").title()
             await service.log_health_check(
@@ -418,6 +421,6 @@ async def check_ti_source_health(db: AsyncSession):
                 try:
                     await client.close()
                 except Exception:
-                    pass  # Best-effort cleanup; connection may already be closed
+                    logger.debug("TI client cleanup failed, connection may already be closed")
 
     await db.commit()

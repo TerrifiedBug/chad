@@ -225,7 +225,8 @@ async def _send_alert_to_jira(
             "error": None,
         }
     except JiraAPIError as e:
-        logger.error("Failed to create Jira issue for alert %s: %s", alert_id, str(e.message))
+        # Log error type only to prevent log injection from external API responses
+        logger.error("Failed to create Jira issue for alert %s: JiraAPIError", alert_id)
         await system_log_service.log_error(
             db,
             category=LogCategory.INTEGRATIONS,
@@ -245,7 +246,8 @@ async def _send_alert_to_jira(
             "error": e.message,
         }
     except Exception as e:
-        logger.error("Unexpected error creating Jira issue for alert %s: %s", alert_id, str(e))
+        # Log error type only to prevent log injection
+        logger.error("Unexpected error creating Jira issue for alert %s: %s", alert_id, type(e).__name__)
         await system_log_service.log_error(
             db,
             category=LogCategory.INTEGRATIONS,

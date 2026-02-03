@@ -309,7 +309,9 @@ async def _enrich_ti(
                         result_dict["field"] = field_path  # Add source field info
                         ti_enrichment["indicators"].append(result_dict)
                 except Exception as e:
-                    logger.warning("TI enrichment failed for %r: %s", value, str(e))
+                    # Sanitize value to prevent log injection (remove newlines/control chars)
+                    safe_value = repr(value)
+                    logger.warning("TI enrichment failed for %s: %s", safe_value, type(e).__name__)
                     await system_log_service.log_warning(
                         db,
                         category=LogCategory.INTEGRATIONS,
