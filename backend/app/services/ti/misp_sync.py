@@ -1,12 +1,12 @@
 """MISP IOC synchronization service."""
 
 import logging
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 
-from app.services.ti.ioc_types import IOCType, IOCRecord
+from app.services.ti.ioc_types import IOCRecord, IOCType
 
 logger = logging.getLogger(__name__)
 

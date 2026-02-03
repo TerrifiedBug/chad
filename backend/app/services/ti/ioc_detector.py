@@ -4,8 +4,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.services.ti.ioc_types import IOCType
 from app.services.ti.ioc_cache import IOCCache
+from app.services.ti.ioc_types import IOCType
 
 logger = logging.getLogger(__name__)
 

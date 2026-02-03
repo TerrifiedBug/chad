@@ -4,10 +4,10 @@ import logging
 import time
 from dataclasses import dataclass
 
-from app.services.ti.ioc_types import IOCType
-from app.services.ti.misp_sync import MISPIOCFetcher
 from app.services.ti.ioc_cache import IOCCache
 from app.services.ti.ioc_index import IOCIndexService
+from app.services.ti.ioc_types import IOCType
+from app.services.ti.misp_sync import MISPIOCFetcher
 
 logger = logging.getLogger(__name__)
 

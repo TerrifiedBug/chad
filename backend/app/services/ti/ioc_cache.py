@@ -2,11 +2,11 @@
 
 import json
 import logging
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.redis import get_redis
-from app.services.ti.ioc_types import IOCType, IOCRecord
+from app.services.ti.ioc_types import IOCRecord, IOCType
 
 logger = logging.getLogger(__name__)
 
