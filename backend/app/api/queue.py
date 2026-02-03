@@ -118,7 +118,7 @@ async def get_queue_stats(
         )
 
     except Exception as e:
-        logger.error(f"Failed to get queue stats: {e}")
+        logger.error("Failed to get queue stats: %s", e)
         raise HTTPException(status_code=503, detail="Redis unavailable")
 
 
@@ -159,7 +159,7 @@ async def get_dead_letter_messages(
         return DeadLetterResponse(count=count, messages=result)
 
     except Exception as e:
-        logger.error(f"Failed to get dead letter messages: {e}")
+        logger.error("Failed to get dead letter messages: %s", e)
         raise HTTPException(status_code=503, detail="Redis unavailable")
 
 
@@ -179,12 +179,12 @@ async def clear_dead_letter(
         # Delete the stream entirely
         await redis.delete("chad:logs:dead-letter")
 
-        logger.info(f"Dead letter queue cleared by user {current_user.email}")
+        logger.info("Dead letter queue cleared by user %s", current_user.email)
 
         return {"status": "cleared"}
 
     except Exception as e:
-        logger.error(f"Failed to clear dead letter queue: {e}")
+        logger.error("Failed to clear dead letter queue: %s", e)
         raise HTTPException(status_code=503, detail="Redis unavailable")
 
 
@@ -212,5 +212,5 @@ async def delete_dead_letter_message(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete dead letter message: {e}")
+        logger.error("Failed to delete dead letter message: %s", e)
         raise HTTPException(status_code=503, detail="Redis unavailable")

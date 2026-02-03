@@ -98,10 +98,10 @@ class AlienVaultOTXClient(TIClient):
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 return None
-            logger.error(f"AlienVault OTX API error: {e.response.status_code}")
+            logger.error("AlienVault OTX API error: %s", e.response.status_code)
             raise
         except Exception as e:
-            logger.error(f"AlienVault OTX request error: {e}")
+            logger.error("AlienVault OTX request error: %s", e)
             raise
 
     def _extract_pulse_info(self, data: dict[str, Any]) -> tuple[int, list[str], list[str]]:

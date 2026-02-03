@@ -31,6 +31,63 @@ import { ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
+type RecentAlert = DashboardStats['recent_alerts'][number]
+
+interface RecentAlertsTableProps {
+  alerts: RecentAlert[] | undefined
+  severityFilter: string[]
+}
+
+function RecentAlertsTable({ alerts, severityFilter }: RecentAlertsTableProps): React.ReactElement {
+  const filteredAlerts = severityFilter.length > 0
+    ? alerts?.filter(a => severityFilter.includes(a.severity))
+    : alerts
+
+  if (!filteredAlerts || filteredAlerts.length === 0) {
+    return (
+      <p className="text-center text-muted-foreground py-8">
+        {severityFilter.length > 0 ? 'No alerts matching the selected severity filters' : 'No alerts yet'}
+      </p>
+    )
+  }
+
+  return (
+    <TooltipProvider>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Severity</TableHead>
+            <TableHead>Rule</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Time</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filteredAlerts.map((alert) => (
+            <TableRow key={alert.alert_id}>
+              <TableCell>
+                <SeverityBadge severity={alert.severity} />
+              </TableCell>
+              <TableCell>
+                <Link
+                  to={`/alerts/${alert.alert_id}`}
+                  className="hover:underline"
+                >
+                  {alert.rule_title}
+                </Link>
+              </TableCell>
+              <TableCell>{ALERT_STATUS_LABELS[alert.status] || capitalize(alert.status)}</TableCell>
+              <TableCell className="text-muted-foreground">
+                <RelativeTime date={alert.created_at} />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TooltipProvider>
+  )
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -202,50 +259,10 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          {(() => {
-            const filteredAlerts = severityFilter.length > 0
-              ? stats?.recent_alerts?.filter(a => severityFilter.includes(a.severity))
-              : stats?.recent_alerts
-            return filteredAlerts && filteredAlerts.length > 0 ? (
-            <TooltipProvider>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Severity</TableHead>
-                    <TableHead>Rule</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Time</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAlerts.map((alert) => (
-                    <TableRow key={alert.alert_id}>
-                      <TableCell>
-                        <SeverityBadge severity={alert.severity} />
-                      </TableCell>
-                      <TableCell>
-                        <Link
-                          to={`/alerts/${alert.alert_id}`}
-                          className="hover:underline"
-                        >
-                          {alert.rule_title}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{ALERT_STATUS_LABELS[alert.status] || capitalize(alert.status)}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        <RelativeTime date={alert.created_at} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TooltipProvider>
-          ) : (
-            <p className="text-center text-muted-foreground py-8">
-              {severityFilter.length > 0 ? 'No alerts matching the selected severity filters' : 'No alerts yet'}
-            </p>
-          )
-          })()}
+          <RecentAlertsTable
+            alerts={stats?.recent_alerts}
+            severityFilter={severityFilter}
+          />
         </CardContent>
       </Card>
     </div>

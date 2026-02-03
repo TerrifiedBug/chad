@@ -19,33 +19,31 @@ export function ProtectedRoute({
   const { showToast } = useToast()
   const hasLoggedRef = useRef<string>('')
 
-  // Log access denied attempts (must be before conditional returns)
   const logKey = `${location.pathname}-${permission}`
+
   useEffect(() => {
-    // Only log and show toast if user is authenticated but lacks permission
-    if (isAuthenticated && permission && !hasPermission(permission)) {
-      // Only log and show toast once per route access
-      if (hasLoggedRef.current !== logKey) {
-        hasLoggedRef.current = logKey
-
-        // Log access denied attempt
-        fetch('/api/audit/log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'route_access_denied',
-            details: {
-              route: location.pathname,
-              reason: `Insufficient permissions: ${permission} required`,
-              user_role: user?.role || 'unknown',
-            }
-          })
-        }).catch(console.error) // Silently fail if audit logging fails
-
-        // Show toast notification
-        showToast('You do not have permission to access this page', 'error')
-      }
+    if (!isAuthenticated || !permission || hasPermission(permission)) {
+      return
     }
+    if (hasLoggedRef.current === logKey) {
+      return
+    }
+    hasLoggedRef.current = logKey
+
+    fetch('/api/audit/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'route_access_denied',
+        details: {
+          route: location.pathname,
+          reason: `Insufficient permissions: ${permission} required`,
+          user_role: user?.role || 'unknown',
+        }
+      })
+    }).catch(console.error)
+
+    showToast('You do not have permission to access this page', 'error')
   }, [isAuthenticated, permission, hasPermission, location.pathname, user?.role, logKey, showToast])
 
   // Show loading state while checking auth

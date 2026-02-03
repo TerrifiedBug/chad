@@ -88,12 +88,12 @@ class SigmaHQService:
             if parsed.scheme == "git" and "//" not in url:
                 return False, "Invalid git URL format"
 
-            logger.info(f"Git URL validation passed: {url[:50]}...")
+            logger.info("Git URL validation passed: %s...", url[:50])
 
             return True, None
 
         except Exception as e:
-            logger.error(f"Error validating git URL: {e}")
+            logger.error("Error validating git URL: %s", e)
             return False, f"URL validation failed: {str(e)}"
 
     def get_rules_directory(self, rule_type: RuleType = RuleType.DETECTION) -> Path:
@@ -113,7 +113,7 @@ class SigmaHQService:
         # Validate URL before executing git command
         is_valid, error_msg = self.validate_git_url(url)
         if not is_valid:
-            logger.warning(f"CSRF/Security: Invalid git URL blocked: {url} - {error_msg}")
+            logger.warning("CSRF/Security: Invalid git URL blocked: %s - %s", url, error_msg)
             return SyncResult(
                 success=False,
                 message="Invalid repository URL",

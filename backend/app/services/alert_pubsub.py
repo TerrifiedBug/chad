@@ -32,10 +32,10 @@ async def publish_alert(alert_data: dict) -> bool:
         redis = await get_redis()
         message = json.dumps(alert_data)
         await redis.publish(ALERT_CHANNEL, message)
-        logger.debug(f"Published alert to channel: {alert_data.get('alert_id', 'unknown')}")
+        logger.debug("Published alert to channel: %s", alert_data.get('alert_id', 'unknown'))
         return True
     except Exception as e:
-        logger.warning(f"Failed to publish alert: {e}")
+        logger.warning("Failed to publish alert: %s", e)
         return False
 
 
@@ -118,17 +118,17 @@ class AlertSubscriber:
                                 alert_data = json.loads(data)
                                 await self.callback(alert_data)
                             except json.JSONDecodeError as e:
-                                logger.warning(f"Invalid JSON in alert message: {e}")
+                                logger.warning("Invalid JSON in alert message: %s", e)
                             except Exception as e:
-                                logger.warning(f"Error processing alert message: {e}")
+                                logger.warning("Error processing alert message: %s", e)
 
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.warning(f"Error in alert subscriber: {e}")
+                    logger.warning("Error in alert subscriber: %s", e)
                     await asyncio.sleep(1)  # Back off on error
 
         except Exception as e:
-            logger.error(f"Alert subscriber failed: {e}")
+            logger.error("Alert subscriber failed: %s", e)
         finally:
             self._running = False

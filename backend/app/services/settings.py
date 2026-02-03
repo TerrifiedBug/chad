@@ -53,7 +53,7 @@ async def get_app_url(db: AsyncSession) -> str | None:
     from app.core.config import settings
 
     if settings.APP_URL:
-        logger.info(f"Using APP_URL from environment: {settings.APP_URL}")
+        logger.info("Using APP_URL from environment: %s", settings.APP_URL)
         return settings.APP_URL
 
     logger.debug("APP_URL not configured, allowing localhost only")

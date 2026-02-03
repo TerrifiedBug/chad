@@ -88,7 +88,7 @@ class ConnectionManager:
             self.active_connections[user_id] = []
         self.active_connections[user_id].append(websocket)
 
-        logger.info(f"WebSocket connected for user {user_id}. Total connections: {len(self._all_connections)}")
+        logger.info("WebSocket connected for user %s. Total connections: %d", user_id, len(self._all_connections))
 
     def disconnect(self, websocket: WebSocket, user_id: str):
         """
@@ -108,7 +108,7 @@ class ConnectionManager:
             if not self.active_connections[user_id]:
                 del self.active_connections[user_id]
 
-        logger.info(f"WebSocket disconnected for user {user_id}. Total connections: {len(self._all_connections)}")
+        logger.info("WebSocket disconnected for user %s. Total connections: %d", user_id, len(self._all_connections))
 
     async def broadcast_to_user(self, user_id: str, message: dict):
         """
@@ -138,7 +138,7 @@ class ConnectionManager:
             try:
                 await connection.send_json(message)
             except Exception as e:
-                logger.warning(f"Failed to send WebSocket message: {e}")
+                logger.warning("Failed to send WebSocket message: %s", e)
                 disconnected.append(connection)
 
         # Clean up disconnected connections
@@ -160,7 +160,7 @@ class ConnectionManager:
             try:
                 await connection.send_json(message)
             except Exception as e:
-                logger.warning(f"Failed to send WebSocket message: {e}")
+                logger.warning("Failed to send WebSocket message: %s", e)
                 disconnected.append(connection)
 
         # Clean up disconnected connections

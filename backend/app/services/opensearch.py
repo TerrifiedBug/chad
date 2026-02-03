@@ -226,7 +226,7 @@ def validate_opensearch_connection(
             try:
                 client.indices.delete(index=test_index)
             except Exception as cleanup_error:
-                logger.warning(f"Failed to cleanup test index after query error: {cleanup_error}")
+                logger.warning("Failed to cleanup test index after query error: %s", cleanup_error)
             return ValidationResult(success=False, steps=steps)
 
         # Step 5: Run percolate query
@@ -252,7 +252,7 @@ def validate_opensearch_connection(
             try:
                 client.indices.delete(index=test_index)
             except Exception as cleanup_error:
-                logger.warning(f"Failed to cleanup test index after percolate error: {cleanup_error}")
+                logger.warning("Failed to cleanup test index after percolate error: %s", cleanup_error)
             return ValidationResult(success=False, steps=steps)
 
         # Step 6: Cleanup
@@ -276,7 +276,7 @@ def validate_opensearch_connection(
             try:
                 client.indices.delete(index=test_index, ignore=[404])
             except Exception as cleanup_error:
-                logger.warning(f"Failed to cleanup test index in finally block: {cleanup_error}")
+                logger.warning("Failed to cleanup test index in finally block: %s", cleanup_error)
 
 
 def get_index_fields(

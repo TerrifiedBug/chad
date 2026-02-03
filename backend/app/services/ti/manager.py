@@ -101,9 +101,9 @@ class TIEnrichmentManager:
                 client = self._create_client(config)
                 if client:
                     self._clients[config.source_type] = client
-                    logger.info(f"Initialized TI client: {config.source_type}")
+                    logger.info("Initialized TI client: %s", config.source_type)
             except Exception as e:
-                logger.error(f"Failed to initialize TI client {config.source_type}: {e}")
+                logger.error("Failed to initialize TI client %s: %s", config.source_type, e)
                 await system_log_service.log_error(
                     db,
                     category=LogCategory.INTEGRATIONS,
@@ -175,7 +175,7 @@ class TIEnrichmentManager:
                 return PhishTankClient(api_key)
 
             case _:
-                logger.warning(f"Unknown TI source type: {source_type}")
+                logger.warning("Unknown TI source type: %s", source_type)
                 return None
 
     async def _lookup_with_timeout(

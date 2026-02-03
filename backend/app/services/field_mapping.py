@@ -153,10 +153,10 @@ async def get_rules_using_mapping(
     mapping = result.scalar_one_or_none()
 
     if not mapping:
-        logger.warning(f"Mapping {mapping_id} not found")
+        logger.warning("Mapping %s not found", mapping_id)
         return []
 
-    logger.info(f"Checking for rules using field mapping: {mapping.sigma_field} -> {mapping.target_field}")
+    logger.info("Checking for rules using field mapping: %s -> %s", mapping.sigma_field, mapping.target_field)
 
     # Find all rules for this index pattern
     rules_result = await db.execute(
@@ -166,7 +166,7 @@ async def get_rules_using_mapping(
     )
     rules = rules_result.scalars().all()
 
-    logger.info(f"Found {len(rules)} rules for index pattern {mapping.index_pattern_id}")
+    logger.info("Found %d rules for index pattern %s", len(rules), mapping.index_pattern_id)
 
     # Check each rule's YAML for the sigma_field
     affected_rules = []
@@ -177,21 +177,21 @@ async def get_rules_using_mapping(
             # Parse YAML into SigmaRule object
             sigma_rule = sigma_service.parse_rule(rule.yaml_content)
             if sigma_rule is None:
-                logger.warning(f"  -> Failed to parse rule {rule.id}: Could not parse Sigma rule")
+                logger.warning("  -> Failed to parse rule %s: Could not parse Sigma rule", rule.id)
                 continue
 
             # Extract fields from the parsed rule
             fields = sigma_service.extract_fields(sigma_rule)
 
-            logger.info(f"Rule {rule.id} ({rule.title}) has fields: {list(fields)[:10]}")  # Log first 10 fields
+            logger.info("Rule %s (%s) has fields: %s", rule.id, rule.title, list(fields)[:10])  # Log first 10 fields
 
             if mapping.sigma_field in fields:
-                logger.info(f"  -> Rule {rule.id} USES this field mapping!")
+                logger.info("  -> Rule %s USES this field mapping!", rule.id)
                 affected_rules.append(rule)
         except Exception as e:
             # If we can't parse the YAML, skip this rule
-            logger.warning(f"  -> Failed to parse rule {rule.id}: {e}")
+            logger.warning("  -> Failed to parse rule %s: %s", rule.id, e)
             continue
 
-    logger.info(f"Total affected rules: {len(affected_rules)}")
+    logger.info("Total affected rules: %d", len(affected_rules))
     return affected_rules

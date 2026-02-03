@@ -111,7 +111,7 @@ class AbuseCHClient(TIClient):
             return None
 
         except Exception as e:
-            logger.error(f"abuse.ch request error: {e}")
+            logger.error("abuse.ch request error: %s", e)
             raise
 
     def _extract_threat_types(self, urls: list[dict]) -> list[str]:

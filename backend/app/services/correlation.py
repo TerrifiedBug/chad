@@ -95,7 +95,7 @@ async def resolve_entity_field(
 
         entity_value = get_nested_value(log_document, doc_field)
         if entity_value is None:
-            logger.debug(f"Direct field '{entity_field}' not found in log document")
+            logger.debug("Direct field '%s' not found in log document", entity_field)
             return None
 
         logger.info(
@@ -112,7 +112,7 @@ async def resolve_entity_field(
     )
     rule = result.scalar_one_or_none()
     if not rule or not rule.index_pattern:
-        logger.warning(f"Rule {rule_id} has no index pattern, cannot resolve field {entity_field}")
+        logger.warning("Rule %s has no index pattern, cannot resolve field %s", rule_id, entity_field)
         return None
 
     # Resolve the Sigma field to the actual log field
@@ -125,8 +125,10 @@ async def resolve_entity_field(
 
     if not target_field:
         logger.warning(
-            f"Sigma field {entity_field} has no mapping for rule {rule_id} "
-            f"(index pattern {rule.index_pattern_id})"
+            "Sigma field %s has no mapping for rule %s (index pattern %s)",
+            entity_field,
+            rule_id,
+            rule.index_pattern_id,
         )
         return None
 
@@ -142,7 +144,9 @@ async def resolve_entity_field(
     entity_value = get_nested_value(log_document, doc_field)
     if entity_value is None:
         logger.debug(
-            f"Field {target_field} (resolved from {entity_field}) not found in log document"
+            "Field %s (resolved from %s) not found in log document",
+            target_field,
+            entity_field,
         )
         return None
 
@@ -220,10 +224,10 @@ async def check_correlation(
     correlation_rules = result.scalars().all()
 
     if not correlation_rules:
-        logger.debug(f"No deployed correlation rules found involving rule {rule_id}")
+        logger.debug("No deployed correlation rules found involving rule %s", rule_id)
         return triggered
 
-    logger.info(f"Checking {len(correlation_rules)} correlation rule(s) for rule {rule_id}")
+    logger.info("Checking %d correlation rule(s) for rule %s", len(correlation_rules), rule_id)
 
     # Fetch deployed version data for each correlation rule
     # Create list of (corr_rule, deployed_data) tuples
@@ -232,13 +236,14 @@ async def check_correlation(
     for corr_rule in correlation_rules:
         # Skip snoozed rules
         if is_rule_snoozed(corr_rule):
-            logger.debug(f"Correlation rule {corr_rule.id} is snoozed, skipping")
+            logger.debug("Correlation rule %s is snoozed, skipping", corr_rule.id)
             continue
 
         deployed_data = await get_deployed_version_data(db, corr_rule)
         if deployed_data is None:
             logger.warning(
-                f"Correlation rule {corr_rule.id} has no deployed version data, skipping"
+                "Correlation rule %s has no deployed version data, skipping",
+                corr_rule.id,
             )
             continue
         rules_with_deployed_data.append((corr_rule, deployed_data))
@@ -259,7 +264,12 @@ async def check_correlation(
         # Resolve the entity field to a value for this rule
         entity_value = await resolve_entity_field(db, rule_id, entity_field, log_document, field_type)
         if not entity_value:
-            logger.info(f"Correlation check: Could not resolve entity field '{entity_field}' (type={field_type}) for rule {rule_id}")
+            logger.info(
+                "Correlation check: Could not resolve entity field '%s' (type=%s) for rule %s",
+                entity_field,
+                field_type,
+                rule_id,
+            )
             continue
 
         logger.info(
@@ -377,6 +387,6 @@ async def cleanup_expired_states(db: AsyncSession) -> int:
         await db.delete(state)
 
     if count > 0:
-        logger.info(f"Cleaned up {count} expired correlation states")
+        logger.info("Cleaned up %d expired correlation states", count)
 
     return count

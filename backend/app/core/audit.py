@@ -138,7 +138,7 @@ def audit_action(
                     # Log the error but continue
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to create audit log entry: {e}")
+                    logger.error("Failed to create audit log entry: %s", e)
 
             return result
 

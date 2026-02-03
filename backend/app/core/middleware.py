@@ -48,7 +48,9 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 size = int(content_length)
                 if size > self.max_request_size:
                     logger.warning(
-                        f"Request too large: {size} bytes from {request.client.host}"
+                        "Request too large: %d bytes from %s",
+                        size,
+                        request.client.host,
                     )
                     return JSONResponse(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -70,7 +72,9 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                     ("application/json", "multipart/form-data", "application/x-www-form-urlencoded")
                 ):
                     logger.warning(
-                        f"Invalid Content-Type from {request.client.host}: {content_type}"
+                        "Invalid Content-Type from %s: %s",
+                        request.client.host,
+                        content_type,
                     )
                     return JSONResponse(
                         status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -88,7 +92,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             response.headers["X-Request-ID"] = request_id
             return response
         except Exception as e:
-            logger.exception(f"Unhandled exception during request processing: {e}")
+            logger.exception("Unhandled exception during request processing: %s", e)
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={
@@ -114,7 +118,7 @@ class ErrorResponseMiddleware(BaseHTTPMiddleware):
             request_id = getattr(request.state, "request_id", "unknown")
 
             # Log the error
-            logger.exception(f"Request error: {request.method} {request.url.path}")
+            logger.exception("Request error: %s %s", request.method, request.url.path)
 
             # Return standardized error response
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -130,7 +134,7 @@ class ErrorResponseMiddleware(BaseHTTPMiddleware):
             elif isinstance(e, RequestValidationError):
                 status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
                 detail = "Validation error"
-                logger.warning(f"Validation error: {e.errors()}")
+                logger.warning("Validation error: %s", e.errors())
             elif isinstance(e, IntegrityError):
                 status_code = status.HTTP_409_CONFLICT
                 detail = "Data integrity error (duplicate or foreign key violation)"

@@ -85,7 +85,7 @@ class PhishTankClient(TIClient):
             return response.json()
 
         except Exception as e:
-            logger.error(f"PhishTank request error: {e}")
+            logger.error("PhishTank request error: %s", e)
             raise
 
     async def lookup_ip(self, ip: str) -> TILookupResult:

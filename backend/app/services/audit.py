@@ -57,7 +57,7 @@ async def _get_opensearch_client_for_audit(db: AsyncSession):
             verify_certs=config.get("verify_certs", True),  # Default to True for security
         )
     except Exception as e:
-        logger.warning(f"Failed to create OpenSearch client for audit: {e}")
+        logger.warning("Failed to create OpenSearch client for audit: %s", e)
         return None
 
 
@@ -128,6 +128,6 @@ async def audit_log(
             )
     except Exception as e:
         # Log warning but don't fail the operation
-        logger.warning(f"Failed to write audit to OpenSearch: {e}")
+        logger.warning("Failed to write audit to OpenSearch: %s", e)
 
     return log

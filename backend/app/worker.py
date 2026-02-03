@@ -55,10 +55,10 @@ class Worker:
         for stream in streams:
             try:
                 await redis.xgroup_create(stream, CONSUMER_GROUP, id="0", mkstream=True)
-                logger.info(f"Created consumer group for {stream}")
+                logger.info("Created consumer group for %s", stream)
             except Exception as e:
                 if "BUSYGROUP" not in str(e):
-                    logger.warning(f"Failed to create group for {stream}: {e}")
+                    logger.warning("Failed to create group for %s: %s", stream, e)
 
     async def process_batch(
         self,
@@ -116,7 +116,7 @@ class Worker:
             try:
                 result = await processor.process_batch(db_session, index_suffix, logs)
             except Exception as e:
-                logger.error(f"Failed to process batch for {index_suffix}: {e}")
+                logger.error("Failed to process batch for %s: %s", index_suffix, e)
                 logs_errored = len(logs)
                 # Still acknowledge to prevent reprocessing
                 # In production, might want to move to dead letter instead
@@ -137,7 +137,7 @@ class Worker:
                     elapsed_seconds=result.get("elapsed_seconds", 0) if result else 0,
                 )
             except Exception as e:
-                logger.warning(f"Failed to record health metrics for {index_suffix}: {e}")
+                logger.warning("Failed to record health metrics for %s: %s", index_suffix, e)
 
         return processed
 
@@ -159,7 +159,7 @@ class Worker:
         index_pattern = result.scalar_one_or_none()
 
         if not index_pattern:
-            logger.debug(f"No index pattern found for suffix '{index_suffix}', skipping metrics")
+            logger.debug("No index pattern found for suffix '%s', skipping metrics", index_suffix)
             return
 
         # Calculate average latency in ms (per log)
@@ -213,14 +213,14 @@ class Worker:
                     messages = result[1]
                     if messages:
                         claimed_messages.append((stream, messages))
-                        logger.info(f"Claimed {len(messages)} pending messages from {stream}")
+                        logger.info("Claimed %d pending messages from %s", len(messages), stream)
 
             except Exception as e:
                 # XAUTOCLAIM may not exist in older Redis versions
                 if "unknown command" in str(e).lower():
                     logger.debug("XAUTOCLAIM not available, skipping pending claim")
                 else:
-                    logger.warning(f"Failed to claim pending from {stream}: {e}")
+                    logger.warning("Failed to claim pending from %s: %s", stream, e)
 
         return claimed_messages
 
@@ -235,13 +235,13 @@ class Worker:
             # This is safe because we only call this after successful ACK
             deleted = await redis.xtrim(stream, minid=last_id, approximate=False)
             if deleted > 0:
-                logger.debug(f"Trimmed {deleted} processed messages from {stream}")
+                logger.debug("Trimmed %d processed messages from %s", deleted, stream)
         except Exception as e:
-            logger.warning(f"Failed to trim {stream}: {e}")
+            logger.warning("Failed to trim %s: %s", stream, e)
 
     async def run(self):
         """Main worker loop."""
-        logger.info(f"Worker {self.consumer_name} starting")
+        logger.info("Worker %s starting", self.consumer_name)
 
         redis = await get_redis()
 
@@ -255,7 +255,7 @@ class Worker:
 
         processor = LogProcessor(os_client, async_session_maker)
 
-        logger.info(f"Worker {self.consumer_name} ready, waiting for messages")
+        logger.info("Worker %s ready, waiting for messages", self.consumer_name)
 
         claim_interval = 0  # Counter for periodic pending claim
 
@@ -321,11 +321,11 @@ class Worker:
                 self.processing = False
 
             except Exception as e:
-                logger.error(f"Worker error: {e}")
+                logger.error("Worker error: %s", e)
                 self.processing = False
                 await asyncio.sleep(1)  # Back off on error
 
-        logger.info(f"Worker {self.consumer_name} shutting down")
+        logger.info("Worker %s shutting down", self.consumer_name)
         await close_redis()
 
 

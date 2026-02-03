@@ -75,7 +75,7 @@ async def _clear_suppression(
 
     if suppression and suppression.suppression_level > 0:
         suppression.clear()
-        logger.debug(f"Cleared suppression for {alert_type} on index pattern {index_pattern_id}")
+        logger.debug("Cleared suppression for %s on index pattern %s", alert_type, index_pattern_id)
 
 
 async def _get_thresholds(db: AsyncSession) -> dict:
@@ -211,7 +211,7 @@ async def check_index_data_freshness(
             })
 
     except Exception as e:
-        logger.error(f"Failed to check data freshness for {index}: {e}")
+        logger.error("Failed to check data freshness for %s: %s", index, e)
         return (False, {
             "status": "error",
             "message": f"Failed to query index: {e}",
@@ -250,7 +250,7 @@ async def check_index_health(db: AsyncSession, os_client=None) -> list[dict]:
         try:
             os_client = await get_client_from_settings(db)
         except Exception as e:
-            logger.warning(f"Could not get OpenSearch client for data freshness checks: {e}")
+            logger.warning("Could not get OpenSearch client for data freshness checks: %s", e)
 
     for pattern in patterns:
         # For pull-mode patterns, skip health checks if no deployed rules exist
@@ -263,8 +263,8 @@ async def check_index_health(db: AsyncSession, os_client=None) -> list[dict]:
             )
             if deployed_rules_count == 0:
                 logger.debug(
-                    f"Skipping health check for {pattern.name}: "
-                    f"no deployed rules (pull mode)"
+                    "Skipping health check for %s: no deployed rules (pull mode)",
+                    pattern.name,
                 )
                 continue
 
@@ -449,15 +449,18 @@ async def _handle_issue(
     # Check if we should suppress this alert
     if suppression.should_suppress():
         logger.debug(
-            f"Suppressing {level} alert for {pattern.name} ({condition_type}) - "
-            f"level {suppression.suppression_level}, "
-            f"next alert in {_format_suppression_remaining(suppression)}"
+            "Suppressing %s alert for %s (%s) - level %d, next alert in %s",
+            level,
+            pattern.name,
+            condition_type,
+            suppression.suppression_level,
+            _format_suppression_remaining(suppression),
         )
         return None
 
     # Not suppressed - record the alert and escalate
     suppression.record_alert()
-    logger.warning(f"Health {level} for {pattern.name}: {message}")
+    logger.warning("Health %s for %s: %s", level, pattern.name, message)
 
     # Send notification
     await send_health_notification(

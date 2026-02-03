@@ -117,10 +117,10 @@ class MISPClient(TIClient):
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 return None
-            logger.error(f"MISP API error: {e.response.status_code}")
+            logger.error("MISP API error: %s", e.response.status_code)
             raise
         except Exception as e:
-            logger.error(f"MISP request error: {e}")
+            logger.error("MISP request error: %s", e)
             raise
 
     async def lookup_ip(self, ip: str) -> TILookupResult:

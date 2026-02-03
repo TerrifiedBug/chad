@@ -78,13 +78,15 @@ export function HistoricalTestPanel({ ruleId, onClose: _onClose }: HistoricalTes
   }
 
   const toggleRowExpand = (id: string) => {
-    const newExpanded = new Set(expandedRows)
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id)
-    } else {
-      newExpanded.add(id)
-    }
-    setExpandedRows(newExpanded)
+    setExpandedRows(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   const exportToCsv = () => {

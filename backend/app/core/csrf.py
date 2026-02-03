@@ -84,7 +84,7 @@ def is_safe_origin(origin: str | None, referer: str | None, app_url: str | None,
         if expected_host:
             allowed_hosts.append(expected_host)
         else:
-            logger.warning(f"Invalid APP_URL format: {app_url}")
+            logger.warning("Invalid APP_URL format: %s", app_url)
 
     # Add additional allowed hosts from ALLOWED_HOSTS setting
     allowed_hosts.extend(settings.allowed_hosts_list)
@@ -159,7 +159,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # Check if path is exempt from CSRF protection
         path = str(request.url.path)
         if path in self.EXEMPT_PATHS or path.startswith(self.EXEMPT_PREFIXES):
-            logger.debug(f"CSRF: Exempted path {path} from validation")
+            logger.debug("CSRF: Exempted path %s from validation", path)
             return await call_next(request)
 
         # For API requests with JWT authentication, CSRF is less critical
@@ -212,8 +212,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
             if not is_safe_origin(origin, referer, settings.APP_URL, host):
                 logger.warning(
-                    f"CSRF: Unsafe origin/referer/host from authenticated request: "
-                    f"origin={origin}, referer={referer}, host={host}, expected={settings.APP_URL}"
+                    "CSRF: Unsafe origin/referer/host from authenticated request: "
+                    "origin=%s, referer=%s, host=%s, expected=%s",
+                    origin,
+                    referer,
+                    host,
+                    settings.APP_URL,
                 )
                 # For API requests, we'll log but not block (can be configured to block)
                 # In production, you may want to reject these requests
@@ -226,7 +230,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
 
         if not csrf_cookie:
-            logger.warning(f"CSRF: Missing cookie for state-changing request: {request.url}")
+            logger.warning("CSRF: Missing cookie for state-changing request: %s", request.url)
             response = JSONResponse(
                 {"detail": "CSRF token missing. Please refresh the page and try again."},
                 status_code=403
@@ -237,7 +241,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         csrf_header = request.headers.get(CSRF_HEADER_NAME)
 
         if not csrf_header:
-            logger.warning(f"CSRF: Missing header for state-changing request: {request.url}")
+            logger.warning("CSRF: Missing header for state-changing request: %s", request.url)
             response = JSONResponse(
                 {"detail": "CSRF token required. Please include X-CSRF-Token header."},
                 status_code=403
@@ -246,7 +250,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         # Validate tokens match
         if not secrets.compare_digest(csrf_cookie.encode(), csrf_header.encode()):
-            logger.warning(f"CSRF: Token mismatch for state-changing request: {request.url}")
+            logger.warning("CSRF: Token mismatch for state-changing request: %s", request.url)
             response = JSONResponse(
                 {"detail": "CSRF token validation failed. Please refresh the page and try again."},
                 status_code=403
@@ -260,8 +264,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         if not is_safe_origin(origin, referer, settings.APP_URL, host):
             logger.warning(
-                f"CSRF: Unsafe origin/referer/host: origin={origin}, referer={referer}, host={host}, "
-                f"expected={settings.APP_URL}, url={request.url}"
+                "CSRF: Unsafe origin/referer/host: origin=%s, referer=%s, host=%s, expected=%s, url=%s",
+                origin,
+                referer,
+                host,
+                settings.APP_URL,
+                request.url,
             )
             response = JSONResponse(
                 {"detail": "Cross-site request not allowed."},

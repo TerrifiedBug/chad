@@ -76,7 +76,10 @@ async def check_rate_limit_redis(
         # Check request limit
         if request_count >= max_requests:
             logger.warning(
-                f"Rate limit exceeded for {pattern_id}: {request_count}/{max_requests} requests"
+                "Rate limit exceeded for %s: %d/%d requests",
+                pattern_id,
+                request_count,
+                max_requests,
             )
             raise HTTPException(
                 status_code=429,
@@ -87,7 +90,10 @@ async def check_rate_limit_redis(
         # Check event limit
         if total_events + event_count > max_events:
             logger.warning(
-                f"Rate limit exceeded for {pattern_id}: {total_events + event_count}/{max_events} events"
+                "Rate limit exceeded for %s: %d/%d events",
+                pattern_id,
+                total_events + event_count,
+                max_events,
             )
             raise HTTPException(
                 status_code=429,
@@ -114,7 +120,7 @@ async def check_rate_limit_redis(
     except Exception as e:
         # Log but don't fail if Redis is unavailable
         # Fall back to allowing the request (fail-open)
-        logger.warning(f"Rate limit check failed, allowing request: {e}")
+        logger.warning("Rate limit check failed, allowing request: %s", e)
 
 
 async def get_rate_limit_status(pattern_id: str) -> dict:
@@ -156,7 +162,7 @@ async def get_rate_limit_status(pattern_id: str) -> dict:
         }
 
     except Exception as e:
-        logger.warning(f"Failed to get rate limit status: {e}")
+        logger.warning("Failed to get rate limit status: %s", e)
         return {
             "requests_in_window": 0,
             "events_in_window": 0,

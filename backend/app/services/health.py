@@ -46,8 +46,8 @@ def get_alert_count(
             }
         }
 
-        logger.info(f"Counting alerts in {alerts_index_pattern} since {since_naive.isoformat()}")
-        logger.info(f"Query: {query}")
+        logger.info("Counting alerts in %s since %s", alerts_index_pattern, since_naive.isoformat())
+        logger.info("Query: %s", query)
 
         result = os_client.count(
             index=alerts_index_pattern,
@@ -55,10 +55,10 @@ def get_alert_count(
         )
 
         count = result.get("count", 0)
-        logger.info(f"Alert count result for {alerts_index_pattern}: {count}")
+        logger.info("Alert count result for %s: %d", alerts_index_pattern, count)
         return count
     except Exception as e:
-        logger.error(f"Failed to count alerts in {alerts_index_pattern}: {e}")
+        logger.error("Failed to count alerts in %s: %s", alerts_index_pattern, e)
         return 0
 
 # Thresholds (could be moved to settings)
