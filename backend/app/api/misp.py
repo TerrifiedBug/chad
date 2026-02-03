@@ -95,7 +95,7 @@ async def search_events(
     limit: int = Query(default=50, ge=1, le=200),
     date_from: str | None = None,
     date_to: str | None = None,
-    threat_levels: str | None = Query(default="1,2"),  # High, Medium
+    threat_levels: str | None = Query(default="1,2,3,4"),  # All levels
     search_term: str | None = None,
 ):
     """Search MISP events."""

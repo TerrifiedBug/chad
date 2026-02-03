@@ -37,7 +37,7 @@ export function MISPImportModal({ open, onOpenChange }: MISPImportModalProps) {
   const queryClient = useQueryClient()
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [threatLevels, setThreatLevels] = useState<number[]>([1, 2])
+  const [threatLevels, setThreatLevels] = useState<number[]>([1, 2, 3, 4])
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null)
   const [selectedIOCs, setSelectedIOCs] = useState<Record<string, Set<string>>>({})
   const [selectedIndexPattern, setSelectedIndexPattern] = useState<string>('')
