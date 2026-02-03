@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { mispApi, type MISPEventSummary, type MISPAttribute, type IndexPattern } from '@/lib/api'
@@ -44,7 +44,7 @@ export default function MISPPage() {
   const [selectedIndexPattern, setSelectedIndexPattern] = useState<string>('')
   const [selectedIOCType, setSelectedIOCType] = useState<string | null>(null)
   const [iocSearchTerm, setIocSearchTerm] = useState('')
-  const [showAllIOCs, setShowAllIOCs] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
 
   // Check MISP connection status
   const { data: mispStatus, isLoading: statusLoading } = useQuery({
@@ -59,7 +59,7 @@ export default function MISPPage() {
     enabled: mispStatus?.configured && mispStatus?.connected,
   })
 
-  // Fetch events
+  // Fetch events (includes ioc_summary with counts per type)
   const {
     data: events,
     isLoading: eventsLoading,
@@ -76,11 +76,16 @@ export default function MISPPage() {
     enabled: mispStatus?.configured && mispStatus?.connected,
   })
 
-  // Fetch IOCs when event is expanded
-  const { data: eventIOCs, isLoading: iocsLoading } = useQuery({
-    queryKey: ['misp-event-iocs', expandedEvent],
-    queryFn: () => mispApi.getEventIOCs(expandedEvent!),
-    enabled: !!expandedEvent,
+  // Fetch IOCs for selected type with pagination (lazy loading)
+  const { data: iocPage, isLoading: iocsLoading, isFetching: iocsFetching } = useQuery({
+    queryKey: ['misp-iocs', expandedEvent, selectedIOCType, currentPage, iocSearchTerm],
+    queryFn: () =>
+      mispApi.getEventIOCsByType(expandedEvent!, selectedIOCType!, {
+        limit: IOCS_PER_PAGE,
+        page: currentPage,
+        search: iocSearchTerm || undefined,
+      }),
+    enabled: !!expandedEvent && !!selectedIOCType,
   })
 
   // Fetch supported IOC types
@@ -99,35 +104,54 @@ export default function MISPPage() {
     },
   })
 
-  // Get sorted IOC types for tabs
-  const sortedIOCTypes = useMemo(() => {
-    if (!eventIOCs?.iocs_by_type) return []
-    return Object.entries(eventIOCs.iocs_by_type)
-      .sort((a, b) => b[1].length - a[1].length)
-      .map(([type, iocs]) => ({ type, count: iocs.length }))
-  }, [eventIOCs])
+  // Get current expanded event
+  const currentEvent = useMemo(() => {
+    if (!expandedEvent || !events) return null
+    return events.find((e) => e.id === expandedEvent) || null
+  }, [expandedEvent, events])
 
-  // Reset IOC type selection when event changes
+  // Get sorted IOC types from event summary (no API call needed)
+  const sortedIOCTypes = useMemo(() => {
+    if (!currentEvent?.ioc_summary) return []
+    return Object.entries(currentEvent.ioc_summary)
+      .sort((a, b) => b[1] - a[1])
+      .map(([type, count]) => ({ type, count }))
+  }, [currentEvent])
+
+  // Auto-select first supported IOC type when event is expanded
+  useEffect(() => {
+    if (sortedIOCTypes.length > 0 && !selectedIOCType && supportedTypes) {
+      // Find first supported type
+      const firstSupported = sortedIOCTypes.find(({ type }) =>
+        supportedTypes.types.includes(type)
+      )
+      if (firstSupported) {
+        setSelectedIOCType(firstSupported.type)
+      } else {
+        setSelectedIOCType(sortedIOCTypes[0].type)
+      }
+    }
+  }, [sortedIOCTypes, selectedIOCType, supportedTypes])
+
   const handleEventToggle = (eventId: string) => {
     if (expandedEvent === eventId) {
       setExpandedEvent(null)
       setSelectedIOCType(null)
       setIocSearchTerm('')
-      setShowAllIOCs(false)
+      setCurrentPage(1)
     } else {
       setExpandedEvent(eventId)
       setSelectedIOCType(null)
       setIocSearchTerm('')
-      setShowAllIOCs(false)
+      setCurrentPage(1)
     }
   }
 
-  // Auto-select first IOC type when IOCs load
-  useMemo(() => {
-    if (sortedIOCTypes.length > 0 && !selectedIOCType) {
-      setSelectedIOCType(sortedIOCTypes[0].type)
-    }
-  }, [sortedIOCTypes, selectedIOCType])
+  const handleTypeChange = (type: string) => {
+    setSelectedIOCType(type)
+    setIocSearchTerm('')
+    setCurrentPage(1)
+  }
 
   const handleIOCToggle = (eventId: string, iocType: string, iocValue: string) => {
     setSelectedIOCs((prev) => {
@@ -157,13 +181,15 @@ export default function MISPPage() {
     })
   }
 
-  const handleSelectAll = (eventId: string, iocType: string, iocs: MISPAttribute[]) => {
+  const handleSelectAllVisible = (eventId: string, iocType: string, iocs: MISPAttribute[]) => {
     const key = `${eventId}:${iocType}`
     const validIOCs = iocs.filter((ioc) => !ioc.on_warning_list && isTypeSupported(iocType))
-    setSelectedIOCs((prev) => ({
-      ...prev,
-      [key]: new Set(validIOCs.map((ioc) => ioc.value)),
-    }))
+    setSelectedIOCs((prev) => {
+      const current = prev[key] || new Set()
+      const updated = new Set(current)
+      validIOCs.forEach((ioc) => updated.add(ioc.value))
+      return { ...prev, [key]: updated }
+    })
   }
 
   const handleDeselectAll = (eventId: string, iocType: string) => {
@@ -192,19 +218,6 @@ export default function MISPPage() {
       default:
         return <Badge variant="secondary">{level}</Badge>
     }
-  }
-
-  // Filter and paginate IOCs
-  const getFilteredIOCs = (iocs: MISPAttribute[]) => {
-    let filtered = iocs
-    if (iocSearchTerm) {
-      const search = iocSearchTerm.toLowerCase()
-      filtered = iocs.filter((ioc) => ioc.value.toLowerCase().includes(search))
-    }
-    if (!showAllIOCs && filtered.length > IOCS_PER_PAGE) {
-      return { iocs: filtered.slice(0, IOCS_PER_PAGE), hasMore: true, total: filtered.length }
-    }
-    return { iocs: filtered, hasMore: false, total: filtered.length }
   }
 
   // Loading state
@@ -367,9 +380,7 @@ export default function MISPPage() {
           </SelectContent>
         </Select>
         {!selectedIndexPattern && (
-          <span className="text-sm text-muted-foreground">
-            Required to create rules
-          </span>
+          <span className="text-sm text-muted-foreground">Required to create rules</span>
         )}
       </div>
 
@@ -428,171 +439,181 @@ export default function MISPPage() {
               </button>
 
               {/* Expanded IOCs */}
-              {expandedEvent === event.id && (
+              {expandedEvent === event.id && sortedIOCTypes.length > 0 && (
                 <div className="px-4 pb-4 pt-2 ml-7 space-y-4 border-t bg-muted/20">
-                  {iocsLoading && (
-                    <div className="flex items-center gap-2 py-4">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">Loading IOCs...</span>
-                    </div>
-                  )}
+                  {/* IOC Type Tabs */}
+                  <Tabs
+                    value={selectedIOCType || sortedIOCTypes[0].type}
+                    onValueChange={handleTypeChange}
+                  >
+                    <TabsList className="flex-wrap h-auto gap-1">
+                      {sortedIOCTypes.map(({ type, count }) => (
+                        <TabsTrigger
+                          key={type}
+                          value={type}
+                          className="text-xs"
+                          disabled={!isTypeSupported(type)}
+                        >
+                          {type}
+                          <Badge
+                            variant={isTypeSupported(type) ? 'secondary' : 'outline'}
+                            className="ml-1.5 text-xs px-1.5"
+                          >
+                            {count.toLocaleString()}
+                          </Badge>
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
 
-                  {eventIOCs && sortedIOCTypes.length > 0 && (
-                    <>
-                      {/* IOC Type Tabs */}
-                      <Tabs
-                        value={selectedIOCType || sortedIOCTypes[0].type}
-                        onValueChange={(value) => {
-                          setSelectedIOCType(value)
-                          setIocSearchTerm('')
-                          setShowAllIOCs(false)
-                        }}
-                      >
-                        <TabsList className="flex-wrap h-auto gap-1">
-                          {sortedIOCTypes.map(({ type, count }) => (
-                            <TabsTrigger
-                              key={type}
-                              value={type}
-                              className="text-xs"
-                              disabled={!isTypeSupported(type)}
-                            >
-                              {type}
-                              <Badge
-                                variant={isTypeSupported(type) ? 'secondary' : 'outline'}
-                                className="ml-1.5 text-xs px-1.5"
-                              >
-                                {count.toLocaleString()}
+                  {/* Selected IOC Type Content */}
+                  {selectedIOCType && (
+                    <div className="border rounded-lg bg-background">
+                      <div className="p-3 border-b flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium text-sm">
+                            {selectedIOCType}
+                            {!isTypeSupported(selectedIOCType) && (
+                              <Badge variant="outline" className="ml-2 text-xs">
+                                unsupported
                               </Badge>
-                            </TabsTrigger>
-                          ))}
-                        </TabsList>
-                      </Tabs>
+                            )}
+                          </div>
+                          <span className="text-sm text-muted-foreground">
+                            ({getSelectedCount(event.id, selectedIOCType)} selected)
+                          </span>
+                          {iocsFetching && <Loader2 className="h-3 w-3 animate-spin" />}
+                        </div>
 
-                      {/* Selected IOC Type Content */}
-                      {selectedIOCType && eventIOCs.iocs_by_type[selectedIOCType] && (() => {
-                        const iocType = selectedIOCType
-                        const allIOCs = eventIOCs.iocs_by_type[iocType] as MISPAttribute[]
-                        const { iocs, hasMore, total } = getFilteredIOCs(allIOCs)
+                        {isTypeSupported(selectedIOCType) && (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                getSelectedCount(event.id, selectedIOCType) > 0
+                                  ? handleDeselectAll(event.id, selectedIOCType)
+                                  : iocPage?.iocs &&
+                                    handleSelectAllVisible(
+                                      event.id,
+                                      selectedIOCType,
+                                      iocPage.iocs
+                                    )
+                              }
+                            >
+                              {getSelectedCount(event.id, selectedIOCType) > 0
+                                ? 'Deselect All'
+                                : 'Select Page'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handleImport(event.id, selectedIOCType)}
+                              disabled={
+                                getSelectedCount(event.id, selectedIOCType) === 0 ||
+                                !selectedIndexPattern ||
+                                importMutation.isPending
+                              }
+                            >
+                              {importMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                              ) : (
+                                <Plus className="h-4 w-4 mr-1" />
+                              )}
+                              Create Rule ({getSelectedCount(event.id, selectedIOCType)})
+                            </Button>
+                          </div>
+                        )}
+                      </div>
 
-                        return (
-                          <div className="border rounded-lg bg-background">
-                            <div className="p-3 border-b flex items-center justify-between gap-4">
-                              <div className="flex items-center gap-2">
-                                <div className="font-medium text-sm">
-                                  {iocType}
-                                  {!isTypeSupported(iocType) && (
-                                    <Badge variant="outline" className="ml-2 text-xs">
-                                      unsupported
+                      {/* IOC Search */}
+                      <div className="p-2 border-b">
+                        <div className="relative">
+                          <Filter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            placeholder={`Filter ${selectedIOCType}s...`}
+                            value={iocSearchTerm}
+                            onChange={(e) => {
+                              setIocSearchTerm(e.target.value)
+                              setCurrentPage(1)
+                            }}
+                            className="pl-10 h-8 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {iocsLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="p-2 max-h-80 overflow-y-auto">
+                            <div className="grid gap-1">
+                              {iocPage?.iocs.map((ioc) => (
+                                <label
+                                  key={ioc.id}
+                                  className={`flex items-center gap-2 text-sm p-2 rounded cursor-pointer hover:bg-muted/50 ${
+                                    ioc.on_warning_list
+                                      ? 'bg-yellow-50 dark:bg-yellow-900/20'
+                                      : ''
+                                  }`}
+                                >
+                                  <Checkbox
+                                    checked={selectedIOCs[
+                                      `${event.id}:${selectedIOCType}`
+                                    ]?.has(ioc.value)}
+                                    onCheckedChange={() =>
+                                      handleIOCToggle(event.id, selectedIOCType, ioc.value)
+                                    }
+                                    disabled={
+                                      !isTypeSupported(selectedIOCType) || ioc.on_warning_list
+                                    }
+                                  />
+                                  <span className="font-mono text-xs break-all flex-1">
+                                    {ioc.value}
+                                  </span>
+                                  {ioc.on_warning_list && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs shrink-0 text-yellow-600"
+                                    >
+                                      {ioc.warning_list_name || 'warning list'}
                                     </Badge>
                                   )}
-                                </div>
-                                <span className="text-sm text-muted-foreground">
-                                  ({getSelectedCount(event.id, iocType)} selected of{' '}
-                                  {total.toLocaleString()})
-                                </span>
-                              </div>
-
-                              {isTypeSupported(iocType) && (
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() =>
-                                      getSelectedCount(event.id, iocType) > 0
-                                        ? handleDeselectAll(event.id, iocType)
-                                        : handleSelectAll(event.id, iocType, allIOCs)
-                                    }
-                                  >
-                                    {getSelectedCount(event.id, iocType) > 0
-                                      ? 'Deselect All'
-                                      : 'Select All'}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleImport(event.id, iocType)}
-                                    disabled={
-                                      getSelectedCount(event.id, iocType) === 0 ||
-                                      !selectedIndexPattern ||
-                                      importMutation.isPending
-                                    }
-                                  >
-                                    {importMutation.isPending ? (
-                                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                                    ) : (
-                                      <Plus className="h-4 w-4 mr-1" />
-                                    )}
-                                    Create Rule ({getSelectedCount(event.id, iocType)})
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* IOC Search */}
-                            {allIOCs.length > 20 && (
-                              <div className="p-2 border-b">
-                                <div className="relative">
-                                  <Filter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                  <Input
-                                    placeholder={`Filter ${iocType}s...`}
-                                    value={iocSearchTerm}
-                                    onChange={(e) => setIocSearchTerm(e.target.value)}
-                                    className="pl-10 h-8 text-sm"
-                                  />
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="p-2 max-h-80 overflow-y-auto">
-                              <div className="grid gap-1">
-                                {iocs.map((ioc) => (
-                                  <label
-                                    key={ioc.id}
-                                    className={`flex items-center gap-2 text-sm p-2 rounded cursor-pointer hover:bg-muted/50 ${
-                                      ioc.on_warning_list
-                                        ? 'bg-yellow-50 dark:bg-yellow-900/20'
-                                        : ''
-                                    }`}
-                                  >
-                                    <Checkbox
-                                      checked={selectedIOCs[`${event.id}:${iocType}`]?.has(
-                                        ioc.value
-                                      )}
-                                      onCheckedChange={() =>
-                                        handleIOCToggle(event.id, iocType, ioc.value)
-                                      }
-                                      disabled={!isTypeSupported(iocType) || ioc.on_warning_list}
-                                    />
-                                    <span className="font-mono text-xs break-all flex-1">
-                                      {ioc.value}
-                                    </span>
-                                    {ioc.on_warning_list && (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-xs shrink-0 text-yellow-600"
-                                      >
-                                        {ioc.warning_list_name || 'warning list'}
-                                      </Badge>
-                                    )}
-                                  </label>
-                                ))}
-                              </div>
-
-                              {hasMore && (
-                                <div className="mt-2 pt-2 border-t text-center">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setShowAllIOCs(true)}
-                                  >
-                                    Show all {total.toLocaleString()} {iocType}s
-                                  </Button>
-                                </div>
-                              )}
+                                </label>
+                              ))}
                             </div>
                           </div>
-                        )
-                      })()}
-                    </>
+
+                          {/* Pagination */}
+                          {iocPage && (iocPage.has_more || currentPage > 1) && (
+                            <div className="p-2 border-t flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                Page {currentPage}
+                              </span>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                  disabled={currentPage === 1}
+                                >
+                                  Previous
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setCurrentPage((p) => p + 1)}
+                                  disabled={!iocPage.has_more}
+                                >
+                                  Next
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   )}
 
                   {importMutation.isError && (

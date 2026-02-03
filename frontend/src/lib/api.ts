@@ -2002,6 +2002,13 @@ export type MISPEventIOCs = {
   iocs_by_type: Record<string, MISPAttribute[]>
 }
 
+export type MISPIOCsPage = {
+  iocs: MISPAttribute[]
+  page: number
+  limit: number
+  has_more: boolean
+}
+
 export type MISPImportRequest = {
   event_id: string
   ioc_type: string
@@ -2061,6 +2068,27 @@ export const mispApi = {
       searchParams.set('to_ids', params.to_ids.toString())
     }
     return api.get<MISPEventIOCs>(`/misp/events/${eventId}/iocs?${searchParams}`)
+  },
+  getEventIOCsByType: (eventId: string, iocType: string, params?: {
+    limit?: number
+    page?: number
+    search?: string
+    to_ids?: boolean
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.limit !== undefined) {
+      searchParams.set('limit', params.limit.toString())
+    }
+    if (params?.page !== undefined) {
+      searchParams.set('page', params.page.toString())
+    }
+    if (params?.search) {
+      searchParams.set('search', params.search)
+    }
+    if (params?.to_ids !== undefined) {
+      searchParams.set('to_ids', params.to_ids.toString())
+    }
+    return api.get<MISPIOCsPage>(`/misp/events/${eventId}/iocs/${encodeURIComponent(iocType)}?${searchParams}`)
   },
   getSupportedTypes: () =>
     api.get<{ types: string[] }>('/misp/supported-types'),

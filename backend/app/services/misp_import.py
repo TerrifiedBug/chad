@@ -92,7 +92,11 @@ class MISPImportService:
         enforce_warninglist: bool = True,
         to_ids_only: bool = True,
     ) -> dict[str, list[dict]]:
-        """Get IOCs from an event, grouped by type."""
+        """Get IOCs from an event, grouped by type.
+
+        DEPRECATED: Use get_event_iocs_by_type for better performance with large events.
+        This method fetches ALL IOCs at once which is inefficient for events with many attributes.
+        """
         try:
             response = await self._client.get(f'/events/view/{event_id}')
             response.raise_for_status()
@@ -130,6 +134,72 @@ class MISPImportService:
 
         except Exception as e:
             logger.error("Failed to get event IOCs: %s", type(e).__name__)
+            raise
+
+    async def get_event_iocs_by_type(
+        self,
+        event_id: str,
+        ioc_type: str,
+        limit: int = 100,
+        page: int = 1,
+        search: str | None = None,
+        to_ids_only: bool = True,
+    ) -> dict:
+        """Get IOCs of a specific type from an event with pagination.
+
+        Returns:
+            dict with 'iocs', 'total', 'page', 'limit', 'has_more'
+        """
+        try:
+            # Use MISP's attribute search with pagination
+            params: dict[str, Any] = {
+                'eventid': event_id,
+                'type': ioc_type,
+                'limit': limit,
+                'page': page,
+                'returnFormat': 'json',
+                'includeWarninglistHits': True,
+            }
+
+            if to_ids_only:
+                params['to_ids'] = True
+
+            if search:
+                params['value'] = f'%{search}%'
+
+            response = await self._client.post('/attributes/restSearch', json=params)
+            response.raise_for_status()
+            data = response.json()
+
+            attributes = data.get('response', {}).get('Attribute', [])
+
+            iocs = []
+            for attr in attributes:
+                warnings = attr.get('warnings', [])
+                on_warning_list = bool(warnings)
+
+                iocs.append({
+                    'id': attr.get('uuid', attr.get('id')),
+                    'type': attr.get('type', 'unknown'),
+                    'value': attr.get('value', ''),
+                    'comment': attr.get('comment'),
+                    'to_ids': attr.get('to_ids', False),
+                    'on_warning_list': on_warning_list,
+                    'warning_list_name': warnings[0] if warnings else None,
+                })
+
+            # Determine if there are more results
+            has_more = len(attributes) == limit
+
+            return {
+                'iocs': iocs,
+                'page': page,
+                'limit': limit,
+                'has_more': has_more,
+            }
+
+        except Exception as e:
+            logger.error("Failed to get event IOCs by type: %s", type(e).__name__)
             raise
 
     async def get_event(self, event_id: str) -> dict:

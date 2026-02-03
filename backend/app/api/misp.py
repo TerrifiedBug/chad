@@ -131,7 +131,11 @@ async def get_event_iocs(
     enforce_warninglist: bool = Query(default=True),
     to_ids: bool = Query(default=True),
 ):
-    """Get IOCs from a MISP event, grouped by type."""
+    """Get IOCs from a MISP event, grouped by type.
+
+    NOTE: This endpoint fetches ALL IOCs at once. For large events,
+    use /events/{event_id}/iocs/{ioc_type} with pagination instead.
+    """
     service = await get_misp_service(db)
 
     try:
@@ -146,6 +150,37 @@ async def get_event_iocs(
             event_info=event['info'],
             iocs_by_type=iocs,
         )
+    finally:
+        await service.close()
+
+
+@router.get("/events/{event_id}/iocs/{ioc_type}")
+async def get_event_iocs_by_type(
+    event_id: str,
+    ioc_type: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    limit: int = Query(default=100, ge=1, le=1000),
+    page: int = Query(default=1, ge=1),
+    search: str | None = Query(default=None),
+    to_ids: bool = Query(default=True),
+):
+    """Get IOCs of a specific type from a MISP event with pagination.
+
+    More efficient than the full IOCs endpoint for large events.
+    """
+    service = await get_misp_service(db)
+
+    try:
+        result = await service.get_event_iocs_by_type(
+            event_id=event_id,
+            ioc_type=ioc_type,
+            limit=limit,
+            page=page,
+            search=search,
+            to_ids_only=to_ids,
+        )
+        return result
     finally:
         await service.close()
 
