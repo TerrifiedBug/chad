@@ -23,10 +23,12 @@ const THREAT_LEVELS = [
 ]
 
 const IOC_TYPES = [
-  { value: 'ip-dst', label: 'IP' },
+  { value: 'ip-dst', label: 'Destination IP' },
+  { value: 'ip-src', label: 'Source IP' },
   { value: 'domain', label: 'Domain' },
   { value: 'url', label: 'URL' },
   { value: 'md5', label: 'MD5' },
+  { value: 'sha1', label: 'SHA1' },
   { value: 'sha256', label: 'SHA256' },
 ]
 
