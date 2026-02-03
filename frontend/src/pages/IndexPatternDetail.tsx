@@ -22,6 +22,7 @@ import {
   Globe,
   Lock,
   HeartPulse,
+  Crosshair,
 } from 'lucide-react'
 import { SettingsTab } from '@/components/index-patterns/SettingsTab'
 import { FieldMappingsTab } from '@/components/index-patterns/FieldMappingsTab'
@@ -30,9 +31,10 @@ import { TIEnrichmentTab } from '@/components/index-patterns/TIEnrichmentTab'
 import { GeoIPTab } from '@/components/index-patterns/GeoIPTab'
 import { SecurityTab } from '@/components/index-patterns/SecurityTab'
 import { HealthTab } from '@/components/index-patterns/HealthTab'
+import { IOCDetectionTab } from '@/components/index-patterns/IOCDetectionTab'
 import { ChangeReasonDialog } from '@/components/ChangeReasonDialog'
 
-type DetailTab = 'settings' | 'mappings' | 'threat-intel' | 'geoip' | 'security' | 'health' | 'endpoint'
+type DetailTab = 'settings' | 'mappings' | 'threat-intel' | 'ioc-detection' | 'geoip' | 'security' | 'health' | 'endpoint'
 
 export default function IndexPatternDetail() {
   const { id } = useParams<{ id: string }>()
@@ -270,6 +272,14 @@ export default function IndexPatternDetail() {
             Threat Intel
           </TabsTrigger>
           <TabsTrigger
+            value="ioc-detection"
+            className="flex items-center gap-2"
+            disabled={isNew}
+          >
+            <Crosshair className="h-4 w-4" />
+            IOC Detection
+          </TabsTrigger>
+          <TabsTrigger
             value="geoip"
             className="flex items-center gap-2"
             disabled={isNew}
@@ -341,6 +351,21 @@ export default function IndexPatternDetail() {
             ) : (
               <div className="text-sm text-muted-foreground py-8 text-center">
                 Save the pattern first to configure threat intelligence enrichment.
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="ioc-detection" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            {pattern ? (
+              <IOCDetectionTab
+                pattern={pattern}
+                onPatternUpdated={setPattern}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                Save the pattern first to configure IOC detection.
               </div>
             )}
           </div>
