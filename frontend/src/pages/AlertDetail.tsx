@@ -33,6 +33,7 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/comp
 import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
+import { IOCMatchesCard } from '@/components/alerts/IOCMatchesCard'
 import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 
 // Type for exception conditions (for AND grouping)
@@ -1163,6 +1164,11 @@ export default function AlertDetailPage() {
           {/* Threat Intelligence Enrichment - shown if TI data exists */}
           {alert.ti_enrichment && alert.ti_enrichment.indicators.length > 0 && (
             <TIEnrichmentCard indicators={alert.ti_enrichment.indicators} />
+          )}
+
+          {/* IOC Matches from Push Mode detection */}
+          {alert.ioc_matches && alert.ioc_matches.length > 0 && (
+            <IOCMatchesCard matches={alert.ioc_matches} />
           )}
 
           {/* Correlation Alert Details - shown if this is a correlation alert */}
