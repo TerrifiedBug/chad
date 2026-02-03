@@ -150,8 +150,8 @@ class SigmaRuleGenerator:
             ),
             'references': [f"{misp_url}/events/view/{event_info['id']}"],
             'tags': [
-                f"misp:event-id={event_info['id']}",
-                f"misp:threat-level={event_info['threat_level'].lower()}",
+                f"misp.event-id={event_info['id']}",
+                f"misp.threat-level={event_info['threat_level'].lower()}",
             ],
             'logsource': mapping['logsource'],
             'detection': {
@@ -212,8 +212,8 @@ class SigmaRuleGenerator:
             ),
             'references': [f"{misp_url}/events/view/{event_info['id']}"],
             'tags': [
-                f"misp:event-id={event_info['id']}",
-                f"misp:threat-level={event_info['threat_level'].lower()}",
+                f"misp.event-id={event_info['id']}",
+                f"misp.threat-level={event_info['threat_level'].lower()}",
             ],
             'logsource': mapping['logsource'],
             'detection': detection,
