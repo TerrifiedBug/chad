@@ -1966,6 +1966,110 @@ export const tiApi = {
     api.post<TITestResponse>(`/ti/${sourceType}/test-saved`),
 }
 
+// MISP Integration Types
+export type MISPConnectionStatus = {
+  configured: boolean
+  connected: boolean
+  error?: string
+  instance_url?: string
+}
+
+export type MISPEventSummary = {
+  id: string
+  uuid?: string
+  info: string
+  date: string
+  threat_level: string
+  threat_level_id: number
+  ioc_count: number
+  ioc_summary: Record<string, number>
+  tags: string[]
+}
+
+export type MISPAttribute = {
+  id: string
+  type: string
+  value: string
+  comment?: string
+  to_ids: boolean
+  on_warning_list: boolean
+  warning_list_name?: string
+}
+
+export type MISPEventIOCs = {
+  event_id: string
+  event_info: string
+  iocs_by_type: Record<string, MISPAttribute[]>
+}
+
+export type MISPImportRequest = {
+  event_id: string
+  ioc_type: string
+  ioc_values: string[]
+  index_pattern_id: string
+}
+
+export type MISPImportResponse = {
+  success: boolean
+  rule_id: string
+  title: string
+  message: string
+}
+
+export type MISPImportedRuleInfo = {
+  misp_url: string
+  misp_event_id: string
+  misp_event_uuid?: string
+  misp_event_info?: string
+  misp_event_date?: string
+  misp_event_threat_level?: string
+  ioc_type: string
+  ioc_count: number
+  imported_at: string
+  last_checked_at?: string
+  has_updates: boolean
+}
+
+// MISP API
+export const mispApi = {
+  getStatus: () =>
+    api.get<MISPConnectionStatus>('/misp/status'),
+  searchEvents: (params: {
+    limit?: number
+    date_from?: string
+    date_to?: string
+    threat_levels?: string
+    search_term?: string
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params.limit) searchParams.set('limit', params.limit.toString())
+    if (params.date_from) searchParams.set('date_from', params.date_from)
+    if (params.date_to) searchParams.set('date_to', params.date_to)
+    if (params.threat_levels) searchParams.set('threat_levels', params.threat_levels)
+    if (params.search_term) searchParams.set('search_term', params.search_term)
+    return api.get<MISPEventSummary[]>(`/misp/events?${searchParams}`)
+  },
+  getEventIOCs: (eventId: string, params?: {
+    enforce_warninglist?: boolean
+    to_ids?: boolean
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.enforce_warninglist !== undefined) {
+      searchParams.set('enforce_warninglist', params.enforce_warninglist.toString())
+    }
+    if (params?.to_ids !== undefined) {
+      searchParams.set('to_ids', params.to_ids.toString())
+    }
+    return api.get<MISPEventIOCs>(`/misp/events/${eventId}/iocs?${searchParams}`)
+  },
+  getSupportedTypes: () =>
+    api.get<{ types: string[] }>('/misp/supported-types'),
+  importRule: (request: MISPImportRequest) =>
+    api.post<MISPImportResponse>('/misp/import-rule', request),
+  getRuleMISPInfo: (ruleId: string) =>
+    api.get<MISPImportedRuleInfo | null>(`/misp/rules/${ruleId}/misp-info`),
+}
+
 // Correlation Rules types
 export type EntityFieldType = 'sigma' | 'direct'
 
