@@ -49,7 +49,8 @@ async def get_misp_service(db: AsyncSession) -> MISPImportService:
         )
 
     api_key = decrypt(config.api_key_encrypted) if config.api_key_encrypted else ""
-    verify_ssl = config.config.get('verify_ssl', True) if config.config else True
+    # Use verify_tls to match TI config key (not verify_ssl)
+    verify_ssl = config.config.get('verify_tls', True) if config.config else True
 
     return MISPImportService(
         url=config.instance_url,
@@ -113,6 +114,11 @@ async def search_events(
             search_term=search_term,
         )
         return events
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to connect to MISP: {type(e).__name__}: {str(e)}",
+        )
     finally:
         await service.close()
 
