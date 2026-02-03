@@ -1168,7 +1168,7 @@ class SchedulerService:
                 return
 
             # Get sync parameters from settings
-            threat_levels = settings.get("threat_levels", ["high", "medium"])
+            threat_levels = settings.get("threat_levels", ["high", "medium", "low", "undefined"])
             max_age_days = settings.get("max_age_days", 30)
             ttl_days = settings.get("ttl_days", 30)
             tags = settings.get("tags")

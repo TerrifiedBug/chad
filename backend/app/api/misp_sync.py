@@ -30,7 +30,7 @@ class SyncConfigRequest(BaseModel):
 
     enabled: bool = False
     interval_minutes: int = 10
-    threat_levels: list[str] = ["high", "medium"]
+    threat_levels: list[str] = ["high", "medium", "low", "undefined"]
     max_age_days: int = 30
     ttl_days: int = 30
     tags: list[str] | None = None
@@ -137,7 +137,7 @@ async def trigger_misp_sync(db: AsyncSession, os_client=None) -> dict[str, Any]:
     service = MISPSyncService(fetcher, cache, index_service)
 
     # Run sync
-    threat_levels = settings.get("threat_levels", ["high", "medium"])
+    threat_levels = settings.get("threat_levels", ["high", "medium", "low", "undefined"])
     max_age_days = settings.get("max_age_days", 30)
     ttl_days = settings.get("ttl_days", 30)
     tags = settings.get("tags")
@@ -225,7 +225,7 @@ async def get_sync_config(
     return {
         "enabled": False,
         "interval_minutes": 10,
-        "threat_levels": ["high", "medium"],
+        "threat_levels": ["high", "medium", "low", "undefined"],
         "max_age_days": 30,
         "ttl_days": 30,
     }
