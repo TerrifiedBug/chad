@@ -160,7 +160,7 @@ class GeoIPService:
         except AddressNotFoundError:
             return None
         except Exception as e:
-            logger.warning("GeoIP lookup failed for %s: %s", ip, e)
+            logger.warning("GeoIP lookup failed for %s: %s", repr(ip), type(e).__name__)
             return None
 
     def is_public_ip(self, ip: str) -> bool:

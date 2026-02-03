@@ -88,7 +88,7 @@ async def websocket_alerts(
                     # Still send pong even if token refresh fails
                     await websocket.send_json({"type": "pong"})
             else:
-                logger.debug("Received WebSocket message from %s: %s", user.username, data)
+                logger.debug("Received WebSocket message from %s: %s", user.username, repr(data))
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected for user %s", user.email)

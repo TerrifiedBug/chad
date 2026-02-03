@@ -238,20 +238,19 @@ async def send_webhook(
 
             if response.status_code >= 400:
                 logger.error(
-                    "Webhook failed: %s returned %s: %s",
-                    url,
+                    "Webhook failed: %s returned %s",
+                    repr(url),
                     response.status_code,
-                    response.text[:200],
                 )
                 return False
 
             return True
 
     except httpx.TimeoutException:
-        logger.error("Webhook timeout: %s", url)
+        logger.error("Webhook timeout: %s", repr(url))
         return False
     except Exception as e:
-        logger.error("Webhook error: %s - %s", url, e)
+        logger.error("Webhook error: %s - %s", repr(url), type(e).__name__)
         return False
 
 

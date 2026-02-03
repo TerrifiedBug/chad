@@ -217,7 +217,7 @@ async def _send_alert_to_jira(
             matched_log=matched_log,
             alert_url=alert_url,
         )
-        logger.info("Created Jira issue %s for alert %s", issue.get('key'), alert_id)
+        logger.info("Created Jira issue for alert %s", alert_id)
         return {
             "destination": "jira",
             "success": True,
