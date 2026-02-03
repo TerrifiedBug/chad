@@ -41,8 +41,9 @@ async def list_index_patterns(
 @router.post("", response_model=IndexPatternResponse, status_code=status.HTTP_201_CREATED)
 async def create_index_pattern(
     pattern_data: IndexPatternCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     # Check for duplicate name
     result = await db.execute(
@@ -78,6 +79,17 @@ async def create_index_pattern(
     db.add(pattern)
     await db.commit()
     await db.refresh(pattern)
+
+    # Audit log the creation
+    await audit_log(
+        db,
+        current_user.id,
+        "index_pattern.create",
+        "index_pattern",
+        str(pattern.id),
+        {"name": pattern.name, "pattern": pattern.pattern, "mode": pattern.mode},
+        ip_address=get_client_ip(request),
+    )
 
     # Schedule pull poll job if this is a pull mode index
     if pattern.mode == "pull":
@@ -254,8 +266,9 @@ async def update_index_pattern(
 @router.delete("/{pattern_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_index_pattern(
     pattern_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_index_config"))],
 ):
     result = await db.execute(select(IndexPattern).where(IndexPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
@@ -286,8 +299,23 @@ async def delete_index_pattern(
         except Exception:
             pass  # Scheduler may not be available during tests
 
+    # Capture details before deletion for audit log
+    pattern_name = pattern.name
+    pattern_pattern = pattern.pattern
+
     await db.delete(pattern)
     await db.commit()
+
+    # Audit log the deletion
+    await audit_log(
+        db,
+        current_user.id,
+        "index_pattern.delete",
+        "index_pattern",
+        str(pattern_id),
+        {"name": pattern_name, "pattern": pattern_pattern},
+        ip_address=get_client_ip(request),
+    )
 
 
 @router.post("/{pattern_id}/regenerate-token", response_model=IndexPatternTokenResponse)
