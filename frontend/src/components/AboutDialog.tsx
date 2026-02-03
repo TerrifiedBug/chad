@@ -72,7 +72,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
           <div className="border-t pt-4">
             <div className="flex justify-center gap-4 text-sm">
               <a
-                href="https://github.com/your-org/chad"
+                href="https://github.com/TerrifiedBug/chad"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground flex items-center gap-1"
@@ -81,7 +81,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
                 <ExternalLink className="h-3 w-3" />
               </a>
               <a
-                href="https://github.com/your-org/chad/blob/main/CHANGELOG.md"
+                href="https://github.com/TerrifiedBug/chad/blob/main/CHANGELOG.md"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground flex items-center gap-1"

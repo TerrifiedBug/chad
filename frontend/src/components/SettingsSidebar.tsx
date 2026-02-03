@@ -24,6 +24,8 @@ import {
   FileText,
   Key,
   ScrollText,
+  KeyRound,
+  ShieldCheck,
 } from 'lucide-react'
 
 type SettingsItem = {
@@ -46,6 +48,7 @@ const settingsGroups: SettingsGroup[] = [
     items: [
       { id: 'general', label: 'General', icon: Wrench },
       { id: 'security', label: 'Security', icon: Shield },
+      { id: 'sso', label: 'SSO', icon: KeyRound },
       { id: 'notifications', label: 'Notifications', icon: Bell },
     ],
   },
@@ -84,6 +87,7 @@ type SettingsLink = {
 
 const adminLinks: SettingsLink[] = [
   { href: '/settings/users', label: 'Users', icon: Users, permission: 'manage_users' },
+  { href: '/settings/permissions', label: 'Permissions', icon: ShieldCheck, permission: 'manage_settings' },
   { href: '/settings/audit', label: 'Audit Log', icon: FileText, permission: 'view_audit' },
   { href: '/settings/system-logs', label: 'System Log', icon: ScrollText, permission: 'view_system_logs' },
   { href: '/settings/api-keys', label: 'API Keys', icon: Key, permission: 'manage_api_keys' },

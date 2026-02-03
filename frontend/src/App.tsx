@@ -18,6 +18,7 @@ import AlertsPage from '@/pages/Alerts'
 import AlertDetailPage from '@/pages/AlertDetail'
 import SettingsPage from '@/pages/Settings'
 import UsersPage from '@/pages/Users'
+import PermissionsPage from '@/pages/Permissions'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
 import SigmaHQPage from '@/pages/SigmaHQ'
@@ -192,6 +193,11 @@ function AppRoutes() {
       <Route path="/settings/users" element={
         <ProtectedRoute permission="manage_users">
           <AppLayout><UsersPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/settings/permissions" element={
+        <ProtectedRoute permission="manage_settings">
+          <AppLayout><PermissionsPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/settings/audit" element={

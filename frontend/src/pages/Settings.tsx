@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, permissionsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, healthApi } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, healthApi } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -152,10 +152,6 @@ export default function SettingsPage() {
   // Audit to OpenSearch
   const [auditOpenSearchEnabled, setAuditOpenSearchEnabled] = useState(false)
 
-  // Role permissions
-  const [permissions, setPermissions] = useState<Record<string, Record<string, boolean>>>({})
-  const [permissionDescriptions, setPermissionDescriptions] = useState<Record<string, string>>({})
-
   // AI settings
   const [aiSettings, setAiSettings] = useState<AISettings>({
     ai_provider: 'disabled',
@@ -205,7 +201,6 @@ export default function SettingsPage() {
   useEffect(() => {
     loadSettings()
     loadOpenSearchStatus()
-    loadPermissions()
     loadSecuritySettings()
     loadHealthSettings()
     loadAlertClusteringSettings()
@@ -411,16 +406,6 @@ export default function SettingsPage() {
       setOsStatus(status)
     } catch {
       console.log('Failed to load OpenSearch status')
-    }
-  }
-
-  const loadPermissions = async () => {
-    try {
-      const data = await permissionsApi.getAll()
-      setPermissions(data.roles)
-      setPermissionDescriptions(data.descriptions)
-    } catch (err) {
-      console.error('Failed to load permissions:', err)
     }
   }
 
@@ -845,313 +830,225 @@ export default function SettingsPage() {
               </CollapsibleContent>
             </Card>
           </Collapsible>
+        </div>
+      )}
 
-          {/* Permissions */}
-          <Collapsible defaultOpen>
-            <Card>
-              <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>Role Permissions</CardTitle>
-                      <CardDescription>Configure what each role can do. Admin permissions cannot be modified.</CardDescription>
-                    </div>
-                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
-                  </div>
-                </CardHeader>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <CardContent>
-                  <div className="space-y-4">
-                    {['analyst', 'viewer'].map((role) => {
-                      const enabledCount = Object.keys(permissionDescriptions).filter(
-                        (perm) => permissions[role]?.[perm] ?? false
-                      ).length
-                      const totalCount = Object.keys(permissionDescriptions).length
-                      return (
-                        <Collapsible key={role} defaultOpen={false} className="border rounded-lg">
-                          <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-muted/50 transition-colors [&[data-state=open]>svg]:rotate-180">
-                            <div className="flex items-center gap-3">
-                              <h3 className="font-medium capitalize text-lg">{role}</h3>
-                              <span className="text-sm text-muted-foreground">
-                                {enabledCount} of {totalCount} permissions enabled
-                              </span>
-                            </div>
-                            <ChevronDown className="h-4 w-4 transition-transform duration-200" />
-                          </CollapsibleTrigger>
-                          <CollapsibleContent>
-                            <div className="grid gap-3 p-4 pt-0 border-t">
-                              {Object.entries(permissionDescriptions).map(([perm, desc]) => (
-                                <div key={perm} className="flex items-center justify-between py-2">
-                                  <div className="space-y-0.5">
-                                    <Label className="text-sm font-medium">
-                                      {perm.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-                                    </Label>
-                                    <p className="text-xs text-muted-foreground">{desc}</p>
-                                  </div>
-                                  <Switch
-                                    checked={permissions[role]?.[perm] ?? false}
-                                    onCheckedChange={async (checked) => {
-                                      try {
-                                        await permissionsApi.update(role, perm, checked)
-                                        setPermissions((prev) => ({
-                                          ...prev,
-                                          [role]: { ...prev[role], [perm]: checked },
-                                        }))
-                                        showToast(`Permission updated for ${role}`)
-                                      } catch (err) {
-                                        showToast(
-                                          err instanceof Error ? err.message : 'Failed to update permission',
-                                          'error'
-                                        )
-                                      }
-                                    }}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          </CollapsibleContent>
-                        </Collapsible>
-                      )
-                    })}
-                    {Object.keys(permissionDescriptions).length === 0 && (
-                      <p className="text-muted-foreground text-sm">
-                        No permissions configured. The permissions API may not be available.
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
+      {/* SSO Section */}
+      {activeTab === 'sso' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Single Sign-On (SSO)</CardTitle>
+            <CardDescription>Configure OIDC provider for enterprise authentication</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Enable SSO</Label>
+                <p className="text-sm text-muted-foreground">
+                  Allow users to login with your identity provider
+                </p>
+              </div>
+              <Switch checked={ssoEnabled} onCheckedChange={setSsoEnabled} />
+            </div>
 
-          {/* SSO */}
-          <Collapsible defaultOpen>
-            <Card>
-              <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>Single Sign-On (SSO)</CardTitle>
-                      <CardDescription>Configure OIDC provider for enterprise authentication</CardDescription>
-                    </div>
-                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
+            {ssoEnabled && (
+              <div className="space-y-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <Label htmlFor="sso-provider-name">Provider Name</Label>
+                  <Input
+                    id="sso-provider-name"
+                    value={ssoProviderName}
+                    onChange={(e) => setSsoProviderName(e.target.value)}
+                    placeholder="Microsoft"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Display name on the login button (e.g., "Microsoft", "Okta", "Google")
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sso-issuer">Issuer URL</Label>
+                  <Input
+                    id="sso-issuer"
+                    value={ssoIssuerUrl}
+                    onChange={(e) => setSsoIssuerUrl(e.target.value)}
+                    placeholder="https://login.microsoftonline.com/tenant-id/v2.0"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    OIDC issuer URL from your identity provider
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sso-client-id">Client ID</Label>
+                  <Input
+                    id="sso-client-id"
+                    value={ssoClientId}
+                    onChange={(e) => setSsoClientId(e.target.value)}
+                    placeholder="your-client-id"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sso-client-secret">Client Secret</Label>
+                  <Input
+                    id="sso-client-secret"
+                    type="password"
+                    value={ssoClientSecret}
+                    onChange={(e) => setSsoClientSecret(e.target.value)}
+                    placeholder="Enter new secret to change"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Leave blank to keep existing secret
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Default Role for New SSO Users</Label>
+                  <Select value={ssoDefaultRole} onValueChange={setSsoDefaultRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-50 bg-popover">
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="analyst">Analyst</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Role assigned to users when role mapping is disabled or no match found
+                  </p>
+                </div>
+
+                {/* Advanced OAuth Settings */}
+                <div className="pt-4 border-t space-y-4">
+                  <h4 className="text-sm font-medium">Advanced OAuth Settings</h4>
+
+                  <div className="space-y-2">
+                    <Label>OAuth Scopes</Label>
+                    <Input
+                      value={ssoScopes}
+                      onChange={(e) => setSsoScopes(e.target.value)}
+                      placeholder="openid email profile"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Space-separated list of scopes to request. Add "groups" or "roles" if needed for role mapping.
+                    </p>
                   </div>
-                </CardHeader>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <CardContent className="space-y-4">
+
+                  <div className="space-y-2">
+                    <Label>Token Auth Method</Label>
+                    <Select value={ssoTokenAuthMethod} onValueChange={setSsoTokenAuthMethod}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="z-50 bg-popover">
+                        <SelectItem value="client_secret_post">POST Body (Most Common)</SelectItem>
+                        <SelectItem value="client_secret_basic">HTTP Basic Auth</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      How credentials are sent to the token endpoint. Try switching if you get "Invalid client secret" errors.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Role Mapping Section */}
+                <div className="pt-4 border-t space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label>Enable SSO</Label>
+                      <Label>Enable Role Mapping</Label>
                       <p className="text-sm text-muted-foreground">
-                        Allow users to login with your identity provider
+                        Automatically assign roles based on IdP claims
                       </p>
                     </div>
-                    <Switch checked={ssoEnabled} onCheckedChange={setSsoEnabled} />
+                    <Switch
+                      checked={ssoRoleMappingEnabled}
+                      onCheckedChange={setSsoRoleMappingEnabled}
+                    />
                   </div>
 
-                  {ssoEnabled && (
-                    <div className="space-y-4 pt-4 border-t">
+                  {ssoRoleMappingEnabled && (
+                    <div className="space-y-4 pl-4 border-l-2 border-muted">
                       <div className="space-y-2">
-                        <Label htmlFor="sso-provider-name">Provider Name</Label>
+                        <Label htmlFor="role-claim">Role Claim</Label>
                         <Input
-                          id="sso-provider-name"
-                          value={ssoProviderName}
-                          onChange={(e) => setSsoProviderName(e.target.value)}
-                          placeholder="Microsoft"
+                          id="role-claim"
+                          value={ssoRoleClaim}
+                          onChange={(e) => setSsoRoleClaim(e.target.value)}
+                          placeholder="groups"
                         />
                         <p className="text-xs text-muted-foreground">
-                          Display name on the login button (e.g., "Microsoft", "Okta", "Google")
+                          The claim name in the token containing user roles (e.g., "groups", "roles", "role")
                         </p>
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="sso-issuer">Issuer URL</Label>
+                        <Label htmlFor="admin-values">Admin Claim Values</Label>
                         <Input
-                          id="sso-issuer"
-                          value={ssoIssuerUrl}
-                          onChange={(e) => setSsoIssuerUrl(e.target.value)}
-                          placeholder="https://login.microsoftonline.com/tenant-id/v2.0"
+                          id="admin-values"
+                          value={ssoAdminValues}
+                          onChange={(e) => setSsoAdminValues(e.target.value)}
+                          placeholder="chad-admins, security-team"
                         />
                         <p className="text-xs text-muted-foreground">
-                          OIDC issuer URL from your identity provider
+                          Comma-separated values that grant Admin role
                         </p>
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="sso-client-id">Client ID</Label>
+                        <Label htmlFor="analyst-values">Analyst Claim Values</Label>
                         <Input
-                          id="sso-client-id"
-                          value={ssoClientId}
-                          onChange={(e) => setSsoClientId(e.target.value)}
-                          placeholder="your-client-id"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="sso-client-secret">Client Secret</Label>
-                        <Input
-                          id="sso-client-secret"
-                          type="password"
-                          value={ssoClientSecret}
-                          onChange={(e) => setSsoClientSecret(e.target.value)}
-                          placeholder="Enter new secret to change"
+                          id="analyst-values"
+                          value={ssoAnalystValues}
+                          onChange={(e) => setSsoAnalystValues(e.target.value)}
+                          placeholder="chad-analysts, soc-analysts"
                         />
                         <p className="text-xs text-muted-foreground">
-                          Leave blank to keep existing secret
+                          Comma-separated values that grant Analyst role
                         </p>
                       </div>
 
                       <div className="space-y-2">
-                        <Label>Default Role for New SSO Users</Label>
-                        <Select value={ssoDefaultRole} onValueChange={setSsoDefaultRole}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="z-50 bg-popover">
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="analyst">Analyst</SelectItem>
-                            <SelectItem value="viewer">Viewer</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Label htmlFor="viewer-values">Viewer Claim Values</Label>
+                        <Input
+                          id="viewer-values"
+                          value={ssoViewerValues}
+                          onChange={(e) => setSsoViewerValues(e.target.value)}
+                          placeholder="chad-viewers, read-only"
+                        />
                         <p className="text-xs text-muted-foreground">
-                          Role assigned to users when role mapping is disabled or no match found
+                          Comma-separated values that grant Viewer role
                         </p>
                       </div>
 
-                      {/* Advanced OAuth Settings */}
-                      <div className="pt-4 border-t space-y-4">
-                        <h4 className="text-sm font-medium">Advanced OAuth Settings</h4>
-
-                        <div className="space-y-2">
-                          <Label>OAuth Scopes</Label>
-                          <Input
-                            value={ssoScopes}
-                            onChange={(e) => setSsoScopes(e.target.value)}
-                            placeholder="openid email profile"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Space-separated list of scopes to request. Add "groups" or "roles" if needed for role mapping.
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Token Auth Method</Label>
-                          <Select value={ssoTokenAuthMethod} onValueChange={setSsoTokenAuthMethod}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="z-50 bg-popover">
-                              <SelectItem value="client_secret_post">POST Body (Most Common)</SelectItem>
-                              <SelectItem value="client_secret_basic">HTTP Basic Auth</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground">
-                            How credentials are sent to the token endpoint. Try switching if you get "Invalid client secret" errors.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Role Mapping Section */}
-                      <div className="pt-4 border-t space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label>Enable Role Mapping</Label>
-                            <p className="text-sm text-muted-foreground">
-                              Automatically assign roles based on IdP claims
-                            </p>
-                          </div>
-                          <Switch
-                            checked={ssoRoleMappingEnabled}
-                            onCheckedChange={setSsoRoleMappingEnabled}
-                          />
-                        </div>
-
-                        {ssoRoleMappingEnabled && (
-                          <div className="space-y-4 pl-4 border-l-2 border-muted">
-                            <div className="space-y-2">
-                              <Label htmlFor="role-claim">Role Claim</Label>
-                              <Input
-                                id="role-claim"
-                                value={ssoRoleClaim}
-                                onChange={(e) => setSsoRoleClaim(e.target.value)}
-                                placeholder="groups"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                The claim name in the token containing user roles (e.g., "groups", "roles", "role")
-                              </p>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label htmlFor="admin-values">Admin Claim Values</Label>
-                              <Input
-                                id="admin-values"
-                                value={ssoAdminValues}
-                                onChange={(e) => setSsoAdminValues(e.target.value)}
-                                placeholder="chad-admins, security-team"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Comma-separated values that grant Admin role
-                              </p>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label htmlFor="analyst-values">Analyst Claim Values</Label>
-                              <Input
-                                id="analyst-values"
-                                value={ssoAnalystValues}
-                                onChange={(e) => setSsoAnalystValues(e.target.value)}
-                                placeholder="chad-analysts, soc-analysts"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Comma-separated values that grant Analyst role
-                              </p>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label htmlFor="viewer-values">Viewer Claim Values</Label>
-                              <Input
-                                id="viewer-values"
-                                value={ssoViewerValues}
-                                onChange={(e) => setSsoViewerValues(e.target.value)}
-                                placeholder="chad-viewers, read-only"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Comma-separated values that grant Viewer role
-                              </p>
-                            </div>
-
-                            <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
-                              <strong>Note:</strong> Role mapping syncs on every login. If a user's groups change in the IdP, their CHAD role will update on next sign-in.
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="pt-4 border-t">
-                        <div className="p-3 bg-muted rounded-md">
-                          <p className="text-sm font-medium mb-1">Callback URL</p>
-                          <code className="text-xs bg-background px-2 py-1 rounded">
-                            {window.location.origin}/api/auth/sso/callback
-                          </code>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Register this URL in your identity provider
-                          </p>
-                        </div>
+                      <div className="p-3 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-md text-sm">
+                        <strong>Note:</strong> Role mapping syncs on every login. If a user's groups change in the IdP, their CHAD role will update on next sign-in.
                       </div>
                     </div>
                   )}
+                </div>
 
-                  <Button onClick={saveSso} disabled={isSaving}>
-                    <Save className="mr-2 h-4 w-4" />
-                    {isSaving ? 'Saving...' : 'Save'}
-                  </Button>
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
-        </div>
+                <div className="pt-4 border-t">
+                  <div className="p-3 bg-muted rounded-md">
+                    <p className="text-sm font-medium mb-1">Callback URL</p>
+                    <code className="text-xs bg-background px-2 py-1 rounded">
+                      {window.location.origin}/api/auth/sso/callback
+                    </code>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Register this URL in your identity provider
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <Button onClick={saveSso} disabled={isSaving}>
+              <Save className="mr-2 h-4 w-4" />
+              {isSaving ? 'Saving...' : 'Save'}
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       {/* AI Section */}
@@ -1616,93 +1513,6 @@ export default function SettingsPage() {
                       disabled={isSavingPullModeSettings}
                     >
                       {isSavingPullModeSettings ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Save className="h-4 w-4 mr-2" />Save Settings</>}
-                    </Button>
-                  </div>
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
-
-          {/* Alert Clustering */}
-          <Collapsible defaultOpen>
-            <Card>
-              <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>Alert Clustering</CardTitle>
-                      <CardDescription>Group alerts from the same detection rule within a time window to reduce noise</CardDescription>
-                    </div>
-                    <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-180" />
-                  </div>
-                </CardHeader>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <CardContent className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Enable Alert Clustering</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Group alerts from the same rule together
-                      </p>
-                    </div>
-                    <Switch
-                      checked={alertClusteringForm.enabled}
-                      onCheckedChange={(checked) =>
-                        setAlertClusteringForm({ ...alertClusteringForm, enabled: checked })
-                      }
-                    />
-                  </div>
-
-                  {alertClusteringForm.enabled && (
-                    <div className="space-y-4 pl-4 border-l-2 border-muted">
-                      <div className="space-y-2">
-                        <Label htmlFor="cluster-window">Time Window (minutes)</Label>
-                        <Input
-                          id="cluster-window"
-                          type="number"
-                          min={1}
-                          max={1440}
-                          className="w-32"
-                          value={alertClusteringForm.window_minutes}
-                          onChange={(e) =>
-                            setAlertClusteringForm({
-                              ...alertClusteringForm,
-                              window_minutes: parseInt(e.target.value) || 60,
-                            })
-                          }
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Alerts from the same rule within this time window will be grouped (1-1440 minutes)
-                        </p>
-                      </div>
-
-                      <div className="p-3 bg-muted rounded-md">
-                        <p className="text-sm">
-                          <strong>How it works:</strong> Alerts from the same detection rule within the time window
-                          are grouped together. The cluster shows a representative alert with a count badge.
-                          Click to expand and see all alerts in the cluster.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex justify-end pt-4 border-t">
-                    <Button
-                      onClick={saveAlertClusteringSettings}
-                      disabled={isSavingAlertClustering}
-                    >
-                      {isSavingAlertClustering ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <Save className="h-4 w-4 mr-2" />
-                          Save Settings
-                        </>
-                      )}
                     </Button>
                   </div>
                 </CardContent>
@@ -2325,6 +2135,82 @@ export default function SettingsPage() {
                   ) : (
                     <>
                       <Save className="mr-2 h-4 w-4" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Alert Clustering */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Alert Clustering</CardTitle>
+              <CardDescription>Group alerts from the same detection rule within a time window to reduce noise</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Enable Alert Clustering</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Group alerts from the same rule together
+                  </p>
+                </div>
+                <Switch
+                  checked={alertClusteringForm.enabled}
+                  onCheckedChange={(checked) =>
+                    setAlertClusteringForm({ ...alertClusteringForm, enabled: checked })
+                  }
+                />
+              </div>
+
+              {alertClusteringForm.enabled && (
+                <div className="space-y-4 pl-4 border-l-2 border-muted">
+                  <div className="space-y-2">
+                    <Label htmlFor="cluster-window">Time Window (minutes)</Label>
+                    <Input
+                      id="cluster-window"
+                      type="number"
+                      min={1}
+                      max={1440}
+                      className="w-32"
+                      value={alertClusteringForm.window_minutes}
+                      onChange={(e) =>
+                        setAlertClusteringForm({
+                          ...alertClusteringForm,
+                          window_minutes: parseInt(e.target.value) || 60,
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Alerts from the same rule within this time window will be grouped (1-1440 minutes)
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-muted rounded-md">
+                    <p className="text-sm">
+                      <strong>How it works:</strong> Alerts from the same detection rule within the time window
+                      are grouped together. The cluster shows a representative alert with a count badge.
+                      Click to expand and see all alerts in the cluster.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  onClick={saveAlertClusteringSettings}
+                  disabled={isSavingAlertClustering}
+                >
+                  {isSavingAlertClustering ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
                       Save Settings
                     </>
                   )}
