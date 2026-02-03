@@ -114,7 +114,7 @@ class SystemLogService:
                 },
             })
         except Exception as e:
-            logger.warning(f"Failed to broadcast system log: {e}")
+            logger.warning("Failed to broadcast system log: %s", e)
 
         return log
 

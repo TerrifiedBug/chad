@@ -101,4 +101,4 @@ class LogQueueService:
                 "reason": reason,
             },
         )
-        logger.warning(f"Message {message_id} moved to dead-letter: {reason}")
+        logger.warning("Message %s moved to dead-letter: %s", message_id, reason)

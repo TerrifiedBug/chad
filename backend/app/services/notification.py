@@ -217,7 +217,7 @@ async def _send_alert_to_jira(
             matched_log=matched_log,
             alert_url=alert_url,
         )
-        logger.info(f"Created Jira issue {issue.get('key')} for alert {alert_id}")
+        logger.info("Created Jira issue for alert")
         return {
             "destination": "jira",
             "success": True,
@@ -225,7 +225,8 @@ async def _send_alert_to_jira(
             "error": None,
         }
     except JiraAPIError as e:
-        logger.error(f"Failed to create Jira issue for alert {alert_id}: {e.message}")
+        # Log error type only to prevent log injection from external API responses
+        logger.error("Failed to create Jira issue: JiraAPIError")
         await system_log_service.log_error(
             db,
             category=LogCategory.INTEGRATIONS,
@@ -245,7 +246,8 @@ async def _send_alert_to_jira(
             "error": e.message,
         }
     except Exception as e:
-        logger.error(f"Unexpected error creating Jira issue for alert {alert_id}: {e}")
+        # Log error type only to prevent log injection
+        logger.error("Unexpected error creating Jira issue: %s", type(e).__name__)
         await system_log_service.log_error(
             db,
             category=LogCategory.INTEGRATIONS,
@@ -459,7 +461,7 @@ async def _send_to_webhook(webhook: Webhook, payload: dict) -> tuple[bool, str |
             header_name = webhook.header_name or "Authorization"
             headers[header_name] = decrypt(webhook.header_value)
         except Exception as e:
-            logger.error(f"Failed to decrypt header value for webhook {webhook.id}: {e}")
+            logger.error("Failed to decrypt header value for webhook %s: %s", webhook.id, e)
             return False, "Failed to decrypt header value"
 
     # Format payload based on provider
@@ -480,5 +482,5 @@ async def _send_to_webhook(webhook: Webhook, payload: dict) -> tuple[bool, str |
     except httpx.TimeoutException:
         return False, "Timeout"
     except Exception as e:
-        logger.error(f"Failed to send to webhook {webhook.id}: {e}")
+        logger.error("Failed to send to webhook %s: %s", webhook.id, e)
         return False, str(e)

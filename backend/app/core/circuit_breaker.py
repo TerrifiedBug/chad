@@ -88,8 +88,8 @@ class CircuitBreaker:
             if self._state == CircuitState.OPEN:
                 if time.time() - self._last_failure_time >= self.recovery_timeout:
                     logger.info(
-                        f"Circuit breaker for '{self.service_name}' "
-                        f"transitioning from OPEN to HALF_OPEN"
+                        "Circuit breaker for '%s' transitioning from OPEN to HALF_OPEN",
+                        self.service_name,
                     )
                     self._state = CircuitState.HALF_OPEN
                 else:
@@ -108,8 +108,8 @@ class CircuitBreaker:
             async with self._lock:
                 if self._state == CircuitState.HALF_OPEN:
                     logger.info(
-                        f"Circuit breaker for '{self.service_name}' "
-                        f"transitioning from HALF_OPEN to CLOSED"
+                        "Circuit breaker for '%s' transitioning from HALF_OPEN to CLOSED",
+                        self.service_name,
                     )
                 self._state = CircuitState.CLOSED
                 self._failure_count = 0
@@ -125,15 +125,19 @@ class CircuitBreaker:
                 if self._failure_count >= self.failure_threshold:
                     if self._state != CircuitState.OPEN:
                         logger.warning(
-                            f"Circuit breaker for '{self.service_name}' "
-                            f"transitioning from {self._state.value.upper()} to OPEN "
-                            f"after {self._failure_count} failures"
+                            "Circuit breaker for '%s' transitioning from %s to OPEN after %d failures",
+                            self.service_name,
+                            self._state.value.upper(),
+                            self._failure_count,
                         )
                     self._state = CircuitState.OPEN
                 else:
                     logger.warning(
-                        f"Circuit breaker for '{self.service_name}' "
-                        f"recorded failure {self._failure_count}/{self.failure_threshold}: {e}"
+                        "Circuit breaker for '%s' recorded failure %d/%d: %s",
+                        self.service_name,
+                        self._failure_count,
+                        self.failure_threshold,
+                        e,
                     )
 
             raise
@@ -153,7 +157,7 @@ class CircuitBreaker:
                 self._state = CircuitState.CLOSED
                 self._failure_count = 0
                 self._last_failure_time = 0.0
-                logger.info(f"Circuit breaker for '{self.service_name}' manually reset")
+                logger.info("Circuit breaker for '%s' manually reset", self.service_name)
 
         # Run synchronously
         try:
@@ -163,7 +167,7 @@ class CircuitBreaker:
             self._state = CircuitState.CLOSED
             self._failure_count = 0
             self._last_failure_time = 0.0
-            logger.info(f"Circuit breaker for '{self.service_name}' manually reset")
+            logger.info("Circuit breaker for '%s' manually reset", self.service_name)
 
 
 # Global circuit breaker instances

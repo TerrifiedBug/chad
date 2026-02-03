@@ -170,8 +170,7 @@ async def validate_log_shipping_token(
     if pattern.allowed_ips and request:
         client_ip = get_client_ip(request)
         if not ip_matches_allowlist(client_ip, pattern.allowed_ips):
-            import logging
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "Log shipping denied: IP %s not in allowlist for %s",
                 client_ip,
                 pattern.name
@@ -362,9 +361,6 @@ async def receive_logs(
                         alert_id=alert["alert_id"],
                     )
                     if triggered_correlations:
-                        import logging
-                        logger = logging.getLogger(__name__)
-
                         for corr in triggered_correlations:
                             # Fetch MITRE tags and titles from both linked sigma rules
                             correlation_tags = ["correlation"]
@@ -460,8 +456,7 @@ async def receive_logs(
                                 corr.get('entity_value')
                             )
                 except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).error("Correlation check failed: %s", e)
+                    logger.error("Correlation check failed: %s", e)
 
                 # Broadcast alert via WebSocket for real-time updates
                 try:
@@ -475,8 +470,7 @@ async def receive_logs(
                     )
                     await manager.broadcast_alert(alert_broadcast)
                 except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).warning("WebSocket broadcast failed: %s", e)
+                    logger.warning("WebSocket broadcast failed: %s", e)
 
             except Exception as e:
                 processing_errors.append(f"Alert creation failed for match: {str(e)}")
@@ -501,8 +495,7 @@ async def receive_logs(
                 )
             except Exception as e:
                 # Log but don't fail the request if notification fails
-                import logging
-                logging.getLogger(__name__).error("Failed to send notification: %s", e)
+                logger.error("Failed to send notification: %s", e)
 
     # Record health metrics for this batch of logs
     try:
@@ -526,8 +519,6 @@ async def receive_logs(
 
         # Log processing errors for monitoring
         if processing_errors:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 "Batch processing had %d errors: First 3 errors: %s",
                 len(processing_errors),
@@ -536,8 +527,7 @@ async def receive_logs(
 
     except Exception as e:
         # Log but don't fail the request if metric recording fails
-        import logging
-        logging.getLogger(__name__).error("Failed to record health metrics: %s", e)
+        logger.error("Failed to record health metrics: %s", e)
 
     return LogMatchResponse(
         logs_received=len(logs),

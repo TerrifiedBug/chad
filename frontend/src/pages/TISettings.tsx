@@ -28,6 +28,7 @@ import { Check, ChevronDown, ExternalLink, Loader2, Shield, XCircle } from 'luci
 type SourceFormState = {
   apiKey: string
   instanceUrl: string
+  verifyTls: boolean
   isTesting: boolean
   isSaving: boolean
   testResult: { success: boolean; error?: string | null } | null
@@ -39,14 +40,14 @@ export default function TISettings() {
   const [sources, setSources] = useState<TISourceConfig[]>([])
   const [expandedSource, setExpandedSource] = useState<TISourceType | null>(null)
   const [formStates, setFormStates] = useState<Record<TISourceType, SourceFormState>>({
-    virustotal: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
-    abuseipdb: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
-    greynoise: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
-    threatfox: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
-    misp: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
-    abuse_ch: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
-    alienvault_otx: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
-    phishtank: { apiKey: '', instanceUrl: '', isTesting: false, isSaving: false, testResult: null },
+    virustotal: { apiKey: '', instanceUrl: '', verifyTls: true, isTesting: false, isSaving: false, testResult: null },
+    abuseipdb: { apiKey: '', instanceUrl: '', verifyTls: true, isTesting: false, isSaving: false, testResult: null },
+    greynoise: { apiKey: '', instanceUrl: '', verifyTls: true, isTesting: false, isSaving: false, testResult: null },
+    threatfox: { apiKey: '', instanceUrl: '', verifyTls: true, isTesting: false, isSaving: false, testResult: null },
+    misp: { apiKey: '', instanceUrl: '', verifyTls: true, isTesting: false, isSaving: false, testResult: null },
+    abuse_ch: { apiKey: '', instanceUrl: '', verifyTls: true, isTesting: false, isSaving: false, testResult: null },
+    alienvault_otx: { apiKey: '', instanceUrl: '', verifyTls: true, isTesting: false, isSaving: false, testResult: null },
+    phishtank: { apiKey: '', instanceUrl: '', verifyTls: true, isTesting: false, isSaving: false, testResult: null },
   })
 
   useEffect(() => {
@@ -57,6 +58,12 @@ export default function TISettings() {
     try {
       const response = await tiApi.listSources()
       setSources(response.sources)
+      // Initialize form state with saved config values (e.g., verify_tls)
+      response.sources.forEach((source) => {
+        const sourceType = source.source_type as TISourceType
+        const verifyTls = typeof source.config?.verify_tls === 'boolean' ? source.config.verify_tls : true
+        updateFormState(sourceType, { verifyTls })
+      })
     } catch {
       console.log('Failed to load TI sources')
     } finally {
@@ -124,6 +131,7 @@ export default function TISettings() {
           is_enabled: true,
           api_key: formState.apiKey,
           instance_url: formState.instanceUrl || null,
+          config: info.requiresInstance ? { verify_tls: formState.verifyTls } : null,
         })
       } else if (source?.has_api_key) {
         // Test saved configuration
@@ -132,6 +140,7 @@ export default function TISettings() {
         // For ThreatFox (no key required)
         result = await tiApi.testConnection(sourceType, {
           is_enabled: true,
+          config: info.requiresInstance ? { verify_tls: formState.verifyTls } : null,
         })
       }
 
@@ -169,6 +178,7 @@ export default function TISettings() {
       const data: TISourceConfigUpdate = {
         is_enabled: source?.is_enabled ?? false,
         instance_url: formState.instanceUrl || null,
+        config: info.requiresInstance ? { verify_tls: formState.verifyTls } : null,
       }
 
       // Only include API key if provided
@@ -292,6 +302,25 @@ export default function TISettings() {
                               ? 'Leave blank to keep existing URL'
                               : `Enter your ${info.name} instance URL (e.g., https://misp.example.com)`}
                           </p>
+                        </div>
+                      )}
+
+                      {/* TLS Verification Toggle - for self-hosted instances with internal certs */}
+                      {info.requiresInstance && (
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id={`${sourceType}-verify-tls`}
+                            checked={formState.verifyTls}
+                            onCheckedChange={(checked) =>
+                              updateFormState(sourceType, { verifyTls: checked })
+                            }
+                          />
+                          <Label htmlFor={`${sourceType}-verify-tls`} className="text-sm font-normal">
+                            Verify TLS certificate
+                          </Label>
+                          <span className="text-xs text-muted-foreground">
+                            (disable for self-signed certificates)
+                          </span>
                         </div>
                       )}
 

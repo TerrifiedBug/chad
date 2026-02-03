@@ -74,23 +74,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     ],
   })
 
-  // Render the appropriate sidebar
-  const renderSidebar = () => {
-    if (useSettingsSidebar) {
-      return (
-        <SettingsSidebar
-          expanded={railExpanded}
-          onExpandedChange={setRailExpanded}
-        />
-      )
-    }
-    return (
-      <AppRail
-        expanded={railExpanded}
-        onExpandedChange={setRailExpanded}
-      />
-    )
-  }
+  const SidebarComponent = useSettingsSidebar ? SettingsSidebar : AppRail
 
   return (
     <div className="min-h-screen bg-background">
@@ -101,23 +85,18 @@ export function AppLayout({ children }: AppLayoutProps) {
       />
 
       {/* Desktop sidebar (fixed position) */}
-      {!isMobile && renderSidebar()}
+      {!isMobile && (
+        <SidebarComponent
+          expanded={railExpanded}
+          onExpandedChange={setRailExpanded}
+        />
+      )}
 
       {/* Mobile sidebar (Sheet) */}
       {isMobile && (
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetContent side="left" className="w-[200px] p-0">
-            {useSettingsSidebar ? (
-              <SettingsSidebar
-                expanded={true}
-                onExpandedChange={() => {}}
-              />
-            ) : (
-              <AppRail
-                expanded={true}
-                onExpandedChange={() => {}}
-              />
-            )}
+            <SidebarComponent expanded={true} onExpandedChange={() => {}} />
           </SheetContent>
         </Sheet>
       )}

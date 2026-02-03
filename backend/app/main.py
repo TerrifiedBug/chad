@@ -103,7 +103,7 @@ async def lifespan(app: FastAPI):
     try:
         await scheduler_service.sync_jobs_from_settings()
     except Exception as e:
-        logger.warning(f"Failed to sync scheduler jobs on startup: {e}")
+        logger.warning("Failed to sync scheduler jobs on startup: %s", e)
 
     # Start WebSocket pub/sub subscriber for cross-worker broadcasts
     # Only start in full deployment mode (not pull-only)
@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI):
         try:
             await websocket_manager.start_subscriber()
         except Exception as e:
-            logger.warning(f"Failed to start WebSocket subscriber: {e}")
+            logger.warning("Failed to start WebSocket subscriber: %s", e)
     else:
         logger.info("Pull-only mode: skipping WebSocket pub/sub subscriber (no Redis)")
 
@@ -313,7 +313,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         await db.execute(text("SELECT 1"))
         checks["database"] = True
     except Exception as e:
-        logger.error(f"Database health check failed: {e}")
+        logger.error("Database health check failed: %s", e)
         checks["status"] = "unhealthy"
 
     # Check OpenSearch if configured (optional - don't fail health if not configured)
@@ -329,7 +329,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
                 if info and info.get("status") == 200:
                     checks["opensearch"] = True
     except Exception as e:
-        logger.warning(f"OpenSearch health check failed: {e}")
+        logger.warning("OpenSearch health check failed: %s", e)
         # Don't fail the health check for OpenSearch issues (it's optional)
         checks["opensearch"] = False
 

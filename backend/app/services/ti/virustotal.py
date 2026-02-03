@@ -63,10 +63,10 @@ class VirusTotalClient(TIClient):
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 return None  # Not found is not an error for lookups
-            logger.error(f"VirusTotal API error: {e.response.status_code}")
+            logger.error("VirusTotal API error: %s", e.response.status_code)
             raise
         except Exception as e:
-            logger.error(f"VirusTotal request error: {e}")
+            logger.error("VirusTotal request error: %s", e)
             raise
 
     def _calculate_risk_level(self, malicious: int, suspicious: int, total: int) -> TIRiskLevel:

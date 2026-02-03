@@ -238,17 +238,19 @@ async def send_webhook(
 
             if response.status_code >= 400:
                 logger.error(
-                    f"Webhook failed: {url} returned {response.status_code}: {response.text[:200]}"
+                    "Webhook failed: %s returned %s",
+                    repr(url),
+                    response.status_code,
                 )
                 return False
 
             return True
 
     except httpx.TimeoutException:
-        logger.error(f"Webhook timeout: {url}")
+        logger.error("Webhook timeout: %s", repr(url))
         return False
     except Exception as e:
-        logger.error(f"Webhook error: {url} - {e}")
+        logger.error("Webhook error: %s - %s", repr(url), type(e).__name__)
         return False
 
 
@@ -279,7 +281,7 @@ async def get_webhook_config() -> dict[str, Any] | None:
                 return setting.value
             return None
     except Exception as e:
-        logger.error(f"Failed to get webhook config: {e}")
+        logger.error("Failed to get webhook config: %s", e)
         return None
     finally:
         await engine.dispose()
@@ -353,7 +355,7 @@ async def send_alert_to_webhooks(alert: dict[str, Any]) -> dict[str, bool]:
 
         for (name, _), result in zip(tasks, webhook_results):
             if isinstance(result, Exception):
-                logger.error(f"Webhook {name} exception: {result}")
+                logger.error("Webhook %s exception: %s", name, result)
                 results[name] = False
             else:
                 results[name] = result

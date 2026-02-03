@@ -101,9 +101,9 @@ class TIEnrichmentManager:
                 client = self._create_client(config)
                 if client:
                     self._clients[config.source_type] = client
-                    logger.info(f"Initialized TI client: {config.source_type}")
+                    logger.info("Initialized TI client: %s", config.source_type)
             except Exception as e:
-                logger.error(f"Failed to initialize TI client {config.source_type}: {e}")
+                logger.error("Failed to initialize TI client %s: %s", config.source_type, e)
                 await system_log_service.log_error(
                     db,
                     category=LogCategory.INTEGRATIONS,
@@ -158,7 +158,9 @@ class TIEnrichmentManager:
                 if not instance_url:
                     logger.warning("MISP requires an instance URL")
                     return None
-                return MISPClient(api_key, instance_url)
+                # Get verify_tls from config, default True
+                verify_tls = config.config.get("verify_tls", True) if config.config else True
+                return MISPClient(api_key, instance_url, verify_tls=verify_tls)
 
             case TISourceType.ABUSE_CH.value:
                 # abuse.ch (URLhaus) doesn't require an API key
@@ -175,7 +177,7 @@ class TIEnrichmentManager:
                 return PhishTankClient(api_key)
 
             case _:
-                logger.warning(f"Unknown TI source type: {source_type}")
+                logger.warning("Unknown TI source type: %s", source_type)
                 return None
 
     async def _lookup_with_timeout(

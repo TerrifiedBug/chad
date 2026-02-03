@@ -64,7 +64,7 @@ async def metrics():
         lines.append(f"chad_dead_letter_count {dl_count}")
 
     except Exception as e:
-        logger.warning(f"Redis unavailable for metrics: {e}")
+        logger.warning("Redis unavailable for metrics: %s", e)
         lines.append("chad_redis_connected 0")
         lines.append("chad_queue_depth_total 0")
         lines.append("chad_dead_letter_count 0")

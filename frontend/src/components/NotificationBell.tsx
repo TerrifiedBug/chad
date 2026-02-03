@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Badge } from './ui/badge'
@@ -29,25 +30,24 @@ interface RecentNotifications {
 }
 
 export function NotificationBell() {
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [data, setData] = useState<RecentNotifications | null>(null)
 
-  useEffect(() => {
-    const loadNotifications = async () => {
-      try {
-        const response = await api.get<RecentNotifications>('/notifications/recent')
-        setData(response)
-      } catch (err) {
-        console.error('Failed to load notifications:', err)
-      }
+  const loadNotifications = useCallback(async () => {
+    try {
+      const response = await api.get<RecentNotifications>('/notifications/recent')
+      setData(response)
+    } catch (err) {
+      console.error('Failed to load notifications:', err)
     }
+  }, [])
 
+  useEffect(() => {
     loadNotifications()
-
-    // Refresh every 30 seconds
     const interval = setInterval(loadNotifications, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [loadNotifications])
 
   const alertCount = data?.security_alerts?.length || 0
   const healthCount = data?.health_issues?.length || 0
@@ -88,7 +88,7 @@ export function NotificationBell() {
             {data?.security_alerts.slice(0, 5).map((alert) => (
               <DropdownMenuItem
                 key={alert.id}
-                onClick={() => (window.location.href = `/alerts/${alert.id}`)}
+                onClick={() => navigate(`/alerts/${alert.id}`)}
               >
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
@@ -104,9 +104,7 @@ export function NotificationBell() {
               </DropdownMenuItem>
             ))}
             {alertCount > 5 && (
-              <DropdownMenuItem
-                onClick={() => (window.location.href = '/alerts')}
-              >
+              <DropdownMenuItem onClick={() => navigate('/alerts')}>
                 View all {alertCount} alerts →
               </DropdownMenuItem>
             )}
@@ -123,7 +121,7 @@ export function NotificationBell() {
             {data?.health_issues.slice(0, 3).map((issue, idx) => (
               <DropdownMenuItem
                 key={`${issue.index_pattern_id}-${idx}`}
-                onClick={() => (window.location.href = '/health')}
+                onClick={() => navigate('/health')}
               >
                 <div className="flex-1">
                   <span className="font-medium">{issue.index_pattern_name}</span>
@@ -135,9 +133,7 @@ export function NotificationBell() {
               </DropdownMenuItem>
             ))}
             {healthCount > 3 && (
-              <DropdownMenuItem
-                onClick={() => (window.location.href = '/health')}
-              >
+              <DropdownMenuItem onClick={() => navigate('/health')}>
                 View all health issues →
               </DropdownMenuItem>
             )}

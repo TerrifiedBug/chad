@@ -58,12 +58,13 @@ def batch_percolate_logs(
                 matches_by_log[slot].append(rule_doc)
 
         logger.debug(
-            f"Batch percolate: {len(logs)} logs, "
-            f"{sum(len(m) for m in matches_by_log.values())} matches"
+            "Batch percolate: %d logs, %d matches",
+            len(logs),
+            sum(len(m) for m in matches_by_log.values()),
         )
 
         return matches_by_log
 
     except Exception as e:
-        logger.error(f"Batch percolate failed: {e}")
+        logger.error("Batch percolate failed: %s", e)
         return {}

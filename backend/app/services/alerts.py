@@ -470,7 +470,7 @@ class AlertService:
 
             result = self.client.bulk(body=bulk_body, refresh=False)
             if result.get("errors"):
-                logger.warning(f"Some bulk alert writes failed: {result}")
+                logger.warning("Some bulk alert writes failed: %s", result)
 
         return alert_ids
 
@@ -675,7 +675,7 @@ class AlertService:
                 return True
             except Exception as e:
                 import logging
-                logging.getLogger(__name__).error(f"Failed to delete alert from OpenSearch: {e}")
+                logging.getLogger(__name__).error("Failed to delete alert from OpenSearch: %s", e)
                 await system_log_service.log_error(
                     db,
                     category=LogCategory.ALERTS,
@@ -711,7 +711,7 @@ class AlertService:
             )
         except Exception as e:
             import logging
-            logging.getLogger(__name__).warning(f"Failed to delete alert from OpenSearch: {e}")
+            logging.getLogger(__name__).warning("Failed to delete alert from OpenSearch: %s", e)
             await system_log_service.log_warning(
                 db,
                 category=LogCategory.ALERTS,

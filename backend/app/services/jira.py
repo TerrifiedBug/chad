@@ -131,7 +131,7 @@ class JiraService:
                 except Exception:
                     error_message = response.text[:500] if response.text else error_message
 
-                logger.error(f"Jira API error: {response.status_code} - {error_message}")
+                logger.error("Jira API error: %s - %s", response.status_code, error_message)
                 raise JiraAPIError(
                     message=error_message,
                     status_code=response.status_code,
@@ -146,7 +146,7 @@ class JiraService:
             if isinstance(e, (JiraAPIError, httpx.TimeoutException, httpx.RequestError)):
                 raise
             # Wrap unexpected exceptions
-            logger.error(f"Unexpected error in Jira API call: {e}")
+            logger.error("Unexpected error in Jira API call: %s", e)
             raise JiraAPIError(message=f"Unexpected error: {str(e)}") from e
 
     async def test_connection(self) -> bool:
@@ -166,13 +166,13 @@ class JiraService:
             result = await self._make_request("GET", "/rest/api/3/serverInfo")
             # Verify we got a valid response with expected fields
             if "baseUrl" in result or "serverTitle" in result:
-                logger.info(f"Successfully connected to Jira: {result.get('serverTitle', 'Unknown')}")
+                logger.info("Successfully connected to Jira: %s", result.get('serverTitle', 'Unknown'))
                 return True
             raise JiraAPIError(message="Invalid response from Jira serverInfo endpoint")
         except JiraAPIError:
             raise
         except Exception as e:
-            logger.error(f"Unexpected error testing Jira connection: {e}")
+            logger.error("Unexpected error testing Jira connection: %s", e)
             raise JiraAPIError(message=f"Unexpected error: {str(e)}") from e
 
     async def create_issue(
@@ -229,7 +229,7 @@ class JiraService:
         }
 
         result = await self._make_request("POST", "/rest/api/3/issue", json_data=payload)
-        logger.info(f"Created Jira issue: {result.get('key')}")
+        logger.info("Created Jira issue: %s", result.get('key'))
         return result
 
     async def get_projects(self) -> list[dict[str, Any]]:

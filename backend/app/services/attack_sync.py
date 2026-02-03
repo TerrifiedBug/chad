@@ -68,7 +68,7 @@ class AttackSyncService:
         Returns tuple of (techniques, tactic_id_map).
         """
         # Download the STIX bundle from MITRE
-        logger.info(f"Downloading ATT&CK STIX bundle from {ATTACK_STIX_URL}")
+        logger.info("Downloading ATT&CK STIX bundle from %s", ATTACK_STIX_URL)
         with httpx.Client(timeout=60.0) as client:
             response = client.get(ATTACK_STIX_URL)
             response.raise_for_status()
@@ -80,7 +80,7 @@ class AttackSyncService:
             stix_filepath = f.name
 
         try:
-            logger.info(f"Parsing ATT&CK STIX bundle from {stix_filepath}")
+            logger.info("Parsing ATT&CK STIX bundle from %s", stix_filepath)
             attack_data = MitreAttackData(stix_filepath)
             techniques = attack_data.get_techniques(remove_revoked_deprecated=True)
 
@@ -116,7 +116,7 @@ class AttackSyncService:
 
             # Fetch data from MITRE in thread pool (synchronous HTTP call)
             techniques, tactic_id_map = await asyncio.to_thread(self._fetch_attack_data)
-            logger.info(f"Fetched {len(techniques)} techniques, {len(tactic_id_map)} tactics from MITRE")
+            logger.info("Fetched %d techniques, %d tactics from MITRE", len(techniques), len(tactic_id_map))
 
             techniques_count = 0
 
@@ -192,7 +192,7 @@ class AttackSyncService:
             count_result = await db.execute(select(AttackTechnique))
             total_count = len(count_result.scalars().all())
 
-            logger.info(f"ATT&CK sync complete: {techniques_count} technique upserts, {total_count} total in DB")
+            logger.info("ATT&CK sync complete: %d technique upserts, %d total in DB", techniques_count, total_count)
 
             return SyncResult(
                 success=True,
@@ -202,7 +202,7 @@ class AttackSyncService:
             )
 
         except Exception as e:
-            logger.error(f"ATT&CK sync failed: {e}")
+            logger.error("ATT&CK sync failed: %s", e)
             await db.rollback()
             return SyncResult(
                 success=False,

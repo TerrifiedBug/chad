@@ -101,7 +101,7 @@ class ThreatFoxClient(TIClient):
             return result
 
         except Exception as e:
-            logger.error(f"ThreatFox search error for '{search_term}': {e}")
+            logger.error("ThreatFox search error for '%s': %s", search_term, e)
             raise
 
     def _calculate_risk_level(self, confidence_level: int | None) -> TIRiskLevel:

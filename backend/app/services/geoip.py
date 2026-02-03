@@ -109,7 +109,7 @@ class GeoIPService:
                 }
 
         except Exception as e:
-            logger.error(f"Failed to download GeoIP database: {e}")
+            logger.error("Failed to download GeoIP database: %s", e)
             return {"success": False, "error": str(e)}
 
     def _reload_reader(self):
@@ -122,7 +122,7 @@ class GeoIPService:
             try:
                 self._reader = geoip2.database.Reader(str(CITY_DB_PATH))
             except Exception as e:
-                logger.error(f"Failed to load GeoIP database: {e}")
+                logger.error("Failed to load GeoIP database: %s", e)
 
     def _get_reader(self) -> geoip2.database.Reader | None:
         """Get or create the database reader."""
@@ -160,7 +160,7 @@ class GeoIPService:
         except AddressNotFoundError:
             return None
         except Exception as e:
-            logger.warning(f"GeoIP lookup failed for {ip}: {e}")
+            logger.warning("GeoIP lookup failed for %s: %s", repr(ip), type(e).__name__)
             return None
 
     def is_public_ip(self, ip: str) -> bool:

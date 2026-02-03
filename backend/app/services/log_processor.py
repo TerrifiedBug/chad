@@ -77,7 +77,7 @@ class LogProcessor:
                 for e in exceptions
             ]
         except (ValueError, Exception) as e:
-            logger.debug(f"Failed to load exceptions for rule {rule_id}: {e}")
+            logger.debug("Failed to load exceptions for rule %s: %s", rule_id, e)
             cache[rule_id] = []
 
         return cache[rule_id]
@@ -116,7 +116,7 @@ class LogProcessor:
         # Look up index pattern for enrichment config
         index_pattern = await self._get_index_pattern(db, index_suffix)
         if not index_pattern:
-            logger.warning(f"No index pattern found for '{index_suffix}', processing without enrichment")
+            logger.warning("No index pattern found for '%s', processing without enrichment", index_suffix)
 
         # Cache for rule exceptions (avoid repeated DB queries)
         rule_exceptions_cache: dict[str, list[dict]] = {}
@@ -163,7 +163,7 @@ class LogProcessor:
                     try:
                         enriched_log = await enrich_alert(db, log, index_pattern)
                     except Exception as e:
-                        logger.warning(f"Enrichment failed for log: {e}")
+                        logger.warning("Enrichment failed for log: %s", e)
                         enriched_log = log
                 else:
                     enriched_log = log
@@ -192,7 +192,7 @@ class LogProcessor:
                     )
 
                 except Exception as e:
-                    logger.error(f"Failed to create alert for rule {rule_id}: {e}")
+                    logger.error("Failed to create alert for rule %s: %s", rule_id, e)
                     continue
 
         # Broadcast alerts via WebSocket (Redis pub/sub for cross-worker)
@@ -205,9 +205,13 @@ class LogProcessor:
 
         elapsed = time.time() - start_time
         logger.info(
-            f"Processed batch: {len(logs)} logs, {total_matches} matches, "
-            f"{len(alerts_created)} alerts, {suppressed_count} suppressed, "
-            f"{disabled_count} disabled in {elapsed:.2f}s"
+            "Processed batch: %d logs, %d matches, %d alerts, %d suppressed, %d disabled in %.2fs",
+            len(logs),
+            total_matches,
+            len(alerts_created),
+            suppressed_count,
+            disabled_count,
+            elapsed,
         )
 
         return {
@@ -295,7 +299,7 @@ class LogProcessor:
                 )
 
         except Exception as e:
-            logger.error(f"Correlation check failed: {e}")
+            logger.error("Correlation check failed: %s", e)
 
     async def _get_rule_tags(self, db: AsyncSession, rule_id: str) -> tuple[str | None, list[str]]:
         """Get rule title and MITRE tags from a rule."""
@@ -335,7 +339,7 @@ class LogProcessor:
                 }
                 await publish_alert(alert_data)
             except Exception as e:
-                logger.warning(f"Failed to broadcast alert {alert.get('alert_id')}: {e}")
+                logger.warning("Failed to broadcast alert %s: %s", alert.get('alert_id'), e)
 
     async def _send_notifications(
         self,
@@ -356,4 +360,4 @@ class LogProcessor:
                     alert_url=alert_url,
                 )
             except Exception as e:
-                logger.warning(f"Failed to send notification for alert {alert['alert_id']}: {e}")
+                logger.warning("Failed to send notification for alert %s: %s", alert['alert_id'], e)

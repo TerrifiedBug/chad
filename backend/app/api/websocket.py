@@ -46,16 +46,16 @@ async def websocket_alerts(
     """
     # Log connection attempt
     client_host = websocket.client
-    logger.info(f"WebSocket connection attempt from {client_host}")
+    logger.info("WebSocket connection attempt from %s", client_host)
 
     # Authenticate the WebSocket connection BEFORE accepting
     user = await get_current_user_websocket(websocket, db)
     if not user:
-        logger.warning(f"WebSocket authentication failed from {client_host}")
+        logger.warning("WebSocket authentication failed from %s", client_host)
         await websocket.close(code=1008, reason="Authentication failed")
         return
 
-    logger.info(f"WebSocket authenticated for user {user.email} ({user.id})")
+    logger.info("WebSocket authenticated for user %s (%s)", user.email, user.id)
 
     # Accept the connection and register with the manager
     # Must accept before sending messages
@@ -84,15 +84,15 @@ async def websocket_alerts(
                         "token": new_token,
                     })
                 except Exception as e:
-                    logger.warning(f"Failed to refresh token for {user.email}: {e}")
+                    logger.warning("Failed to refresh token for %s: %s", user.email, e)
                     # Still send pong even if token refresh fails
                     await websocket.send_json({"type": "pong"})
             else:
-                logger.debug(f"Received WebSocket message from {user.username}: {data}")
+                logger.debug("Received WebSocket message from %s: %s", user.username, repr(data))
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for user {user.email}")
+        logger.info("WebSocket disconnected for user %s", user.email)
         manager.disconnect(websocket, str(user.id))
     except Exception as e:
-        logger.error(f"WebSocket error for user {user.email}: {e}", exc_info=True)
+        logger.error("WebSocket error for user %s: %s", user.email, e, exc_info=True)
         manager.disconnect(websocket, str(user.id))
