@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
-import { rulesApi, indexPatternsApi, correlationRulesApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult, CorrelationRule } from '@/lib/api'
+import { rulesApi, indexPatternsApi, correlationRulesApi, mispApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult, CorrelationRule } from '@/lib/api'
 import yaml from 'js-yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,6 +44,7 @@ import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { RulesExportDialog } from '@/components/RulesExportDialog'
+import { MISPImportModal } from '@/components/MISPImportModal'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -130,6 +132,13 @@ export default function RulesPage() {
 
   // Export report state
   const [showExportDialog, setShowExportDialog] = useState(false)
+
+  // MISP import state
+  const [showMISPModal, setShowMISPModal] = useState(false)
+  const { data: mispStatus } = useQuery({
+    queryKey: ['misp-status'],
+    queryFn: () => mispApi.getStatus(),
+  })
 
   // Deployment eligibility state
   const [deploymentEligibility, setDeploymentEligibility] = useState<DeploymentEligibilityResult | null>(null)
@@ -638,6 +647,28 @@ export default function RulesPage() {
               <ExternalLink className="h-4 w-4 mr-2" />
               SigmaHQ
             </Button>
+          )}
+          {activeTab === 'sigma' && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowMISPModal(true)}
+                      disabled={!mispStatus?.configured}
+                    >
+                      MISP
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!mispStatus?.configured && (
+                  <TooltipContent>
+                    Configure MISP in Settings &gt; Threat Intel
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           )}
           <Button variant="outline" onClick={() => setShowExportDialog(true)}>
             <Download className="h-4 w-4 mr-2" />
@@ -1624,6 +1655,9 @@ export default function RulesPage() {
         onOpenChange={setShowExportDialog}
         onError={(msg) => setError(msg)}
       />
+
+      {/* MISP Import Modal */}
+      <MISPImportModal open={showMISPModal} onOpenChange={setShowMISPModal} />
     </div>
   )
 }
