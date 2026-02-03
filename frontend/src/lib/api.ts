@@ -694,6 +694,9 @@ export type IndexPattern = {
   poll_interval_minutes: number
   // Timestamp field for pull mode time filtering (must be a date field in the index)
   timestamp_field: string
+  // IOC Detection (Push Mode)
+  ioc_detection_enabled: boolean
+  ioc_field_mappings: Record<string, string[]> | null
   // Audit: email of user who last edited this pattern
   last_edited_by: string | null
 }
@@ -724,6 +727,9 @@ export type IndexPatternCreate = {
   mode?: IndexPatternMode
   poll_interval_minutes?: number
   timestamp_field?: string
+  // IOC Detection (Push Mode)
+  ioc_detection_enabled?: boolean
+  ioc_field_mappings?: Record<string, string[]> | null
 }
 
 export type IndexPatternUpdate = Partial<IndexPatternCreate> & {
@@ -812,6 +818,7 @@ export type Alert = {
   status: AlertStatus
   log_document: Record<string, unknown>
   ti_enrichment?: TIEnrichment | null
+  ioc_matches?: IOCMatch[] | null
   created_at: string
   updated_at: string
   acknowledged_by: string | null
@@ -2037,6 +2044,83 @@ export type MISPImportedRuleInfo = {
   has_updates: boolean
 }
 
+// MISP Sync Types
+export type MISPSyncStatus = {
+  last_sync_at: string | null
+  iocs_synced: number
+  sync_duration_ms: number
+  redis_ioc_count: number
+  opensearch_ioc_count: number
+  error_message: string | null
+}
+
+export type MISPSyncConfig = {
+  enabled: boolean
+  interval_minutes: number
+  threat_levels: string[]
+  max_age_days: number
+  ttl_days: number
+  tags: string[] | null
+  ioc_types: string[] | null
+}
+
+export type MISPSyncTriggerResponse = {
+  success: boolean
+  iocs_fetched: number
+  iocs_cached: number
+  iocs_indexed: number
+  duration_ms: number
+  error: string | null
+}
+
+// MISP Feedback Types
+export type MISPSightingRequest = {
+  attribute_uuid: string
+  source?: string
+  is_false_positive: boolean
+}
+
+export type MISPSightingResponse = {
+  success: boolean
+  sighting_id: string | null
+  error: string | null
+}
+
+export type MISPEventAttribute = {
+  type: string
+  value: string
+  to_ids?: boolean
+}
+
+export type MISPEventRequest = {
+  alert_id?: string | null
+  info: string
+  threat_level: number
+  distribution: number
+  tags: string[]
+  attributes: MISPEventAttribute[]
+}
+
+export type MISPEventResponse = {
+  success: boolean
+  event_id: string | null
+  event_uuid: string | null
+  error: string | null
+}
+
+// IOC Match type (from Push Mode detection)
+export type IOCMatch = {
+  ioc_type: string
+  value: string
+  field_name: string
+  misp_event_id: string
+  misp_event_uuid: string | null
+  misp_attribute_uuid: string | null
+  misp_event_info: string | null
+  threat_level: string
+  tags: string[]
+}
+
 // MISP API
 export const mispApi = {
   getStatus: () =>
@@ -2096,6 +2180,26 @@ export const mispApi = {
     api.post<MISPImportResponse>('/misp/import-rule', request),
   getRuleMISPInfo: (ruleId: string) =>
     api.get<MISPImportedRuleInfo | null>(`/misp/rules/${ruleId}/misp-info`),
+}
+
+// MISP Sync API
+export const mispSyncApi = {
+  getStatus: () =>
+    api.get<MISPSyncStatus>('/misp/sync/status'),
+  trigger: () =>
+    api.post<MISPSyncTriggerResponse>('/misp/sync/trigger'),
+  getConfig: () =>
+    api.get<MISPSyncConfig>('/misp/sync/config'),
+  updateConfig: (config: Partial<MISPSyncConfig>) =>
+    api.put<MISPSyncConfig>('/misp/sync/config', config),
+}
+
+// MISP Feedback API
+export const mispFeedbackApi = {
+  recordSighting: (data: MISPSightingRequest) =>
+    api.post<MISPSightingResponse>('/misp/feedback/sighting', data),
+  createEvent: (data: MISPEventRequest) =>
+    api.post<MISPEventResponse>('/misp/feedback/event', data),
 }
 
 // Correlation Rules types
