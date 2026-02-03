@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator, RelatedAlertsResponse } from '@/lib/api'
+import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, mispApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator, RelatedAlertsResponse } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
@@ -30,10 +31,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers, Upload } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { IOCMatchesCard } from '@/components/alerts/IOCMatchesCard'
+import { CreateMISPEventDialog } from '@/components/alerts/CreateMISPEventDialog'
 import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 
 // Type for exception conditions (for AND grouping)
@@ -518,6 +520,15 @@ export default function AlertDetailPage() {
   // Ownership state
   const [isAssigning, setIsAssigning] = useState(false)
 
+  // MISP Event dialog state
+  const [showMISPEventDialog, setShowMISPEventDialog] = useState(false)
+
+  // MISP status query
+  const { data: mispStatus } = useQuery({
+    queryKey: ['misp-status'],
+    queryFn: () => mispApi.getStatus(),
+  })
+
   // Helper to generate unique condition IDs
   const generateConditionId = () => `cond-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
@@ -980,6 +991,16 @@ export default function AlertDetailPage() {
             >
               <ShieldAlert className="h-4 w-4 mr-1" />
               Create Exception
+            </Button>
+          )}
+          {mispStatus?.configured && mispStatus?.connected && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowMISPEventDialog(true)}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Create MISP Event
             </Button>
           )}
           <Button
@@ -1570,6 +1591,15 @@ export default function AlertDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create MISP Event Dialog */}
+      {alert && (
+        <CreateMISPEventDialog
+          alert={alert}
+          open={showMISPEventDialog}
+          onOpenChange={setShowMISPEventDialog}
+        />
+      )}
     </div>
     </TooltipProvider>
   )
