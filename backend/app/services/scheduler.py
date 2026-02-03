@@ -188,6 +188,9 @@ class SchedulerService:
             # Schedule pull polling jobs for pull-mode index patterns
             await self._schedule_pull_polling_jobs(session)
 
+            # Configure MISP IOC sync job
+            await self._configure_misp_sync_job(session)
+
             logger.info("Scheduler jobs synced from settings")
 
         finally:
@@ -1205,6 +1208,27 @@ class SchedulerService:
                 )
         finally:
             await session.close()
+
+    async def _configure_misp_sync_job(self, session: AsyncSession) -> None:
+        """Configure MISP IOC sync job based on settings."""
+        job_id = "misp_ioc_sync"
+
+        # Get MISP sync settings
+        result = await session.execute(
+            select(Setting).where(Setting.key == "misp_sync")
+        )
+        setting = result.scalar_one_or_none()
+        settings = setting.value if setting and setting.value else {}
+
+        if not settings.get("enabled"):
+            # Remove job if disabled
+            if scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
+                logger.info("Removed MISP sync job (disabled)")
+            return
+
+        interval_minutes = settings.get("interval_minutes", 10)
+        self._add_misp_sync_job(interval_minutes)
 
     def _add_misp_sync_job(self, interval_minutes: int = 10) -> None:
         """Add MISP sync job to scheduler."""
