@@ -117,7 +117,7 @@ class PullDetector:
                 for e in exceptions
             ]
         except (ValueError, Exception) as e:
-            logger.debug(f"Failed to load exceptions for rule {rule_id}: {e}")
+            logger.debug("Failed to load exceptions for rule %s: %s", rule_id, e)
             cache[rule_id] = []
 
         return cache[rule_id]
@@ -136,7 +136,7 @@ class PullDetector:
                 }
                 await publish_alert(alert_data)
             except Exception as e:
-                logger.warning(f"Failed to broadcast alert {alert.get('alert_id')}: {e}")
+                logger.warning("Failed to broadcast alert %s: %s", alert.get('alert_id'), e)
 
     async def _send_notifications(
         self,
@@ -157,7 +157,7 @@ class PullDetector:
                     alert_url=alert_url,
                 )
             except Exception as e:
-                logger.warning(f"Failed to send notification for alert {alert['alert_id']}: {e}")
+                logger.warning("Failed to send notification for alert %s: %s", alert['alert_id'], e)
 
     async def _check_correlations(
         self,
@@ -232,7 +232,7 @@ class PullDetector:
                 )
 
         except Exception as e:
-            logger.error(f"Correlation check failed: {e}")
+            logger.error("Correlation check failed: %s", e)
 
     async def _get_rule_tags(self, db: AsyncSession, rule_id: str) -> tuple[str | None, list[str]]:
         """Get rule title and MITRE tags from a rule."""
@@ -367,13 +367,15 @@ class PullDetector:
                 last_error = e
                 if attempt < max_retries - 1:
                     logger.warning(
-                        f"OpenSearch query failed for rule {rule_id} (attempt {attempt + 1}/{max_retries}): {e}"
+                        "OpenSearch query failed for rule %s (attempt %s/%s): %s",
+                        rule_id, attempt + 1, max_retries, e
                     )
                     # Use async sleep to not block the event loop
                     await asyncio.sleep(retry_delay)
                 else:
                     logger.error(
-                        f"OpenSearch query failed for rule {rule_id} after {max_retries} attempts: {e}"
+                        "OpenSearch query failed for rule %s after %s attempts: %s",
+                        rule_id, max_retries, e
                     )
         raise last_error
 
@@ -387,7 +389,7 @@ class PullDetector:
             )
             return response.get("pit_id")
         except Exception as e:
-            logger.warning(f"Failed to open PIT for {index_pattern}, will paginate without: {e}")
+            logger.warning("Failed to open PIT for %s, will paginate without: %s", index_pattern, e)
             return None
 
     async def _close_pit(self, pit_id: str) -> None:
@@ -398,7 +400,7 @@ class PullDetector:
                 body={"pit_id": pit_id},
             )
         except Exception as e:
-            logger.debug(f"Failed to close PIT: {e}")
+            logger.debug("Failed to close PIT: %s", e)
 
     async def poll_index_pattern(
         self,
@@ -462,7 +464,7 @@ class PullDetector:
                     if parsed_rule and isinstance(parsed_rule, dict):
                         rule_tags = parsed_rule.get("tags", []) or []
                 except yaml.YAMLError:
-                    logger.debug(f"Failed to parse YAML for tags in rule {rule.id}")
+                    logger.debug("Failed to parse YAML for tags in rule %s", rule.id)
 
                 # Translate rule to DSL
                 result = sigma_service.translate_and_validate(rule.yaml_content)
@@ -526,7 +528,8 @@ class PullDetector:
                             # Warn if we're going to truncate
                             if rule_events > MAX_EVENTS_PER_POLL:
                                 logger.warning(
-                                    f"Rule {rule.id} matched {rule_events} events, truncating to {MAX_EVENTS_PER_POLL}"
+                                    "Rule %s matched %s events, truncating to %s",
+                                    rule.id, rule_events, MAX_EVENTS_PER_POLL
                                 )
                                 truncated = True
 
@@ -559,7 +562,7 @@ class PullDetector:
                                         if latency_ms >= 0:  # Sanity check (shouldn't be negative)
                                             detection_latencies_ms.append(latency_ms)
                                 except Exception as e:
-                                    logger.debug(f"Could not parse event timestamp for latency calc: {e}")
+                                    logger.debug("Could not parse event timestamp for latency calc: %s", e)
 
                             # Check if alert should be suppressed by exception
                             if should_suppress_alert(log_document, exceptions):
@@ -570,7 +573,7 @@ class PullDetector:
                             try:
                                 enriched_log = await enrich_alert(db, log_document, index_pattern)
                             except Exception as e:
-                                logger.warning(f"Enrichment failed for log: {e}")
+                                logger.warning("Enrichment failed for log: %s", e)
                                 enriched_log = log_document
 
                             # Create individual alert
@@ -598,12 +601,12 @@ class PullDetector:
                                 )
 
                             except Exception as e:
-                                logger.error(f"Failed to create alert for rule {rule.id}: {e}")
+                                logger.error("Failed to create alert for rule %s: %s", rule.id, e)
                                 continue
 
                             # Safety check to prevent runaway queries
                             if rule_matches >= MAX_EVENTS_PER_POLL:
-                                logger.warning(f"Reached max events limit for rule {rule.id}")
+                                logger.warning("Reached max events limit for rule %s", rule.id)
                                 truncated = True
                                 break
 
@@ -629,7 +632,7 @@ class PullDetector:
                         await self._close_pit(pit_id)
 
             except Exception as e:
-                logger.error(f"Error polling rule {rule.id}: {e}")
+                logger.error("Error polling rule %s: %s", rule.id, e)
                 errors.append({"rule_id": str(rule.id), "error": str(e)})
                 await system_log_service.log_error(
                     db,
@@ -660,14 +663,16 @@ class PullDetector:
         if detection_latencies_ms:
             avg_detection_latency_ms = sum(detection_latencies_ms) / len(detection_latencies_ms)
 
-        logger.info(
-            f"Pull mode poll completed: {len(rules)} rules, {total_events_scanned} events, "
-            f"{total_matches} matches, {len(alerts_created)} alerts, {suppressed_count} suppressed "
-            f"in {duration_ms}ms (avg detection latency: {avg_detection_latency_ms:.0f}ms)" if avg_detection_latency_ms else
-            f"Pull mode poll completed: {len(rules)} rules, {total_events_scanned} events, "
-            f"{total_matches} matches, {len(alerts_created)} alerts, {suppressed_count} suppressed "
-            f"in {duration_ms}ms"
-        )
+        if avg_detection_latency_ms:
+            logger.info(
+                "Pull mode poll completed: %s rules, %s events, %s matches, %s alerts, %s suppressed in %sms (avg detection latency: %.0fms)",
+                len(rules), total_events_scanned, total_matches, len(alerts_created), suppressed_count, duration_ms, avg_detection_latency_ms
+            )
+        else:
+            logger.info(
+                "Pull mode poll completed: %s rules, %s events, %s matches, %s alerts, %s suppressed in %sms",
+                len(rules), total_events_scanned, total_matches, len(alerts_created), suppressed_count, duration_ms
+            )
 
         return {
             "matches": total_matches,
@@ -718,7 +723,8 @@ async def schedule_pull_jobs(scheduler, index_patterns: list) -> None:
             replace_existing=True,
         )
         logger.info(
-            f"Scheduled pull job for {pattern.pattern} every {pattern.poll_interval_minutes} min"
+            "Scheduled pull job for %s every %s min",
+            pattern.pattern, pattern.poll_interval_minutes
         )
 
 
@@ -743,7 +749,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
     from app.services.opensearch import get_client_from_settings
     from app.services.sigma import SigmaService
 
-    logger.info(f"Running pull poll for index pattern {index_pattern_id}")
+    logger.info("Running pull poll for index pattern %s", index_pattern_id)
 
     async with async_session_maker() as session:
         try:
@@ -774,7 +780,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
 
                 if existing_state is not None:
                     # State exists but is locked by another worker - skip this poll
-                    logger.debug(f"Poll state for {index_pattern_id} is locked by another worker, skipping")
+                    logger.debug("Poll state for %s is locked by another worker, skipping", index_pattern_id)
                     return
                 # else: state doesn't exist, we'll create it below
 
@@ -787,7 +793,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
             index_pattern = result.scalar_one_or_none()
 
             if not index_pattern:
-                logger.error(f"Index pattern {index_pattern_id} not found")
+                logger.error("Index pattern %s not found", index_pattern_id)
                 return
 
             # Get deployed rules for this pattern
@@ -799,7 +805,7 @@ async def run_poll_job(index_pattern_id: str) -> None:
             rules = list(rules_result.scalars().all())
 
             if not rules:
-                logger.debug(f"No deployed rules for {index_pattern.pattern}")
+                logger.debug("No deployed rules for %s", index_pattern.pattern)
                 return
 
             # Get last poll time
@@ -850,11 +856,13 @@ async def run_poll_job(index_pattern_id: str) -> None:
                     # Log warning/critical based on configurable thresholds
                     if ps.consecutive_failures >= failures_critical:
                         logger.error(
-                            f"CRITICAL: {ps.consecutive_failures} consecutive poll failures for {index_pattern.pattern}"
+                            "CRITICAL: %s consecutive poll failures for %s",
+                            ps.consecutive_failures, index_pattern.pattern
                         )
                     elif ps.consecutive_failures >= failures_warning:
                         logger.warning(
-                            f"WARNING: {ps.consecutive_failures} consecutive poll failures for {index_pattern.pattern}"
+                            "WARNING: %s consecutive poll failures for %s",
+                            ps.consecutive_failures, index_pattern.pattern
                         )
 
                 ps.total_matches += poll_result["matches"]
@@ -901,13 +909,13 @@ async def run_poll_job(index_pattern_id: str) -> None:
 
             truncated_msg = " (TRUNCATED)" if poll_result.get("truncated") else ""
             logger.info(
-                f"Poll complete for {index_pattern.pattern}: "
-                f"{poll_result['matches']} matches, {poll_result['events_scanned']} events scanned, "
-                f"{poll_result['duration_ms']}ms, {len(poll_result['errors'])} errors{truncated_msg}"
+                "Poll complete for %s: %s matches, %s events scanned, %sms, %s errors%s",
+                index_pattern.pattern, poll_result['matches'], poll_result['events_scanned'],
+                poll_result['duration_ms'], len(poll_result['errors']), truncated_msg
             )
 
         except Exception as e:
-            logger.error(f"Poll job failed for {index_pattern_id}: {e}")
+            logger.error("Poll job failed for %s: %s", index_pattern_id, e)
             # Log to system log service
             await system_log_service.log_error(
                 session,
@@ -936,5 +944,5 @@ async def run_poll_job(index_pattern_id: str) -> None:
                     pattern.poll_state.updated_at = datetime.now(UTC)
                     await session.commit()
             except Exception as update_error:
-                logger.error(f"Failed to update poll state on error: {update_error}")
+                logger.error("Failed to update poll state on error: %s", update_error)
             raise

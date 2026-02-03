@@ -210,11 +210,11 @@ async def update_index_pattern(
             deleted_count = percolator_service.undeploy_all_rules(pattern.percolator_index)
             if deleted_count > 0:
                 logger.info(
-                    f"Mode transition (push -> pull): Removed {deleted_count} percolator queries "
-                    f"from {pattern.percolator_index}"
+                    "Mode transition (push -> pull): Removed %s percolator queries from %s",
+                    deleted_count, pattern.percolator_index
                 )
         except Exception as e:
-            logger.warning(f"Failed to cleanup percolator queries during mode transition: {e}")
+            logger.warning("Failed to cleanup percolator queries during mode transition: %s", e)
 
     for field, value in update_data.items():
         setattr(pattern, field, value)
@@ -258,7 +258,7 @@ async def update_index_pattern(
             scheduler_service.remove_pull_poll_job(str(pattern.id))
     except Exception as e:
         # Scheduler may not be available during tests
-        logger.debug(f"Could not update scheduler: {e}")
+        logger.debug("Could not update scheduler: %s", e)
 
     return pattern
 
