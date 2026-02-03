@@ -194,36 +194,37 @@ export function IOCDetectionTab({ pattern, onPatternUpdated }: IOCDetectionTabPr
         </div>
       )}
 
-      {pattern.mode !== 'push' && (
-        <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg">
-          <AlertTriangle className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
-              Push Mode Required
-            </p>
-            <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-              IOC detection is only available for index patterns in Push mode.
-              This pattern is currently in Pull mode.
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Mode explanation */}
+      <div className="p-4 bg-muted/50 border rounded-lg">
+        <p className="text-sm text-muted-foreground">
+          <strong>Current mode:</strong> {pattern.mode === 'push' ? 'Push' : 'Pull'}
+          {pattern.mode === 'push' ? (
+            <span className="block mt-1">
+              IOC matching occurs in real-time as logs arrive in CHAD.
+            </span>
+          ) : (
+            <span className="block mt-1">
+              IOC matching queries OpenSearch on scheduled intervals.
+            </span>
+          )}
+        </p>
+      </div>
 
       <div className="flex items-center justify-between p-4 border rounded-lg">
         <div>
           <Label className="font-medium">Enable IOC Detection</Label>
           <p className="text-sm text-muted-foreground">
-            Check incoming logs against MISP IOCs
+            Check logs against MISP IOCs
           </p>
         </div>
         <Switch
           checked={iocEnabled}
           onCheckedChange={setIocEnabled}
-          disabled={!isMispConfigured || pattern.mode !== 'push'}
+          disabled={!isMispConfigured}
         />
       </div>
 
-      {iocEnabled && isMispConfigured && pattern.mode === 'push' && (
+      {iocEnabled && isMispConfigured && (
         <div className="space-y-3">
           <div>
             <Label className="text-base font-medium">Field Mappings</Label>
