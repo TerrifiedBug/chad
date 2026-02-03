@@ -738,8 +738,11 @@ async def list_settings(
     result = await db.execute(select(Setting))
     settings = result.scalars().all()
 
-    # Convert to dict, hiding sensitive values
-    return {s.key: _mask_sensitive(s.key, s.value) for s in settings}
+    # Convert to dict, decrypting incorrectly encrypted fields and hiding sensitive values
+    return {
+        s.key: _mask_sensitive(s.key, _decrypt_incorrectly_encrypted(s.value))
+        for s in settings
+    }
 
 
 # Security settings models
@@ -1050,6 +1053,34 @@ async def update_setting(
     return {"success": True}
 
 
+def _decrypt_incorrectly_encrypted(value: dict | None) -> dict | None:
+    """Decrypt fields that were incorrectly encrypted due to pattern matching.
+
+    Some fields like 'token_auth_method' contain 'token' in their name but are
+    not actually sensitive. They may have been encrypted by mistake and need
+    to be decrypted when reading settings.
+    """
+    if value is None or not isinstance(value, dict):
+        return value
+
+    # Fields that may have been incorrectly encrypted
+    fields_to_decrypt = {"token_auth_method"}
+    result = dict(value)
+
+    for field in fields_to_decrypt:
+        if field in result and result[field]:
+            field_value = result[field]
+            # Check if value looks like a Fernet token (starts with gAAAAA)
+            if isinstance(field_value, str) and field_value.startswith("gAAAAA"):
+                try:
+                    result[field] = decrypt(field_value)
+                except Exception:
+                    # If decryption fails, keep original value
+                    pass
+
+    return result
+
+
 def _mask_sensitive(key: str, value: dict | None) -> dict | None:
     """Mask sensitive values in settings."""
     if value is None:
@@ -1059,10 +1090,16 @@ def _mask_sensitive(key: str, value: dict | None) -> dict | None:
     sensitive_patterns = {"password", "secret", "token", "api_key", "client_secret"}
     # Specific field names that should be masked
     sensitive_exact = {"ai_openai_key", "ai_anthropic_key"}
+    # Fields that match patterns but are NOT sensitive (false positives)
+    non_sensitive_fields = {"token_auth_method"}
 
     if isinstance(value, dict):
         result = {}
         for k, v in value.items():
+            # Skip known non-sensitive fields
+            if k.lower() in non_sensitive_fields:
+                result[k] = v
+                continue
             is_sensitive = (
                 k.lower() in sensitive_exact
                 or any(s in k.lower() for s in sensitive_patterns)
@@ -1089,11 +1126,19 @@ def _encrypt_sensitive(key: str, value: dict, skip_fields: set[str] | None = Non
     sensitive_patterns = {"password", "secret", "token", "api_key", "client_secret"}
     # Specific field names that should be encrypted
     sensitive_exact = {"ai_openai_key", "ai_anthropic_key"}
+    # Fields that match patterns but are NOT sensitive (false positives)
+    # e.g., token_auth_method contains "token" but is just a config option
+    non_sensitive_fields = {"token_auth_method"}
     result = {}
 
     for k, v in value.items():
         # Skip fields that are already encrypted
         if k in skip_fields:
+            result[k] = v
+            continue
+
+        # Skip known non-sensitive fields that would otherwise match patterns
+        if k.lower() in non_sensitive_fields:
             result[k] = v
             continue
 
