@@ -418,8 +418,9 @@ async def bulk_delete_alerts(
     failed = []
 
     # Convert string IDs to UUIDs and strings for comparison
+    # Use validated UUIDs for strings to prevent log injection
     alert_ids = [UUID(aid) for aid in data.alert_ids]
-    alert_id_strs = [str(aid) for aid in data.alert_ids]
+    alert_id_strs = [str(aid) for aid in alert_ids]
 
     # Query database by alert_id (OpenSearch document ID), not database id
     result = await db.execute(select(Alert).where(Alert.alert_id.in_(alert_id_strs)))
