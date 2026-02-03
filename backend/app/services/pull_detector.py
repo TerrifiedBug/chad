@@ -19,6 +19,8 @@ from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
 from app.services.system_log import LogCategory, system_log_service
+from app.services.ti.ioc_index import INDICATOR_INDEX_NAME
+from app.services.ti.ioc_query_builder import IOCQueryBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -402,6 +404,224 @@ class PullDetector:
         except Exception as e:
             logger.debug("Failed to close PIT: %s", e)
 
+    def _map_threat_level_to_severity(self, threat_level: str) -> str:
+        """Map MISP threat level to alert severity."""
+        mapping = {
+            "high": "high",
+            "medium": "medium",
+            "low": "low",
+            "undefined": "medium",
+        }
+        return mapping.get(threat_level, "medium")
+
+    async def _run_ioc_detection(
+        self,
+        index_pattern,
+        alert_service: AlertService,
+        alerts_index: str,
+        timestamp_field: str,
+        lookback_minutes: int,
+        db: AsyncSession,
+    ) -> dict[str, Any]:
+        """
+        Run IOC detection for Pull Mode using OpenSearch join queries.
+
+        Args:
+            index_pattern: The IndexPattern to check
+            alert_service: Service for creating alerts
+            alerts_index: Index to store alerts
+            timestamp_field: Timestamp field for time filtering
+            lookback_minutes: How far back to search
+            db: Database session
+
+        Returns:
+            Dict with IOC detection results
+        """
+        if not index_pattern.ioc_detection_enabled:
+            return {"ioc_matches": 0, "ioc_alerts": 0, "ioc_errors": []}
+
+        if not index_pattern.ioc_field_mappings:
+            return {"ioc_matches": 0, "ioc_alerts": 0, "ioc_errors": []}
+
+        ioc_matches = 0
+        ioc_alerts_created = []
+        ioc_errors = []
+
+        try:
+            # Check if indicator index exists
+            if not self.client.indices.exists(INDICATOR_INDEX_NAME):
+                logger.debug("Indicator index %s does not exist, skipping IOC detection", INDICATOR_INDEX_NAME)
+                return {"ioc_matches": 0, "ioc_alerts": 0, "ioc_errors": []}
+
+            # Build IOC join query
+            query_builder = IOCQueryBuilder()
+            ioc_query = query_builder.build_join_query(
+                field_mappings=index_pattern.ioc_field_mappings,
+                time_field=timestamp_field,
+                lookback_minutes=lookback_minutes,
+            )
+
+            # Execute the query
+            response = await asyncio.to_thread(
+                self.client.search,
+                index=index_pattern.pattern,
+                body=ioc_query,
+                size=BATCH_SIZE,
+            )
+
+            hits = response.get("hits", {}).get("hits", [])
+            total_hits = response.get("hits", {}).get("total", {})
+            if isinstance(total_hits, dict):
+                ioc_matches = total_hits.get("value", 0)
+            else:
+                ioc_matches = total_hits
+
+            if ioc_matches == 0:
+                return {"ioc_matches": 0, "ioc_alerts": 0, "ioc_errors": []}
+
+            logger.info(
+                "IOC detection found %s matches in %s",
+                ioc_matches, index_pattern.pattern
+            )
+
+            # For each hit, determine which IOC matched and create alert
+            for hit in hits:
+                log_document = hit["_source"]
+
+                # Find which field matched an IOC
+                matched_ioc_info = await self._identify_matched_ioc(
+                    log_document, index_pattern.ioc_field_mappings
+                )
+
+                if not matched_ioc_info:
+                    continue
+
+                # Enrich log
+                try:
+                    enriched_log = await enrich_alert(db, log_document, index_pattern)
+                except Exception as e:
+                    logger.warning("Enrichment failed for IOC log: %s", e)
+                    enriched_log = log_document
+
+                # Add IOC match info to log
+                enriched_log["threat_intel"] = {
+                    "ioc_matches": [matched_ioc_info],
+                    "has_ioc_match": True,
+                }
+
+                # Create IOC alert
+                try:
+                    ioc_alert = alert_service.create_alert(
+                        alerts_index=alerts_index,
+                        rule_id="ioc-detection",
+                        rule_title=f"IOC Match: {matched_ioc_info.get('ioc_type', 'unknown')}",
+                        severity=self._map_threat_level_to_severity(
+                            matched_ioc_info.get("threat_level", "medium")
+                        ),
+                        tags=[
+                            "ioc-match",
+                            f"misp:{matched_ioc_info.get('misp_event_id', 'unknown')}",
+                        ] + matched_ioc_info.get("tags", []),
+                        log_document=enriched_log,
+                    )
+                    ioc_alerts_created.append(ioc_alert)
+                except Exception as e:
+                    logger.error("Failed to create IOC alert: %s", e)
+                    ioc_errors.append(str(e))
+
+        except Exception as e:
+            logger.error("IOC detection failed for %s: %s", index_pattern.pattern, e)
+            ioc_errors.append(str(e))
+
+        return {
+            "ioc_matches": ioc_matches,
+            "ioc_alerts": len(ioc_alerts_created),
+            "ioc_alerts_created": ioc_alerts_created,
+            "ioc_errors": ioc_errors,
+        }
+
+    async def _identify_matched_ioc(
+        self,
+        log_document: dict,
+        field_mappings: dict[str, list[str]],
+    ) -> dict[str, Any] | None:
+        """
+        Identify which IOC matched in a log document by looking up values in indicator index.
+
+        Args:
+            log_document: The log that matched
+            field_mappings: IOC type to field name mappings
+
+        Returns:
+            IOC match info dict or None if not found
+        """
+        from app.services.ti.ioc_types import IOCType
+
+        for ioc_type_str, fields in field_mappings.items():
+            try:
+                IOCType(ioc_type_str)  # Validate IOC type
+            except ValueError:
+                continue
+
+            for field_name in fields:
+                # Get value from log using dot notation
+                value = self._get_nested_value(log_document, field_name)
+                if not value:
+                    continue
+
+                # Look up in indicator index
+                try:
+                    response = await asyncio.to_thread(
+                        self.client.search,
+                        index=INDICATOR_INDEX_NAME,
+                        body={
+                            "query": {
+                                "bool": {
+                                    "must": [
+                                        {"term": {"indicator.type": ioc_type_str}},
+                                        {"term": {"indicator.value": value}},
+                                    ]
+                                }
+                            },
+                            "size": 1,
+                        },
+                    )
+
+                    hits = response.get("hits", {}).get("hits", [])
+                    if hits:
+                        indicator = hits[0]["_source"]
+                        return {
+                            "ioc_type": ioc_type_str,
+                            "value": value,
+                            "field_name": field_name,
+                            "misp_event_id": indicator.get("misp.event_id"),
+                            "misp_event_uuid": indicator.get("misp.event_uuid"),
+                            "misp_attribute_uuid": indicator.get("misp.attribute_uuid"),
+                            "misp_event_info": indicator.get("misp.event_info"),
+                            "threat_level": indicator.get("misp.threat_level", "unknown"),
+                            "tags": indicator.get("misp.tags", []),
+                        }
+                except Exception as e:
+                    logger.debug("Failed to lookup IOC %s: %s", value, e)
+
+        return None
+
+    def _get_nested_value(self, doc: dict, field_path: str) -> str | None:
+        """Extract a nested value from a document using dot notation."""
+        if field_path in doc:
+            value = doc[field_path]
+            return value if isinstance(value, str) else None
+
+        parts = field_path.split(".")
+        current = doc
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return None
+
+        return current if isinstance(current, str) else None
+
     async def poll_index_pattern(
         self,
         index_pattern,  # IndexPattern model
@@ -648,6 +868,24 @@ class PullDetector:
                     },
                 )
 
+        # Run IOC detection (parallel to Sigma rule detection)
+        ioc_result = await self._run_ioc_detection(
+            index_pattern=index_pattern,
+            alert_service=alert_service,
+            alerts_index=alerts_index,
+            timestamp_field=timestamp_field,
+            lookback_minutes=index_pattern.poll_interval_minutes,
+            db=db,
+        )
+
+        # Add IOC alerts to the alerts list
+        ioc_alerts_created = ioc_result.get("ioc_alerts_created", [])
+        alerts_created.extend(ioc_alerts_created)
+
+        # Add IOC errors to errors list
+        for ioc_error in ioc_result.get("ioc_errors", []):
+            errors.append({"rule_id": "ioc-detection", "error": ioc_error})
+
         # Broadcast alerts via WebSocket (Redis pub/sub for cross-worker)
         if alerts_created:
             await self._broadcast_alerts(alerts_created)
@@ -663,15 +901,22 @@ class PullDetector:
         if detection_latencies_ms:
             avg_detection_latency_ms = sum(detection_latencies_ms) / len(detection_latencies_ms)
 
+        ioc_matches = ioc_result.get("ioc_matches", 0)
+        ioc_alerts = ioc_result.get("ioc_alerts", 0)
+
         if avg_detection_latency_ms:
             logger.info(
-                "Pull mode poll completed: %s rules, %s events, %s matches, %s alerts, %s suppressed in %sms (avg detection latency: %.0fms)",
-                len(rules), total_events_scanned, total_matches, len(alerts_created), suppressed_count, duration_ms, avg_detection_latency_ms
+                "Pull poll: %s rules, %s events, %s matches, %s alerts, "
+                "%s suppressed, %s IOC matches, %s IOC alerts in %sms (latency: %.0fms)",
+                len(rules), total_events_scanned, total_matches, len(alerts_created),
+                suppressed_count, ioc_matches, ioc_alerts, duration_ms, avg_detection_latency_ms
             )
         else:
             logger.info(
-                "Pull mode poll completed: %s rules, %s events, %s matches, %s alerts, %s suppressed in %sms",
-                len(rules), total_events_scanned, total_matches, len(alerts_created), suppressed_count, duration_ms
+                "Pull poll: %s rules, %s events, %s matches, %s alerts, "
+                "%s suppressed, %s IOC matches, %s IOC alerts in %sms",
+                len(rules), total_events_scanned, total_matches, len(alerts_created),
+                suppressed_count, ioc_matches, ioc_alerts, duration_ms
             )
 
         return {
@@ -683,6 +928,8 @@ class PullDetector:
             "alerts_created": len(alerts_created),
             "suppressed": suppressed_count,
             "avg_detection_latency_ms": avg_detection_latency_ms,
+            "ioc_matches": ioc_matches,
+            "ioc_alerts": ioc_alerts,
         }
 
 
