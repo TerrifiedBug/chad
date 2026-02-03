@@ -62,7 +62,7 @@ class LogProcessor:
             result = await db.execute(
                 select(RuleException).where(
                     RuleException.rule_id == rule_uuid,
-                    RuleException.is_active == True,
+                    RuleException.is_active.is_(True),
                 )
             )
             exceptions = result.scalars().all()

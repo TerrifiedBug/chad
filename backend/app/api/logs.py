@@ -306,7 +306,7 @@ async def receive_logs(
                         exc_result = await db.execute(
                             select(RuleException).where(
                                 RuleException.rule_id == rule_uuid,
-                                RuleException.is_active == True,
+                                RuleException.is_active.is_(True),
                             )
                         )
                         exceptions = exc_result.scalars().all()
@@ -593,7 +593,7 @@ async def test_log_matching(
             exc_result = await db.execute(
                 select(RuleException).where(
                     RuleException.rule_id == rule_uuid,
-                    RuleException.is_active == True,
+                    RuleException.is_active.is_(True),
                 )
             )
             exceptions = exc_result.scalars().all()

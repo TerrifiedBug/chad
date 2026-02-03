@@ -315,7 +315,7 @@ async def check_ti_source_health(db: AsyncSession):
 
     # Get all enabled TI sources
     result = await db.execute(
-        select(TISourceConfig).where(TISourceConfig.is_enabled == True)
+        select(TISourceConfig).where(TISourceConfig.is_enabled.is_(True))
     )
     configs = result.scalars().all()
 

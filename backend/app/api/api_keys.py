@@ -186,7 +186,7 @@ async def validate_api_key(key: str, db: AsyncSession) -> User | None:
 
     result = await db.execute(
         select(APIKey)
-        .where(APIKey.key_prefix == key_prefix, APIKey.is_active == True)
+        .where(APIKey.key_prefix == key_prefix, APIKey.is_active.is_(True))
     )
     api_key = result.scalar_one_or_none()
 
@@ -203,7 +203,7 @@ async def validate_api_key(key: str, db: AsyncSession) -> User | None:
 
     # Get the user
     user_result = await db.execute(
-        select(User).where(User.id == api_key.user_id, User.is_active == True)
+        select(User).where(User.id == api_key.user_id, User.is_active.is_(True))
     )
     user = user_result.scalar_one_or_none()
 

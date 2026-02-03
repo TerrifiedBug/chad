@@ -37,7 +37,7 @@ async def get_health_status(
 
     # TI sources
     result = await db.execute(
-        select(TISourceConfig).where(TISourceConfig.is_enabled == True)
+        select(TISourceConfig).where(TISourceConfig.is_enabled.is_(True))
     )
     ti_configs = result.scalars().all()
     for config in ti_configs:

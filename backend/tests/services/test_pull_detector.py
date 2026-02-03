@@ -135,8 +135,8 @@ class TestPollIndexPattern:
         with patch('app.services.pull_detector.get_app_url', new_callable=AsyncMock) as mock_get_url, \
              patch('app.services.pull_detector.enrich_alert', new_callable=AsyncMock) as mock_enrich, \
              patch('app.services.pull_detector.should_suppress_alert') as mock_suppress, \
-             patch('app.services.pull_detector.publish_alert', new_callable=AsyncMock) as mock_publish, \
-             patch('app.services.pull_detector.send_alert_notification', new_callable=AsyncMock) as mock_notify, \
+             patch('app.services.pull_detector.publish_alert', new_callable=AsyncMock), \
+             patch('app.services.pull_detector.send_alert_notification', new_callable=AsyncMock), \
              patch('app.services.pull_detector.check_correlation', new_callable=AsyncMock) as mock_corr:
 
             mock_get_url.return_value = "http://localhost:3000"

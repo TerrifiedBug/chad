@@ -216,7 +216,7 @@ async def delete_user(
     # Prevent deleting the last admin user
     if user.role == UserRole.ADMIN:
         admin_count_result = await db.execute(
-            select(User).where(User.role == UserRole.ADMIN, User.is_active == True)
+            select(User).where(User.role == UserRole.ADMIN, User.is_active.is_(True))
         )
         admin_count = len(admin_count_result.scalars().all())
         if admin_count <= 1:
