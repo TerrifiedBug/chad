@@ -15,7 +15,7 @@ import os
 import socket
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
@@ -334,9 +334,9 @@ async def send_webhook(
         True if successful, False otherwise
     """
     # Validate and sanitize URL to prevent SSRF attacks
-    sanitized_url, error_msg = sanitize_webhook_url(url)
+    sanitized_url, _ = sanitize_webhook_url(url)
     if sanitized_url is None:
-        logger.warning("Webhook URL blocked (SSRF protection): %s", error_msg)
+        logger.warning("Webhook URL blocked by SSRF protection")
         return False
 
     formatter = FORMATTERS.get(provider, format_generic_payload)
