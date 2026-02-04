@@ -21,6 +21,13 @@ from app.services.settings import get_setting, set_setting
 
 router = APIRouter(prefix="/health", tags=["health"])
 
+# Display name mappings for AI providers
+AI_PROVIDER_DISPLAY_NAMES = {
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "ollama": "Ollama",
+}
+
 # Default values (same as in health_monitor.py)
 DEFAULT_NO_DATA_MINUTES = 15
 DEFAULT_ERROR_RATE_PERCENT = 5.0
@@ -336,9 +343,10 @@ async def get_health_status(
                 status = "unknown"
             else:
                 status = "healthy" if last_test_success else "unhealthy"
+            display_name = AI_PROVIDER_DISPLAY_NAMES.get(provider, provider.title())
             services.append({
                 "service_type": "ai",
-                "service_name": f"AI ({provider})",
+                "service_name": f"AI ({display_name})",
                 "status": status,
                 "last_check": last_test
             })

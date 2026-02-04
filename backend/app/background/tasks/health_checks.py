@@ -229,12 +229,7 @@ async def check_jira_health(db: AsyncSession):
     config = result.scalar_one_or_none()
 
     if not config or not config.is_enabled:
-        await service.log_health_check(
-            service_type="jira",
-            service_name="Jira Cloud",
-            status="unhealthy",
-            error_message="Jira not configured or disabled"
-        )
+        # Skip health check for disabled/unconfigured services
         return
 
     try:
