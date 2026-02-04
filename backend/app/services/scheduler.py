@@ -24,10 +24,10 @@ from app.core.encryption import decrypt
 from app.core.redis import get_redis
 from app.models.setting import Setting
 from app.services.system_log import LogCategory, system_log_service
-from app.services.ti.ioc_types import IOCType
-from app.services.ti.misp_sync import MISPIOCFetcher
 from app.services.ti.ioc_cache import IOCCache
 from app.services.ti.ioc_index import IOCIndexService
+from app.services.ti.ioc_types import IOCType
+from app.services.ti.misp_sync import MISPIOCFetcher
 from app.services.ti.misp_sync_service import MISPSyncService
 
 logger = logging.getLogger(__name__)
@@ -1118,8 +1118,8 @@ class SchedulerService:
 
     async def _create_misp_sync_service(self, session) -> MISPSyncService | None:
         """Create MISP sync service from configuration."""
-        from app.models.ti_config import TISourceConfig, TISourceType
         from app.core.encryption import decrypt
+        from app.models.ti_config import TISourceConfig, TISourceType
         from app.services.opensearch import get_client_from_settings
 
         result = await session.execute(
@@ -1156,19 +1156,31 @@ class SchedulerService:
 
         return MISPSyncService(fetcher, cache, index_service)
 
+    async def _run_misp_sync_with_lock(self) -> None:
+        """MISP sync wrapper with distributed locking."""
+        await self._run_with_lock(
+            "scheduler:misp_sync",
+            timeout=300,  # 5 minute lock timeout
+            job_func=self._run_misp_sync_job,
+        )
+
     async def _run_misp_sync_job(self) -> None:
         """Run MISP IOC sync job."""
+        logger.info("Starting MISP sync job")
         settings = await self._get_misp_sync_settings()
 
         if not settings.get("enabled", False):
-            logger.debug("MISP sync is disabled, skipping")
+            logger.info("MISP sync is disabled, skipping")
             return
 
+        logger.info("MISP sync enabled, creating service")
         session = await self._get_session()
         try:
             service = await self._create_misp_sync_service(session)
             if not service:
+                logger.warning("Failed to create MISP sync service")
                 return
+            logger.info("MISP sync service created, starting sync")
 
             # Get sync parameters from settings
             threat_levels = settings.get("threat_levels", ["high", "medium", "low", "undefined"])
@@ -1197,6 +1209,22 @@ class SchedulerService:
                     result.iocs_indexed,
                     result.duration_ms,
                 )
+                # Update sync status in database
+                status_result = await session.execute(
+                    select(Setting).where(Setting.key == "misp_sync_status")
+                )
+                status_setting = status_result.scalar_one_or_none()
+                status_value = {
+                    "last_sync_at": datetime.now(UTC).isoformat(),
+                    "iocs_synced": result.iocs_fetched,
+                    "sync_duration_ms": result.duration_ms,
+                    "error_message": None,
+                }
+                if status_setting:
+                    status_setting.value = status_value
+                else:
+                    session.add(Setting(key="misp_sync_status", value=status_value))
+                await session.commit()
             else:
                 logger.error("MISP sync failed: %s", result.error)
                 await system_log_service.log_error(
@@ -1239,15 +1267,13 @@ class SchedulerService:
             scheduler.remove_job(job_id)
 
         scheduler.add_job(
-            lambda: self._run_with_lock(
-                "scheduler:misp_sync",
-                timeout=300,  # 5 minute lock timeout
-                job_func=self._run_misp_sync_job,
-            ),
+            self._run_misp_sync_with_lock,
             trigger=IntervalTrigger(minutes=interval_minutes),
             id=job_id,
             name="MISP IOC Sync",
             replace_existing=True,
+            misfire_grace_time=interval_minutes * 60,  # Grace period matching interval
+            next_run_time=datetime.now(UTC),  # Run immediately on startup
         )
         logger.info("Added MISP sync job with %d minute interval", interval_minutes)
 
