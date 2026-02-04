@@ -18,6 +18,21 @@ from app.models.ti_config import TISourceConfig
 from app.services.health_check import HealthCheckService
 from app.services.jira import JiraAPIError, JiraService
 
+# Display name mappings for TI sources (proper capitalization)
+TI_SOURCE_DISPLAY_NAMES = {
+    "misp": "MISP",
+    "alienvault_otx": "AlienVault OTX",
+    "abuse_ch": "Abuse.ch",
+}
+
+
+def get_ti_source_display_name(source_type: str) -> str:
+    """Get properly capitalized display name for TI source."""
+    return TI_SOURCE_DISPLAY_NAMES.get(
+        source_type,
+        source_type.replace("_", " ").title()
+    )
+
 
 async def check_opensearch_health(db: AsyncSession):
     """
@@ -396,7 +411,7 @@ async def check_ti_source_health(db: AsyncSession):
                     logger.debug("Redis cache write failed for TI health, continuing")
 
             # Log health check
-            service_name = config.source_type.replace("_", " ").title()
+            service_name = get_ti_source_display_name(config.source_type)
             await service.log_health_check(
                 service_type=config.source_type,
                 service_name=service_name,
@@ -418,7 +433,7 @@ async def check_ti_source_health(db: AsyncSession):
                 except Exception:
                     logger.debug("Redis cache write failed for TI health, continuing")
 
-            service_name = config.source_type.replace("_", " ").title()
+            service_name = get_ti_source_display_name(config.source_type)
             await service.log_health_check(
                 service_type=config.source_type,
                 service_name=service_name,
