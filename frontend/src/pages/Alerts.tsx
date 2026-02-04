@@ -673,7 +673,7 @@ export default function AlertsPage() {
                       aria-label="Select all alerts"
                     />
                   </TableHead>
-                  {isClustered && <TableHead className="w-10"></TableHead>}
+                  {isClustered && <TableHead className="w-[60px]"></TableHead>}
                   <TableHead>Rule</TableHead>
                   <TableHead>Severity</TableHead>
                   <TableHead>Status</TableHead>
@@ -725,29 +725,27 @@ export default function AlertsPage() {
                               aria-label={`Select cluster of ${cluster.count} alerts`}
                             />
                           </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            {hasMultiple && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0"
+                          <TableCell onClick={(e) => e.stopPropagation()} className="w-[60px]">
+                            {hasMultiple ? (
+                              <button
+                                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                                 onClick={() => toggleCluster(clusterId)}
                               >
+                                <Badge variant="secondary" className="font-mono">
+                                  {cluster.count}
+                                </Badge>
                                 {isExpanded ? (
-                                  <ChevronUp className="h-4 w-4" />
+                                  <ChevronUp className="h-4 w-4 transition-transform" />
                                 ) : (
-                                  <ChevronDown className="h-4 w-4" />
+                                  <ChevronDown className="h-4 w-4 transition-transform" />
                                 )}
-                              </Button>
+                              </button>
+                            ) : (
+                              <div className="w-[60px]" /> // Spacer for alignment
                             )}
                           </TableCell>
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
-                              {hasMultiple && (
-                                <Badge variant="secondary" className="font-mono">
-                                  x{cluster.count}
-                                </Badge>
-                              )}
                               {alert.tags.includes('correlation') && (
                                 <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
                                   <Link2 className="h-3 w-3" />
@@ -780,7 +778,7 @@ export default function AlertsPage() {
                           </TableCell>
                           <TableCell>
                             <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
+                              className={`inline-block min-w-[90px] text-center px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
                             >
                               {ALERT_STATUS_LABELS[alert.status]}
                             </span>
@@ -885,7 +883,7 @@ export default function AlertsPage() {
                             </TableCell>
                             <TableCell>
                               <span
-                                className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[clusterAlert.status]}`}
+                                className={`inline-block min-w-[90px] text-center px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[clusterAlert.status]}`}
                               >
                                 {ALERT_STATUS_LABELS[clusterAlert.status]}
                               </span>
@@ -980,7 +978,7 @@ export default function AlertsPage() {
                       </TableCell>
                       <TableCell>
                         <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
+                          className={`inline-block min-w-[90px] text-center px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
                         >
                           {ALERT_STATUS_LABELS[alert.status]}
                         </span>
