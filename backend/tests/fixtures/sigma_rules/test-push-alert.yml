@@ -1,0 +1,19 @@
+title: CHAD Test Rule - Push Mode
+id: chad-test-push-001
+status: test
+description: Test rule for validating push mode alert generation. Matches process execution with CHAD_TEST marker.
+author: CHAD Testing
+date: 2026/02/04
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: 'CHAD_TEST_PUSH'
+    condition: selection
+falsepositives:
+    - Legitimate test executions
+level: medium
+tags:
+    - test.chad
+    - attack.execution
