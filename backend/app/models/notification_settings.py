@@ -50,7 +50,8 @@ class SystemNotificationSetting(Base, UUIDMixin):
     )
 
     # Event types: user_locked, sigmahq_sync_complete, sigmahq_new_rules,
-    # attack_sync_complete, sync_failed, health_warning, health_critical
+    # attack_sync_complete, sync_failed, health_warning, health_critical,
+    # data_freshness_warning, data_freshness_critical
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     webhook_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("webhooks.id", ondelete="CASCADE"), nullable=False
