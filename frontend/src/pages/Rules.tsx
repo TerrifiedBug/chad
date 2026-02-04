@@ -642,7 +642,7 @@ export default function RulesPage() {
         <div className="flex gap-2">
           {activeTab === 'sigma' && hasPermission('manage_sigmahq') && (
             <Button variant="outline" onClick={() => navigate('/sigmahq')}>
-              <ExternalLink className="h-4 w-4 mr-2" />
+              <FileCode className="h-4 w-4 mr-2 text-blue-500" />
               SigmaHQ
             </Button>
           )}
@@ -656,6 +656,7 @@ export default function RulesPage() {
                       onClick={() => navigate('/misp')}
                       disabled={!mispStatus?.configured}
                     >
+                      <ExternalLink className="h-4 w-4 mr-2 text-purple-500" />
                       MISP
                     </Button>
                   </span>
