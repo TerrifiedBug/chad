@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat, AlertCluster, ClusteredAlertListResponse, AlertListResponse } from '@/lib/api'
+import { useQuery } from '@tanstack/react-query'
+import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat, AlertCluster, ClusteredAlertListResponse, AlertListResponse, mispApi, mispFeedbackApi } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,7 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert, ExternalLink } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -46,6 +47,7 @@ import { DateRange } from 'react-day-picker'
 import { cn } from '@/lib/utils'
 import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 import { useAuth } from '@/hooks/use-auth'
+import { useToast } from '@/components/ui/toast-provider'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 
@@ -61,6 +63,7 @@ function isClusteredResponse(response: AlertListResponse | ClusteredAlertListRes
 export default function AlertsPage() {
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
+  const { showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [clusters, setClusters] = useState<AlertCluster[]>([])
@@ -129,6 +132,17 @@ export default function AlertsPage() {
   const [exportFormat, setExportFormat] = useState<ReportFormat>('pdf')
   const [exportDateRange, setExportDateRange] = useState<DateRange | undefined>()
   const [isExporting, setIsExporting] = useState(false)
+
+  // Bulk MISP export state
+  const [showBulkMISPExport, setShowBulkMISPExport] = useState(false)
+  const [mispExportProgress, setMispExportProgress] = useState({ current: 0, total: 0 })
+  const [mispExportResults, setMispExportResults] = useState<{ success: number; failed: number } | null>(null)
+
+  // Check MISP status for bulk export
+  const { data: mispStatus } = useQuery({
+    queryKey: ['misp-status'],
+    queryFn: () => mispApi.getStatus(),
+  })
 
   // Toggle cluster expansion
   const toggleCluster = (clusterId: string) => {
@@ -367,6 +381,51 @@ export default function AlertsPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete alerts')
     } finally {
       setIsBulkUpdating(false)
+    }
+  }
+
+  // Handle bulk MISP export
+  const handleBulkMISPExport = async () => {
+    if (selectedAlerts.size === 0) return
+
+    setMispExportProgress({ current: 0, total: selectedAlerts.size })
+    setMispExportResults(null)
+    setIsBulkUpdating(true)
+
+    let success = 0
+    let failed = 0
+    const alertIds = Array.from(selectedAlerts)
+
+    for (let i = 0; i < alertIds.length; i++) {
+      const alertId = alertIds[i]
+      try {
+        // Find the alert to get its title
+        const alert = alerts.find(a => a.alert_id === alertId)
+        const title = alert?.rule_title || `Alert ${alertId}`
+
+        await mispFeedbackApi.createEvent({
+          alert_id: alertId,
+          info: `CHAD Alert: ${title}`,
+          threat_level: 2, // Medium
+          distribution: 0, // Your organization only
+          tags: ['source:chad', 'bulk-export'],
+          attributes: [],
+        })
+        success++
+      } catch {
+        failed++
+      }
+      setMispExportProgress({ current: i + 1, total: alertIds.length })
+    }
+
+    setMispExportResults({ success, failed })
+    setIsBulkUpdating(false)
+
+    if (success > 0) {
+      showToast(`Created ${success} MISP event${success !== 1 ? 's' : ''}`)
+    }
+    if (failed > 0) {
+      showToast(`Failed to create ${failed} event${failed !== 1 ? 's' : ''}`, 'error')
     }
   }
 
@@ -618,6 +677,16 @@ export default function AlertsPage() {
             >
               <UserPlus className="h-4 w-4 mr-1" />
               Take Ownership
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBulkMISPExport(true)}
+              disabled={isBulkUpdating || !mispStatus?.configured}
+              title={!mispStatus?.configured ? 'MISP not configured' : undefined}
+            >
+              <ExternalLink className="h-4 w-4 mr-1 text-purple-500" />
+              Export to MISP
             </Button>
             <Button
               variant="destructive"
@@ -1107,6 +1176,77 @@ export default function AlertsPage() {
             >
               {isBulkUpdating ? 'Deleting...' : 'Delete'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk MISP Export Dialog */}
+      <Dialog
+        open={showBulkMISPExport}
+        onOpenChange={(open) => {
+          if (isBulkUpdating) return
+          setShowBulkMISPExport(open)
+          if (!open) {
+            setMispExportProgress({ current: 0, total: 0 })
+            setMispExportResults(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export to MISP</DialogTitle>
+            <DialogDescription>
+              {mispExportResults ? (
+                `Export complete: ${mispExportResults.success} created, ${mispExportResults.failed} failed`
+              ) : isBulkUpdating ? (
+                `Exporting ${mispExportProgress.current} of ${mispExportProgress.total} alerts...`
+              ) : (
+                `Create ${selectedAlerts.size} MISP event${selectedAlerts.size !== 1 ? 's' : ''} from the selected alerts. Each alert will be exported as a separate event.`
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {isBulkUpdating && (
+            <div className="w-full bg-muted rounded-full h-2">
+              <div
+                className="bg-primary h-2 rounded-full transition-all"
+                style={{ width: `${(mispExportProgress.current / mispExportProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            {mispExportResults ? (
+              <Button onClick={() => {
+                setShowBulkMISPExport(false)
+                setMispExportResults(null)
+                setSelectedAlerts(new Set())
+                setSelectAll(false)
+              }}>
+                Done
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowBulkMISPExport(false)}
+                  disabled={isBulkUpdating}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleBulkMISPExport}
+                  disabled={isBulkUpdating}
+                >
+                  {isBulkUpdating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    'Export'
+                  )}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
