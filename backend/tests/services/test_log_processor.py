@@ -171,7 +171,8 @@ class TestLogProcessorDuplicateAlertPrevention:
             # Verify it's an IOC alert
             call_kwargs = processor.alert_service.create_alert.call_args[1]
             assert call_kwargs["rule_id"] == "ioc-detection"
-            assert "IOC Match" in call_kwargs["rule_title"]
+            # IOC title uses MISP event info if available, otherwise "IOC Match: <value>"
+            assert call_kwargs["rule_title"] == "Test Event"
 
     @pytest.mark.asyncio
     async def test_sigma_suppressed_allows_ioc_alert(
