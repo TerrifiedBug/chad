@@ -5,7 +5,8 @@ import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Eye, XCircle, ExternalLink, ShieldAlert } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Loader2, Eye, XCircle, ExternalLink, ShieldAlert, ChevronDown } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 const threatLevelColors: Record<string, string> = {
@@ -21,6 +22,7 @@ interface IOCMatchesCardProps {
 
 export function IOCMatchesCard({ matches }: IOCMatchesCardProps) {
   const { showToast } = useToast()
+  const [isOpen, setIsOpen] = useState(false)
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'sighting' | 'false_positive'>>({})
 
   // Check MISP status for linking
@@ -58,6 +60,9 @@ export function IOCMatchesCard({ matches }: IOCMatchesCardProps) {
     return order.indexOf(a.threat_level) - order.indexOf(b.threat_level)
   })
 
+  // Count high threat matches
+  const highThreatCount = matches.filter((m) => m.threat_level === 'high').length
+
   const getMISPEventUrl = (match: IOCMatch): string | null => {
     if (!mispStatus?.instance_url || !match.misp_event_id) return null
     return `${mispStatus.instance_url}/events/view/${match.misp_event_id}`
@@ -65,16 +70,30 @@ export function IOCMatchesCard({ matches }: IOCMatchesCardProps) {
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <ShieldAlert className="h-4 w-4 text-red-500" />
-          IOC Matches
-          <Badge variant="destructive" className="ml-2">
-            {matches.length}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger className="w-full">
+          <CardHeader className="pb-3 hover:bg-muted/50 rounded-t-lg transition-colors">
+            <CardTitle className="text-sm font-medium flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-red-500" />
+                IOC Matches
+                <Badge variant="destructive">
+                  {matches.length}
+                </Badge>
+                {highThreatCount > 0 && (
+                  <span className="text-xs text-red-600 font-normal">
+                    {highThreatCount} high threat
+                  </span>
+                )}
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+              />
+            </CardTitle>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="space-y-3 pt-0">
         {sortedMatches.map((match, idx) => {
           const key = match.misp_attribute_uuid || `${match.ioc_type}-${match.value}-${idx}`
           const feedback = match.misp_attribute_uuid ? feedbackGiven[match.misp_attribute_uuid] : null
@@ -175,7 +194,9 @@ export function IOCMatchesCard({ matches }: IOCMatchesCardProps) {
             </div>
           )
         })}
-      </CardContent>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   )
 }

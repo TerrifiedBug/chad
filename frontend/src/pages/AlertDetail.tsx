@@ -68,6 +68,7 @@ const indicatorTypeLabels: Record<string, string> = {
 
 // TI Enrichment card component
 function TIEnrichmentCard({ indicators }: { indicators: TIEnrichmentIndicator[] }) {
+  const [isOpen, setIsOpen] = useState(false)
   const [expandedIndicator, setExpandedIndicator] = useState<string | null>(null)
 
   // Sort by risk level (critical first)
@@ -76,15 +77,37 @@ function TIEnrichmentCard({ indicators }: { indicators: TIEnrichmentIndicator[] 
     return order.indexOf(a.overall_risk_level) - order.indexOf(b.overall_risk_level)
   })
 
+  // Count high-risk indicators for summary
+  const highRiskCount = indicators.filter((i) =>
+    ['critical', 'high'].includes(i.overall_risk_level)
+  ).length
+
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <ShieldAlert className="h-4 w-4" />
-          Threat Intelligence
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger className="w-full">
+          <CardHeader className="pb-3 hover:bg-muted/50 rounded-t-lg transition-colors">
+            <CardTitle className="text-sm font-medium flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4" />
+                Threat Intelligence
+                <Badge variant="secondary" className="text-xs">
+                  {indicators.length}
+                </Badge>
+                {highRiskCount > 0 && (
+                  <Badge variant="destructive" className="text-xs">
+                    {highRiskCount} high risk
+                  </Badge>
+                )}
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+              />
+            </CardTitle>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="space-y-3 pt-0">
         {sortedIndicators.map((indicator) => (
           <Collapsible
             key={`${indicator.indicator_type}-${indicator.indicator}`}
@@ -177,12 +200,14 @@ function TIEnrichmentCard({ indicators }: { indicators: TIEnrichmentIndicator[] 
             </CollapsibleContent>
           </Collapsible>
         ))}
-        {sortedIndicators.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            No threat intelligence data available
-          </p>
-        )}
-      </CardContent>
+            {sortedIndicators.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No threat intelligence data available
+              </p>
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   )
 }
