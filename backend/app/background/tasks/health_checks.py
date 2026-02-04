@@ -365,6 +365,15 @@ async def check_ti_source_health(db: AsyncSession):
             elif config.source_type == "threatfox":
                 client = ThreatFoxClient(api_key)
                 success = await client.test_connection()
+            elif config.source_type == "misp":
+                if not api_key:
+                    raise Exception("API key not configured")
+                if not config.instance_url:
+                    raise Exception("MISP instance URL not configured")
+                from app.services.ti.misp import MISPClient
+                verify_tls = config.config.get("verify_tls", True) if config.config else True
+                client = MISPClient(api_key, config.instance_url, verify_tls=verify_tls)
+                success = await client.test_connection()
             else:
                 raise Exception(f"Unknown source type: {config.source_type}")
 
