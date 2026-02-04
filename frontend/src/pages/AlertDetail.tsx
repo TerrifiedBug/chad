@@ -1053,13 +1053,6 @@ export default function AlertDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <span
-            className={`px-3 py-1 rounded text-sm font-medium ${
-              SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
-            }`}
-          >
-            {capitalize(alert.severity)}
-          </span>
           {alert.exception_created && (
             <Tooltip>
               <TooltipTrigger>
@@ -1076,27 +1069,6 @@ export default function AlertDetailPage() {
                 <p className="text-xs text-muted-foreground">
                   {new Date(alert.exception_created.created_at).toLocaleString()}
                 </p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-          {relatedAlerts && relatedAlerts.clustering_enabled && relatedAlerts.related_count > 0 && (
-            <Tooltip>
-              <TooltipTrigger>
-                <Badge variant="secondary" className="gap-1">
-                  <Layers className="h-3 w-3" />
-                  Cluster ({relatedAlerts.related_count + 1})
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="font-medium">Part of alert cluster</p>
-                <p className="text-sm text-muted-foreground">
-                  {relatedAlerts.related_count} related alert{relatedAlerts.related_count > 1 ? 's' : ''} from the same rule
-                </p>
-                {relatedAlerts.window_minutes && (
-                  <p className="text-xs text-muted-foreground">
-                    Within {relatedAlerts.window_minutes} minute window
-                  </p>
-                )}
               </TooltipContent>
             </Tooltip>
           )}
@@ -1174,15 +1146,37 @@ export default function AlertDetailPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4" />
-                Status
+                Overview
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <span
-                className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
-              >
-                {ALERT_STATUS_LABELS[alert.status]}
-              </span>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <span
+                  className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
+                >
+                  {ALERT_STATUS_LABELS[alert.status]}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Severity</span>
+                <span
+                  className={`px-2 py-1 rounded text-xs font-medium ${
+                    SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
+                  }`}
+                >
+                  {capitalize(alert.severity)}
+                </span>
+              </div>
+              {relatedAlerts && relatedAlerts.clustering_enabled && relatedAlerts.related_count > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Cluster</span>
+                  <Badge variant="secondary" className="gap-1">
+                    <Layers className="h-3 w-3" />
+                    {relatedAlerts.related_count + 1} alerts
+                  </Badge>
+                </div>
+              )}
             </CardContent>
           </Card>
 
