@@ -117,6 +117,8 @@ export default function SettingsPage() {
     opensearch_latency_critical_ms: 5,
     queue_warning: 10000,
     queue_critical: 100000,
+    data_freshness_warning_minutes: 60,
+    data_freshness_critical_minutes: 240,
   })
   const [healthSettingsForm, setHealthSettingsForm] = useState<HealthSettings>(healthSettings)
   const [isSavingHealthSettings, setIsSavingHealthSettings] = useState(false)
@@ -1785,6 +1787,28 @@ export default function SettingsPage() {
                       value={healthSettingsForm.queue_critical}
                       onChange={(e) => setHealthSettingsForm({...healthSettingsForm, queue_critical: parseInt(e.target.value) || 0})}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="data-freshness-warning">Data Freshness Warning (minutes)</Label>
+                    <Input
+                      id="data-freshness-warning"
+                      type="number"
+                      min="1"
+                      value={healthSettingsForm.data_freshness_warning_minutes}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, data_freshness_warning_minutes: parseInt(e.target.value) || 0})}
+                    />
+                    <p className="text-xs text-muted-foreground">Notify when index data is older than this (default: 60 minutes)</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="data-freshness-critical">Data Freshness Critical (minutes)</Label>
+                    <Input
+                      id="data-freshness-critical"
+                      type="number"
+                      min="1"
+                      value={healthSettingsForm.data_freshness_critical_minutes}
+                      onChange={(e) => setHealthSettingsForm({...healthSettingsForm, data_freshness_critical_minutes: parseInt(e.target.value) || 0})}
+                    />
+                    <p className="text-xs text-muted-foreground">Critical alert when index data is older than this (default: 240 minutes)</p>
                   </div>
                 </div>
               </div>
