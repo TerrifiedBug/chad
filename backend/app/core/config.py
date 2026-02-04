@@ -119,9 +119,6 @@ class Settings(BaseSettings):
     # Trusted proxies (for X-Forwarded-* headers)
     TRUSTED_PROXIES: str = "*"  # Trust all proxies in production
 
-    # API Key Rate Limiting
-    API_KEY_RATE_LIMIT: int = 100  # Requests per minute per API key
-
     @field_validator('JWT_SECRET_KEY', 'SESSION_SECRET_KEY')
     @classmethod
     def validate_secrets(cls, v: str, info) -> str:
