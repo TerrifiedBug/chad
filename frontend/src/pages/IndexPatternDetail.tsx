@@ -23,6 +23,7 @@ import {
   Lock,
   HeartPulse,
   Crosshair,
+  Webhook,
 } from 'lucide-react'
 import { SettingsTab } from '@/components/index-patterns/SettingsTab'
 import { FieldMappingsTab } from '@/components/index-patterns/FieldMappingsTab'
@@ -32,9 +33,10 @@ import { GeoIPTab } from '@/components/index-patterns/GeoIPTab'
 import { SecurityTab } from '@/components/index-patterns/SecurityTab'
 import { HealthTab } from '@/components/index-patterns/HealthTab'
 import { IOCDetectionTab } from '@/components/index-patterns/IOCDetectionTab'
+import { WebhooksTab } from '@/components/index-patterns/WebhooksTab'
 import { ChangeReasonDialog } from '@/components/ChangeReasonDialog'
 
-type DetailTab = 'settings' | 'mappings' | 'threat-intel' | 'ioc-detection' | 'geoip' | 'security' | 'health' | 'endpoint'
+type DetailTab = 'settings' | 'mappings' | 'threat-intel' | 'ioc-detection' | 'geoip' | 'webhooks' | 'security' | 'health' | 'endpoint'
 
 export default function IndexPatternDetail() {
   const { id } = useParams<{ id: string }>()
@@ -288,6 +290,14 @@ export default function IndexPatternDetail() {
             GeoIP
           </TabsTrigger>
           <TabsTrigger
+            value="webhooks"
+            className="flex items-center gap-2"
+            disabled={isNew}
+          >
+            <Webhook className="h-4 w-4" />
+            Webhooks
+          </TabsTrigger>
+          <TabsTrigger
             value="security"
             className="flex items-center gap-2"
             disabled={isNew || pattern?.mode !== 'push'}
@@ -381,6 +391,21 @@ export default function IndexPatternDetail() {
             ) : (
               <div className="text-sm text-muted-foreground py-8 text-center">
                 Save the pattern first to configure GeoIP enrichment.
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="webhooks" className="mt-0">
+          <div className="rounded-lg border bg-card p-6">
+            {pattern ? (
+              <WebhooksTab
+                pattern={pattern}
+                onPatternUpdated={handlePatternUpdated}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                Save the pattern first to configure webhook enrichment.
               </div>
             )}
           </div>

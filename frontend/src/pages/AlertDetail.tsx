@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers, Upload } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers, Upload, Webhook } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { IOCMatchesCard } from '@/components/alerts/IOCMatchesCard'
@@ -484,6 +484,121 @@ function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): stri
   }
 
   return String(value ?? '')
+}
+
+// Custom Enrichment Card - displays webhook enrichment data
+interface EnrichmentStatus {
+  status: 'success' | 'failed' | 'timeout' | 'circuit_open' | 'pending'
+  error?: string
+  completed_at?: string
+}
+
+function CustomEnrichmentCard({ logDocument }: { logDocument: Record<string, unknown> }) {
+  const [expandedNamespace, setExpandedNamespace] = useState<string | null>(null)
+
+  // Extract enrichment_status from log document
+  const enrichmentStatus = logDocument.enrichment_status as Record<string, EnrichmentStatus> | undefined
+
+  // If no enrichment status, nothing to show
+  if (!enrichmentStatus || Object.keys(enrichmentStatus).length === 0) {
+    return null
+  }
+
+  // Get namespaces from enrichment_status
+  const namespaces = Object.keys(enrichmentStatus)
+
+  // Extract enrichment data for each namespace (stored at top level of log_document)
+  const getEnrichmentData = (namespace: string): Record<string, unknown> | undefined => {
+    const data = logDocument[namespace]
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      return data as Record<string, unknown>
+    }
+    return undefined
+  }
+
+  // Status badge styling
+  const statusColors: Record<string, string> = {
+    success: 'bg-green-500 text-white',
+    failed: 'bg-red-500 text-white',
+    timeout: 'bg-yellow-500 text-black',
+    circuit_open: 'bg-orange-500 text-white',
+    pending: 'bg-gray-500 text-white',
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Webhook className="h-4 w-4" />
+          Custom Enrichment
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {namespaces.map((namespace) => {
+          const status = enrichmentStatus[namespace]
+          const data = getEnrichmentData(namespace)
+          const isExpanded = expandedNamespace === namespace
+
+          return (
+            <Collapsible
+              key={namespace}
+              open={isExpanded}
+              onOpenChange={(open) => setExpandedNamespace(open ? namespace : null)}
+            >
+              <CollapsibleTrigger className="w-full">
+                <div className="flex items-center justify-between text-sm hover:bg-muted/50 rounded p-2 -m-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge
+                      className={`text-xs shrink-0 ${statusColors[status.status] || statusColors.pending}`}
+                    >
+                      {status.status === 'circuit_open' ? 'Circuit Open' : capitalize(status.status)}
+                    </Badge>
+                    <span className="font-medium font-mono text-xs">{namespace}</span>
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                  />
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-2 pl-2 border-l-2 border-muted space-y-2 text-xs">
+                  {status.error && (
+                    <div className="text-red-600 dark:text-red-400">
+                      Error: {status.error}
+                    </div>
+                  )}
+                  {status.completed_at && (
+                    <div className="text-muted-foreground">
+                      Completed: {new Date(status.completed_at).toLocaleString()}
+                    </div>
+                  )}
+                  {data && Object.keys(data).length > 0 && (
+                    <div className="space-y-1">
+                      {Object.entries(data).map(([key, value]) => (
+                        <div key={key} className="flex gap-2">
+                          <span className="text-muted-foreground shrink-0">{key}:</span>
+                          <span className="font-mono break-all">
+                            {typeof value === 'object'
+                              ? JSON.stringify(value)
+                              : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(!data || Object.keys(data).length === 0) && status.status === 'success' && (
+                    <div className="text-muted-foreground italic">
+                      No enrichment data returned
+                    </div>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function AlertDetailPage() {
@@ -1199,6 +1314,9 @@ export default function AlertDetailPage() {
           {alert.ioc_matches && alert.ioc_matches.length > 0 && (
             <IOCMatchesCard matches={alert.ioc_matches} />
           )}
+
+          {/* Custom Enrichment from webhooks - shown if enrichment_status exists */}
+          <CustomEnrichmentCard logDocument={alert.log_document as Record<string, unknown>} />
 
           {/* Correlation Alert Details - shown if this is a correlation alert */}
           <CorrelationAlertDetails logDocument={alert.log_document as Record<string, unknown>} />

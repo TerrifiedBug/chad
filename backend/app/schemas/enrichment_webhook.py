@@ -6,7 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-
 NAMESPACE_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$")
 
 
