@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.services.ti.ioc_query_builder import IOCQueryBuilder
 from app.services.ti.ioc_index import INDICATOR_INDEX_NAME
+from app.services.ti.ioc_query_builder import IOCQueryBuilder
 
 
 @pytest.fixture

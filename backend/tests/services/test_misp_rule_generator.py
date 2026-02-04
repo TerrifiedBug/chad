@@ -1,6 +1,7 @@
 """Tests for MISP Sigma rule generator."""
 
 import pytest
+
 from app.services.misp_rule_generator import SigmaRuleGenerator
 
 

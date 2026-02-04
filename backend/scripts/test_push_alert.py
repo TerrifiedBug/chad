@@ -252,7 +252,7 @@ async def deploy_test_sigma_rule(db_session, os_client, index_pattern_id: str, u
         await db_session.commit()
         print(f"   Deployed rule to percolator: {TEST_PERCOLATOR_INDEX}")
     else:
-        print(f"   Rule already deployed")
+        print("   Rule already deployed")
 
 
 async def inject_test_ioc() -> None:

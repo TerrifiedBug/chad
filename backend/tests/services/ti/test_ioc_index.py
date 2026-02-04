@@ -1,12 +1,12 @@
 """Tests for OpenSearch indicator index service."""
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.ti.ioc_types import IOCType, IOCRecord
-from app.services.ti.ioc_index import IOCIndexService, INDICATOR_INDEX_NAME
+from app.services.ti.ioc_index import INDICATOR_INDEX_NAME, IOCIndexService
+from app.services.ti.ioc_types import IOCRecord, IOCType
 
 
 @pytest.fixture

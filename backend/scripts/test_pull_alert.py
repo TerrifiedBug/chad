@@ -259,6 +259,7 @@ async def run_pull_detection(db_session, index_pattern_id: str) -> dict:
 
     # Get poll state to check results
     from sqlalchemy import select
+
     from app.models.poll_state import IndexPatternPollState
 
     result = await db_session.execute(

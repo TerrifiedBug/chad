@@ -113,7 +113,9 @@ export function logError(error: unknown, context?: string): void {
   const errorCode = getErrorCode(error)
   const details = getErrorDetails(error)
 
-  console.error(`API Error${context ? ` in ${context}` : ''}:`, {
+  // Pass context as a separate property to avoid format string issues
+  console.error('API Error:', {
+    context: context || undefined,
     code: errorCode,
     message: getErrorMessage(error),
     request_id: requestId,

@@ -1,13 +1,13 @@
 """Tests for Redis IOC cache service."""
 
 import json
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.ti.ioc_types import IOCType, IOCRecord
 from app.services.ti.ioc_cache import IOCCache
+from app.services.ti.ioc_types import IOCRecord, IOCType
 
 
 @pytest.fixture

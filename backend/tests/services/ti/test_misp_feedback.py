@@ -1,11 +1,11 @@
 """Tests for MISP feedback service."""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.ti.misp_feedback import MISPFeedbackService, SightingResult, EventCreationResult
+from app.services.ti.misp_feedback import EventCreationResult, MISPFeedbackService, SightingResult
 
 
 @pytest.fixture

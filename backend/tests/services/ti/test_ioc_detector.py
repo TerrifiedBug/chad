@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.ti.ioc_types import IOCType
 from app.services.ti.ioc_detector import IOCDetector, IOCMatch
+from app.services.ti.ioc_types import IOCType
 
 
 @pytest.fixture

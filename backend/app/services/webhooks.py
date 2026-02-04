@@ -9,10 +9,13 @@ Supports multiple providers with provider-specific payload formatting:
 """
 
 import asyncio
+import ipaddress
 import logging
 import os
+import socket
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
@@ -21,6 +24,69 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.models.setting import Setting
 
 logger = logging.getLogger(__name__)
+
+
+# Private/internal IP ranges that should be blocked for SSRF protection
+BLOCKED_IP_RANGES = [
+    ipaddress.ip_network("127.0.0.0/8"),       # Loopback
+    ipaddress.ip_network("10.0.0.0/8"),        # Private Class A
+    ipaddress.ip_network("172.16.0.0/12"),     # Private Class B
+    ipaddress.ip_network("192.168.0.0/16"),    # Private Class C
+    ipaddress.ip_network("169.254.0.0/16"),    # Link-local (AWS metadata, etc.)
+    ipaddress.ip_network("::1/128"),           # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),          # IPv6 private
+    ipaddress.ip_network("fe80::/10"),         # IPv6 link-local
+]
+
+
+def is_safe_url(url: str) -> tuple[bool, str]:
+    """
+    Validate webhook URL to prevent SSRF attacks.
+
+    Returns:
+        Tuple of (is_safe, error_message)
+    """
+    try:
+        parsed = urlparse(url)
+
+        # Only allow http and https schemes
+        if parsed.scheme not in ("http", "https"):
+            return False, "URL scheme must be http or https"
+
+        if not parsed.netloc:
+            return False, "URL must have a hostname"
+
+        # Extract hostname (without port)
+        hostname = parsed.hostname
+        if not hostname:
+            return False, "URL must have a valid hostname"
+
+        # Block localhost variants
+        if hostname in ("localhost", "0.0.0.0"):
+            return False, "Localhost URLs are not allowed"
+
+        # Resolve hostname to IP and check against blocked ranges
+        try:
+            # Get all IP addresses for the hostname
+            addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
+            for family, _, _, _, sockaddr in addr_info:
+                ip_str = sockaddr[0]
+                try:
+                    ip = ipaddress.ip_address(ip_str)
+                    for blocked_range in BLOCKED_IP_RANGES:
+                        if ip in blocked_range:
+                            return False, "URL resolves to a private/internal IP address"
+                except ValueError:
+                    continue
+        except socket.gaierror:
+            # DNS resolution failed - could be temporary, allow the request
+            # The actual HTTP request will fail if the host is unreachable
+            pass
+
+        return True, ""
+
+    except Exception as e:
+        return False, f"Invalid URL: {e}"
 
 # Severity colors for Discord (decimal format)
 SEVERITY_COLORS = {
@@ -224,6 +290,12 @@ async def send_webhook(
     Returns:
         True if successful, False otherwise
     """
+    # Validate URL to prevent SSRF attacks
+    is_safe, error_msg = is_safe_url(url)
+    if not is_safe:
+        logger.warning("Webhook URL blocked (SSRF protection): %s", error_msg)
+        return False
+
     formatter = FORMATTERS.get(provider, format_generic_payload)
     payload = formatter(alert, alert_url)
 

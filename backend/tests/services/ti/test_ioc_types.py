@@ -1,9 +1,8 @@
 """Tests for IOC data types."""
 
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
-from app.services.ti.ioc_types import IOCType, IOCRecord
+from app.services.ti.ioc_types import IOCRecord, IOCType
 
 
 def test_ioc_type_enum_values():

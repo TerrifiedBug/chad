@@ -1,12 +1,12 @@
 """Tests for MISP sync service orchestrator."""
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
 
-from app.services.ti.ioc_types import IOCType, IOCRecord
-from app.services.ti.misp_sync_service import MISPSyncService, MISPSyncResult
+from app.services.ti.ioc_types import IOCRecord, IOCType
+from app.services.ti.misp_sync_service import MISPSyncResult, MISPSyncService
 
 
 @pytest.fixture

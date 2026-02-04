@@ -1,7 +1,10 @@
 """Dashboard statistics API."""
 
+import logging
 from datetime import datetime
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends
 from opensearchpy import OpenSearch
@@ -202,7 +205,9 @@ async def get_system_health(
             "alert_indices": len(alert_indices),
         }
     except Exception as e:
+        # Log the actual error for debugging, but don't expose details to user
+        logger.error("OpenSearch health check failed: %s", e)
         return {
             "status": "unhealthy",
-            "error": str(e),
+            "error": "Failed to connect to OpenSearch",
         }
