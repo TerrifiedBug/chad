@@ -251,7 +251,12 @@ class SchedulerService:
 
         logger.info("Found %s index pattern(s) for pull mode polling", len(patterns))
         for pattern in patterns:
-            logger.debug("Processing pattern: %s (mode=%s, interval=%smin)", pattern.name, pattern.mode, pattern.poll_interval_minutes)
+            logger.debug(
+                "Processing pattern: %s (mode=%s, interval=%smin)",
+                pattern.name,
+                pattern.mode,
+                pattern.poll_interval_minutes,
+            )
 
             job_id = f"pull_poll_{pattern.id}"
 
@@ -542,6 +547,7 @@ class SchedulerService:
             check_ti_source_health,
         )
         from app.services.health_monitor import check_index_health
+        from app.services.websocket import manager as websocket_manager
 
         logger.debug("Running scheduled health check")
         session = await self._get_session()
@@ -580,6 +586,18 @@ class SchedulerService:
                 logger.debug("TI source health check completed")
             except Exception as e:
                 logger.error("TI source health check failed: %s", e)
+
+            # Broadcast health update to connected clients
+            try:
+                await websocket_manager.broadcast_to_all_local({
+                    "type": "health_update",
+                    "data": {
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    },
+                })
+                logger.debug("Broadcasted health update to WebSocket clients")
+            except Exception as e:
+                logger.warning("Failed to broadcast health update: %s", e)
 
         except Exception as e:
             logger.error("Scheduled health check failed: %s", e)

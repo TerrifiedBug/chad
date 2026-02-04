@@ -134,14 +134,37 @@ export default function HealthPage() {
     loadServiceHealth()
     loadQueueStats()
     loadPullModeHealth()
-    // Refresh every 30 seconds
-    const interval = setInterval(() => {
-      loadHealth()
-      loadServiceHealth()
-      loadQueueStats()
-      loadPullModeHealth()
-    }, 30000)
-    return () => clearInterval(interval)
+
+    // WebSocket for live health updates
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data)
+        if (message.type === 'health_update') {
+          // Reload all health data when backend broadcasts an update
+          loadHealth()
+          loadServiceHealth()
+          loadQueueStats()
+          loadPullModeHealth()
+        }
+      } catch (err) {
+        console.error('WebSocket message error:', err)
+      }
+    }
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error)
+    }
+
+    ws.onclose = () => {
+      console.log('WebSocket connection closed')
+    }
+
+    return () => {
+      ws.close()
+    }
   }, [])
 
   // Persist accordion states to localStorage
