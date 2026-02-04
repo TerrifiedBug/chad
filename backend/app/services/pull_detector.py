@@ -524,16 +524,22 @@ class PullDetector:
                 }
 
                 # Create IOC alert
+                # Use MISP event info as title if available, otherwise fall back to IOC value
+                ioc_type = matched_ioc_info.get("ioc_type", "unknown")
+                event_info = matched_ioc_info.get("misp_event_info")
+                ioc_title = event_info if event_info else f"IOC Match: {matched_ioc_info.get('value', ioc_type)}"
+
                 try:
                     ioc_alert = alert_service.create_alert(
                         alerts_index=alerts_index,
                         rule_id="ioc-detection",
-                        rule_title=f"IOC Match: {matched_ioc_info.get('ioc_type', 'unknown')}",
+                        rule_title=ioc_title,
                         severity=self._map_threat_level_to_severity(
                             matched_ioc_info.get("threat_level", "medium")
                         ),
                         tags=[
                             "ioc-match",
+                            f"ioc-type:{ioc_type}",
                             f"misp:{matched_ioc_info.get('misp_event_id', 'unknown')}",
                         ] + matched_ioc_info.get("tags", []),
                         log_document=enriched_log,

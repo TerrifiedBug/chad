@@ -261,11 +261,15 @@ class LogProcessor:
                 else:
                     severity = "low"
 
-                # Get IOC type for title
-                ioc_type = ioc_matches[0].get("ioc_type", "unknown") if ioc_matches else "unknown"
+                # Get IOC type and title from first match
+                first_match = ioc_matches[0] if ioc_matches else {}
+                ioc_type = first_match.get("ioc_type", "unknown")
+                # Use MISP event info as title if available, otherwise fall back to IOC value
+                event_info = first_match.get("misp_event_info")
+                ioc_title = event_info if event_info else f"IOC Match: {first_match.get('value', ioc_type)}"
 
                 # Build tags from IOC matches
-                tags = ["ioc-match"]
+                tags = ["ioc-match", f"ioc-type:{ioc_type}"]
                 for match in ioc_matches:
                     if match.get("misp_event_id"):
                         tags.append(f"misp:{match['misp_event_id']}")
@@ -277,7 +281,7 @@ class LogProcessor:
                     ioc_alert = self.alert_service.create_alert(
                         alerts_index=alerts_index,
                         rule_id="ioc-detection",
-                        rule_title=f"IOC Match: {ioc_type}",
+                        rule_title=ioc_title,
                         severity=severity,
                         tags=tags,
                         log_document=enriched_log,
