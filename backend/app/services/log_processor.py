@@ -154,6 +154,8 @@ class LogProcessor:
         total_matches = 0
         suppressed_count = 0
         disabled_count = 0
+        # Track which log indices actually created Sigma alerts (for duplicate prevention)
+        logs_with_sigma_alerts: set[int] = set()
 
         # Get app URL for notification links
         app_url = await get_app_url(db)
@@ -208,6 +210,7 @@ class LogProcessor:
                     )
                     alerts_created.append(alert)
                     total_matches += 1
+                    logs_with_sigma_alerts.add(log_idx)
 
                     # Check for correlation triggers
                     await self._check_correlations(
@@ -223,15 +226,12 @@ class LogProcessor:
                     logger.error("Failed to create alert for rule %s: %s", rule_id, e)
                     continue
 
-        # Create IOC-only alerts for logs that matched IOCs but no Sigma rules
+        # Create IOC-only alerts for logs that matched IOCs but didn't create Sigma alerts
         ioc_only_alerts = 0
         if ioc_detection_enabled and ioc_matches_by_log:
-            # Find logs that have IOC matches but didn't match any rules
-            logs_with_rule_matches = set(matches_by_log.keys())
-
             for log_idx, ioc_matches in ioc_matches_by_log.items():
-                if log_idx in logs_with_rule_matches:
-                    # Already processed as part of rule-based alert
+                if log_idx in logs_with_sigma_alerts:
+                    # Skip - already has a Sigma alert (IOC info is embedded in that alert)
                     continue
 
                 log = logs[log_idx]

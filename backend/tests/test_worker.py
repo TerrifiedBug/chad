@@ -79,8 +79,10 @@ class TestLogProcessor:
         with patch("app.services.log_processor.batch_percolate_logs", return_value={}), \
              patch("app.services.log_processor.get_app_url", new_callable=AsyncMock, return_value=None):
             # Mock the index pattern lookup to return None
-            mock_db_session.execute = AsyncMock()
-            mock_db_session.execute.return_value.scalar_one_or_none.return_value = None
+            # AsyncMock.execute returns a mock, and scalar_one_or_none returns None
+            mock_execute_result = MagicMock()
+            mock_execute_result.scalar_one_or_none.return_value = None
+            mock_db_session.execute = AsyncMock(return_value=mock_execute_result)
 
             processor = LogProcessor(mock_client, mock_session_factory)
             result = await processor.process_batch(mock_db_session, "test", [{"message": "test"}])

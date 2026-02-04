@@ -422,6 +422,7 @@ class PullDetector:
         timestamp_field: str,
         lookback_minutes: int,
         db: AsyncSession,
+        exclude_doc_ids: set[str] | None = None,
     ) -> dict[str, Any]:
         """
         Run IOC detection for Pull Mode using OpenSearch join queries.
@@ -461,6 +462,15 @@ class PullDetector:
                 lookback_minutes=lookback_minutes,
             )
 
+            # Query-level filtering for small exclusion sets (avoid fetching docs that already have Sigma alerts)
+            if exclude_doc_ids and len(exclude_doc_ids) < 1000:
+                # Wrap query in bool if needed and add must_not clause
+                if "bool" not in ioc_query:
+                    ioc_query = {"bool": {"must": [ioc_query]}}
+                if "must_not" not in ioc_query["bool"]:
+                    ioc_query["bool"]["must_not"] = []
+                ioc_query["bool"]["must_not"].append({"ids": {"values": list(exclude_doc_ids)}})
+
             # Execute the query
             response = await asyncio.to_thread(
                 self.client.search,
@@ -486,6 +496,10 @@ class PullDetector:
 
             # For each hit, determine which IOC matched and create alert
             for hit in hits:
+                # Post-query filtering fallback for large exclusion sets
+                if exclude_doc_ids and hit["_id"] in exclude_doc_ids:
+                    continue  # Skip - already has Sigma alert
+
                 log_document = hit["_source"]
 
                 # Find which field matched an IOC
@@ -676,6 +690,9 @@ class PullDetector:
         # Get app URL for notification links
         app_url = await get_app_url(db)
 
+        # Track document IDs that generated Sigma alerts to avoid duplicate IOC alerts
+        matched_doc_ids: set[str] = set()
+
         for rule in rules:
             try:
                 # Extract tags from Sigma YAML for alert creation
@@ -762,6 +779,7 @@ class PullDetector:
 
                         # Process each hit with full alert workflow
                         for hit in hits:
+                            doc_id = hit["_id"]
                             log_document = hit["_source"]
 
                             # Calculate real detection latency from event timestamp
@@ -810,6 +828,9 @@ class PullDetector:
                                 alerts_created.append(alert)
                                 rule_matches += 1
 
+                                # Track this document to avoid duplicate IOC alert
+                                matched_doc_ids.add(doc_id)
+
                                 # Check for correlation triggers
                                 await self._check_correlations(
                                     db=db,
@@ -847,6 +868,8 @@ class PullDetector:
                     total_matches += rule_matches
                     total_events_scanned += rule_events
 
+                    logger.debug("Tracked %d matched doc IDs for rule %s", len(matched_doc_ids), rule.id)
+
                 finally:
                     # Always close PIT
                     if pit_id:
@@ -870,6 +893,8 @@ class PullDetector:
                 )
 
         # Run IOC detection (parallel to Sigma rule detection)
+        # Pass matched_doc_ids to avoid creating IOC alerts for logs that already have Sigma alerts
+        logger.debug("Total matched doc IDs for IOC exclusion: %d", len(matched_doc_ids))
         ioc_result = await self._run_ioc_detection(
             index_pattern=index_pattern,
             alert_service=alert_service,
@@ -877,6 +902,7 @@ class PullDetector:
             timestamp_field=timestamp_field,
             lookback_minutes=index_pattern.poll_interval_minutes,
             db=db,
+            exclude_doc_ids=matched_doc_ids if matched_doc_ids else None,
         )
 
         # Add IOC alerts to the alerts list
