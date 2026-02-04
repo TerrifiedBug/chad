@@ -168,8 +168,14 @@ async def update_ti_source(
     if config:
         # Update existing
         config.is_enabled = data.is_enabled
-        config.instance_url = data.instance_url
-        config.config = data.config
+
+        # Only update instance_url if provided (don't overwrite with None)
+        if data.instance_url is not None:
+            config.instance_url = data.instance_url
+
+        # Only update config if provided (don't overwrite with None)
+        if data.config is not None:
+            config.config = data.config
 
         # Only update API key if provided
         if data.api_key:

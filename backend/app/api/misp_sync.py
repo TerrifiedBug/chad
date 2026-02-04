@@ -110,6 +110,9 @@ async def trigger_misp_sync(db: AsyncSession, os_client=None) -> dict[str, Any]:
     if not api_key:
         raise HTTPException(400, "MISP API key not configured")
 
+    if not config.instance_url:
+        raise HTTPException(400, "MISP instance URL not configured")
+
     if not os_client:
         raise HTTPException(400, "OpenSearch not configured")
 
