@@ -147,12 +147,12 @@ async def setup_test_index_pattern(db_session) -> tuple[str, str]:
     if pattern:
         print(f"   Using existing index pattern: {pattern.name}")
         # Ensure IOC detection is enabled with proper field mappings
+        # ioc_field_mappings uses IOCType enum values: ip-src, ip-dst, domain, etc.
         pattern.ioc_detection_enabled = True
-        pattern.ti_config = {
-            "ioc_fields": {
-                "ip": ["source.ip", "client_real_ip", "destination.ip"],
-                "domain": ["dns.question.name", "url.domain"],
-            }
+        pattern.ioc_field_mappings = {
+            "ip-src": ["source.ip", "client_real_ip"],
+            "ip-dst": ["destination.ip"],
+            "domain": ["dns.question.name", "url.domain"],
         }
         await db_session.commit()
         return str(pattern.id), pattern.auth_token
@@ -167,11 +167,11 @@ async def setup_test_index_pattern(db_session) -> tuple[str, str]:
         auth_token=auth_token,
         mode="push",
         ioc_detection_enabled=True,
-        ti_config={
-            "ioc_fields": {
-                "ip": ["source.ip", "client_real_ip", "destination.ip"],
-                "domain": ["dns.question.name", "url.domain"],
-            }
+        # ioc_field_mappings uses IOCType enum values: ip-src, ip-dst, domain, etc.
+        ioc_field_mappings={
+            "ip-src": ["source.ip", "client_real_ip"],
+            "ip-dst": ["destination.ip"],
+            "domain": ["dns.question.name", "url.domain"],
         },
     )
     db_session.add(pattern)
