@@ -39,19 +39,20 @@ export function WebhooksTab({ pattern }: WebhooksTabProps) {
     const loadData = async () => {
       setIsLoading(true)
       try {
-        const [webhookList, enrichments, fields] = await Promise.all([
+        const [webhookList, enrichmentConfigs, fields] = await Promise.all([
           enrichmentWebhooksApi.list(),
           indexPatternEnrichmentsApi.get(pattern.id),
           indexPatternsApi.getFields(pattern.id),
         ])
         // Only show active webhooks
         setWebhooks(webhookList.filter((w) => w.is_active))
-        setConfigs(enrichments.enrichments)
+        // Backend returns array directly
+        setConfigs(enrichmentConfigs || [])
         setAvailableFields(fields.sort())
 
         // Initialize field searches with current config values
         const initialSearches: Record<string, string> = {}
-        enrichments.enrichments.forEach((c) => {
+        ;(enrichmentConfigs || []).forEach((c) => {
           initialSearches[c.webhook_id] = c.field_to_send
         })
         setFieldSearches(initialSearches)
@@ -87,10 +88,11 @@ export function WebhooksTab({ pattern }: WebhooksTabProps) {
         is_enabled: c.is_enabled,
       }))
 
+      // Backend returns array directly
       const updated = await indexPatternEnrichmentsApi.update(pattern.id, {
         enrichments: enrichmentsPayload,
       })
-      setConfigs(updated.enrichments)
+      setConfigs(updated || [])
       showToast('Webhook enrichment settings saved')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to save', 'error')

@@ -2566,10 +2566,8 @@ export type IndexPatternEnrichmentConfig = {
   is_enabled: boolean
 }
 
-export type IndexPatternEnrichmentsResponse = {
-  index_pattern_id: string
-  enrichments: IndexPatternEnrichmentConfig[]
-}
+// Backend returns array directly
+export type IndexPatternEnrichmentsResponse = IndexPatternEnrichmentConfig[]
 
 export type IndexPatternEnrichmentsUpdate = {
   enrichments: Array<{
