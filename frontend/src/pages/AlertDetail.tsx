@@ -1269,39 +1269,6 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
-          {/* Rule card - only show for Sigma rule alerts (not correlation or IOC-only) */}
-          {!(alert.log_document as Record<string, unknown>)?.correlation &&
-           alert.rule_id !== 'ioc-detection' && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Rule
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Link
-                  to={`/rules/${alert.rule_id}`}
-                  className="text-sm text-primary hover:underline"
-                >
-                  View Rule
-                </Link>
-                {alert.tags.length > 0 && (
-                  <div className="flex gap-1 flex-wrap mt-2">
-                    {alert.tags.map((tag, i) => (
-                      <span
-                        key={i}
-                        className="px-1.5 py-0.5 bg-muted rounded text-xs"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
           {/* GeoIP Data - shown if enrichment data exists */}
           {(() => {
             const geoData = extractGeoIPData(alert.log_document as Record<string, unknown>)
@@ -1423,9 +1390,37 @@ export default function AlertDetailPage() {
         {/* Log Document - stretches to fill available height */}
         <Card className="flex flex-col">
           <CardHeader className="shrink-0">
-            <CardTitle className="text-sm font-medium">
-              Triggering Log Document
-            </CardTitle>
+            <div className="flex items-center justify-between gap-4">
+              <CardTitle className="text-sm font-medium">
+                Triggering Log Document
+              </CardTitle>
+              <div className="flex items-center gap-3">
+                {/* Tags */}
+                {alert.tags.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {alert.tags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {/* View Rule link - only for Sigma rule alerts */}
+                {!(alert.log_document as Record<string, unknown>)?.correlation &&
+                 alert.rule_id !== 'ioc-detection' && (
+                  <Link
+                    to={`/rules/${alert.rule_id}`}
+                    className="text-sm text-primary hover:underline flex items-center gap-1 shrink-0"
+                  >
+                    <FileText className="h-3 w-3" />
+                    View Rule
+                  </Link>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col min-h-0">
             <pre className="p-4 bg-muted rounded-lg overflow-auto flex-1 min-h-[300px] text-xs font-mono">
