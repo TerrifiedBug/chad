@@ -434,9 +434,13 @@ async def _enrich_ioc_cache(
                     except Exception as e:
                         logger.debug("IOC cache lookup failed for %s: %s", value, e)
 
-        # Add ioc_matches to enriched document if we found any
+        # Add ioc_matches inside threat_intel (same structure as IOC detection alerts)
+        # This allows AlertService.create_alert() to extract it to the top level
         if ioc_matches:
-            enriched["ioc_matches"] = ioc_matches
+            if "threat_intel" not in enriched:
+                enriched["threat_intel"] = {}
+            enriched["threat_intel"]["ioc_matches"] = ioc_matches
+            enriched["threat_intel"]["has_ioc_match"] = True
 
     except Exception as e:
         logger.warning("IOC cache enrichment failed: %s", e)
