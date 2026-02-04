@@ -46,7 +46,11 @@ function formatRelativeTime(isoString: string | null): string {
   return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`
 }
 
-export function MISPSyncDashboard() {
+interface MISPSyncDashboardProps {
+  embedded?: boolean
+}
+
+export function MISPSyncDashboard({ embedded = false }: MISPSyncDashboardProps) {
   const { showToast } = useToast()
   const queryClient = useQueryClient()
   const [isOpen, setIsOpen] = useState(true)
@@ -126,6 +130,203 @@ export function MISPSyncDashboard() {
   const isLoading = statusLoading || configLoading
   const hasChanges = Object.keys(localConfig).length > 0
 
+  const content = isLoading ? (
+    <div className="flex items-center justify-center py-8">
+      <Loader2 className="h-6 w-6 animate-spin" />
+    </div>
+  ) : (
+    <div className="space-y-6">
+      {/* Status Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Sync Status</CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => triggerMutation.mutate()}
+              disabled={triggerMutation.isPending}
+            >
+              {triggerMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="ml-2">Sync Now</span>
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Last Sync:</span>
+              <span className="font-medium">{formatRelativeTime(status?.last_sync_at ?? null)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Redis:</span>
+              <span className="font-medium">{(status?.redis_ioc_count ?? 0).toLocaleString()} IOCs</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">OpenSearch:</span>
+              <span className="font-medium">{(status?.opensearch_ioc_count ?? 0).toLocaleString()} IOCs</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Duration:</span>
+              <span className="font-medium">{status?.sync_duration_ms ?? 0}ms</span>
+            </div>
+          </div>
+          {status?.error_message && (
+            <div className="mt-3 flex items-start gap-2 p-2 rounded bg-destructive/10 text-destructive text-sm">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              {status.error_message}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Configuration */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-base">Enable Automatic Sync</Label>
+            <p className="text-sm text-muted-foreground">
+              Sync IOCs from MISP on a schedule
+            </p>
+          </div>
+          <Switch
+            checked={mergedConfig.enabled ?? false}
+            onCheckedChange={(checked) => updateConfig({ enabled: checked })}
+          />
+        </div>
+
+        {/* Sync Interval - only relevant for auto-sync */}
+        {mergedConfig.enabled && (
+          <div>
+            <Label>Sync Interval (minutes)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={1440}
+              value={mergedConfig.interval_minutes ?? 10}
+              onChange={(e) => updateConfig({ interval_minutes: parseInt(e.target.value) || 10 })}
+              className="mt-1"
+            />
+          </div>
+        )}
+
+        {/* These settings apply to both manual and automatic sync */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Max Age (days)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={365}
+              value={mergedConfig.max_age_days ?? 30}
+              onChange={(e) => updateConfig({ max_age_days: parseInt(e.target.value) || 30 })}
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Only sync IOCs created within this many days
+            </p>
+          </div>
+          <div>
+            <Label>TTL / Cache Expiry (days)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={365}
+              value={mergedConfig.ttl_days ?? 30}
+              onChange={(e) => updateConfig({ ttl_days: parseInt(e.target.value) || 30 })}
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              How long to keep IOCs in cache
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <Label>Threat Levels</Label>
+          <p className="text-xs text-muted-foreground mb-2">
+            Filter IOCs by MISP threat level
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {THREAT_LEVELS.map(({ value, label }) => (
+              <label key={value} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={(mergedConfig.threat_levels ?? ['high', 'medium', 'low', 'undefined']).includes(value)}
+                  onCheckedChange={(checked) => toggleThreatLevel(value, !!checked)}
+                />
+                <span className="text-sm">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Label>IOC Types</Label>
+          <p className="text-xs text-muted-foreground mb-2">
+            Filter IOCs by indicator type
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {IOC_TYPES.map(({ value, label }) => (
+              <label key={value} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={(mergedConfig.ioc_types ?? IOC_TYPES.map(t => t.value)).includes(value)}
+                  onCheckedChange={(checked) => toggleIOCType(value, !!checked)}
+                />
+                <span className="text-sm">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Label>Tags Filter (optional)</Label>
+          <Input
+            placeholder="e.g., tlp:amber, apt"
+            value={(mergedConfig.tags ?? []).join(', ')}
+            onChange={(e) => {
+              const tags = e.target.value
+                .split(',')
+                .map(t => t.trim())
+                .filter(Boolean)
+              updateConfig({ tags: tags.length > 0 ? tags : null })
+            }}
+            className="mt-1"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Comma-separated. Only sync IOCs with these tags.
+          </p>
+        </div>
+      </div>
+
+      {hasChanges && (
+        <div className="flex justify-end pt-4 border-t">
+          <Button onClick={handleSaveConfig} disabled={isSaving}>
+            {isSaving ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+            )}
+            Save Settings
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+
+  // When embedded, render content directly without collapsible wrapper
+  if (embedded) {
+    return content
+  }
+
+  // Standalone mode: wrap in collapsible
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-muted/50 rounded-lg">
@@ -142,196 +343,7 @@ export function MISPSyncDashboard() {
       </CollapsibleTrigger>
 
       <CollapsibleContent className="px-4 pb-4">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin" />
-          </div>
-        ) : (
-          <div className="space-y-6 pt-4">
-            {/* Status Card */}
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium">Sync Status</CardTitle>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => triggerMutation.mutate()}
-                    disabled={triggerMutation.isPending}
-                  >
-                    {triggerMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                    <span className="ml-2">Sync Now</span>
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Last Sync:</span>
-                    <span className="font-medium">{formatRelativeTime(status?.last_sync_at ?? null)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Database className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Redis:</span>
-                    <span className="font-medium">{(status?.redis_ioc_count ?? 0).toLocaleString()} IOCs</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Database className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">OpenSearch:</span>
-                    <span className="font-medium">{(status?.opensearch_ioc_count ?? 0).toLocaleString()} IOCs</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Duration:</span>
-                    <span className="font-medium">{status?.sync_duration_ms ?? 0}ms</span>
-                  </div>
-                </div>
-                {status?.error_message && (
-                  <div className="mt-3 flex items-start gap-2 p-2 rounded bg-destructive/10 text-destructive text-sm">
-                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                    {status.error_message}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Configuration */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-base">Enable Automatic Sync</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Sync IOCs from MISP on a schedule
-                  </p>
-                </div>
-                <Switch
-                  checked={mergedConfig.enabled ?? false}
-                  onCheckedChange={(checked) => updateConfig({ enabled: checked })}
-                />
-              </div>
-
-              {/* Sync Interval - only relevant for auto-sync */}
-              {mergedConfig.enabled && (
-                <div>
-                  <Label>Sync Interval (minutes)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    value={mergedConfig.interval_minutes ?? 10}
-                    onChange={(e) => updateConfig({ interval_minutes: parseInt(e.target.value) || 10 })}
-                    className="mt-1"
-                  />
-                </div>
-              )}
-
-              {/* These settings apply to both manual and automatic sync */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Max Age (days)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={mergedConfig.max_age_days ?? 30}
-                    onChange={(e) => updateConfig({ max_age_days: parseInt(e.target.value) || 30 })}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Only sync IOCs created within this many days
-                  </p>
-                </div>
-                <div>
-                  <Label>TTL / Cache Expiry (days)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={mergedConfig.ttl_days ?? 30}
-                    onChange={(e) => updateConfig({ ttl_days: parseInt(e.target.value) || 30 })}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    How long to keep IOCs in cache
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <Label>Threat Levels</Label>
-                <p className="text-xs text-muted-foreground mb-2">
-                  Filter IOCs by MISP threat level
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  {THREAT_LEVELS.map(({ value, label }) => (
-                    <label key={value} className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={(mergedConfig.threat_levels ?? ['high', 'medium', 'low', 'undefined']).includes(value)}
-                        onCheckedChange={(checked) => toggleThreatLevel(value, !!checked)}
-                      />
-                      <span className="text-sm">{label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Label>IOC Types</Label>
-                <p className="text-xs text-muted-foreground mb-2">
-                  Filter IOCs by indicator type
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  {IOC_TYPES.map(({ value, label }) => (
-                    <label key={value} className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={(mergedConfig.ioc_types ?? IOC_TYPES.map(t => t.value)).includes(value)}
-                        onCheckedChange={(checked) => toggleIOCType(value, !!checked)}
-                      />
-                      <span className="text-sm">{label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Label>Tags Filter (optional)</Label>
-                <Input
-                  placeholder="e.g., tlp:amber, apt"
-                  value={(mergedConfig.tags ?? []).join(', ')}
-                  onChange={(e) => {
-                    const tags = e.target.value
-                      .split(',')
-                      .map(t => t.trim())
-                      .filter(Boolean)
-                    updateConfig({ tags: tags.length > 0 ? tags : null })
-                  }}
-                  className="mt-1"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Comma-separated. Only sync IOCs with these tags.
-                </p>
-              </div>
-            </div>
-
-            {hasChanges && (
-              <div className="flex justify-end pt-4 border-t">
-                <Button onClick={handleSaveConfig} disabled={isSaving}>
-                  {isSaving ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                  )}
-                  Save Settings
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
+        {content}
       </CollapsibleContent>
     </Collapsible>
   )

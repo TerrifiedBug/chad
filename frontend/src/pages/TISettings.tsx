@@ -415,6 +415,14 @@ export default function TISettings() {
                           </span>
                         )}
                       </div>
+
+                      {/* MISP IOC Sync - embedded inside MISP source section */}
+                      {sourceType === 'misp' && source.is_enabled && source.has_api_key && (
+                        <div className="mt-4 pt-4 border-t">
+                          <h4 className="font-medium mb-2">IOC Sync Settings</h4>
+                          <MISPSyncDashboard embedded />
+                        </div>
+                      )}
                     </div>
                   </CollapsibleContent>
                 </div>
@@ -423,13 +431,6 @@ export default function TISettings() {
           })}
         </CardContent>
       </Card>
-
-      {/* MISP IOC Sync Dashboard - only show if MISP is configured */}
-      {sources.find(s => s.source_type === 'misp' && s.is_enabled && s.has_api_key) && (
-        <div className="border rounded-lg">
-          <MISPSyncDashboard />
-        </div>
-      )}
     </div>
   )
 }

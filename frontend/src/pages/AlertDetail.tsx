@@ -1022,8 +1022,8 @@ export default function AlertDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        {/* Info Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+        {/* Left sidebar - Info Cards */}
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
@@ -1273,7 +1273,7 @@ export default function AlertDetailPage() {
         </div>
 
         {/* Log Document */}
-        <Card className="md:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">
               Triggering Log Document

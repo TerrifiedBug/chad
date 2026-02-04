@@ -129,10 +129,11 @@ export function IOCMatchesCard({ matches }: IOCMatchesCardProps) {
 
               {/* Feedback buttons */}
               {match.misp_attribute_uuid && !feedback && (
-                <div className="flex gap-2 pt-2 border-t">
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t">
                   <Button
                     size="sm"
                     variant="outline"
+                    className="w-full"
                     onClick={() => sightingMutation.mutate({
                       attribute_uuid: match.misp_attribute_uuid!,
                       is_false_positive: false,
@@ -149,6 +150,7 @@ export function IOCMatchesCard({ matches }: IOCMatchesCardProps) {
                   <Button
                     size="sm"
                     variant="outline"
+                    className="w-full"
                     onClick={() => sightingMutation.mutate({
                       attribute_uuid: match.misp_attribute_uuid!,
                       is_false_positive: true,
