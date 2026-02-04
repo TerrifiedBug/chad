@@ -9,9 +9,10 @@ import logging
 import time
 
 from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.redis import get_redis
+from app.services.settings import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ WINDOW_SECONDS = 60
 
 
 async def check_api_key_rate_limit(
+    db: AsyncSession,
     api_key_id: str,
     max_requests: int | None = None,
 ) -> None:
@@ -33,14 +35,17 @@ async def check_api_key_rate_limit(
     Works correctly across multiple workers.
 
     Args:
+        db: Database session for reading settings
         api_key_id: The API key ID (UUID)
-        max_requests: Maximum requests per minute for this API key
+        max_requests: Maximum requests per minute for this API key (overrides setting)
 
     Raises:
         HTTPException: If rate limit is exceeded (429)
     """
     if max_requests is None:
-        max_requests = settings.API_KEY_RATE_LIMIT
+        # Read from settings table, default to 100 if not set
+        security_settings = await get_setting(db, "security")
+        max_requests = security_settings.get("api_key_rate_limit", 100) if security_settings else 100
 
     redis = await get_redis()
     now = time.time()

@@ -225,6 +225,7 @@ export type UpdateCheckResponse = {
 // Security settings types
 export type SecuritySettings = {
   force_2fa_on_signup: boolean
+  api_key_rate_limit: number
 }
 
 // Settings API

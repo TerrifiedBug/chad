@@ -58,7 +58,7 @@ async def get_api_key_user(
 
     if api_key:
         # Enforce rate limit per API key
-        await check_api_key_rate_limit(str(api_key.id))
+        await check_api_key_rate_limit(db, str(api_key.id))
 
     return user
 

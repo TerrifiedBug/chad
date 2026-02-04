@@ -63,6 +63,9 @@ export default function SettingsPage() {
   // 2FA settings
   const [force2FAOnSignup, setForce2FAOnSignup] = useState(false)
 
+  // API key rate limiting
+  const [apiKeyRateLimit, setApiKeyRateLimit] = useState(100)
+
   // Active tab for programmatic navigation - read from URL param if present
   const activeTab = searchParams.get('tab') || 'general'
 
@@ -212,6 +215,7 @@ export default function SettingsPage() {
     try {
       const security = await settingsApi.getSecuritySettings()
       setForce2FAOnSignup(security.force_2fa_on_signup)
+      setApiKeyRateLimit(security.api_key_rate_limit)
     } catch (error) {
       console.error('Failed to load security settings:', error)
     }
@@ -469,8 +473,11 @@ export default function SettingsPage() {
   const save2FASettings = async () => {
     setIsSaving(true)
     try {
-      await settingsApi.updateSecuritySettings({ force_2fa_on_signup: force2FAOnSignup })
-      showToast('MFA settings saved')
+      await settingsApi.updateSecuritySettings({
+        force_2fa_on_signup: force2FAOnSignup,
+        api_key_rate_limit: apiKeyRateLimit
+      })
+      showToast('Security settings saved')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
@@ -800,6 +807,32 @@ export default function SettingsPage() {
                       )}
 
                       <Button onClick={saveRateLimiting} disabled={isSaving}>
+                        <Save className="mr-2 h-4 w-4" />
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-6">
+                    <h4 className="text-sm font-medium mb-4">API Key Rate Limiting</h4>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="api-key-rate-limit">Requests Per Minute</Label>
+                        <Input
+                          id="api-key-rate-limit"
+                          type="number"
+                          autoComplete="off"
+                          min={1}
+                          max={10000}
+                          value={apiKeyRateLimit}
+                          onChange={(e) => setApiKeyRateLimit(parseInt(e.target.value) || 100)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Maximum API requests per minute per API key (applies to external API endpoints)
+                        </p>
+                      </div>
+
+                      <Button onClick={save2FASettings} disabled={isSaving}>
                         <Save className="mr-2 h-4 w-4" />
                         {isSaving ? 'Saving...' : 'Save'}
                       </Button>

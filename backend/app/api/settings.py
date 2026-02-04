@@ -748,10 +748,12 @@ async def list_settings(
 # Security settings models
 class SecuritySettings(BaseModel):
     force_2fa_on_signup: bool = False
+    api_key_rate_limit: int = Field(100, ge=1, le=10000, description="API key rate limit (requests per minute)")
 
 
 class SecuritySettingsResponse(BaseModel):
     force_2fa_on_signup: bool
+    api_key_rate_limit: int
 
 
 # Security settings endpoints
@@ -763,7 +765,8 @@ async def get_security_settings(
     """Get security settings."""
     security = await get_setting(db, "security")
     return SecuritySettingsResponse(
-        force_2fa_on_signup=security.get("force_2fa_on_signup", False) if security else False
+        force_2fa_on_signup=security.get("force_2fa_on_signup", False) if security else False,
+        api_key_rate_limit=security.get("api_key_rate_limit", 100) if security else 100,
     )
 
 
@@ -777,14 +780,18 @@ async def update_security_settings(
     """Update security settings."""
     security = await get_setting(db, "security") or {}
     security["force_2fa_on_signup"] = data.force_2fa_on_signup
+    security["api_key_rate_limit"] = data.api_key_rate_limit
     await set_setting(db, "security", security)
     await audit_log(
         db, current_user.id, "settings.update", "settings", "security",
-        {"force_2fa_on_signup": data.force_2fa_on_signup},
+        {"force_2fa_on_signup": data.force_2fa_on_signup, "api_key_rate_limit": data.api_key_rate_limit},
         ip_address=get_client_ip(request)
     )
     await db.commit()
-    return SecuritySettingsResponse(force_2fa_on_signup=data.force_2fa_on_signup)
+    return SecuritySettingsResponse(
+        force_2fa_on_signup=data.force_2fa_on_signup,
+        api_key_rate_limit=data.api_key_rate_limit
+    )
 
 
 # GeoIP endpoints
