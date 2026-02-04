@@ -1488,6 +1488,8 @@ export type HealthSettings = {
   opensearch_latency_critical_ms: number
   queue_warning: number
   queue_critical: number
+  data_freshness_warning_minutes: number
+  data_freshness_critical_minutes: number
 }
 
 export type HealthIntervals = {
