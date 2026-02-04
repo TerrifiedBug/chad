@@ -980,7 +980,7 @@ export default function AlertDetailPage() {
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}
             disabled={isUpdating || !hasPermission('manage_rules')}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger className="w-40 h-9">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="z-50 bg-popover">

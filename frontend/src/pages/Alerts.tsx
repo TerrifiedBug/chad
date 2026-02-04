@@ -847,7 +847,7 @@ export default function AlertsPage() {
                           </TableCell>
                           <TableCell>
                             <span
-                              className={`inline-block min-w-[90px] text-center px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
+                              className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
                             >
                               {ALERT_STATUS_LABELS[alert.status]}
                             </span>
@@ -952,7 +952,7 @@ export default function AlertsPage() {
                             </TableCell>
                             <TableCell>
                               <span
-                                className={`inline-block min-w-[90px] text-center px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[clusterAlert.status]}`}
+                                className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[clusterAlert.status]}`}
                               >
                                 {ALERT_STATUS_LABELS[clusterAlert.status]}
                               </span>
@@ -1047,7 +1047,7 @@ export default function AlertsPage() {
                       </TableCell>
                       <TableCell>
                         <span
-                          className={`inline-block min-w-[90px] text-center px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
+                          className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
                         >
                           {ALERT_STATUS_LABELS[alert.status]}
                         </span>
