@@ -127,8 +127,15 @@ Failures that trigger the circuit breaker:
 
 URLs are validated to prevent Server-Side Request Forgery:
 - Only `http://` and `https://` schemes are allowed
-- Internal/private IP ranges are blocked (configurable)
+- Internal/private IP ranges are blocked by default
 - Localhost URLs are blocked
+
+**For internal infrastructure or development**, set the environment variable:
+```bash
+ALLOW_INTERNAL_WEBHOOK_IPS=true
+```
+
+This allows webhooks to internal networks (10.x, 172.16.x, 192.168.x, localhost). Only enable this if you understand the security implications and trust your internal network.
 
 #### Rate Limiting
 

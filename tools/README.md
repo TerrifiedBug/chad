@@ -51,6 +51,8 @@ Authorization: Bearer test-webhook-token
 
 ### Setting Up in CHAD
 
+**Note:** The development docker-compose already sets `ALLOW_INTERNAL_WEBHOOK_IPS=true` to permit webhooks to internal addresses. This is required for the backend to reach the mock server.
+
 1. Start the mock server (see Quick Start above)
 
 2. In CHAD Settings → Enrichment → Custom Webhooks, add:
