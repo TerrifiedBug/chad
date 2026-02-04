@@ -494,6 +494,8 @@ interface EnrichmentStatus {
 }
 
 function CustomEnrichmentCard({ logDocument }: { logDocument: Record<string, unknown> }) {
+  const [isOpen, setIsOpen] = useState(false)
+
   // Extract enrichment_status from log document
   const enrichmentStatus = logDocument.enrichment_status as Record<string, EnrichmentStatus> | undefined
 
@@ -517,61 +519,89 @@ function CustomEnrichmentCard({ logDocument }: { logDocument: Record<string, unk
     return undefined
   }
 
+  // Count matches and failures for summary
+  const matchCount = namespaces.filter((ns) => {
+    const data = getEnrichmentData(ns)
+    return data && Object.keys(data).length > 0
+  }).length
+  const failCount = namespaces.filter((ns) => enrichmentStatus[ns].status !== 'success').length
+
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Webhook className="h-4 w-4" />
-          Custom Enrichment
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {namespaces.map((namespace) => {
-          const status = enrichmentStatus[namespace]
-          const data = getEnrichmentData(namespace)
-          const hasData = data && Object.keys(data).length > 0
-          const isFailed = status.status !== 'success'
-
-          return (
-            <div key={namespace} className="space-y-2">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger className="w-full">
+          <CardHeader className="pb-3 hover:bg-muted/50 rounded-t-lg transition-colors">
+            <CardTitle className="text-sm font-medium flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">{namespace}</span>
-                {isFailed && (
+                <Webhook className="h-4 w-4" />
+                Custom Enrichment
+                {matchCount > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {matchCount} {matchCount === 1 ? 'match' : 'matches'}
+                  </Badge>
+                )}
+                {failCount > 0 && (
                   <Badge variant="outline" className="text-xs text-red-600 border-red-300">
-                    {status.status === 'circuit_open' ? 'Circuit Open' : capitalize(status.status)}
+                    {failCount} failed
                   </Badge>
                 )}
               </div>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+              />
+            </CardTitle>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="space-y-4 pt-0">
+            {namespaces.map((namespace) => {
+              const status = enrichmentStatus[namespace]
+              const data = getEnrichmentData(namespace)
+              const hasData = data && Object.keys(data).length > 0
+              const isFailed = status.status !== 'success'
 
-              {/* Show error for failures */}
-              {status.error && (
-                <div className="text-xs text-red-600 dark:text-red-400 pl-2">
-                  {status.error}
-                </div>
-              )}
+              return (
+                <div key={namespace} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">{namespace}</span>
+                    {isFailed && (
+                      <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                        {status.status === 'circuit_open' ? 'Circuit Open' : capitalize(status.status)}
+                      </Badge>
+                    )}
+                  </div>
 
-              {/* Show enrichment data if available */}
-              {hasData && (
-                <div className="pl-2 border-l-2 border-muted space-y-1 text-xs">
-                  {Object.entries(data).map(([key, value]) => (
-                    <div key={key} className="flex gap-2">
-                      <span className="text-muted-foreground shrink-0">{key}:</span>
-                      <span className="font-mono break-all">
-                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                      </span>
+                  {/* Show error for failures */}
+                  {status.error && (
+                    <div className="text-xs text-red-600 dark:text-red-400 pl-2">
+                      {status.error}
                     </div>
-                  ))}
-                </div>
-              )}
+                  )}
 
-              {/* No match message for success with no data */}
-              {!hasData && !isFailed && (
-                <div className="text-xs text-muted-foreground pl-2">No match</div>
-              )}
-            </div>
-          )
-        })}
-      </CardContent>
+                  {/* Show enrichment data if available */}
+                  {hasData && (
+                    <div className="pl-2 border-l-2 border-muted space-y-1 text-xs">
+                      {Object.entries(data).map(([key, value]) => (
+                        <div key={key} className="flex gap-2">
+                          <span className="text-muted-foreground shrink-0">{key}:</span>
+                          <span className="font-mono break-all">
+                            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* No match message for success with no data */}
+                  {!hasData && !isFailed && (
+                    <div className="text-xs text-muted-foreground pl-2">No match</div>
+                  )}
+                </div>
+              )
+            })}
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   )
 }
@@ -1365,15 +1395,15 @@ export default function AlertDetailPage() {
           )}
         </div>
 
-        {/* Log Document */}
-        <Card>
-          <CardHeader>
+        {/* Log Document - stretches to fill available height */}
+        <Card className="flex flex-col">
+          <CardHeader className="shrink-0">
             <CardTitle className="text-sm font-medium">
               Triggering Log Document
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <pre className="p-4 bg-muted rounded-lg overflow-auto max-h-[600px] text-xs font-mono">
+          <CardContent className="flex-1 flex flex-col min-h-0">
+            <pre className="p-4 bg-muted rounded-lg overflow-auto flex-1 min-h-[300px] text-xs font-mono">
               {JSON.stringify(alert.log_document, null, 2)}
             </pre>
           </CardContent>
