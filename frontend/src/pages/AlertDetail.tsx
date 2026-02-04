@@ -494,8 +494,6 @@ interface EnrichmentStatus {
 }
 
 function CustomEnrichmentCard({ logDocument }: { logDocument: Record<string, unknown> }) {
-  const [expandedNamespace, setExpandedNamespace] = useState<string | null>(null)
-
   // Extract enrichment_status from log document
   const enrichmentStatus = logDocument.enrichment_status as Record<string, EnrichmentStatus> | undefined
 
@@ -519,15 +517,6 @@ function CustomEnrichmentCard({ logDocument }: { logDocument: Record<string, unk
     return undefined
   }
 
-  // Status badge styling
-  const statusColors: Record<string, string> = {
-    success: 'bg-green-500 text-white',
-    failed: 'bg-red-500 text-white',
-    timeout: 'bg-yellow-500 text-black',
-    circuit_open: 'bg-orange-500 text-white',
-    pending: 'bg-gray-500 text-white',
-  }
-
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -536,67 +525,50 @@ function CustomEnrichmentCard({ logDocument }: { logDocument: Record<string, unk
           Custom Enrichment
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         {namespaces.map((namespace) => {
           const status = enrichmentStatus[namespace]
           const data = getEnrichmentData(namespace)
-          const isExpanded = expandedNamespace === namespace
+          const hasData = data && Object.keys(data).length > 0
+          const isFailed = status.status !== 'success'
 
           return (
-            <Collapsible
-              key={namespace}
-              open={isExpanded}
-              onOpenChange={(open) => setExpandedNamespace(open ? namespace : null)}
-            >
-              <CollapsibleTrigger className="w-full">
-                <div className="flex items-center justify-between text-sm hover:bg-muted/50 rounded p-2 -m-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Badge
-                      className={`text-xs shrink-0 ${statusColors[status.status] || statusColors.pending}`}
-                    >
-                      {status.status === 'circuit_open' ? 'Circuit Open' : capitalize(status.status)}
-                    </Badge>
-                    <span className="font-medium font-mono text-xs">{namespace}</span>
-                  </div>
-                  <ChevronDown
-                    className={`h-4 w-4 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                  />
+            <div key={namespace} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm">{namespace}</span>
+                {isFailed && (
+                  <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                    {status.status === 'circuit_open' ? 'Circuit Open' : capitalize(status.status)}
+                  </Badge>
+                )}
+              </div>
+
+              {/* Show error for failures */}
+              {status.error && (
+                <div className="text-xs text-red-600 dark:text-red-400 pl-2">
+                  {status.error}
                 </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="mt-2 pl-2 border-l-2 border-muted space-y-2 text-xs">
-                  {status.error && (
-                    <div className="text-red-600 dark:text-red-400">
-                      Error: {status.error}
+              )}
+
+              {/* Show enrichment data if available */}
+              {hasData && (
+                <div className="pl-2 border-l-2 border-muted space-y-1 text-xs">
+                  {Object.entries(data).map(([key, value]) => (
+                    <div key={key} className="flex gap-2">
+                      <span className="text-muted-foreground shrink-0">{key}:</span>
+                      <span className="font-mono break-all">
+                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                      </span>
                     </div>
-                  )}
-                  {status.completed_at && (
-                    <div className="text-muted-foreground">
-                      Completed: {new Date(status.completed_at).toLocaleString()}
-                    </div>
-                  )}
-                  {data && Object.keys(data).length > 0 && (
-                    <div className="space-y-1">
-                      {Object.entries(data).map(([key, value]) => (
-                        <div key={key} className="flex gap-2">
-                          <span className="text-muted-foreground shrink-0">{key}:</span>
-                          <span className="font-mono break-all">
-                            {typeof value === 'object'
-                              ? JSON.stringify(value)
-                              : String(value)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {(!data || Object.keys(data).length === 0) && status.status === 'success' && (
-                    <div className="text-muted-foreground italic">
-                      No enrichment data returned
-                    </div>
-                  )}
+                  ))}
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
+              )}
+
+              {/* No match message for success with no data */}
+              {!hasData && !isFailed && (
+                <div className="text-xs text-muted-foreground pl-2">No match</div>
+              )}
+            </div>
           )
         })}
       </CardContent>
