@@ -68,6 +68,37 @@ class MISPIOCFetcher:
         }
         return mapping.get(misp_type)
 
+    def _has_excessive_false_positives(self, attr: dict) -> bool:
+        """Check if attribute has more false positive sightings than true sightings.
+
+        MISP sighting types:
+        - 0: Regular sighting (confirmed observation)
+        - 1: False positive
+        - 2: Expiration (not relevant here)
+
+        Args:
+            attr: MISP attribute dict with optional Sighting key.
+
+        Returns:
+            True if FP sightings >= regular sightings, False otherwise.
+        """
+        sightings = attr.get("Sighting", [])
+        if not sightings:
+            return False
+
+        true_sightings = 0
+        false_positives = 0
+
+        for sighting in sightings:
+            sighting_type = int(sighting.get("type", 0))
+            if sighting_type == 0:
+                true_sightings += 1
+            elif sighting_type == 1:
+                false_positives += 1
+
+        # Filter if FP sightings >= true sightings (and there are FPs)
+        return false_positives > 0 and false_positives >= true_sightings
+
     async def fetch_iocs(
         self,
         threat_levels: list[str] | None = None,
@@ -75,6 +106,7 @@ class MISPIOCFetcher:
         max_age_days: int = 30,
         tags: list[str] | None = None,
         ttl_days: int = 30,
+        filter_false_positives: bool = True,
     ) -> list[IOCRecord]:
         """Fetch IOCs from MISP.
 
@@ -84,6 +116,7 @@ class MISPIOCFetcher:
             max_age_days: Only fetch IOCs from last N days.
             tags: Filter by MISP tags.
             ttl_days: TTL for IOCs (for expires_at calculation).
+            filter_false_positives: Filter out IOCs with more FP sightings than true sightings.
 
         Returns:
             List of IOCRecord objects.
@@ -92,6 +125,7 @@ class MISPIOCFetcher:
         request_body: dict[str, Any] = {
             "to_ids": True,
             "includeEventTags": True,
+            "includeSightings": filter_false_positives,  # Include sightings for FP filtering
             "timestamp": int((datetime.now(UTC) - timedelta(days=max_age_days)).timestamp()),
         }
 
@@ -130,12 +164,18 @@ class MISPIOCFetcher:
         attributes = data.get("response", {}).get("Attribute", [])
         records: list[IOCRecord] = []
         expires_at = datetime.now(UTC) + timedelta(days=ttl_days)
+        filtered_fp_count = 0
 
         for attr in attributes:
             misp_type = attr.get("type")
             ioc_type = self._map_misp_type_to_ioc_type(misp_type)
 
             if ioc_type is None:
+                continue
+
+            # Filter out IOCs with excessive false positive sightings
+            if filter_false_positives and self._has_excessive_false_positives(attr):
+                filtered_fp_count += 1
                 continue
 
             event = attr.get("Event", {})
@@ -155,6 +195,11 @@ class MISPIOCFetcher:
             )
             records.append(record)
 
+        if filtered_fp_count > 0:
+            logger.info(
+                "Filtered %d IOCs with excessive false positives",
+                filtered_fp_count
+            )
         logger.info("Fetched %d IOCs from MISP", len(records))
         return records
 

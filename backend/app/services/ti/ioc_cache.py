@@ -145,3 +145,55 @@ class IOCCache:
         redis = await get_redis()
         keys = await redis.keys(f"{self.KEY_PREFIX}:*")
         return len(keys)
+
+    async def evict_ioc(self, ioc_type: IOCType, value: str) -> bool:
+        """Remove a single IOC from the cache.
+
+        Used when marking an IOC as a false positive to immediately
+        prevent future detections.
+
+        Args:
+            ioc_type: Type of IOC.
+            value: IOC value to evict.
+
+        Returns:
+            True if IOC was found and deleted, False otherwise.
+        """
+        redis = await get_redis()
+        key = self._make_key(ioc_type, value)
+        deleted = await redis.delete(key)
+        if deleted:
+            logger.info("Evicted IOC from cache: %s:%s", ioc_type.value, value)
+        return deleted > 0
+
+    async def evict_by_attribute_uuid(self, attribute_uuid: str) -> bool:
+        """Remove an IOC from cache by its MISP attribute UUID.
+
+        Scans all IOC keys to find the one with matching UUID.
+        Less efficient but necessary when only UUID is known.
+
+        Args:
+            attribute_uuid: The MISP attribute UUID.
+
+        Returns:
+            True if IOC was found and deleted, False otherwise.
+        """
+        redis = await get_redis()
+        keys = await redis.keys(f"{self.KEY_PREFIX}:*")
+
+        for key in keys:
+            data = await redis.get(key)
+            if data:
+                try:
+                    ioc_data = json.loads(data)
+                    if ioc_data.get("misp_attribute_uuid") == attribute_uuid:
+                        await redis.delete(key)
+                        logger.info(
+                            "Evicted IOC by attribute UUID: %s",
+                            attribute_uuid
+                        )
+                        return True
+                except json.JSONDecodeError:
+                    continue
+
+        return False

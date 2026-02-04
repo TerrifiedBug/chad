@@ -590,6 +590,7 @@ class PullDetector:
                     hits = response.get("hits", {}).get("hits", [])
                     if hits:
                         indicator = hits[0]["_source"]
+                        # Fields stored with dot notation keys (misp.event_id)
                         return {
                             "ioc_type": ioc_type_str,
                             "value": value,

@@ -14,6 +14,7 @@ from app.api.deps import get_current_user, get_db
 from app.core.encryption import decrypt
 from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.user import User
+from app.services.ti.ioc_cache import IOCCache
 from app.services.ti.misp_feedback import MISPFeedbackService
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,20 @@ async def record_sighting(
         timestamp=datetime.now(UTC),
         sighting_type=sighting_type,
     )
+
+    # If false positive, evict IOC from Redis cache to prevent future detections
+    if request.is_false_positive and result.success:
+        try:
+            cache = IOCCache()
+            evicted = await cache.evict_by_attribute_uuid(request.attribute_uuid)
+            if evicted:
+                logger.info(
+                    "Evicted false positive IOC from cache: %s",
+                    request.attribute_uuid
+                )
+        except Exception as e:
+            # Don't fail the sighting if cache eviction fails
+            logger.warning("Failed to evict IOC from cache: %s", e)
 
     return SightingResponse(
         success=result.success,
