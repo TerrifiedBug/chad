@@ -1030,27 +1030,7 @@ export default function AlertDetailPage() {
           <Button variant="ghost" size="icon" onClick={() => navigate('/alerts')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              {alert.tags.includes('correlation') ? (
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
-                  <Link2 className="h-3 w-3" />
-                  <span>Correlation</span>
-                </div>
-              ) : alert.rule_id === 'ioc-detection' ? (
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
-                  <ShieldAlert className="h-3 w-3" />
-                  <span>IOC Match</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
-                  <FileText className="h-3 w-3" />
-                  <span>Sigma</span>
-                </div>
-              )}
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
         </div>
         <div className="flex items-center gap-4">
           {alert.exception_created && (
@@ -1167,6 +1147,25 @@ export default function AlertDetailPage() {
                 >
                   {capitalize(alert.severity)}
                 </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Type</span>
+                {alert.tags.includes('correlation') ? (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                    <Link2 className="h-3 w-3" />
+                    <span>Correlation</span>
+                  </div>
+                ) : alert.rule_id === 'ioc-detection' ? (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                    <ShieldAlert className="h-3 w-3" />
+                    <span>IOC Match</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                    <FileText className="h-3 w-3" />
+                    <span>Sigma</span>
+                  </div>
+                )}
               </div>
               {relatedAlerts && relatedAlerts.clustering_enabled && relatedAlerts.related_count > 0 && (
                 <div className="flex items-center justify-between">
