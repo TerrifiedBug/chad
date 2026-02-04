@@ -49,12 +49,25 @@ from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.redis_rate_limit import check_rate_limit_redis
 from app.services.settings import get_app_url
+from app.services.ti.ioc_detector import IOCDetector, IOCMatch
 from app.services.websocket import AlertBroadcast, manager
 from app.utils.request import get_client_ip
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/logs", tags=["logs"])
+
+
+def _map_threat_level_to_severity(threat_level: str) -> str:
+    """Map MISP threat level to alert severity."""
+    mapping = {
+        "high": "high",
+        "medium": "medium",
+        "low": "low",
+        "undefined": "informational",
+        "unknown": "informational",
+    }
+    return mapping.get(threat_level, "informational")
 
 
 def get_settings():
@@ -290,6 +303,15 @@ async def receive_logs(
             # Continue to next log instead of failing entire batch
             continue
 
+        # IOC Detection for Push Mode
+        ioc_matches: list[IOCMatch] = []
+        if index_pattern.ioc_detection_enabled and index_pattern.ioc_field_mappings:
+            try:
+                detector = IOCDetector()
+                ioc_matches = await detector.detect_iocs(log, index_pattern.ioc_field_mappings)
+            except Exception as e:
+                logger.warning("IOC detection failed for log: %s", e)
+
         for match in matches:
             try:
                 # Only process enabled rules
@@ -327,6 +349,13 @@ async def receive_logs(
 
                 # Enrich log with GeoIP data if configured
                 enriched_log = await enrich_alert(db, log, index_pattern)
+
+                # Add IOC enrichment to alert if matches found
+                if ioc_matches:
+                    enriched_log["threat_intel"] = {
+                        "ioc_matches": [m.to_dict() for m in ioc_matches],
+                        "has_ioc_match": True,
+                    }
 
                 # Create alert
                 alert = alert_service.create_alert(
@@ -476,6 +505,30 @@ async def receive_logs(
                 processing_errors.append(f"Alert creation failed for match: {str(e)}")
                 logs_errored += 1
                 continue
+
+        # Create IOC-only alerts for logs with IOC matches but no behavioral matches
+        if ioc_matches and not matches:
+            for ioc_match in ioc_matches:
+                try:
+                    ioc_alert = alert_service.create_alert(
+                        alerts_index=alerts_index,
+                        rule_id="ioc-detection",
+                        rule_title=f"IOC Match: {ioc_match.ioc_type.value}",
+                        severity=_map_threat_level_to_severity(ioc_match.threat_level),
+                        tags=["ioc-match", f"misp:{ioc_match.misp_event_id}"] + ioc_match.tags,
+                        log_document={
+                            **log,
+                            "threat_intel": {
+                                "ioc_matches": [ioc_match.to_dict()],
+                                "has_ioc_match": True,
+                            },
+                        },
+                    )
+                    alerts_created.append(ioc_alert)
+                    total_matches += 1
+                except Exception as e:
+                    logger.error("Failed to create IOC alert: %s", e)
+
         # Send notifications through the new notification system
     if alerts_created:
         # Get app URL for alert links

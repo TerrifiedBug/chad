@@ -63,6 +63,14 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     # Format: {"virustotal": {"enabled": true, "fields": ["source.ip"]}, ...}
     ti_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
 
+    # IOC Detection settings
+    ioc_detection_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    ioc_field_mappings: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None
+    )
+
     # IP allowlist for log shipping - restrict which IPs can ship logs
     # Format: ["10.10.40.1", "10.10.40.0/24"] - supports IPs and CIDR ranges
     # None = allow all IPs (no restriction)

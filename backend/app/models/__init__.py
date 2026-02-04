@@ -12,6 +12,7 @@ from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
 from app.models.jira_config import JiraConfig
 from app.models.login_attempt import LoginAttempt
+from app.models.misp_imported_rule import MISPImportedRule
 from app.models.notification_settings import (
     AlertNotificationSetting,
     NotificationSettings,
@@ -46,6 +47,7 @@ __all__ = [
     "IndexHealthMetrics",
     "JiraConfig",
     "MappingOrigin",
+    "MISPImportedRule",
     "DEFAULT_ROLE_PERMISSIONS",
     "ExceptionOperator",
     "IndexPattern",

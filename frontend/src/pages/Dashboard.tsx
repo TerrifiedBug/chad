@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { AlertTriangle, ChevronDown, Clock, FileText, Shield } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Clock, FileText } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { cn } from '@/lib/utils'
@@ -153,31 +153,16 @@ export default function Dashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Rules</CardTitle>
+            <CardTitle className="text-sm font-medium">Rules</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats?.rules.total || 0}</div>
             <p className="text-xs text-muted-foreground">
               {stats?.rules.deployed || 0} deployed
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Active Rules</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {stats?.rules.by_status?.enabled || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {stats?.rules.by_status?.disabled || 0} disabled
             </p>
           </CardContent>
         </Card>

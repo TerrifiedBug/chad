@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_opensearch_client, require_admin
+from app.background.tasks.health_checks import get_ti_source_display_name
 from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
 from app.models.setting import Setting
@@ -20,12 +21,21 @@ from app.services.settings import get_setting, set_setting
 
 router = APIRouter(prefix="/health", tags=["health"])
 
+# Display name mappings for AI providers
+AI_PROVIDER_DISPLAY_NAMES = {
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "ollama": "Ollama",
+}
+
 # Default values (same as in health_monitor.py)
 DEFAULT_NO_DATA_MINUTES = 15
 DEFAULT_ERROR_RATE_PERCENT = 5.0
 DEFAULT_LATENCY_MS = 1000
 DEFAULT_QUEUE_WARNING = 10000
 DEFAULT_QUEUE_CRITICAL = 100000
+DEFAULT_DATA_FRESHNESS_WARNING_MINUTES = 60
+DEFAULT_DATA_FRESHNESS_CRITICAL_MINUTES = 240
 
 # Pull mode default values
 DEFAULT_PULL_MAX_RETRIES = 3
@@ -46,6 +56,8 @@ class HealthSettingsResponse(BaseModel):
     detection_latency_critical_ms: int
     opensearch_latency_warning_ms: int
     opensearch_latency_critical_ms: int
+    data_freshness_warning_minutes: int
+    data_freshness_critical_minutes: int
 
 
 class HealthSettingsUpdate(BaseModel):
@@ -60,6 +72,8 @@ class HealthSettingsUpdate(BaseModel):
     detection_latency_critical_ms: int = Field(default=10000, ge=100)
     opensearch_latency_warning_ms: int = Field(default=1000, ge=100)
     opensearch_latency_critical_ms: int = Field(default=5000, ge=100)
+    data_freshness_warning_minutes: int = Field(default=60, ge=1)
+    data_freshness_critical_minutes: int = Field(default=240, ge=1)
 
 
 @router.get("/indices")
@@ -113,6 +127,12 @@ async def get_health_settings(
         detection_latency_critical_ms=thresholds.get("detection_latency_critical_ms", 10000),
         opensearch_latency_warning_ms=thresholds.get("opensearch_latency_warning_ms", 1000),
         opensearch_latency_critical_ms=thresholds.get("opensearch_latency_critical_ms", 5000),
+        data_freshness_warning_minutes=thresholds.get(
+            "data_freshness_warning_minutes", DEFAULT_DATA_FRESHNESS_WARNING_MINUTES
+        ),
+        data_freshness_critical_minutes=thresholds.get(
+            "data_freshness_critical_minutes", DEFAULT_DATA_FRESHNESS_CRITICAL_MINUTES
+        ),
     )
 
 
@@ -145,6 +165,12 @@ async def update_health_settings(
         detection_latency_critical_ms=thresholds.get("detection_latency_critical_ms", 10000),
         opensearch_latency_warning_ms=thresholds.get("opensearch_latency_warning_ms", 1000),
         opensearch_latency_critical_ms=thresholds.get("opensearch_latency_critical_ms", 5000),
+        data_freshness_warning_minutes=thresholds.get(
+            "data_freshness_warning_minutes", DEFAULT_DATA_FRESHNESS_WARNING_MINUTES
+        ),
+        data_freshness_critical_minutes=thresholds.get(
+            "data_freshness_critical_minutes", DEFAULT_DATA_FRESHNESS_CRITICAL_MINUTES
+        ),
     )
 
 
@@ -335,9 +361,10 @@ async def get_health_status(
                 status = "unknown"
             else:
                 status = "healthy" if last_test_success else "unhealthy"
+            display_name = AI_PROVIDER_DISPLAY_NAMES.get(provider, provider.title())
             services.append({
                 "service_type": "ai",
-                "service_name": f"AI ({provider})",
+                "service_name": f"AI ({display_name})",
                 "status": status,
                 "last_check": last_test
             })
@@ -456,7 +483,7 @@ async def get_health_status(
     for config in ti_configs:
         services.append({
             "service_type": config.source_type,
-            "service_name": config.source_type.replace("_", " ").title(),
+            "service_name": get_ti_source_display_name(config.source_type),
             "status": config.last_health_status or "unknown",
             "last_check": config.last_health_check.isoformat() if config.last_health_check else None
         })

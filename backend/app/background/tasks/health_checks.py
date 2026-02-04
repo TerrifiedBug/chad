@@ -18,6 +18,21 @@ from app.models.ti_config import TISourceConfig
 from app.services.health_check import HealthCheckService
 from app.services.jira import JiraAPIError, JiraService
 
+# Display name mappings for TI sources (proper capitalization)
+TI_SOURCE_DISPLAY_NAMES = {
+    "misp": "MISP",
+    "alienvault_otx": "AlienVault OTX",
+    "abuse_ch": "Abuse.ch",
+}
+
+
+def get_ti_source_display_name(source_type: str) -> str:
+    """Get properly capitalized display name for TI source."""
+    return TI_SOURCE_DISPLAY_NAMES.get(
+        source_type,
+        source_type.replace("_", " ").title()
+    )
+
 
 async def check_opensearch_health(db: AsyncSession):
     """
@@ -214,12 +229,7 @@ async def check_jira_health(db: AsyncSession):
     config = result.scalar_one_or_none()
 
     if not config or not config.is_enabled:
-        await service.log_health_check(
-            service_type="jira",
-            service_name="Jira Cloud",
-            status="unhealthy",
-            error_message="Jira not configured or disabled"
-        )
+        # Skip health check for disabled/unconfigured services
         return
 
     try:
@@ -365,6 +375,15 @@ async def check_ti_source_health(db: AsyncSession):
             elif config.source_type == "threatfox":
                 client = ThreatFoxClient(api_key)
                 success = await client.test_connection()
+            elif config.source_type == "misp":
+                if not api_key:
+                    raise Exception("API key not configured")
+                if not config.instance_url:
+                    raise Exception("MISP instance URL not configured")
+                from app.services.ti.misp import MISPClient
+                verify_tls = config.config.get("verify_tls", True) if config.config else True
+                client = MISPClient(api_key, config.instance_url, verify_tls=verify_tls)
+                success = await client.test_connection()
             else:
                 raise Exception(f"Unknown source type: {config.source_type}")
 
@@ -387,7 +406,7 @@ async def check_ti_source_health(db: AsyncSession):
                     logger.debug("Redis cache write failed for TI health, continuing")
 
             # Log health check
-            service_name = config.source_type.replace("_", " ").title()
+            service_name = get_ti_source_display_name(config.source_type)
             await service.log_health_check(
                 service_type=config.source_type,
                 service_name=service_name,
@@ -409,7 +428,7 @@ async def check_ti_source_health(db: AsyncSession):
                 except Exception:
                     logger.debug("Redis cache write failed for TI health, continuing")
 
-            service_name = config.source_type.replace("_", " ").title()
+            service_name = get_ti_source_display_name(config.source_type)
             await service.log_health_check(
                 service_type=config.source_type,
                 service_name=service_name,

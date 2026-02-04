@@ -6,6 +6,20 @@ from typing import Any
 from pydantic import BaseModel
 
 
+class IOCMatch(BaseModel):
+    """IOC match information from MISP threat intelligence."""
+
+    ioc_type: str
+    value: str
+    field_name: str
+    misp_event_id: str | None = None
+    misp_event_uuid: str | None = None
+    misp_attribute_uuid: str | None = None
+    misp_event_info: str | None = None
+    threat_level: str | None = None
+    tags: list[str] = []
+
+
 class ExceptionCreatedInfo(BaseModel):
     """Info about an exception that was created from this alert."""
 
@@ -36,6 +50,8 @@ class AlertResponse(BaseModel):
     exception_created: ExceptionCreatedInfo | None = None
     # TI enrichment (optional, may be large)
     ti_enrichment: dict[str, Any] | None = None
+    # IOC matches from Pull Mode detection
+    ioc_matches: list[IOCMatch] | None = None
 
 
 class AlertListResponse(BaseModel):

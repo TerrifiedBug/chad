@@ -22,6 +22,7 @@ import PermissionsPage from '@/pages/Permissions'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
 import SigmaHQPage from '@/pages/SigmaHQ'
+import MISPPage from '@/pages/MISP'
 import AuditLogPage from '@/pages/AuditLog'
 import SystemLogsPage from '@/pages/SystemLogs'
 import HealthPage from '@/pages/Health'
@@ -228,6 +229,11 @@ function AppRoutes() {
       <Route path="/sigmahq" element={
         <ProtectedRoute permission="manage_sigmahq">
           <AppLayout><SigmaHQPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/misp" element={
+        <ProtectedRoute permission="manage_rules">
+          <AppLayout><MISPPage /></AppLayout>
         </ProtectedRoute>
       } />
       <Route path="/health" element={

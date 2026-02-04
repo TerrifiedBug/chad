@@ -17,8 +17,10 @@ from sqlalchemy.orm import selectinload
 from app.api.api_keys import validate_api_key
 from app.api.deps import get_opensearch_client_optional
 from app.db.session import get_db
+from app.models.api_key import APIKey
 from app.models.rule import Rule, RuleStatus
 from app.models.user import User
+from app.services.api_rate_limit import check_api_key_rate_limit
 
 router = APIRouter(prefix="/external", tags=["external"])
 
@@ -31,6 +33,7 @@ async def get_api_key_user(
     Dependency to authenticate requests via API key.
 
     Expects the API key in the X-API-Key header.
+    Enforces rate limiting per API key.
     """
     if not x_api_key:
         raise HTTPException(
@@ -45,6 +48,17 @@ async def get_api_key_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired API key",
         )
+
+    # Get the API key object to use its ID for rate limiting
+    key_prefix = x_api_key[:12] if len(x_api_key) >= 12 else x_api_key
+    result = await db.execute(
+        select(APIKey).where(APIKey.key_prefix == key_prefix, APIKey.is_active.is_(True))
+    )
+    api_key = result.scalar_one_or_none()
+
+    if api_key:
+        # Enforce rate limit per API key
+        await check_api_key_rate_limit(db, str(api_key.id))
 
     return user
 

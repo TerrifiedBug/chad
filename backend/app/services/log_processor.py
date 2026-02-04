@@ -20,6 +20,7 @@ from app.services.correlation import check_correlation
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
+from app.services.ti.ioc_detector import IOCDetector
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class LogProcessor:
         self.os_client = os_client
         self.db_session_factory = db_session_factory
         self.alert_service = AlertService(os_client)
+        self.ioc_detector = IOCDetector()
 
     async def _get_index_pattern(
         self,
@@ -121,6 +123,25 @@ class LogProcessor:
         # Cache for rule exceptions (avoid repeated DB queries)
         rule_exceptions_cache: dict[str, list[dict]] = {}
 
+        # IOC detection for Push Mode (check all logs against Redis IOC cache)
+        ioc_matches_by_log: dict[int, list[dict]] = {}
+        ioc_detection_enabled = (
+            index_pattern
+            and index_pattern.ioc_detection_enabled
+            and index_pattern.ioc_field_mappings
+        )
+
+        if ioc_detection_enabled:
+            for log_idx, log in enumerate(logs):
+                try:
+                    matches = await self.ioc_detector.detect_iocs(
+                        log, index_pattern.ioc_field_mappings
+                    )
+                    if matches:
+                        ioc_matches_by_log[log_idx] = [m.to_dict() for m in matches]
+                except Exception as e:
+                    logger.debug("IOC detection failed for log %d: %s", log_idx, e)
+
         # Batch percolate all logs at once
         matches_by_log = batch_percolate_logs(
             self.os_client,
@@ -133,6 +154,8 @@ class LogProcessor:
         total_matches = 0
         suppressed_count = 0
         disabled_count = 0
+        # Track which log indices actually created Sigma alerts (for duplicate prevention)
+        logs_with_sigma_alerts: set[int] = set()
 
         # Get app URL for notification links
         app_url = await get_app_url(db)
@@ -168,6 +191,13 @@ class LogProcessor:
                 else:
                     enriched_log = log
 
+                # Add IOC matches to enriched log if any were found
+                if log_idx in ioc_matches_by_log:
+                    enriched_log["threat_intel"] = {
+                        "ioc_matches": ioc_matches_by_log[log_idx],
+                        "has_ioc_match": True,
+                    }
+
                 # Create alert
                 try:
                     alert = self.alert_service.create_alert(
@@ -180,6 +210,7 @@ class LogProcessor:
                     )
                     alerts_created.append(alert)
                     total_matches += 1
+                    logs_with_sigma_alerts.add(log_idx)
 
                     # Check for correlation triggers
                     await self._check_correlations(
@@ -194,6 +225,74 @@ class LogProcessor:
                 except Exception as e:
                     logger.error("Failed to create alert for rule %s: %s", rule_id, e)
                     continue
+
+        # Create IOC-only alerts for logs that matched IOCs but didn't create Sigma alerts
+        ioc_only_alerts = 0
+        if ioc_detection_enabled and ioc_matches_by_log:
+            for log_idx, ioc_matches in ioc_matches_by_log.items():
+                if log_idx in logs_with_sigma_alerts:
+                    # Skip - already has a Sigma alert (IOC info is embedded in that alert)
+                    continue
+
+                log = logs[log_idx]
+
+                # Enrich the log
+                if index_pattern:
+                    try:
+                        enriched_log = await enrich_alert(db, log, index_pattern)
+                    except Exception as e:
+                        logger.debug("Enrichment failed for IOC-only log: %s", e)
+                        enriched_log = log
+                else:
+                    enriched_log = log
+
+                # Add IOC match info
+                enriched_log["threat_intel"] = {
+                    "ioc_matches": ioc_matches,
+                    "has_ioc_match": True,
+                }
+
+                # Determine severity from highest threat level in matches
+                threat_levels = [m.get("threat_level", "unknown") for m in ioc_matches]
+                if "high" in threat_levels:
+                    severity = "high"
+                elif "medium" in threat_levels:
+                    severity = "medium"
+                else:
+                    severity = "low"
+
+                # Get IOC type and title from first match
+                first_match = ioc_matches[0] if ioc_matches else {}
+                ioc_type = first_match.get("ioc_type", "unknown")
+                # Use MISP event info as title if available, otherwise fall back to IOC value
+                event_info = first_match.get("misp_event_info")
+                ioc_title = event_info if event_info else f"IOC Match: {first_match.get('value', ioc_type)}"
+
+                # Build tags from IOC matches
+                tags = ["ioc-match", f"ioc-type:{ioc_type}"]
+                for match in ioc_matches:
+                    if match.get("misp_event_id"):
+                        tags.append(f"misp:{match['misp_event_id']}")
+                    tags.extend(match.get("tags", []))
+                # Deduplicate tags
+                tags = list(dict.fromkeys(tags))
+
+                try:
+                    ioc_alert = self.alert_service.create_alert(
+                        alerts_index=alerts_index,
+                        rule_id="ioc-detection",
+                        rule_title=ioc_title,
+                        severity=severity,
+                        tags=tags,
+                        log_document=enriched_log,
+                    )
+                    alerts_created.append(ioc_alert)
+                    ioc_only_alerts += 1
+                except Exception as e:
+                    logger.error("Failed to create IOC-only alert: %s", e)
+
+            if ioc_only_alerts > 0:
+                logger.info("Created %d IOC-only alerts (Push Mode)", ioc_only_alerts)
 
         # Broadcast alerts via WebSocket (Redis pub/sub for cross-worker)
         if alerts_created:

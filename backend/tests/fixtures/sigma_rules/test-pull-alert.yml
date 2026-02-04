@@ -1,0 +1,19 @@
+title: CHAD Test Rule - Pull Mode
+id: chad-test-pull-001
+status: test
+description: Test rule for validating pull mode alert generation. Matches authentication events with CHAD_TEST marker.
+author: CHAD Testing
+date: 2026/02/04
+logsource:
+    category: authentication
+    product: windows
+detection:
+    selection:
+        user.name|contains: 'CHAD_TEST_PULL'
+    condition: selection
+falsepositives:
+    - Legitimate test authentications
+level: high
+tags:
+    - test.chad
+    - attack.initial_access

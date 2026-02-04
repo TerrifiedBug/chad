@@ -51,6 +51,9 @@ services:
       - OPENSEARCH_HOST=${OPENSEARCH_HOST:-}
       - OPENSEARCH_USER=${OPENSEARCH_USER:-}
       - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD:-}
+      # MISP (external)
+      - MISP_HOST=${MISP_HOST:-}
+      - MISP_KEY=${MISP_KEY:-}
       # Security (CHANGE IN PRODUCTION)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-prod}
       - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}

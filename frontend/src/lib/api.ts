@@ -225,6 +225,7 @@ export type UpdateCheckResponse = {
 // Security settings types
 export type SecuritySettings = {
   force_2fa_on_signup: boolean
+  api_key_rate_limit: number
 }
 
 // Settings API
@@ -325,7 +326,7 @@ export type RuleComment = {
 
 // Rule types
 export type RuleStatus = 'deployed' | 'undeployed' | 'snoozed'
-export type RuleSource = 'user' | 'sigmahq'
+export type RuleSource = 'user' | 'sigmahq' | 'misp'
 export type SigmaHQRuleType = 'detection' | 'threat_hunting' | 'emerging_threats'
 
 export type Rule = {
@@ -694,6 +695,9 @@ export type IndexPattern = {
   poll_interval_minutes: number
   // Timestamp field for pull mode time filtering (must be a date field in the index)
   timestamp_field: string
+  // IOC Detection (Push Mode)
+  ioc_detection_enabled: boolean
+  ioc_field_mappings: Record<string, string[]> | null
   // Audit: email of user who last edited this pattern
   last_edited_by: string | null
 }
@@ -724,6 +728,9 @@ export type IndexPatternCreate = {
   mode?: IndexPatternMode
   poll_interval_minutes?: number
   timestamp_field?: string
+  // IOC Detection (Push Mode)
+  ioc_detection_enabled?: boolean
+  ioc_field_mappings?: Record<string, string[]> | null
 }
 
 export type IndexPatternUpdate = Partial<IndexPatternCreate> & {
@@ -812,6 +819,7 @@ export type Alert = {
   status: AlertStatus
   log_document: Record<string, unknown>
   ti_enrichment?: TIEnrichment | null
+  ioc_matches?: IOCMatch[] | null
   created_at: string
   updated_at: string
   acknowledged_by: string | null
@@ -1480,6 +1488,8 @@ export type HealthSettings = {
   opensearch_latency_critical_ms: number
   queue_warning: number
   queue_critical: number
+  data_freshness_warning_minutes: number
+  data_freshness_critical_minutes: number
 }
 
 export type HealthIntervals = {
@@ -1964,6 +1974,235 @@ export const tiApi = {
     api.post<TITestResponse>(`/ti/${sourceType}/test`, data),
   testSavedConnection: (sourceType: TISourceType) =>
     api.post<TITestResponse>(`/ti/${sourceType}/test-saved`),
+}
+
+// MISP Integration Types
+export type MISPConnectionStatus = {
+  configured: boolean
+  connected: boolean
+  error?: string
+  instance_url?: string
+}
+
+export type MISPEventSummary = {
+  id: string
+  uuid?: string
+  info: string
+  date: string
+  threat_level: string
+  threat_level_id: number
+  ioc_count: number
+  ioc_summary: Record<string, number>
+  tags: string[]
+}
+
+export type MISPAttribute = {
+  id: string
+  type: string
+  value: string
+  comment?: string
+  to_ids: boolean
+  on_warning_list: boolean
+  warning_list_name?: string
+}
+
+export type MISPEventIOCs = {
+  event_id: string
+  event_info: string
+  iocs_by_type: Record<string, MISPAttribute[]>
+}
+
+export type MISPIOCsPage = {
+  iocs: MISPAttribute[]
+  page: number
+  limit: number
+  has_more: boolean
+}
+
+export type MISPImportRequest = {
+  event_id: string
+  ioc_type: string
+  ioc_values: string[]
+  index_pattern_id: string | null
+}
+
+export type MISPImportResponse = {
+  success: boolean
+  rule_id: string
+  title: string
+  message: string
+}
+
+export type MISPImportedRuleInfo = {
+  misp_url: string
+  misp_event_id: string
+  misp_event_uuid?: string
+  misp_event_info?: string
+  misp_event_date?: string
+  misp_event_threat_level?: string
+  ioc_type: string
+  ioc_count: number
+  imported_at: string
+  last_checked_at?: string
+  has_updates: boolean
+}
+
+// MISP Sync Types
+export type MISPSyncStatus = {
+  last_sync_at: string | null
+  iocs_synced: number
+  sync_duration_ms: number
+  redis_ioc_count: number
+  opensearch_ioc_count: number
+  error_message: string | null
+}
+
+export type MISPSyncConfig = {
+  enabled: boolean
+  interval_minutes: number
+  threat_levels: string[]
+  max_age_days: number
+  ttl_days: number
+  tags: string[] | null
+  ioc_types: string[] | null
+}
+
+export type MISPSyncTriggerResponse = {
+  success: boolean
+  iocs_fetched: number
+  iocs_cached: number
+  iocs_indexed: number
+  duration_ms: number
+  error: string | null
+}
+
+// MISP Feedback Types
+export type MISPSightingRequest = {
+  attribute_uuid: string
+  source?: string
+  is_false_positive: boolean
+}
+
+export type MISPSightingResponse = {
+  success: boolean
+  sighting_id: string | null
+  error: string | null
+}
+
+export type MISPEventAttribute = {
+  type: string
+  value: string
+  to_ids?: boolean
+}
+
+export type MISPEventRequest = {
+  alert_id?: string | null
+  info: string
+  threat_level: number
+  distribution: number
+  tags: string[]
+  attributes: MISPEventAttribute[]
+}
+
+export type MISPEventResponse = {
+  success: boolean
+  event_id: string | null
+  event_uuid: string | null
+  error: string | null
+}
+
+// IOC Match type (from Push Mode detection)
+export type IOCMatch = {
+  ioc_type: string
+  value: string
+  field_name: string
+  misp_event_id: string
+  misp_event_uuid: string | null
+  misp_attribute_uuid: string | null
+  misp_event_info: string | null
+  threat_level: string
+  tags: string[]
+}
+
+// MISP API
+export const mispApi = {
+  getStatus: () =>
+    api.get<MISPConnectionStatus>('/misp/status'),
+  searchEvents: (params: {
+    limit?: number
+    date_from?: string
+    date_to?: string
+    threat_levels?: string
+    search_term?: string
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params.limit) searchParams.set('limit', params.limit.toString())
+    if (params.date_from) searchParams.set('date_from', params.date_from)
+    if (params.date_to) searchParams.set('date_to', params.date_to)
+    if (params.threat_levels) searchParams.set('threat_levels', params.threat_levels)
+    if (params.search_term) searchParams.set('search_term', params.search_term)
+    return api.get<MISPEventSummary[]>(`/misp/events?${searchParams}`)
+  },
+  getEventIOCs: (eventId: string, params?: {
+    enforce_warninglist?: boolean
+    to_ids?: boolean
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.enforce_warninglist !== undefined) {
+      searchParams.set('enforce_warninglist', params.enforce_warninglist.toString())
+    }
+    if (params?.to_ids !== undefined) {
+      searchParams.set('to_ids', params.to_ids.toString())
+    }
+    return api.get<MISPEventIOCs>(`/misp/events/${eventId}/iocs?${searchParams}`)
+  },
+  getEventIOCsByType: (eventId: string, iocType: string, params?: {
+    limit?: number
+    page?: number
+    search?: string
+    to_ids?: boolean
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.limit !== undefined) {
+      searchParams.set('limit', params.limit.toString())
+    }
+    if (params?.page !== undefined) {
+      searchParams.set('page', params.page.toString())
+    }
+    if (params?.search) {
+      searchParams.set('search', params.search)
+    }
+    if (params?.to_ids !== undefined) {
+      searchParams.set('to_ids', params.to_ids.toString())
+    }
+    return api.get<MISPIOCsPage>(`/misp/events/${eventId}/iocs/${encodeURIComponent(iocType)}?${searchParams}`)
+  },
+  getSupportedTypes: () =>
+    api.get<{ types: string[] }>('/misp/supported-types'),
+  importRule: (request: MISPImportRequest) =>
+    api.post<MISPImportResponse>('/misp/import-rule', request),
+  getRuleMISPInfo: (ruleId: string) =>
+    api.get<MISPImportedRuleInfo | null>(`/misp/rules/${ruleId}/misp-info`),
+}
+
+// MISP Sync API
+export const mispSyncApi = {
+  getStatus: () =>
+    api.get<MISPSyncStatus>('/misp/sync/status'),
+  trigger: () =>
+    api.post<MISPSyncTriggerResponse>('/misp/sync/trigger'),
+  getConfig: () =>
+    api.get<MISPSyncConfig>('/misp/sync/config'),
+  updateConfig: (config: Partial<MISPSyncConfig>) =>
+    api.put<MISPSyncConfig>('/misp/sync/config', config),
+}
+
+// MISP Feedback API
+export const mispFeedbackApi = {
+  recordSighting: (data: MISPSightingRequest) =>
+    api.post<MISPSightingResponse>('/misp/feedback/sighting', data),
+  createEvent: (data: MISPEventRequest) =>
+    api.post<MISPEventResponse>('/misp/feedback/event', data),
 }
 
 // Correlation Rules types

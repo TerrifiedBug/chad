@@ -239,7 +239,7 @@ async def test_jira_healthy(db_session):
 
 @pytest.mark.asyncio
 async def test_jira_disabled(db_session):
-    """Test Jira health check when Jira is disabled."""
+    """Test Jira health check when Jira is disabled - should skip health check."""
     config = JiraConfig(
         jira_url="https://test.atlassian.net",
         email="test@example.com",
@@ -263,9 +263,8 @@ async def test_jira_disabled(db_session):
     )
     log = result.scalar_one_or_none()
 
-    assert log is not None
-    assert log.status == "unhealthy"
-    assert "disabled" in log.error_message
+    # Health check should be skipped for disabled services (no log created)
+    assert log is None
 
 
 @pytest.mark.asyncio

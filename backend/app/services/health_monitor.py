@@ -36,6 +36,8 @@ DEFAULT_ERROR_RATE_PERCENT = 5.0
 DEFAULT_LATENCY_MS = 1000
 DEFAULT_QUEUE_WARNING = 10000
 DEFAULT_QUEUE_CRITICAL = 100000
+DEFAULT_DATA_FRESHNESS_WARNING_MINUTES = 60
+DEFAULT_DATA_FRESHNESS_CRITICAL_MINUTES = 240
 
 
 async def _get_suppression(
@@ -88,6 +90,12 @@ async def _get_thresholds(db: AsyncSession) -> dict:
         "latency_ms": thresholds.get("latency_ms", DEFAULT_LATENCY_MS),
         "queue_warning": thresholds.get("queue_warning", DEFAULT_QUEUE_WARNING),
         "queue_critical": thresholds.get("queue_critical", DEFAULT_QUEUE_CRITICAL),
+        "data_freshness_warning_minutes": thresholds.get(
+            "data_freshness_warning_minutes", DEFAULT_DATA_FRESHNESS_WARNING_MINUTES
+        ),
+        "data_freshness_critical_minutes": thresholds.get(
+            "data_freshness_critical_minutes", DEFAULT_DATA_FRESHNESS_CRITICAL_MINUTES
+        ),
     }
 
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator, RelatedAlertsResponse } from '@/lib/api'
+import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, mispApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator, RelatedAlertsResponse } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
@@ -30,9 +31,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers, Upload } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
+import { IOCMatchesCard } from '@/components/alerts/IOCMatchesCard'
+import { CreateMISPEventDialog } from '@/components/alerts/CreateMISPEventDialog'
 import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 
 // Type for exception conditions (for AND grouping)
@@ -517,6 +520,15 @@ export default function AlertDetailPage() {
   // Ownership state
   const [isAssigning, setIsAssigning] = useState(false)
 
+  // MISP Event dialog state
+  const [showMISPEventDialog, setShowMISPEventDialog] = useState(false)
+
+  // MISP status query
+  const { data: mispStatus } = useQuery({
+    queryKey: ['misp-status'],
+    queryFn: () => mispApi.getStatus(),
+  })
+
   // Helper to generate unique condition IDs
   const generateConditionId = () => `cond-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
@@ -874,18 +886,25 @@ export default function AlertDetailPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
-              {alert.tags.includes('correlation') && (
-                <div className="flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+            <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
+            <div className="flex items-center gap-2 mt-1">
+              {alert.tags.includes('correlation') ? (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
                   <Link2 className="h-3 w-3" />
                   <span>Correlation</span>
                 </div>
+              ) : alert.rule_id === 'ioc-detection' ? (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                  <ShieldAlert className="h-3 w-3" />
+                  <span>IOC Match</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                  <FileText className="h-3 w-3" />
+                  <span>Sigma</span>
+                </div>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Alert ID: {alert.alert_id}
-            </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -961,7 +980,7 @@ export default function AlertDetailPage() {
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}
             disabled={isUpdating || !hasPermission('manage_rules')}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger className="w-40 h-9">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="z-50 bg-popover">
@@ -981,6 +1000,16 @@ export default function AlertDetailPage() {
               Create Exception
             </Button>
           )}
+          {mispStatus?.configured && mispStatus?.connected && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowMISPEventDialog(true)}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Create MISP Event
+            </Button>
+          )}
           <Button
             variant="destructive"
             size="sm"
@@ -993,8 +1022,8 @@ export default function AlertDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        {/* Info Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+        {/* Left sidebar - Info Cards */}
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
@@ -1095,8 +1124,9 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
-          {/* Rule card - only show for non-correlation alerts */}
-          {!(alert.log_document as Record<string, unknown>)?.correlation && (
+          {/* Rule card - only show for Sigma rule alerts (not correlation or IOC-only) */}
+          {!(alert.log_document as Record<string, unknown>)?.correlation &&
+           alert.rule_id !== 'ioc-detection' && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -1163,6 +1193,11 @@ export default function AlertDetailPage() {
           {/* Threat Intelligence Enrichment - shown if TI data exists */}
           {alert.ti_enrichment && alert.ti_enrichment.indicators.length > 0 && (
             <TIEnrichmentCard indicators={alert.ti_enrichment.indicators} />
+          )}
+
+          {/* IOC Matches from Push Mode detection */}
+          {alert.ioc_matches && alert.ioc_matches.length > 0 && (
+            <IOCMatchesCard matches={alert.ioc_matches} />
           )}
 
           {/* Correlation Alert Details - shown if this is a correlation alert */}
@@ -1238,7 +1273,7 @@ export default function AlertDetailPage() {
         </div>
 
         {/* Log Document */}
-        <Card className="md:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">
               Triggering Log Document
@@ -1564,6 +1599,13 @@ export default function AlertDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create MISP Event Dialog */}
+      <CreateMISPEventDialog
+        alert={alert}
+        open={showMISPEventDialog}
+        onOpenChange={setShowMISPEventDialog}
+      />
     </div>
     </TooltipProvider>
   )

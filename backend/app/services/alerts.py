@@ -372,6 +372,16 @@ class AlertService:
         # Extract TI enrichment to top level for querying
         ti_enrichment = log_document.pop("ti_enrichment", None)
 
+        # Extract IOC matches to top level for display
+        # Check both threat_intel.ioc_matches (standard location) and direct ioc_matches (fallback)
+        ioc_matches = None
+        threat_intel = log_document.get("threat_intel")
+        if threat_intel and isinstance(threat_intel, dict):
+            ioc_matches = threat_intel.get("ioc_matches")
+        if not ioc_matches:
+            # Fallback: check if ioc_matches is directly in log_document
+            ioc_matches = log_document.pop("ioc_matches", None)
+
         alert = {
             "alert_id": alert_id,
             "rule_id": rule_id,
@@ -387,6 +397,10 @@ class AlertService:
         # Add TI enrichment at top level if present
         if ti_enrichment:
             alert["ti_enrichment"] = ti_enrichment
+
+        # Add IOC matches at top level if present
+        if ioc_matches:
+            alert["ioc_matches"] = ioc_matches
 
         # Use the deterministic alert_id as the document ID
         # This makes retries overwrite instead of creating duplicates
@@ -506,9 +520,20 @@ class AlertService:
 
         try:
             result = self.client.search(index=index_pattern, body=query)
+            alerts = []
+            for hit in result["hits"]["hits"]:
+                alert = hit["_source"]
+                # Extract ioc_matches from log_document if not at top level (backward compat)
+                if not alert.get("ioc_matches"):
+                    log_doc = alert.get("log_document", {})
+                    if log_doc.get("ioc_matches"):
+                        alert["ioc_matches"] = log_doc["ioc_matches"]
+                    elif log_doc.get("threat_intel", {}).get("ioc_matches"):
+                        alert["ioc_matches"] = log_doc["threat_intel"]["ioc_matches"]
+                alerts.append(alert)
             return {
                 "total": result["hits"]["total"]["value"],
-                "alerts": [hit["_source"] for hit in result["hits"]["hits"]],
+                "alerts": alerts,
             }
         except Exception:
             # Index may not exist yet
@@ -527,7 +552,15 @@ class AlertService:
             )
             hits = result.get("hits", {}).get("hits", [])
             if hits:
-                return hits[0]["_source"]
+                alert = hits[0]["_source"]
+                # Extract ioc_matches from log_document if not at top level (backward compat)
+                if not alert.get("ioc_matches"):
+                    log_doc = alert.get("log_document", {})
+                    if log_doc.get("ioc_matches"):
+                        alert["ioc_matches"] = log_doc["ioc_matches"]
+                    elif log_doc.get("threat_intel", {}).get("ioc_matches"):
+                        alert["ioc_matches"] = log_doc["threat_intel"]["ioc_matches"]
+                return alert
             return None
         except Exception:
             return None

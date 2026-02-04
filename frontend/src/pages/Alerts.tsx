@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat, AlertCluster, ClusteredAlertListResponse, AlertListResponse } from '@/lib/api'
+import { useQuery } from '@tanstack/react-query'
+import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat, AlertCluster, ClusteredAlertListResponse, AlertListResponse, mispApi, mispFeedbackApi } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,7 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert, ExternalLink } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -46,10 +47,13 @@ import { DateRange } from 'react-day-picker'
 import { cn } from '@/lib/utils'
 import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 import { useAuth } from '@/hooks/use-auth'
+import { useToast } from '@/components/ui/toast-provider'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
+const ALERT_TYPES = ['sigma', 'ioc', 'correlation'] as const
+type AlertType = typeof ALERT_TYPES[number]
 
 // Type guard to check if response is clustered
 function isClusteredResponse(response: AlertListResponse | ClusteredAlertListResponse): response is ClusteredAlertListResponse {
@@ -59,6 +63,7 @@ function isClusteredResponse(response: AlertListResponse | ClusteredAlertListRes
 export default function AlertsPage() {
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
+  const { showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [clusters, setClusters] = useState<AlertCluster[]>([])
@@ -82,6 +87,10 @@ export default function AlertsPage() {
     const severities = searchParams.get('severity')
     return severities ? severities.split(',').filter(s => SEVERITIES.includes(s as typeof SEVERITIES[number])) : []
   })
+  const [alertTypeFilter, setAlertTypeFilter] = useState<AlertType[]>(() => {
+    const types = searchParams.get('type')
+    return types ? types.split(',').filter(t => ALERT_TYPES.includes(t as AlertType)) as AlertType[] : []
+  })
   const [page, setPage] = useState(1)
 
   // Owner filter - initialize from URL query param, fallback to localStorage
@@ -103,6 +112,13 @@ export default function AlertsPage() {
         : [...prev, severity]
     )
   }
+  const toggleAlertTypeFilter = (type: AlertType) => {
+    setAlertTypeFilter(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    )
+  }
   const [pageSize, setPageSize] = useState(25)
 
   // Bulk selection state
@@ -116,6 +132,17 @@ export default function AlertsPage() {
   const [exportFormat, setExportFormat] = useState<ReportFormat>('pdf')
   const [exportDateRange, setExportDateRange] = useState<DateRange | undefined>()
   const [isExporting, setIsExporting] = useState(false)
+
+  // Bulk MISP export state
+  const [showBulkMISPExport, setShowBulkMISPExport] = useState(false)
+  const [mispExportProgress, setMispExportProgress] = useState({ current: 0, total: 0 })
+  const [mispExportResults, setMispExportResults] = useState<{ success: number; failed: number } | null>(null)
+
+  // Check MISP status for bulk export
+  const { data: mispStatus } = useQuery({
+    queryKey: ['misp-status'],
+    queryFn: () => mispApi.getStatus(),
+  })
 
   // Toggle cluster expansion
   const toggleCluster = (clusterId: string) => {
@@ -173,7 +200,7 @@ export default function AlertsPage() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1)
-  }, [statusFilter, severityFilter, ownerFilter])
+  }, [statusFilter, severityFilter, alertTypeFilter, ownerFilter])
 
   // Sync all filters with URL
   useEffect(() => {
@@ -182,13 +209,14 @@ export default function AlertsPage() {
     if (search) newParams.set('search', search)
     if (statusFilter !== 'all') newParams.set('status', statusFilter)
     if (severityFilter.length > 0) newParams.set('severity', severityFilter.join(','))
+    if (alertTypeFilter.length > 0) newParams.set('type', alertTypeFilter.join(','))
     if (ownerFilter) newParams.set('owner', ownerFilter)
 
     setSearchParams(newParams, { replace: true })
 
     // Persist "Assigned to Me" preference to localStorage
     localStorage.setItem('alerts-assigned-to-me', ownerFilter === 'me' ? 'true' : 'false')
-  }, [search, statusFilter, severityFilter, ownerFilter, setSearchParams])
+  }, [search, statusFilter, severityFilter, alertTypeFilter, ownerFilter, setSearchParams])
 
   useEffect(() => {
     loadData()
@@ -198,6 +226,13 @@ export default function AlertsPage() {
   const canGoPrevious = page > 1
   const canGoNext = page < totalPages
 
+  // Helper to determine alert type
+  const getAlertType = (alert: Alert): AlertType => {
+    if (alert.tags.includes('correlation')) return 'correlation'
+    if (alert.rule_id === 'ioc-detection') return 'ioc'
+    return 'sigma'
+  }
+
   // Filter alerts (works for non-clustered mode)
   const filteredAlerts = alerts.filter((alert) => {
     // Search filter (handle null rule_title for deleted rules)
@@ -206,6 +241,10 @@ export default function AlertsPage() {
     }
     // Severity filter (client-side when multiple selected)
     if (severityFilter.length > 1 && !severityFilter.includes(alert.severity)) {
+      return false
+    }
+    // Alert type filter
+    if (alertTypeFilter.length > 0 && !alertTypeFilter.includes(getAlertType(alert))) {
       return false
     }
     return true
@@ -219,6 +258,10 @@ export default function AlertsPage() {
     }
     // Severity filter
     if (severityFilter.length > 1 && !severityFilter.includes(cluster.representative.severity)) {
+      return false
+    }
+    // Alert type filter
+    if (alertTypeFilter.length > 0 && !alertTypeFilter.includes(getAlertType(cluster.representative))) {
       return false
     }
     return true
@@ -338,6 +381,51 @@ export default function AlertsPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete alerts')
     } finally {
       setIsBulkUpdating(false)
+    }
+  }
+
+  // Handle bulk MISP export
+  const handleBulkMISPExport = async () => {
+    if (selectedAlerts.size === 0) return
+
+    setMispExportProgress({ current: 0, total: selectedAlerts.size })
+    setMispExportResults(null)
+    setIsBulkUpdating(true)
+
+    let success = 0
+    let failed = 0
+    const alertIds = Array.from(selectedAlerts)
+
+    for (let i = 0; i < alertIds.length; i++) {
+      const alertId = alertIds[i]
+      try {
+        // Find the alert to get its title
+        const alert = alerts.find(a => a.alert_id === alertId)
+        const title = alert?.rule_title || `Alert ${alertId}`
+
+        await mispFeedbackApi.createEvent({
+          alert_id: alertId,
+          info: `CHAD Alert: ${title}`,
+          threat_level: 2, // Medium
+          distribution: 0, // Your organization only
+          tags: ['source:chad', 'bulk-export'],
+          attributes: [],
+        })
+        success++
+      } catch {
+        failed++
+      }
+      setMispExportProgress({ current: i + 1, total: alertIds.length })
+    }
+
+    setMispExportResults({ success, failed })
+    setIsBulkUpdating(false)
+
+    if (success > 0) {
+      showToast(`Created ${success} MISP event${success !== 1 ? 's' : ''}`)
+    }
+    if (failed > 0) {
+      showToast(`Failed to create ${failed} event${failed !== 1 ? 's' : ''}`, 'error')
     }
   }
 
@@ -492,6 +580,47 @@ export default function AlertsPage() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="w-32 justify-between">
+              Type
+              {alertTypeFilter.length > 0 && (
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                  {alertTypeFilter.length}
+                </Badge>
+              )}
+              <ChevronDown className="h-4 w-4 ml-auto" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="z-50">
+            <DropdownMenuLabel>Filter by Type</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={alertTypeFilter.includes('sigma')}
+              onCheckedChange={() => toggleAlertTypeFilter('sigma')}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <FileText className="h-3 w-3 mr-2 text-blue-500" />
+              Sigma
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={alertTypeFilter.includes('ioc')}
+              onCheckedChange={() => toggleAlertTypeFilter('ioc')}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <ShieldAlert className="h-3 w-3 mr-2 text-red-500" />
+              IOC
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={alertTypeFilter.includes('correlation')}
+              onCheckedChange={() => toggleAlertTypeFilter('correlation')}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <Link2 className="h-3 w-3 mr-2 text-purple-500" />
+              Correlation
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="flex items-center space-x-2">
           <Checkbox
             id="my-alerts"
@@ -550,6 +679,16 @@ export default function AlertsPage() {
               Take Ownership
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBulkMISPExport(true)}
+              disabled={isBulkUpdating || !mispStatus?.configured}
+              title={!mispStatus?.configured ? 'MISP not configured' : undefined}
+            >
+              <ExternalLink className="h-4 w-4 mr-1 text-purple-500" />
+              Export to MISP
+            </Button>
+            <Button
               variant="destructive"
               size="sm"
               onClick={handleBulkDelete}
@@ -603,7 +742,7 @@ export default function AlertsPage() {
                       aria-label="Select all alerts"
                     />
                   </TableHead>
-                  {isClustered && <TableHead className="w-10"></TableHead>}
+                  {isClustered && <TableHead className="w-[60px]"></TableHead>}
                   <TableHead>Rule</TableHead>
                   <TableHead>Severity</TableHead>
                   <TableHead>Status</TableHead>
@@ -655,33 +794,43 @@ export default function AlertsPage() {
                               aria-label={`Select cluster of ${cluster.count} alerts`}
                             />
                           </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            {hasMultiple && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0"
+                          <TableCell onClick={(e) => e.stopPropagation()} className="w-[60px]">
+                            {hasMultiple ? (
+                              <button
+                                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                                 onClick={() => toggleCluster(clusterId)}
                               >
+                                <Badge variant="secondary" className="font-mono">
+                                  {cluster.count}
+                                </Badge>
                                 {isExpanded ? (
-                                  <ChevronUp className="h-4 w-4" />
+                                  <ChevronUp className="h-4 w-4 transition-transform" />
                                 ) : (
-                                  <ChevronDown className="h-4 w-4" />
+                                  <ChevronDown className="h-4 w-4 transition-transform" />
                                 )}
-                              </Button>
+                              </button>
+                            ) : (
+                              <div className="w-[60px]" /> // Spacer for alignment
                             )}
                           </TableCell>
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
-                              {hasMultiple && (
-                                <Badge variant="secondary" className="font-mono">
-                                  x{cluster.count}
-                                </Badge>
-                              )}
                               {alert.tags.includes('correlation') && (
                                 <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
                                   <Link2 className="h-3 w-3" />
                                   <span>Correlation</span>
+                                </div>
+                              )}
+                              {alert.rule_id === 'ioc-detection' && (
+                                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                                  <ShieldAlert className="h-3 w-3" />
+                                  <span>IOC</span>
+                                </div>
+                              )}
+                              {!alert.tags.includes('correlation') && alert.rule_id !== 'ioc-detection' && (
+                                <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                                  <FileText className="h-3 w-3" />
+                                  <span>Sigma</span>
                                 </div>
                               )}
                               <span>{alert.rule_title}</span>
@@ -713,7 +862,7 @@ export default function AlertsPage() {
                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
                               {alert.tags
-                                .filter(tag => tag !== 'correlation')
+                                .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
                                 .slice(0, 3)
                                 .map((tag, i) => (
                                   <span
@@ -777,6 +926,18 @@ export default function AlertsPage() {
                                     <span>Correlation</span>
                                   </div>
                                 )}
+                                {clusterAlert.rule_id === 'ioc-detection' && (
+                                  <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                                    <ShieldAlert className="h-3 w-3" />
+                                    <span>IOC</span>
+                                  </div>
+                                )}
+                                {!clusterAlert.tags.includes('correlation') && clusterAlert.rule_id !== 'ioc-detection' && (
+                                  <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                                    <FileText className="h-3 w-3" />
+                                    <span>Sigma</span>
+                                  </div>
+                                )}
                                 <span>{clusterAlert.rule_title}</span>
                               </div>
                             </TableCell>
@@ -806,7 +967,7 @@ export default function AlertsPage() {
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
                                 {clusterAlert.tags
-                                  .filter(tag => tag !== 'correlation')
+                                  .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
                                   .slice(0, 2)
                                   .map((tag, i) => (
                                     <span
@@ -860,6 +1021,18 @@ export default function AlertsPage() {
                               <span>Correlation</span>
                             </div>
                           )}
+                          {alert.rule_id === 'ioc-detection' && (
+                            <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                              <ShieldAlert className="h-3 w-3" />
+                              <span>IOC</span>
+                            </div>
+                          )}
+                          {!alert.tags.includes('correlation') && alert.rule_id !== 'ioc-detection' && (
+                            <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                              <FileText className="h-3 w-3" />
+                              <span>Sigma</span>
+                            </div>
+                          )}
                           <span>{alert.rule_title}</span>
                         </div>
                       </TableCell>
@@ -889,7 +1062,7 @@ export default function AlertsPage() {
                       <TableCell>
                         <div className="flex gap-1 flex-wrap">
                           {alert.tags
-                            .filter(tag => tag !== 'correlation')
+                            .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
                             .slice(0, 3)
                             .map((tag, i) => (
                               <span
@@ -899,9 +1072,9 @@ export default function AlertsPage() {
                                 {tag}
                               </span>
                             ))}
-                          {alert.tags.filter(tag => tag !== 'correlation').length > 3 && (
+                          {alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length > 3 && (
                             <span className="text-xs text-muted-foreground">
-                              +{alert.tags.filter(tag => tag !== 'correlation').length - 3}
+                              +{alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length - 3}
                             </span>
                           )}
                         </div>
@@ -1003,6 +1176,77 @@ export default function AlertsPage() {
             >
               {isBulkUpdating ? 'Deleting...' : 'Delete'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk MISP Export Dialog */}
+      <Dialog
+        open={showBulkMISPExport}
+        onOpenChange={(open) => {
+          if (isBulkUpdating) return
+          setShowBulkMISPExport(open)
+          if (!open) {
+            setMispExportProgress({ current: 0, total: 0 })
+            setMispExportResults(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export to MISP</DialogTitle>
+            <DialogDescription>
+              {mispExportResults ? (
+                `Export complete: ${mispExportResults.success} created, ${mispExportResults.failed} failed`
+              ) : isBulkUpdating ? (
+                `Exporting ${mispExportProgress.current} of ${mispExportProgress.total} alerts...`
+              ) : (
+                `Create ${selectedAlerts.size} MISP event${selectedAlerts.size !== 1 ? 's' : ''} from the selected alerts. Each alert will be exported as a separate event.`
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {isBulkUpdating && (
+            <div className="w-full bg-muted rounded-full h-2">
+              <div
+                className="bg-primary h-2 rounded-full transition-all"
+                style={{ width: `${(mispExportProgress.current / mispExportProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            {mispExportResults ? (
+              <Button onClick={() => {
+                setShowBulkMISPExport(false)
+                setMispExportResults(null)
+                setSelectedAlerts(new Set())
+                setSelectAll(false)
+              }}>
+                Done
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowBulkMISPExport(false)}
+                  disabled={isBulkUpdating}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleBulkMISPExport}
+                  disabled={isBulkUpdating}
+                >
+                  {isBulkUpdating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    'Export'
+                  )}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

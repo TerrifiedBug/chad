@@ -91,6 +91,9 @@ class IndexPatternUpdate(BaseModel):
     mode: str | None = None
     poll_interval_minutes: int | None = None
     timestamp_field: str | None = None
+    # IOC Detection (Push Mode)
+    ioc_detection_enabled: bool | None = None
+    ioc_field_mappings: dict[str, list[str]] | None = None
     # For audit logging
     change_reason: str | None = None
 
@@ -115,6 +118,9 @@ class IndexPatternResponse(IndexPatternBase):
     mode: str
     poll_interval_minutes: int
     timestamp_field: str
+    # IOC Detection
+    ioc_detection_enabled: bool = False
+    ioc_field_mappings: dict[str, list[str]] | None = None
     created_at: datetime
     updated_at: datetime
     last_edited_by: str | None = None  # Email of user who last edited

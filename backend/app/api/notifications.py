@@ -50,6 +50,9 @@ SYSTEM_EVENT_TYPES = [
     "health_critical",
     "opensearch_connection_lost",
     "opensearch_connection_restored",
+    # Data Freshness (upstream log shipping health)
+    "data_freshness_warning",
+    "data_freshness_critical",
     # Rule operations
     "rule_deployment_failed",
     "percolator_query_error",
