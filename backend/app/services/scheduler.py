@@ -1225,6 +1225,13 @@ class SchedulerService:
                 else:
                     session.add(Setting(key="misp_sync_status", value=status_value))
                 await session.commit()
+
+                # Reset consecutive failure counter on success
+                try:
+                    redis = await get_redis()
+                    await redis.set("chad:misp_sync:consecutive_failures", 0)
+                except Exception:
+                    pass  # Redis unavailable, skip counter reset
             else:
                 logger.error("MISP sync failed: %s", result.error)
                 await system_log_service.log_error(
@@ -1234,8 +1241,41 @@ class SchedulerService:
                     message=f"MISP sync failed: {result.error}",
                     details={"error": result.error},
                 )
+                # Track consecutive failures and send notification after 3
+                await self._track_misp_sync_failure(session, result.error)
         finally:
             await session.close()
+
+    async def _track_misp_sync_failure(self, session: AsyncSession, error: str) -> None:
+        """Track MISP sync failures and send notification after 3 consecutive failures."""
+        from app.services.notification import send_system_notification
+
+        failure_key = "chad:misp_sync:consecutive_failures"
+        consecutive_failures_threshold = 3
+
+        try:
+            redis = await get_redis()
+            # Increment failure counter
+            failures = int(await redis.get(failure_key) or 0) + 1
+            await redis.set(failure_key, failures)
+
+            if failures >= consecutive_failures_threshold:
+                # Send notification
+                await send_system_notification(
+                    session,
+                    "misp_sync_failed",
+                    {
+                        "consecutive_failures": failures,
+                        "error": error,
+                        "message": f"MISP IOC sync has failed {failures} consecutive times",
+                    },
+                )
+                logger.warning(
+                    "MISP sync has failed %d consecutive times, notification sent",
+                    failures,
+                )
+        except Exception as e:
+            logger.debug("Failed to track MISP sync failure: %s", e)
 
     async def _configure_misp_sync_job(self, session: AsyncSession) -> None:
         """Configure MISP IOC sync job based on settings."""
