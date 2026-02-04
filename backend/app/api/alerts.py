@@ -417,16 +417,25 @@ async def bulk_delete_alerts(
     success = []
     failed = []
 
-    # Convert string IDs to UUIDs and strings for comparison
-    # Use validated UUIDs for strings to prevent log injection
-    alert_ids = [UUID(aid) for aid in data.alert_ids]
-    alert_id_strs = [str(aid) for aid in alert_ids]
+    # alert_ids are OpenSearch document IDs (SHA256 hex hashes, not UUIDs)
+    # Validate they are hex strings to prevent injection
+    alert_id_strs = []
+    for aid in data.alert_ids:
+        # Validate hex string format (32 chars for truncated SHA256)
+        if not all(c in '0123456789abcdefABCDEF-' for c in aid):
+            failed.append({"id": aid, "error": "Invalid alert ID format"})
+            continue
+        alert_id_strs.append(aid)
 
     # Query database by alert_id (OpenSearch document ID), not database id
     result = await db.execute(select(Alert).where(Alert.alert_id.in_(alert_id_strs)))
     alerts = {alert.alert_id: alert for alert in result.scalars().all()}
 
-    for alert_id_uuid, alert_id_str in zip(alert_ids, alert_id_strs):
+    for alert_id_str in alert_id_strs:
+        # Skip if already failed during validation
+        if any(f["id"] == alert_id_str for f in failed):
+            continue
+
         try:
             # Check if alert exists in database
             if alert_id_str in alerts:
@@ -438,7 +447,7 @@ async def bulk_delete_alerts(
                     os_client.delete(index=alert.alert_index, id=alert.alert_id, refresh=True)
                 except Exception as e:
                     # Don't proceed with DB deletion if OpenSearch fails
-                    # Log sanitized alert ID (already validated as UUID)
+                    # Log sanitized alert ID (already validated as hex string)
                     logger.warning("Failed to delete alert from OpenSearch: %s", str(e))
                     failed.append({"id": alert_id_str, "error": "Failed to delete from OpenSearch"})
                     continue
