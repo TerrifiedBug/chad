@@ -74,6 +74,13 @@ const SYSTEM_EVENT_GROUPS = [
     ],
   },
   {
+    name: 'Data Freshness',
+    events: [
+      { id: 'data_freshness_warning', label: 'Data Freshness Warning', description: 'Index data is older than warning threshold' },
+      { id: 'data_freshness_critical', label: 'Data Freshness Critical', description: 'Index data is older than critical threshold' },
+    ],
+  },
+  {
     name: 'Rule Operations',
     events: [
       { id: 'rule_deployment_failed', label: 'Rule Deployment Failed' },
