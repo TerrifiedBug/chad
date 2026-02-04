@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_opensearch_client, require_admin
+from app.background.tasks.health_checks import get_ti_source_display_name
 from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
 from app.models.setting import Setting
@@ -456,7 +457,7 @@ async def get_health_status(
     for config in ti_configs:
         services.append({
             "service_type": config.source_type,
-            "service_name": config.source_type.replace("_", " ").title(),
+            "service_name": get_ti_source_display_name(config.source_type),
             "status": config.last_health_status or "unknown",
             "last_check": config.last_health_check.isoformat() if config.last_health_check else None
         })
