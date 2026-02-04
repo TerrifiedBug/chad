@@ -68,9 +68,11 @@ async def check_api_key_rate_limit(
 
         # Check request limit
         if request_count >= max_requests:
+            # Log only last 4 chars of key ID to avoid exposing full key
+            safe_key_id = f"...{str(api_key_id)[-4:]}" if api_key_id else "unknown"
             logger.warning(
                 "API key rate limit exceeded: %s - %d/%d requests",
-                api_key_id,
+                safe_key_id,
                 request_count,
                 max_requests,
             )

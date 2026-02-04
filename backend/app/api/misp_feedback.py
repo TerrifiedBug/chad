@@ -115,9 +115,11 @@ async def record_sighting(
             cache = IOCCache()
             evicted = await cache.evict_by_attribute_uuid(request.attribute_uuid)
             if evicted:
+                # Sanitize UUID for logging (remove newlines/control chars)
+                safe_uuid = str(request.attribute_uuid).replace('\n', '').replace('\r', '')[:64]
                 logger.info(
                     "Evicted false positive IOC from cache: %s",
-                    request.attribute_uuid
+                    safe_uuid
                 )
         except Exception as e:
             # Don't fail the sighting if cache eviction fails

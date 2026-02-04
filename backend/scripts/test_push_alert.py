@@ -302,12 +302,12 @@ async def send_push_log(api_url: str, auth_token: str, log: dict) -> dict:
     async with httpx.AsyncClient() as client:
         response = await client.post(url, json=[log], headers=headers)
 
-        if response.status_code == 200:
-            return response.json()
-        else:
+        if response.status_code != 200:
             print(f"ERROR: Push failed with status {response.status_code}")
             print(f"Response: {response.text}")
             sys.exit(1)
+
+        return response.json()
 
 
 async def get_admin_user_id(db_session) -> str:

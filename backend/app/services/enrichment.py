@@ -432,7 +432,9 @@ async def _enrich_ioc_cache(
                             # Found a match, no need to check other IOC types for this value
                             break
                     except Exception as e:
-                        logger.debug("IOC cache lookup failed for %s: %s", value, e)
+                        # Sanitize value for logging (truncate and remove control chars)
+                        safe_value = str(value).replace('\n', '').replace('\r', '')[:50]
+                        logger.debug("IOC cache lookup failed for %s: %s", safe_value, e)
 
         # Add ioc_matches inside threat_intel (same structure as IOC detection alerts)
         # This allows AlertService.create_alert() to extract it to the top level

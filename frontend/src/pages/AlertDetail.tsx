@@ -1601,13 +1601,11 @@ export default function AlertDetailPage() {
       </Dialog>
 
       {/* Create MISP Event Dialog */}
-      {alert && (
-        <CreateMISPEventDialog
-          alert={alert}
-          open={showMISPEventDialog}
-          onOpenChange={setShowMISPEventDialog}
-        />
-      )}
+      <CreateMISPEventDialog
+        alert={alert}
+        open={showMISPEventDialog}
+        onOpenChange={setShowMISPEventDialog}
+      />
     </div>
     </TooltipProvider>
   )

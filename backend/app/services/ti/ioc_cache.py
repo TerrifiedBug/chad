@@ -188,9 +188,11 @@ class IOCCache:
                     ioc_data = json.loads(data)
                     if ioc_data.get("misp_attribute_uuid") == attribute_uuid:
                         await redis.delete(key)
+                        # Sanitize UUID for logging (remove newlines/control chars)
+                        safe_uuid = str(attribute_uuid).replace('\n', '').replace('\r', '')[:64]
                         logger.info(
                             "Evicted IOC by attribute UUID: %s",
-                            attribute_uuid
+                            safe_uuid
                         )
                         return True
                 except json.JSONDecodeError:

@@ -338,7 +338,7 @@ async def main():
     async with async_session_maker() as db:
         print("\n3. Setting up test Sigma rule...")
         user_id = await get_admin_user_id(db)
-        rule_id = await deploy_test_sigma_rule(db, index_pattern_id, user_id)
+        await deploy_test_sigma_rule(db, index_pattern_id, user_id)
 
     # Step 4: Inject IOC if requested
     if args.with_ioc:
@@ -377,6 +377,7 @@ async def main():
             os_client.delete(index=TEST_INDEX_NAME, id=doc_id, refresh=True)
             print(f"   Deleted test document: {doc_id}")
         except Exception:
+            # Cleanup is best-effort; ignore failures (e.g., doc already deleted)
             pass
 
     print("\n" + "=" * 60)
