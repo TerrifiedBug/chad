@@ -507,9 +507,12 @@ function CustomEnrichmentCard({ logDocument }: { logDocument: Record<string, unk
   // Get namespaces from enrichment_status
   const namespaces = Object.keys(enrichmentStatus)
 
-  // Extract enrichment data for each namespace (stored at top level of log_document)
+  // Extract enrichment data for each namespace (stored under log_document.enrichment)
   const getEnrichmentData = (namespace: string): Record<string, unknown> | undefined => {
-    const data = logDocument[namespace]
+    const enrichment = logDocument.enrichment as Record<string, unknown> | undefined
+    if (!enrichment) return undefined
+
+    const data = enrichment[namespace]
     if (data && typeof data === 'object' && !Array.isArray(data)) {
       return data as Record<string, unknown>
     }
