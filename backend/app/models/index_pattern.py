@@ -1,9 +1,14 @@
 import secrets
 import uuid
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from app.models.enrichment_webhook import IndexPatternEnrichmentWebhook
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
 
@@ -109,6 +114,11 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
     )
     updated_by = relationship("User", foreign_keys=[updated_by_id])
+    enrichment_webhook_configs: Mapped[list["IndexPatternEnrichmentWebhook"]] = relationship(
+        "IndexPatternEnrichmentWebhook",
+        back_populates="index_pattern",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def last_edited_by(self) -> str | None:
