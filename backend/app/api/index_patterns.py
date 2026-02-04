@@ -3,15 +3,21 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
+from app.api.deps import get_current_user, get_opensearch_client, require_admin, require_permission_dep
+from app.core.audit import log_audit
 from app.db.session import get_db
+from app.models.enrichment_webhook import EnrichmentWebhook, IndexPatternEnrichmentWebhook
 from app.models.index_pattern import IndexPattern, generate_auth_token
 from app.models.rule import Rule
 from app.models.user import User
+from app.schemas.enrichment_webhook import (
+    IndexPatternEnrichmentConfigResponse,
+    IndexPatternEnrichmentsUpdate,
+)
 from app.schemas.index_pattern import (
     IndexPatternCreate,
     IndexPatternResponse,
@@ -445,3 +451,106 @@ async def validate_pattern(
         sample_fields=result.get("sample_fields", []),
         error=result.get("error"),
     )
+
+
+# --- Enrichment Webhook Config Endpoints ---
+
+
+@router.get("/{pattern_id}/enrichments", response_model=list[IndexPatternEnrichmentConfigResponse])
+async def get_index_pattern_enrichments(
+    pattern_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    """Get enrichment webhook configs for an index pattern."""
+    # Verify pattern exists
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == pattern_id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Index pattern not found")
+
+    # Get configs with webhook details
+    result = await db.execute(
+        select(IndexPatternEnrichmentWebhook)
+        .options(selectinload(IndexPatternEnrichmentWebhook.webhook))
+        .where(IndexPatternEnrichmentWebhook.index_pattern_id == pattern_id)
+    )
+    configs = result.scalars().all()
+
+    return [
+        IndexPatternEnrichmentConfigResponse(
+            webhook_id=c.enrichment_webhook_id,
+            webhook_name=c.webhook.name,
+            webhook_namespace=c.webhook.namespace,
+            field_to_send=c.field_to_send,
+            is_enabled=c.is_enabled,
+        )
+        for c in configs
+    ]
+
+
+@router.put("/{pattern_id}/enrichments", response_model=list[IndexPatternEnrichmentConfigResponse])
+async def update_index_pattern_enrichments(
+    pattern_id: UUID,
+    data: IndexPatternEnrichmentsUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    """Update enrichment webhook configs for an index pattern."""
+    # Verify pattern exists
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == pattern_id)
+    )
+    pattern = result.scalar_one_or_none()
+    if not pattern:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Index pattern not found")
+
+    # Verify all webhook IDs exist
+    webhook_ids = [e.webhook_id for e in data.enrichments]
+    if webhook_ids:
+        result = await db.execute(
+            select(EnrichmentWebhook.id).where(EnrichmentWebhook.id.in_(webhook_ids))
+        )
+        found_ids = {row[0] for row in result.all()}
+        missing = set(webhook_ids) - found_ids
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Webhook IDs not found: {missing}",
+            )
+
+    # Delete existing configs
+    await db.execute(
+        delete(IndexPatternEnrichmentWebhook).where(
+            IndexPatternEnrichmentWebhook.index_pattern_id == pattern_id
+        )
+    )
+
+    # Create new configs
+    for enrichment in data.enrichments:
+        config = IndexPatternEnrichmentWebhook(
+            index_pattern_id=pattern_id,
+            enrichment_webhook_id=enrichment.webhook_id,
+            field_to_send=enrichment.field_to_send,
+            is_enabled=enrichment.is_enabled,
+        )
+        db.add(config)
+
+    # Audit log the change
+    await log_audit(
+        db=db,
+        action="update",
+        resource_type="index_pattern_enrichments",
+        resource_id=str(pattern_id),
+        user=current_user,
+        details={
+            "pattern_name": pattern.name,
+            "webhook_count": len(data.enrichments),
+        },
+    )
+
+    await db.commit()
+
+    # Return updated configs
+    return await get_index_pattern_enrichments(pattern_id, db, current_user)

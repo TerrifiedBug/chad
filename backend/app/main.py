@@ -18,6 +18,7 @@ from app.api.auth import router as auth_router
 from app.api.circuit_breakers import router as circuit_breakers_router
 from app.api.correlation_rules import router as correlation_rules_router
 from app.api.deps import get_db
+from app.api.enrichment_webhooks import router as enrichment_webhooks_router
 from app.api.export import router as export_router
 from app.api.external import router as external_router
 from app.api.field_mappings import router as field_mappings_router
@@ -365,6 +366,7 @@ app.include_router(field_mappings_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(attack_router, prefix="/api")
 app.include_router(webhooks_router, prefix="/api")
+app.include_router(enrichment_webhooks_router, prefix="/api")
 app.include_router(queue_router, prefix="/api")
 app.include_router(metrics_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
