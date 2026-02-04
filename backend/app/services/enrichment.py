@@ -14,6 +14,8 @@ from app.services.geoip import geoip_service
 from app.services.settings import get_setting
 from app.services.system_log import LogCategory, system_log_service
 from app.services.ti import TIEnrichmentManager, TIIndicatorType
+from app.services.ti.ioc_cache import IOCCache
+from app.services.ti.ioc_types import IOCType
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +177,18 @@ async def reinitialize_ti_manager(db: AsyncSession) -> None:
     await _ti_manager.initialize(db)
 
 
+# Mapping from TIIndicatorType to IOCType for MISP cache lookups
+# For IP type, we check both ip-src and ip-dst
+TI_TO_IOC_TYPE_MAP: dict[TIIndicatorType, list[IOCType]] = {
+    TIIndicatorType.IP: [IOCType.IP_SRC, IOCType.IP_DST],
+    TIIndicatorType.DOMAIN: [IOCType.DOMAIN],
+    TIIndicatorType.URL: [IOCType.URL],
+    TIIndicatorType.HASH_MD5: [IOCType.MD5],
+    TIIndicatorType.HASH_SHA1: [IOCType.SHA1],
+    TIIndicatorType.HASH_SHA256: [IOCType.SHA256],
+}
+
+
 async def enrich_alert(
     db: AsyncSession,
     log_doc: dict,
@@ -197,8 +211,11 @@ async def enrich_alert(
     # GeoIP enrichment
     await _enrich_geoip(db, enriched, log_doc, index_pattern)
 
-    # Threat Intelligence enrichment
+    # Threat Intelligence enrichment (real-time API lookups)
     await _enrich_ti(db, enriched, log_doc, index_pattern)
+
+    # MISP IOC cache enrichment (local cache lookups)
+    await _enrich_ioc_cache(enriched, log_doc, index_pattern)
 
     return enriched
 
@@ -337,3 +354,89 @@ async def _enrich_ti(
             message=f"TI enrichment operation failed: {str(e)}",
             details={"error": str(e), "error_type": type(e).__name__}
         )
+
+
+async def _enrich_ioc_cache(
+    enriched: dict,
+    log_doc: dict,
+    index_pattern: IndexPattern,
+) -> None:
+    """
+    Enrich alert with MISP IOC matches from local cache.
+
+    Looks up field values in the synced MISP IOC cache (Redis) and adds
+    any matches to the ioc_matches field for display in IOCMatchesCard.
+    """
+    try:
+        # Check if IOC detection is enabled for this index pattern
+        if not index_pattern.ioc_detection_enabled:
+            return
+
+        field_mappings = index_pattern.ioc_field_mappings
+        if not field_mappings:
+            return
+
+        ioc_cache = IOCCache()
+        ioc_matches: list[dict] = []
+        seen_values: set[str] = set()
+
+        # field_mappings is like: {"ip": ["client_real_ip", "source.ip"], "domain": ["host"]}
+        for ioc_type_str, field_paths in field_mappings.items():
+            # Map the string type to IOCType enum values
+            try:
+                # Handle both MISP-style types (ip-src, ip-dst) and generic types (ip)
+                if ioc_type_str == "ip":
+                    ioc_types_to_check = [IOCType.IP_SRC, IOCType.IP_DST]
+                else:
+                    ioc_types_to_check = [IOCType(ioc_type_str)]
+            except ValueError:
+                logger.debug("Unknown IOC type in field mappings: %s", ioc_type_str)
+                continue
+
+            for field_path in field_paths:
+                value = get_nested_value(log_doc, field_path)
+                if not value or not isinstance(value, str):
+                    continue
+
+                # Skip empty strings
+                value = value.strip()
+                if not value:
+                    continue
+
+                # Skip private IPs for IP types
+                if ioc_type_str == "ip" and not is_public_ip(value):
+                    continue
+
+                # Avoid duplicate lookups
+                lookup_key = f"{ioc_type_str}:{value}"
+                if lookup_key in seen_values:
+                    continue
+                seen_values.add(lookup_key)
+
+                # Look up in cache for each possible IOC type
+                for ioc_type in ioc_types_to_check:
+                    try:
+                        cached_ioc = await ioc_cache.lookup_ioc(ioc_type, value)
+                        if cached_ioc:
+                            ioc_matches.append({
+                                "ioc_type": cached_ioc.get("ioc_type", ioc_type.value),
+                                "value": value,
+                                "field_name": field_path,
+                                "misp_event_id": cached_ioc.get("misp_event_id"),
+                                "misp_event_uuid": cached_ioc.get("misp_event_uuid"),
+                                "misp_attribute_uuid": cached_ioc.get("misp_attribute_uuid"),
+                                "misp_event_info": cached_ioc.get("misp_event_info"),
+                                "threat_level": cached_ioc.get("threat_level"),
+                                "tags": cached_ioc.get("tags", []),
+                            })
+                            # Found a match, no need to check other IOC types for this value
+                            break
+                    except Exception as e:
+                        logger.debug("IOC cache lookup failed for %s: %s", value, e)
+
+        # Add ioc_matches to enriched document if we found any
+        if ioc_matches:
+            enriched["ioc_matches"] = ioc_matches
+
+    except Exception as e:
+        logger.warning("IOC cache enrichment failed: %s", e)
