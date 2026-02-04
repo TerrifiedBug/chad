@@ -38,7 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -50,6 +50,8 @@ import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
+const ALERT_TYPES = ['sigma', 'ioc', 'correlation'] as const
+type AlertType = typeof ALERT_TYPES[number]
 
 // Type guard to check if response is clustered
 function isClusteredResponse(response: AlertListResponse | ClusteredAlertListResponse): response is ClusteredAlertListResponse {
@@ -82,6 +84,10 @@ export default function AlertsPage() {
     const severities = searchParams.get('severity')
     return severities ? severities.split(',').filter(s => SEVERITIES.includes(s as typeof SEVERITIES[number])) : []
   })
+  const [alertTypeFilter, setAlertTypeFilter] = useState<AlertType[]>(() => {
+    const types = searchParams.get('type')
+    return types ? types.split(',').filter(t => ALERT_TYPES.includes(t as AlertType)) as AlertType[] : []
+  })
   const [page, setPage] = useState(1)
 
   // Owner filter - initialize from URL query param, fallback to localStorage
@@ -101,6 +107,13 @@ export default function AlertsPage() {
       prev.includes(severity)
         ? prev.filter(s => s !== severity)
         : [...prev, severity]
+    )
+  }
+  const toggleAlertTypeFilter = (type: AlertType) => {
+    setAlertTypeFilter(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
     )
   }
   const [pageSize, setPageSize] = useState(25)
@@ -173,7 +186,7 @@ export default function AlertsPage() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1)
-  }, [statusFilter, severityFilter, ownerFilter])
+  }, [statusFilter, severityFilter, alertTypeFilter, ownerFilter])
 
   // Sync all filters with URL
   useEffect(() => {
@@ -182,13 +195,14 @@ export default function AlertsPage() {
     if (search) newParams.set('search', search)
     if (statusFilter !== 'all') newParams.set('status', statusFilter)
     if (severityFilter.length > 0) newParams.set('severity', severityFilter.join(','))
+    if (alertTypeFilter.length > 0) newParams.set('type', alertTypeFilter.join(','))
     if (ownerFilter) newParams.set('owner', ownerFilter)
 
     setSearchParams(newParams, { replace: true })
 
     // Persist "Assigned to Me" preference to localStorage
     localStorage.setItem('alerts-assigned-to-me', ownerFilter === 'me' ? 'true' : 'false')
-  }, [search, statusFilter, severityFilter, ownerFilter, setSearchParams])
+  }, [search, statusFilter, severityFilter, alertTypeFilter, ownerFilter, setSearchParams])
 
   useEffect(() => {
     loadData()
@@ -198,6 +212,13 @@ export default function AlertsPage() {
   const canGoPrevious = page > 1
   const canGoNext = page < totalPages
 
+  // Helper to determine alert type
+  const getAlertType = (alert: Alert): AlertType => {
+    if (alert.tags.includes('correlation')) return 'correlation'
+    if (alert.rule_id === 'ioc-detection') return 'ioc'
+    return 'sigma'
+  }
+
   // Filter alerts (works for non-clustered mode)
   const filteredAlerts = alerts.filter((alert) => {
     // Search filter (handle null rule_title for deleted rules)
@@ -206,6 +227,10 @@ export default function AlertsPage() {
     }
     // Severity filter (client-side when multiple selected)
     if (severityFilter.length > 1 && !severityFilter.includes(alert.severity)) {
+      return false
+    }
+    // Alert type filter
+    if (alertTypeFilter.length > 0 && !alertTypeFilter.includes(getAlertType(alert))) {
       return false
     }
     return true
@@ -219,6 +244,10 @@ export default function AlertsPage() {
     }
     // Severity filter
     if (severityFilter.length > 1 && !severityFilter.includes(cluster.representative.severity)) {
+      return false
+    }
+    // Alert type filter
+    if (alertTypeFilter.length > 0 && !alertTypeFilter.includes(getAlertType(cluster.representative))) {
       return false
     }
     return true
@@ -492,6 +521,47 @@ export default function AlertsPage() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="w-32 justify-between">
+              Type
+              {alertTypeFilter.length > 0 && (
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                  {alertTypeFilter.length}
+                </Badge>
+              )}
+              <ChevronDown className="h-4 w-4 ml-auto" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="z-50">
+            <DropdownMenuLabel>Filter by Type</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={alertTypeFilter.includes('sigma')}
+              onCheckedChange={() => toggleAlertTypeFilter('sigma')}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <FileText className="h-3 w-3 mr-2 text-blue-500" />
+              Sigma
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={alertTypeFilter.includes('ioc')}
+              onCheckedChange={() => toggleAlertTypeFilter('ioc')}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <ShieldAlert className="h-3 w-3 mr-2 text-red-500" />
+              IOC
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={alertTypeFilter.includes('correlation')}
+              onCheckedChange={() => toggleAlertTypeFilter('correlation')}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <Link2 className="h-3 w-3 mr-2 text-purple-500" />
+              Correlation
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="flex items-center space-x-2">
           <Checkbox
             id="my-alerts"
@@ -684,6 +754,18 @@ export default function AlertsPage() {
                                   <span>Correlation</span>
                                 </div>
                               )}
+                              {alert.rule_id === 'ioc-detection' && (
+                                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                                  <ShieldAlert className="h-3 w-3" />
+                                  <span>IOC</span>
+                                </div>
+                              )}
+                              {!alert.tags.includes('correlation') && alert.rule_id !== 'ioc-detection' && (
+                                <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                                  <FileText className="h-3 w-3" />
+                                  <span>Sigma</span>
+                                </div>
+                              )}
                               <span>{alert.rule_title}</span>
                             </div>
                           </TableCell>
@@ -713,7 +795,7 @@ export default function AlertsPage() {
                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
                               {alert.tags
-                                .filter(tag => tag !== 'correlation')
+                                .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
                                 .slice(0, 3)
                                 .map((tag, i) => (
                                   <span
@@ -777,6 +859,18 @@ export default function AlertsPage() {
                                     <span>Correlation</span>
                                   </div>
                                 )}
+                                {clusterAlert.rule_id === 'ioc-detection' && (
+                                  <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                                    <ShieldAlert className="h-3 w-3" />
+                                    <span>IOC</span>
+                                  </div>
+                                )}
+                                {!clusterAlert.tags.includes('correlation') && clusterAlert.rule_id !== 'ioc-detection' && (
+                                  <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                                    <FileText className="h-3 w-3" />
+                                    <span>Sigma</span>
+                                  </div>
+                                )}
                                 <span>{clusterAlert.rule_title}</span>
                               </div>
                             </TableCell>
@@ -806,7 +900,7 @@ export default function AlertsPage() {
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
                                 {clusterAlert.tags
-                                  .filter(tag => tag !== 'correlation')
+                                  .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
                                   .slice(0, 2)
                                   .map((tag, i) => (
                                     <span
@@ -860,6 +954,18 @@ export default function AlertsPage() {
                               <span>Correlation</span>
                             </div>
                           )}
+                          {alert.rule_id === 'ioc-detection' && (
+                            <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                              <ShieldAlert className="h-3 w-3" />
+                              <span>IOC</span>
+                            </div>
+                          )}
+                          {!alert.tags.includes('correlation') && alert.rule_id !== 'ioc-detection' && (
+                            <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                              <FileText className="h-3 w-3" />
+                              <span>Sigma</span>
+                            </div>
+                          )}
                           <span>{alert.rule_title}</span>
                         </div>
                       </TableCell>
@@ -889,7 +995,7 @@ export default function AlertsPage() {
                       <TableCell>
                         <div className="flex gap-1 flex-wrap">
                           {alert.tags
-                            .filter(tag => tag !== 'correlation')
+                            .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
                             .slice(0, 3)
                             .map((tag, i) => (
                               <span
@@ -899,9 +1005,9 @@ export default function AlertsPage() {
                                 {tag}
                               </span>
                             ))}
-                          {alert.tags.filter(tag => tag !== 'correlation').length > 3 && (
+                          {alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length > 3 && (
                             <span className="text-xs text-muted-foreground">
-                              +{alert.tags.filter(tag => tag !== 'correlation').length - 3}
+                              +{alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length - 3}
                             </span>
                           )}
                         </div>

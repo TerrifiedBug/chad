@@ -886,18 +886,25 @@ export default function AlertDetailPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
-              {alert.tags.includes('correlation') && (
-                <div className="flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+            <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
+            <div className="flex items-center gap-2 mt-1">
+              {alert.tags.includes('correlation') ? (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
                   <Link2 className="h-3 w-3" />
                   <span>Correlation</span>
                 </div>
+              ) : alert.rule_id === 'ioc-detection' ? (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                  <ShieldAlert className="h-3 w-3" />
+                  <span>IOC Match</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                  <FileText className="h-3 w-3" />
+                  <span>Sigma</span>
+                </div>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Alert ID: {alert.alert_id}
-            </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -1117,8 +1124,9 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
-          {/* Rule card - only show for non-correlation alerts */}
-          {!(alert.log_document as Record<string, unknown>)?.correlation && (
+          {/* Rule card - only show for Sigma rule alerts (not correlation or IOC-only) */}
+          {!(alert.log_document as Record<string, unknown>)?.correlation &&
+           alert.rule_id !== 'ioc-detection' && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
