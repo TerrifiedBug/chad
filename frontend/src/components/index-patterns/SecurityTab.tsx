@@ -1,31 +1,33 @@
 import { useState, useEffect } from 'react'
-import { IndexPattern, indexPatternsApi } from '@/lib/api'
-import { useToast } from '@/components/ui/toast-provider'
+import { IndexPattern } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, X, Plus } from 'lucide-react'
+import { X, Plus } from 'lucide-react'
 
 interface SecurityTabProps {
   pattern: IndexPattern
-  onPatternUpdated: (pattern: IndexPattern) => void
+  onDirtyChange?: (isDirty: boolean) => void
+  onPendingChange?: (changes: Partial<IndexPattern>) => void
 }
 
-export function SecurityTab({ pattern, onPatternUpdated }: SecurityTabProps) {
-  const { showToast } = useToast()
+export function SecurityTab({ pattern, onDirtyChange, onPendingChange }: SecurityTabProps) {
   const [allowedIps, setAllowedIps] = useState<string[]>(pattern.allowed_ips || [])
+  const [originalAllowedIps] = useState<string[]>(pattern.allowed_ips || [])
   const [newIpEntry, setNewIpEntry] = useState('')
   const [ipError, setIpError] = useState('')
   const [rateLimitEnabled, setRateLimitEnabled] = useState(pattern.rate_limit_enabled || false)
+  const [originalRateLimitEnabled] = useState(pattern.rate_limit_enabled || false)
   const [rateLimitRequests, setRateLimitRequests] = useState<number | null>(
     pattern.rate_limit_requests_per_minute || 100
   )
+  const [originalRateLimitRequests] = useState<number | null>(pattern.rate_limit_requests_per_minute || 100)
   const [rateLimitEvents, setRateLimitEvents] = useState<number | null>(
     pattern.rate_limit_events_per_minute || 50000
   )
-  const [isSaving, setIsSaving] = useState(false)
+  const [originalRateLimitEvents] = useState<number | null>(pattern.rate_limit_events_per_minute || 50000)
 
   // Reset form when pattern changes
   useEffect(() => {
@@ -64,23 +66,25 @@ export function SecurityTab({ pattern, onPatternUpdated }: SecurityTabProps) {
     setAllowedIps(allowedIps.filter(i => i !== ip))
   }
 
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
-      const updated = await indexPatternsApi.update(pattern.id, {
+  // Track dirty state and report pending changes
+  useEffect(() => {
+    const isDirty =
+      JSON.stringify(allowedIps) !== JSON.stringify(originalAllowedIps) ||
+      rateLimitEnabled !== originalRateLimitEnabled ||
+      rateLimitRequests !== originalRateLimitRequests ||
+      rateLimitEvents !== originalRateLimitEvents
+    onDirtyChange?.(isDirty)
+    if (isDirty) {
+      onPendingChange?.({
         allowed_ips: allowedIps.length > 0 ? allowedIps : null,
         rate_limit_enabled: rateLimitEnabled,
         rate_limit_requests_per_minute: rateLimitEnabled ? rateLimitRequests : null,
         rate_limit_events_per_minute: rateLimitEnabled ? rateLimitEvents : null,
       })
-      onPatternUpdated(updated)
-      showToast('Security settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
-    } finally {
-      setIsSaving(false)
     }
-  }
+  }, [allowedIps, rateLimitEnabled, rateLimitRequests, rateLimitEvents,
+      originalAllowedIps, originalRateLimitEnabled, originalRateLimitRequests, originalRateLimitEvents,
+      onDirtyChange, onPendingChange])
 
   // This tab is only for push mode
   if (pattern.mode !== 'push') {
@@ -206,21 +210,6 @@ export function SecurityTab({ pattern, onPatternUpdated }: SecurityTabProps) {
         )}
       </div>
 
-      <div className="flex justify-end pt-4 border-t">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
-            </>
-          )}
-        </Button>
-      </div>
     </div>
   )
 }

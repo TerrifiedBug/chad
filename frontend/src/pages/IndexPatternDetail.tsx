@@ -3,6 +3,8 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   IndexPattern,
   indexPatternsApi,
+  indexPatternEnrichmentsApi,
+  IndexPatternEnrichmentsUpdate,
 } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
@@ -51,9 +53,15 @@ export default function IndexPatternDetail() {
   const [isLoading, setIsLoading] = useState(!isNew)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [showChangeReasonDialog, setShowChangeReasonDialog] = useState(false)
-  const [pendingChanges, setPendingChanges] = useState<Partial<IndexPattern> | null>(null)
+
+  // Unified dirty state tracking across all tabs
+  const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set())
+  const hasUnsavedChanges = dirtyTabs.size > 0
+
+  // Unified pending changes from all tabs
+  const [pendingPatternChanges, setPendingPatternChanges] = useState<Partial<IndexPattern>>({})
+  const [pendingEnrichmentChanges, setPendingEnrichmentChanges] = useState<IndexPatternEnrichmentsUpdate | null>(null)
 
   // Warn on browser refresh/close when there are unsaved changes
   const { confirmNavigation } = useUnsavedChanges(hasUnsavedChanges)
@@ -84,14 +92,14 @@ export default function IndexPatternDetail() {
     setSearchParams({ tab })
   }
 
-  // Handle save
-  const handleSave = async (data: Partial<IndexPattern>) => {
+  // Handle save from Settings tab (for new patterns or direct saves)
+  const handleSettingsSave = async (data: Partial<IndexPattern>) => {
     if (isNew) {
       // For new patterns, save directly (no audit needed)
       setIsSaving(true)
       try {
         const created = await indexPatternsApi.create(data as Parameters<typeof indexPatternsApi.create>[0])
-        setHasUnsavedChanges(false) // Clear before navigation
+        setDirtyTabs(new Set()) // Clear before navigation
         showToast('Index pattern created')
         // Navigate to the edit view of the new pattern
         navigate(`/index-patterns/${created.id}`, { replace: true })
@@ -103,27 +111,44 @@ export default function IndexPatternDetail() {
         setIsSaving(false)
       }
     } else {
-      // For updates, show change reason dialog
-      setPendingChanges(data)
+      // For updates, merge with pending changes and show dialog
+      setPendingPatternChanges(prev => ({ ...prev, ...data }))
       setShowChangeReasonDialog(true)
     }
   }
 
-  // Handle confirm save with change reason
+  // Trigger unified save (shows change reason dialog)
+  const handleUnifiedSave = () => {
+    if (!pattern) return
+    setShowChangeReasonDialog(true)
+  }
+
+  // Handle confirm save with change reason (unified save for all tabs)
   const handleConfirmSave = async (changeReason: string) => {
-    if (!pendingChanges || !pattern) return
+    if (!pattern) return
 
     setIsSaving(true)
     try {
-      const updated = await indexPatternsApi.update(pattern.id, {
-        ...pendingChanges,
-        change_reason: changeReason,
-      })
-      setPattern(updated)
-      setHasUnsavedChanges(false)
+      // Save index pattern changes if any
+      if (Object.keys(pendingPatternChanges).length > 0) {
+        const updated = await indexPatternsApi.update(pattern.id, {
+          ...pendingPatternChanges,
+          change_reason: changeReason,
+        })
+        setPattern(updated)
+      }
+
+      // Save webhook enrichment changes if any
+      if (pendingEnrichmentChanges) {
+        await indexPatternEnrichmentsApi.update(pattern.id, pendingEnrichmentChanges)
+      }
+
+      // Clear all dirty state
+      setDirtyTabs(new Set())
+      setPendingPatternChanges({})
+      setPendingEnrichmentChanges(null)
       showToast('Index pattern updated')
       setShowChangeReasonDialog(false)
-      setPendingChanges(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save'
       showToast(message, 'error')
@@ -132,9 +157,29 @@ export default function IndexPatternDetail() {
     }
   }
 
-  // Handle dirty state from SettingsTab
-  const handleDirtyChange = useCallback((isDirty: boolean) => {
-    setHasUnsavedChanges(isDirty)
+  // Handle dirty state from any tab
+  const createDirtyHandler = useCallback((tabName: string) => {
+    return (isDirty: boolean) => {
+      setDirtyTabs(prev => {
+        const next = new Set(prev)
+        if (isDirty) {
+          next.add(tabName)
+        } else {
+          next.delete(tabName)
+        }
+        return next
+      })
+    }
+  }, [])
+
+  // Handle pending changes from any tab (for index pattern fields)
+  const handlePendingPatternChange = useCallback((changes: Partial<IndexPattern>) => {
+    setPendingPatternChanges(prev => ({ ...prev, ...changes }))
+  }, [])
+
+  // Handle pending changes for webhook enrichments (separate API)
+  const handlePendingEnrichmentChange = useCallback((changes: IndexPatternEnrichmentsUpdate) => {
+    setPendingEnrichmentChanges(changes)
   }, [])
 
   // Handle back navigation
@@ -225,29 +270,32 @@ export default function IndexPatternDetail() {
             )}
           </div>
         </div>
-        {/* Save button - only show on Settings tab */}
-        {activeTab === 'settings' && (
-          <Button
-            onClick={() => {
-              // Trigger save from the settings form
+        {/* Unified Save button - always visible */}
+        <Button
+          onClick={() => {
+            if (isNew && activeTab === 'settings') {
+              // For new patterns, trigger form submission
               const form = document.getElementById('settings-form') as HTMLFormElement
               form?.requestSubmit()
-            }}
-            disabled={isSaving || !hasUnsavedChanges}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-2" />
-                {isNew ? 'Create Pattern' : 'Save Changes'}
-              </>
-            )}
-          </Button>
-        )}
+            } else {
+              // For existing patterns, show change reason dialog
+              handleUnifiedSave()
+            }
+          }}
+          disabled={isSaving || !hasUnsavedChanges}
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="h-4 w-4 mr-2" />
+              {isNew ? 'Create Pattern' : 'Save Changes'}
+            </>
+          )}
+        </Button>
       </div>
 
       {/* Tabs */}
@@ -329,9 +377,9 @@ export default function IndexPatternDetail() {
             <SettingsTab
               pattern={pattern}
               isNew={isNew}
-              onSave={handleSave}
+              onSave={handleSettingsSave}
               isSaving={isSaving}
-              onDirtyChange={handleDirtyChange}
+              onDirtyChange={createDirtyHandler('settings')}
             />
           </div>
         </TabsContent>
@@ -356,7 +404,8 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <TIEnrichmentTab
                 pattern={pattern}
-                onPatternUpdated={handlePatternUpdated}
+                onDirtyChange={createDirtyHandler('threat-intel')}
+                onPendingChange={handlePendingPatternChange}
               />
             ) : (
               <div className="text-sm text-muted-foreground py-8 text-center">
@@ -371,7 +420,8 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <IOCDetectionTab
                 pattern={pattern}
-                onPatternUpdated={setPattern}
+                onDirtyChange={createDirtyHandler('ioc-detection')}
+                onPendingChange={handlePendingPatternChange}
               />
             ) : (
               <div className="text-sm text-muted-foreground py-8 text-center">
@@ -386,7 +436,8 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <GeoIPTab
                 pattern={pattern}
-                onPatternUpdated={handlePatternUpdated}
+                onDirtyChange={createDirtyHandler('geoip')}
+                onPendingChange={handlePendingPatternChange}
               />
             ) : (
               <div className="text-sm text-muted-foreground py-8 text-center">
@@ -401,7 +452,8 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <WebhooksTab
                 pattern={pattern}
-                onPatternUpdated={handlePatternUpdated}
+                onDirtyChange={createDirtyHandler('webhooks')}
+                onPendingChange={handlePendingEnrichmentChange}
               />
             ) : (
               <div className="text-sm text-muted-foreground py-8 text-center">
@@ -416,7 +468,8 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <SecurityTab
                 pattern={pattern}
-                onPatternUpdated={handlePatternUpdated}
+                onDirtyChange={createDirtyHandler('security')}
+                onPendingChange={handlePendingPatternChange}
               />
             ) : (
               <div className="text-sm text-muted-foreground py-8 text-center">
@@ -431,7 +484,8 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <HealthTab
                 pattern={pattern}
-                onPatternUpdated={handlePatternUpdated}
+                onDirtyChange={createDirtyHandler('health')}
+                onPendingChange={handlePendingPatternChange}
               />
             ) : (
               <div className="text-sm text-muted-foreground py-8 text-center">

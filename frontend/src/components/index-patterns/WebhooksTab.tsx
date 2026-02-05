@@ -6,27 +6,28 @@ import {
   indexPatternEnrichmentsApi,
   EnrichmentWebhook,
   IndexPatternEnrichmentConfig,
+  IndexPatternEnrichmentsUpdate,
 } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, Search, Webhook } from 'lucide-react'
+import { Loader2, Search, Webhook } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 interface WebhooksTabProps {
   pattern: IndexPattern
-  onPatternUpdated?: (pattern: IndexPattern) => void
+  onDirtyChange?: (isDirty: boolean) => void
+  onPendingChange?: (changes: IndexPatternEnrichmentsUpdate) => void
 }
 
-export function WebhooksTab({ pattern }: WebhooksTabProps) {
+export function WebhooksTab({ pattern, onDirtyChange, onPendingChange }: WebhooksTabProps) {
   const { showToast } = useToast()
   const [webhooks, setWebhooks] = useState<EnrichmentWebhook[]>([])
   const [configs, setConfigs] = useState<IndexPatternEnrichmentConfig[]>([])
+  const [originalConfigs, setOriginalConfigs] = useState<IndexPatternEnrichmentConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
   const [availableFields, setAvailableFields] = useState<string[]>([])
 
   // Track field search per webhook
@@ -39,15 +40,17 @@ export function WebhooksTab({ pattern }: WebhooksTabProps) {
     const loadData = async () => {
       setIsLoading(true)
       try {
+        // Gracefully handle empty webhooks/configs - don't show error for "no data"
         const [webhookList, enrichmentConfigs, fields] = await Promise.all([
-          enrichmentWebhooksApi.list(),
-          indexPatternEnrichmentsApi.get(pattern.id),
+          enrichmentWebhooksApi.list().catch(() => []),
+          indexPatternEnrichmentsApi.get(pattern.id).catch(() => []),
           indexPatternsApi.getFields(pattern.id),
         ])
         // Only show active webhooks
-        setWebhooks(webhookList.filter((w) => w.is_active))
+        setWebhooks((webhookList || []).filter((w) => w.is_active))
         // Backend returns array directly
         setConfigs(enrichmentConfigs || [])
+        setOriginalConfigs(enrichmentConfigs || [])
         setAvailableFields(fields.sort())
 
         // Initialize field searches with current config values
@@ -57,8 +60,9 @@ export function WebhooksTab({ pattern }: WebhooksTabProps) {
         })
         setFieldSearches(initialSearches)
       } catch (err) {
-        console.error('Failed to load webhook data:', err)
-        showToast('Failed to load webhook configuration', 'error')
+        // Only show error for field loading failure (critical for functionality)
+        console.error('Failed to load fields:', err)
+        showToast('Failed to load available fields', 'error')
       } finally {
         setIsLoading(false)
       }
@@ -79,27 +83,19 @@ export function WebhooksTab({ pattern }: WebhooksTabProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
+  // Track dirty state and report pending changes
+  useEffect(() => {
+    const isDirty = JSON.stringify(configs) !== JSON.stringify(originalConfigs)
+    onDirtyChange?.(isDirty)
+    if (isDirty) {
       const enrichmentsPayload = configs.map((c) => ({
         webhook_id: c.webhook_id,
         field_to_send: c.field_to_send,
         is_enabled: c.is_enabled,
       }))
-
-      // Backend returns array directly
-      const updated = await indexPatternEnrichmentsApi.update(pattern.id, {
-        enrichments: enrichmentsPayload,
-      })
-      setConfigs(updated || [])
-      showToast('Webhook enrichment settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
-    } finally {
-      setIsSaving(false)
+      onPendingChange?.({ enrichments: enrichmentsPayload })
     }
-  }
+  }, [configs, originalConfigs, onDirtyChange, onPendingChange])
 
   const toggleWebhook = (webhookId: string, enabled: boolean) => {
     if (enabled) {
@@ -307,21 +303,6 @@ export function WebhooksTab({ pattern }: WebhooksTabProps) {
         </div>
       )}
 
-      <div className="flex justify-end pt-4 border-t">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
-            </>
-          )}
-        </Button>
-      </div>
     </div>
   )
 }

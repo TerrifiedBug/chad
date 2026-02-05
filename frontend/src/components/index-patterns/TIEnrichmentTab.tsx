@@ -12,13 +12,11 @@ import {
   TI_INDICATOR_TYPE_INFO,
   TISourceType,
 } from '@/lib/api'
-import { useToast } from '@/components/ui/toast-provider'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, X, Search } from 'lucide-react'
+import { Loader2, X, Search } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -29,15 +27,15 @@ import {
 
 interface TIEnrichmentTabProps {
   pattern: IndexPattern
-  onPatternUpdated: (pattern: IndexPattern) => void
+  onDirtyChange?: (isDirty: boolean) => void
+  onPendingChange?: (changes: Partial<IndexPattern>) => void
 }
 
-export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabProps) {
-  const { showToast } = useToast()
+export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIEnrichmentTabProps) {
   const [tiSources, setTiSources] = useState<TISourceConfig[]>([])
   const [tiConfig, setTiConfig] = useState<TIConfig>(pattern.ti_config || {})
+  const [originalConfig] = useState<TIConfig>(pattern.ti_config || {})
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
   const [availableFields, setAvailableFields] = useState<string[]>([])
 
   // Track pending field additions per source (field search text and selected field)
@@ -85,20 +83,16 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
-      const updated = await indexPatternsApi.update(pattern.id, {
+  // Track dirty state and report pending changes
+  useEffect(() => {
+    const isDirty = JSON.stringify(tiConfig) !== JSON.stringify(originalConfig)
+    onDirtyChange?.(isDirty)
+    if (isDirty) {
+      onPendingChange?.({
         ti_config: Object.keys(tiConfig).length > 0 ? tiConfig : null,
       })
-      onPatternUpdated(updated)
-      showToast('Threat intelligence settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
-    } finally {
-      setIsSaving(false)
     }
-  }
+  }, [tiConfig, originalConfig, onDirtyChange, onPendingChange])
 
   const toggleSource = (sourceType: string, enabled: boolean) => {
     if (enabled) {
@@ -348,21 +342,6 @@ export function TIEnrichmentTab({ pattern, onPatternUpdated }: TIEnrichmentTabPr
         </div>
       )}
 
-      <div className="flex justify-end pt-4 border-t">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
-            </>
-          )}
-        </Button>
-      </div>
     </div>
   )
 }

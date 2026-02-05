@@ -73,7 +73,7 @@ export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyC
         percolator_index: pattern.percolator_index,
         description: pattern.description || '',
       })
-      setDetectionMode(pattern.mode)
+      setDetectionMode(pattern.mode || (isPullOnly ? 'pull' : 'push'))
       setPollIntervalMinutes(pattern.poll_interval_minutes || 5)
       setTimestampField(pattern.timestamp_field || '@timestamp')
     } else {
@@ -185,6 +185,12 @@ export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyC
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault()
     setSaveError('')
+
+    // Validate mode before saving
+    if (!detectionMode || !['push', 'pull'].includes(detectionMode)) {
+      setSaveError('Invalid detection mode. Please select Push or Pull.')
+      return
+    }
 
     const data: Partial<IndexPattern> = {
       name: formData.name,
