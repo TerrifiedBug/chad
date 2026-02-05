@@ -27,7 +27,6 @@ interface SettingsTabProps {
   pattern: IndexPattern | null
   isNew: boolean
   onSave: (data: Partial<IndexPattern>) => Promise<void>
-  isSaving?: boolean
   onDirtyChange?: (isDirty: boolean) => void
 }
 
@@ -38,7 +37,7 @@ interface FormData {
   description: string
 }
 
-export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyChange }: SettingsTabProps) {
+export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsTabProps) {
   const { isPullOnly, supportsPush } = useMode()
 
   // Form state
@@ -422,21 +421,6 @@ export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyC
         </div>
       )}
 
-      {/* Save Button */}
-      <div className="flex justify-end pt-4 border-t">
-        <Button type="submit" disabled={isSaving || !formData.name || !formData.pattern}>
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : isNew ? (
-            'Create Pattern'
-          ) : (
-            'Save Changes'
-          )}
-        </Button>
-      </div>
     </form>
   )
 }

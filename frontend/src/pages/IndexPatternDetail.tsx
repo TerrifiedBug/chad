@@ -420,7 +420,6 @@ export default function IndexPatternDetail() {
               pattern={pattern}
               isNew={isNew}
               onSave={handleSettingsSave}
-              isSaving={isSaving}
               onDirtyChange={handleSettingsDirty}
             />
           </div>
