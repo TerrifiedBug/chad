@@ -21,6 +21,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { PageHeader } from '@/components/PageHeader'
 import { HEALTH_COLORS, HEALTH_BG_COLORS } from '@/lib/constants'
+import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
 interface ServiceHealth {
@@ -737,7 +738,7 @@ export default function HealthPage() {
                             <div className="flex justify-between items-start mb-2">
                               <span className="font-mono text-muted-foreground">{msg.original_stream}</span>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                {'timestamp' in msg && msg.timestamp && (
+                                {'timestamp' in msg && !!(msg.timestamp) && (
                                   <TimestampTooltip timestamp={msg.timestamp as string}>
                                     <span>{formatDateTime(msg.timestamp as string)}</span>
                                   </TimestampTooltip>
@@ -746,7 +747,7 @@ export default function HealthPage() {
                               </div>
                             </div>
                             <p className="text-destructive mb-2">{msg.reason}</p>
-                            {'payload' in msg && msg.payload && (
+                            {'payload' in msg && !!(msg.payload) && (
                               <details className="mt-2">
                                 <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
                                   View payload

@@ -214,7 +214,7 @@ export default function UsersPage() {
 
   // Lock status state
   const [lockStatuses, setLockStatuses] = useState<Record<string, {locked: boolean; remaining_minutes: number | null}>>({})
-  const [isLoadingLockStatus, setIsLoadingLockStatus] = useState(false)
+  const [, setIsLoadingLockStatus] = useState(false)
 
   // Password complexity
   const passwordComplexity = validatePasswordComplexity(newPassword)
