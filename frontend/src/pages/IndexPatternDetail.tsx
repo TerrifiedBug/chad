@@ -157,19 +157,61 @@ export default function IndexPatternDetail() {
     }
   }
 
-  // Handle dirty state from any tab
-  const createDirtyHandler = useCallback((tabName: string) => {
-    return (isDirty: boolean) => {
-      setDirtyTabs(prev => {
-        const next = new Set(prev)
-        if (isDirty) {
-          next.add(tabName)
-        } else {
-          next.delete(tabName)
-        }
-        return next
-      })
-    }
+  // Stable dirty handlers for each tab (memoized to prevent infinite loops)
+  const handleSettingsDirty = useCallback((isDirty: boolean) => {
+    setDirtyTabs(prev => {
+      const next = new Set(prev)
+      if (isDirty) { next.add('settings') } else { next.delete('settings') }
+      return next
+    })
+  }, [])
+
+  const handleThreatIntelDirty = useCallback((isDirty: boolean) => {
+    setDirtyTabs(prev => {
+      const next = new Set(prev)
+      if (isDirty) { next.add('threat-intel') } else { next.delete('threat-intel') }
+      return next
+    })
+  }, [])
+
+  const handleIocDetectionDirty = useCallback((isDirty: boolean) => {
+    setDirtyTabs(prev => {
+      const next = new Set(prev)
+      if (isDirty) { next.add('ioc-detection') } else { next.delete('ioc-detection') }
+      return next
+    })
+  }, [])
+
+  const handleGeoipDirty = useCallback((isDirty: boolean) => {
+    setDirtyTabs(prev => {
+      const next = new Set(prev)
+      if (isDirty) { next.add('geoip') } else { next.delete('geoip') }
+      return next
+    })
+  }, [])
+
+  const handleWebhooksDirty = useCallback((isDirty: boolean) => {
+    setDirtyTabs(prev => {
+      const next = new Set(prev)
+      if (isDirty) { next.add('webhooks') } else { next.delete('webhooks') }
+      return next
+    })
+  }, [])
+
+  const handleSecurityDirty = useCallback((isDirty: boolean) => {
+    setDirtyTabs(prev => {
+      const next = new Set(prev)
+      if (isDirty) { next.add('security') } else { next.delete('security') }
+      return next
+    })
+  }, [])
+
+  const handleHealthDirty = useCallback((isDirty: boolean) => {
+    setDirtyTabs(prev => {
+      const next = new Set(prev)
+      if (isDirty) { next.add('health') } else { next.delete('health') }
+      return next
+    })
   }, [])
 
   // Handle pending changes from any tab (for index pattern fields)
@@ -379,7 +421,7 @@ export default function IndexPatternDetail() {
               isNew={isNew}
               onSave={handleSettingsSave}
               isSaving={isSaving}
-              onDirtyChange={createDirtyHandler('settings')}
+              onDirtyChange={handleSettingsDirty}
             />
           </div>
         </TabsContent>
@@ -404,7 +446,7 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <TIEnrichmentTab
                 pattern={pattern}
-                onDirtyChange={createDirtyHandler('threat-intel')}
+                onDirtyChange={handleThreatIntelDirty}
                 onPendingChange={handlePendingPatternChange}
               />
             ) : (
@@ -420,7 +462,7 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <IOCDetectionTab
                 pattern={pattern}
-                onDirtyChange={createDirtyHandler('ioc-detection')}
+                onDirtyChange={handleIocDetectionDirty}
                 onPendingChange={handlePendingPatternChange}
               />
             ) : (
@@ -436,7 +478,7 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <GeoIPTab
                 pattern={pattern}
-                onDirtyChange={createDirtyHandler('geoip')}
+                onDirtyChange={handleGeoipDirty}
                 onPendingChange={handlePendingPatternChange}
               />
             ) : (
@@ -452,7 +494,7 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <WebhooksTab
                 pattern={pattern}
-                onDirtyChange={createDirtyHandler('webhooks')}
+                onDirtyChange={handleWebhooksDirty}
                 onPendingChange={handlePendingEnrichmentChange}
               />
             ) : (
@@ -468,7 +510,7 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <SecurityTab
                 pattern={pattern}
-                onDirtyChange={createDirtyHandler('security')}
+                onDirtyChange={handleSecurityDirty}
                 onPendingChange={handlePendingPatternChange}
               />
             ) : (
@@ -484,7 +526,7 @@ export default function IndexPatternDetail() {
             {pattern ? (
               <HealthTab
                 pattern={pattern}
-                onDirtyChange={createDirtyHandler('health')}
+                onDirtyChange={handleHealthDirty}
                 onPendingChange={handlePendingPatternChange}
               />
             ) : (
