@@ -2,14 +2,8 @@ import { useState, useEffect } from 'react'
 import { IndexPattern, indexPatternsApi } from '@/lib/api'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { SearchableFieldSelect } from '@/components/ui/searchable-field-select'
 import { Loader2, X } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
 interface GeoIPTabProps {
   pattern: IndexPattern
@@ -104,20 +98,13 @@ export function GeoIPTab({ pattern, onDirtyChange, onPendingChange }: GeoIPTabPr
       <div className="space-y-4">
         <div className="space-y-2">
           <Label>IP Fields to Enrich</Label>
-          <Select value="" onValueChange={addField}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select an IP field to add..." />
-            </SelectTrigger>
-            <SelectContent>
-              {availableFields
-                .filter(f => !geoipFields.includes(f))
-                .map((field) => (
-                  <SelectItem key={field} value={field}>
-                    {field}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          <SearchableFieldSelect
+            fields={availableFields}
+            placeholder="Search and select an IP field..."
+            onSelect={addField}
+            clearOnSelect={true}
+            excludeFields={geoipFields}
+          />
         </div>
 
         {geoipFields.length > 0 ? (

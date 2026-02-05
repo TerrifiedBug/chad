@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
   IndexPattern,
   indexPatternsApi,
@@ -9,11 +9,11 @@ import {
   IndexPatternEnrichmentsUpdate,
 } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Search, Webhook } from 'lucide-react'
+import { SearchableFieldSelect } from '@/components/ui/searchable-field-select'
+import { Loader2, Webhook } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 interface WebhooksTabProps {
@@ -29,11 +29,6 @@ export function WebhooksTab({ pattern, onDirtyChange, onPendingChange }: Webhook
   const [originalConfigs, setOriginalConfigs] = useState<IndexPatternEnrichmentConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [availableFields, setAvailableFields] = useState<string[]>([])
-
-  // Track field search per webhook
-  const [fieldSearches, setFieldSearches] = useState<Record<string, string>>({})
-  const [showDropdowns, setShowDropdowns] = useState<Record<string, boolean>>({})
-  const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Load webhooks and current config
   useEffect(() => {
@@ -52,13 +47,6 @@ export function WebhooksTab({ pattern, onDirtyChange, onPendingChange }: Webhook
         setConfigs(enrichmentConfigs || [])
         setOriginalConfigs(enrichmentConfigs || [])
         setAvailableFields(fields.sort())
-
-        // Initialize field searches with current config values
-        const initialSearches: Record<string, string> = {}
-        ;(enrichmentConfigs || []).forEach((c) => {
-          initialSearches[c.webhook_id] = c.field_to_send
-        })
-        setFieldSearches(initialSearches)
       } catch (err) {
         // Only show error for field loading failure (critical for functionality)
         console.error('Failed to load fields:', err)
@@ -69,19 +57,6 @@ export function WebhooksTab({ pattern, onDirtyChange, onPendingChange }: Webhook
     }
     loadData()
   }, [pattern.id, showToast])
-
-  // Handle click outside to close dropdowns
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      Object.entries(dropdownRefs.current).forEach(([webhookId, ref]) => {
-        if (ref && !ref.contains(event.target as Node)) {
-          setShowDropdowns((prev) => ({ ...prev, [webhookId]: false }))
-        }
-      })
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   // Track dirty state and report pending changes
   useEffect(() => {
@@ -127,27 +102,14 @@ export function WebhooksTab({ pattern, onDirtyChange, onPendingChange }: Webhook
     } else {
       // Remove config entirely
       setConfigs((prev) => prev.filter((c) => c.webhook_id !== webhookId))
-      setFieldSearches((prev) => {
-        const updated = { ...prev }
-        delete updated[webhookId]
-        return updated
-      })
     }
   }
 
-  const selectField = (webhookId: string, field: string) => {
-    setFieldSearches((prev) => ({ ...prev, [webhookId]: field }))
+  const updateFieldToSend = (webhookId: string, field: string) => {
     setConfigs((prev) =>
       prev.map((c) =>
         c.webhook_id === webhookId ? { ...c, field_to_send: field } : c
       )
-    )
-    setShowDropdowns((prev) => ({ ...prev, [webhookId]: false }))
-  }
-
-  const getFilteredFields = (search: string) => {
-    return availableFields.filter((f) =>
-      f.toLowerCase().includes(search.toLowerCase())
     )
   }
 
@@ -185,9 +147,6 @@ export function WebhooksTab({ pattern, onDirtyChange, onPendingChange }: Webhook
           {webhooks.map((webhook) => {
             const config = configs.find((c) => c.webhook_id === webhook.id)
             const isEnabled = !!config?.is_enabled
-            const fieldSearch = fieldSearches[webhook.id] || ''
-            const showDropdown = showDropdowns[webhook.id]
-            const filteredFields = getFilteredFields(fieldSearch)
 
             return (
               <div key={webhook.id} className="border rounded-lg p-4">
@@ -218,70 +177,13 @@ export function WebhooksTab({ pattern, onDirtyChange, onPendingChange }: Webhook
                       </p>
                     </div>
 
-                    <div
-                      ref={(el) => {
-                        dropdownRefs.current[webhook.id] = el
-                      }}
-                      className="relative"
-                    >
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          value={fieldSearch}
-                          onChange={(e) => {
-                            setFieldSearches((prev) => ({
-                              ...prev,
-                              [webhook.id]: e.target.value,
-                            }))
-                            setShowDropdowns((prev) => ({
-                              ...prev,
-                              [webhook.id]: true,
-                            }))
-                            // Also update config
-                            setConfigs((prev) =>
-                              prev.map((c) =>
-                                c.webhook_id === webhook.id
-                                  ? { ...c, field_to_send: e.target.value }
-                                  : c
-                              )
-                            )
-                          }}
-                          onFocus={() =>
-                            setShowDropdowns((prev) => ({
-                              ...prev,
-                              [webhook.id]: true,
-                            }))
-                          }
-                          placeholder="Search and select a field..."
-                          className="pl-9"
-                        />
-                      </div>
-                      {showDropdown && availableFields.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full bg-popover border rounded-md shadow-md max-h-60 overflow-y-auto">
-                          {filteredFields.length === 0 ? (
-                            <div className="px-3 py-2 text-sm text-muted-foreground">
-                              No matching fields
-                            </div>
-                          ) : (
-                            filteredFields.slice(0, 100).map((field) => (
-                              <button
-                                key={field}
-                                type="button"
-                                className="w-full px-3 py-2 text-left text-sm font-mono hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground outline-none"
-                                onClick={() => selectField(webhook.id, field)}
-                              >
-                                {field}
-                              </button>
-                            ))
-                          )}
-                          {filteredFields.length > 100 && (
-                            <div className="px-3 py-2 text-xs text-muted-foreground border-t">
-                              Showing first 100 of {filteredFields.length} matches
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <SearchableFieldSelect
+                      fields={availableFields}
+                      value={config?.field_to_send || ''}
+                      placeholder="Search and select a field..."
+                      onSelect={(field) => updateFieldToSend(webhook.id, field)}
+                      onChange={(value) => updateFieldToSend(webhook.id, value)}
+                    />
 
                     {config?.field_to_send && (
                       <div className="flex items-center gap-2 p-2 bg-muted/50 rounded">
