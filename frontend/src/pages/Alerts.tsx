@@ -38,7 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert, ExternalLink, X, RotateCcw } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert, ExternalLink, X, RotateCcw, LayoutList, List } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -122,6 +122,17 @@ export default function AlertsPage() {
     )
   }
   const [pageSize, setPageSize] = useState(25)
+
+  // Compact mode state with localStorage persistence
+  const [isCompact, setIsCompact] = useState(() => {
+    const saved = localStorage.getItem('alerts-compact-mode')
+    return saved ? JSON.parse(saved) : false
+  })
+
+  // Persist compact mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('alerts-compact-mode', JSON.stringify(isCompact))
+  }, [isCompact])
 
   // Bulk selection state
   const [selectedAlerts, setSelectedAlerts] = useState<Set<string>>(new Set())
@@ -464,7 +475,17 @@ export default function AlertsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Alerts"
+        title={
+          <div className="flex items-center gap-3">
+            <span>Alerts</span>
+            {isClustered && totalClusters > 0 && (
+              <div className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">
+                <Layers className="h-3.5 w-3.5" />
+                <span>{totalClusters} clusters from {total} alerts</span>
+              </div>
+            )}
+          </div>
+        }
         description="Monitor and manage security alerts"
         actions={
           <Button variant="outline" onClick={() => setShowExportDialog(true)}>
@@ -606,12 +627,9 @@ export default function AlertsPage() {
             />
             <Label htmlFor="my-alerts" className="text-sm cursor-pointer">Assigned to me</Label>
           </div>
-          <Button variant="outline" size="icon" onClick={loadData} title="Refresh">
-            <RotateCcw className="h-4 w-4" />
-          </Button>
         </div>
 
-        {/* Filters - Secondary Row: Severity Pills */}
+        {/* Filters - Secondary Row: Severity Pills + Clustering Info */}
         <div className="flex flex-wrap items-center gap-3">
           <SeverityPills
             selected={severityFilter}
@@ -638,6 +656,31 @@ export default function AlertsPage() {
               Clear all filters
             </Button>
           )}
+
+          {/* Refresh and Compact toggle */}
+          <div className="ml-auto flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={loadData} title="Refresh" className="text-muted-foreground">
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsCompact(!isCompact)}
+              className="text-muted-foreground"
+            >
+              {isCompact ? (
+                <>
+                  <LayoutList className="h-4 w-4 mr-1" />
+                  Comfortable
+                </>
+              ) : (
+                <>
+                  <List className="h-4 w-4 mr-1" />
+                  Compact
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -716,16 +759,6 @@ export default function AlertsPage() {
         </div>
       )}
 
-      {/* Clustering indicator */}
-      {isClustered && totalClusters > 0 && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-3 py-2 rounded-md">
-          <Layers className="h-4 w-4" />
-          <span>
-            Alert clustering is enabled. Showing {totalClusters} cluster{totalClusters !== 1 ? 's' : ''} from {total} alert{total !== 1 ? 's' : ''}.
-          </span>
-        </div>
-      )}
-
       {isLoading ? (
         <div className="space-y-4">
           {/* Skeleton for filter bar */}
@@ -748,7 +781,7 @@ export default function AlertsPage() {
       ) : (
         <TooltipProvider>
           <div className="border rounded-lg">
-            <Table>
+            <Table className={cn(isCompact && 'table-compact')}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
@@ -876,21 +909,21 @@ export default function AlertsPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-1 flex-wrap">
+                            <div className="flex gap-1">
                               {alert.tags
                                 .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
-                                .slice(0, 3)
+                                .slice(0, 2)
                                 .map((tag, i) => (
                                   <span
                                     key={i}
-                                    className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                                    className="px-1.5 py-0.5 bg-muted rounded text-xs truncate max-w-[80px]"
                                   >
                                     {tag}
                                   </span>
                                 ))}
-                              {alert.tags.filter(tag => tag !== 'correlation').length > 3 && (
-                                <span className="text-xs text-muted-foreground">
-                                  +{alert.tags.filter(tag => tag !== 'correlation').length - 3}
+                              {alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length > 2 && (
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  +{alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length - 2}
                                 </span>
                               )}
                             </div>
@@ -1079,21 +1112,21 @@ export default function AlertsPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-1 flex-wrap">
+                        <div className="flex gap-1">
                           {alert.tags
                             .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
-                            .slice(0, 3)
+                            .slice(0, 2)
                             .map((tag, i) => (
                               <span
                                 key={i}
-                                className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                                className="px-1.5 py-0.5 bg-muted rounded text-xs truncate max-w-[80px]"
                               >
                                 {tag}
                               </span>
                             ))}
-                          {alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length > 3 && (
-                            <span className="text-xs text-muted-foreground">
-                              +{alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length - 3}
+                          {alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length > 2 && (
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              +{alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length - 2}
                             </span>
                           )}
                         </div>

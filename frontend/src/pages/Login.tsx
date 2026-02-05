@@ -107,11 +107,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-3xl">CHAD</CardTitle>
-          <CardDescription>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-muted/50 p-4">
+      <Card className="w-full max-w-md shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <CardHeader className="text-center pb-2">
+          <div className="mx-auto mb-3 p-3 rounded-full bg-primary/10 w-fit">
+            <Shield className="h-8 w-8 text-primary" />
+          </div>
+          <CardTitle className="text-3xl font-bold tracking-tight">CHAD</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground/80">
             Cyber Hunting And Detection
           </CardDescription>
         </CardHeader>
@@ -130,7 +133,6 @@ export default function LoginPage() {
           {requires2FA ? (
             <form onSubmit={handle2FASubmit} className="space-y-4" autoComplete="off">
               <div className="text-center mb-4">
-                <Shield className="h-12 w-12 mx-auto mb-2 text-primary" />
                 <p className="text-sm text-muted-foreground">
                   Enter the 6-digit code from your authenticator app, or an 8-character backup code
                 </p>

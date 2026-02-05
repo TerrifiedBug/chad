@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { CheckCircle2, ChevronDown, Download, Loader2, Save, Upload, XCircle } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Select,
@@ -443,44 +444,25 @@ export default function SettingsPage() {
     }
   }
 
-  const saveSession = async () => {
+  // Combined save for all security settings
+  const saveAllSecuritySettings = async () => {
     setIsSaving(true)
     try {
-      await settingsApiExtended.update('session', {
-        timeout_minutes: sessionTimeout,
-      })
-      showToast('Session settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const saveRateLimiting = async () => {
-    setIsSaving(true)
-    try {
-      await settingsApiExtended.update('rate_limiting', {
-        enabled: rateLimitEnabled,
-        max_attempts: rateLimitMaxAttempts,
-        lockout_minutes: rateLimitLockoutMinutes,
-      })
-      showToast('Rate limiting settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Save failed', 'error')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const save2FASettings = async () => {
-    setIsSaving(true)
-    try {
-      await settingsApi.updateSecuritySettings({
-        force_2fa_on_signup: force2FAOnSignup,
-        api_key_rate_limit: apiKeyRateLimit
-      })
-      showToast('Security settings saved')
+      await Promise.all([
+        settingsApiExtended.update('session', {
+          timeout_minutes: sessionTimeout,
+        }),
+        settingsApiExtended.update('rate_limiting', {
+          enabled: rateLimitEnabled,
+          max_attempts: rateLimitMaxAttempts,
+          lockout_minutes: rateLimitLockoutMinutes,
+        }),
+        settingsApi.updateSecuritySettings({
+          force_2fa_on_signup: force2FAOnSignup,
+          api_key_rate_limit: apiKeyRateLimit
+        })
+      ])
+      showToast('All security settings saved')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Save failed', 'error')
     } finally {
@@ -681,16 +663,33 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">Loading...</div>
+      <div className="space-y-6">
+        {/* Loading skeleton */}
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-4 w-72 mt-2" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+            <div className="flex justify-end pt-4">
+              <Skeleton className="h-10 w-24" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage your CHAD configuration</p>
-      </div>
 
       {/* Notifications Section */}
       {activeTab === 'notifications' && (
@@ -739,6 +738,7 @@ export default function SettingsPage() {
                         id="session-timeout"
                         type="number"
                         autoComplete="off"
+                        className="w-32"
                         value={sessionTimeout}
                         onChange={(e) =>
                           setSessionTimeout(parseInt(e.target.value) || 480)
@@ -751,10 +751,6 @@ export default function SettingsPage() {
                         7 days)
                       </p>
                     </div>
-                    <Button onClick={saveSession} disabled={isSaving}>
-                      <Save className="mr-2 h-4 w-4" />
-                      {isSaving ? 'Saving...' : 'Save'}
-                    </Button>
                   </div>
 
                   <div className="border-t pt-6">
@@ -781,6 +777,7 @@ export default function SettingsPage() {
                               id="rate-limit-max-attempts"
                               type="number"
                               autoComplete="off"
+                              className="w-32"
                               min={1}
                               max={20}
                               value={rateLimitMaxAttempts}
@@ -797,6 +794,7 @@ export default function SettingsPage() {
                               id="rate-limit-lockout-minutes"
                               type="number"
                               autoComplete="off"
+                              className="w-32"
                               min={1}
                               max={1440}
                               value={rateLimitLockoutMinutes}
@@ -808,11 +806,6 @@ export default function SettingsPage() {
                           </div>
                         </>
                       )}
-
-                      <Button onClick={saveRateLimiting} disabled={isSaving}>
-                        <Save className="mr-2 h-4 w-4" />
-                        {isSaving ? 'Saving...' : 'Save'}
-                      </Button>
                     </div>
                   </div>
 
@@ -825,6 +818,7 @@ export default function SettingsPage() {
                           id="api-key-rate-limit"
                           type="number"
                           autoComplete="off"
+                          className="w-32"
                           min={1}
                           max={10000}
                           value={apiKeyRateLimit}
@@ -834,11 +828,6 @@ export default function SettingsPage() {
                           Maximum API requests per minute per API key (applies to external API endpoints)
                         </p>
                       </div>
-
-                      <Button onClick={save2FASettings} disabled={isSaving}>
-                        <Save className="mr-2 h-4 w-4" />
-                        {isSaving ? 'Saving...' : 'Save'}
-                      </Button>
                     </div>
                   </div>
 
@@ -857,11 +846,24 @@ export default function SettingsPage() {
                           onCheckedChange={setForce2FAOnSignup}
                         />
                       </div>
-                      <Button onClick={save2FASettings} disabled={isSaving}>
-                        <Save className="mr-2 h-4 w-4" />
-                        {isSaving ? 'Saving...' : 'Save'}
-                      </Button>
                     </div>
+                  </div>
+
+                  {/* Single save button for all security settings */}
+                  <div className="flex justify-end pt-6 border-t">
+                    <Button onClick={saveAllSecuritySettings} disabled={isSaving}>
+                      {isSaving ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="mr-2 h-4 w-4" />
+                          Save All Settings
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </CardContent>
               </CollapsibleContent>
@@ -1943,16 +1945,24 @@ export default function SettingsPage() {
 
       {/* General Section - background-sync content */}
       {activeTab === 'general' && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>SigmaHQ Auto-Sync</CardTitle>
-              <CardDescription>
-                Configure automatic synchronization of the SigmaHQ rules repository.
-                When enabled, CHAD will periodically pull the latest rules from SigmaHQ.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <Collapsible defaultOpen>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>SigmaHQ Auto-Sync</CardTitle>
+                      <CardDescription>
+                        Configure automatic synchronization of the SigmaHQ rules repository
+                      </CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Enable Auto-Sync</Label>
@@ -1995,10 +2005,11 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              <div className="pt-4 border-t">
-                <p className="text-sm text-muted-foreground mb-4">
-                  You can also manually sync at any time from the SigmaHQ browser page.
-                </p>
+              <p className="text-sm text-muted-foreground">
+                You can also manually sync at any time from the SigmaHQ browser page.
+              </p>
+
+              <div className="flex justify-end pt-4 border-t">
                 <Button onClick={saveSigmahqSync} disabled={isSaving}>
                   {isSaving ? (
                     <>
@@ -2014,17 +2025,27 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </CardContent>
-          </Card>
+          </CollapsibleContent>
+            </Card>
+          </Collapsible>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>MITRE ATT&CK Auto-Sync</CardTitle>
-              <CardDescription>
-                Configure automatic synchronization of the MITRE ATT&CK Enterprise framework.
-                When enabled, CHAD will periodically update technique data from the ATT&CK STIX repository.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+          <Collapsible>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>MITRE ATT&CK Auto-Sync</CardTitle>
+                      <CardDescription>
+                        Configure automatic synchronization of the MITRE ATT&CK Enterprise framework
+                      </CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Enable Auto-Sync</Label>
@@ -2066,10 +2087,11 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              <div className="pt-4 border-t">
-                <p className="text-sm text-muted-foreground mb-4">
-                  You can also manually sync from the ATT&CK Matrix page.
-                </p>
+              <p className="text-sm text-muted-foreground">
+                You can also manually sync from the ATT&CK Matrix page.
+              </p>
+
+              <div className="flex justify-end pt-4 border-t">
                 <Button onClick={saveAttackSync} disabled={isSaving}>
                   {isSaving ? (
                     <>
@@ -2085,137 +2107,169 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </CardContent>
-          </Card>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Version Cleanup</CardTitle>
-              <CardDescription>
-                Automatically clean up old rule and correlation rule versions to save storage.
-                Runs daily at 3:00 AM.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Enable Version Cleanup</Label>
+          <Collapsible>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Version Cleanup</CardTitle>
+                      <CardDescription>
+                        Automatically clean up old rule versions. Runs daily at 3:00 AM.
+                      </CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>Enable Version Cleanup</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Automatically delete old versions beyond the retention policy
+                      </p>
+                    </div>
+                    <Switch
+                      checked={versionCleanupEnabled}
+                      onCheckedChange={setVersionCleanupEnabled}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="version-cleanup-min-keep">Minimum Versions to Keep</Label>
+                    <Input
+                      id="version-cleanup-min-keep"
+                      type="number"
+                      min={1}
+                      max={100}
+                      className="w-32"
+                      value={versionCleanupMinKeep}
+                      onChange={(e) => setVersionCleanupMinKeep(parseInt(e.target.value) || 10)}
+                      disabled={!versionCleanupEnabled}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Always keep at least this many versions per rule, regardless of age
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="version-cleanup-max-age">Maximum Age (days)</Label>
+                    <Input
+                      id="version-cleanup-max-age"
+                      type="number"
+                      min={1}
+                      max={365}
+                      className="w-32"
+                      value={versionCleanupMaxAgeDays}
+                      onChange={(e) => setVersionCleanupMaxAgeDays(parseInt(e.target.value) || 90)}
+                      disabled={!versionCleanupEnabled}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Delete versions older than this (if more than minimum kept)
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end pt-4 border-t">
+                    <Button onClick={saveVersionCleanup} disabled={isSavingVersionCleanup}>
+                      {isSavingVersionCleanup ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="mr-2 h-4 w-4" />
+                          Save Settings
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
+          <Collapsible>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>System Log Retention</CardTitle>
+                      <CardDescription>
+                        Configure how long system logs are kept before automatic cleanup
+                      </CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6">
+                  <div className="flex items-center gap-4">
+                    <Label htmlFor="system-log-retention">Keep logs for</Label>
+                    <Select
+                      value={systemLogRetention.toString()}
+                      onValueChange={(v) => setSystemLogRetention(parseInt(v))}
+                    >
+                      <SelectTrigger id="system-log-retention" className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="z-50 bg-popover">
+                        <SelectItem value="7">7 days</SelectItem>
+                        <SelectItem value="14">14 days</SelectItem>
+                        <SelectItem value="30">30 days</SelectItem>
+                        <SelectItem value="60">60 days</SelectItem>
+                        <SelectItem value="90">90 days</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <p className="text-sm text-muted-foreground">
-                    Automatically delete old versions beyond the retention policy
+                    Logs older than this will be automatically purged daily at 3 AM.
                   </p>
-                </div>
-                <Switch
-                  checked={versionCleanupEnabled}
-                  onCheckedChange={setVersionCleanupEnabled}
-                />
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="version-cleanup-min-keep">Minimum Versions to Keep</Label>
-                <Input
-                  id="version-cleanup-min-keep"
-                  type="number"
-                  min={1}
-                  max={100}
-                  className="w-32"
-                  value={versionCleanupMinKeep}
-                  onChange={(e) => setVersionCleanupMinKeep(parseInt(e.target.value) || 10)}
-                  disabled={!versionCleanupEnabled}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Always keep at least this many versions per rule, regardless of age
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="version-cleanup-max-age">Maximum Age (days)</Label>
-                <Input
-                  id="version-cleanup-max-age"
-                  type="number"
-                  min={1}
-                  max={365}
-                  className="w-32"
-                  value={versionCleanupMaxAgeDays}
-                  onChange={(e) => setVersionCleanupMaxAgeDays(parseInt(e.target.value) || 90)}
-                  disabled={!versionCleanupEnabled}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Delete versions older than this (if more than minimum kept)
-                </p>
-              </div>
-
-              <div className="pt-4 border-t">
-                <Button onClick={saveVersionCleanup} disabled={isSavingVersionCleanup}>
-                  {isSavingVersionCleanup ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 h-4 w-4" />
-                      Save Settings
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>System Log Retention</CardTitle>
-              <CardDescription>
-                Configure how long system logs are kept before automatic cleanup.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center gap-4">
-                <Label htmlFor="system-log-retention">Keep logs for</Label>
-                <Select
-                  value={systemLogRetention.toString()}
-                  onValueChange={(v) => setSystemLogRetention(parseInt(v))}
-                >
-                  <SelectTrigger id="system-log-retention" className="w-[100px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 bg-popover">
-                    <SelectItem value="7">7 days</SelectItem>
-                    <SelectItem value="14">14 days</SelectItem>
-                    <SelectItem value="30">30 days</SelectItem>
-                    <SelectItem value="60">60 days</SelectItem>
-                    <SelectItem value="90">90 days</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Logs older than this will be automatically purged daily at 3 AM.
-              </p>
-
-              <div className="pt-4 border-t">
-                <Button onClick={saveSystemLogRetention} disabled={isSavingSystemLogRetention}>
-                  {isSavingSystemLogRetention ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 h-4 w-4" />
-                      Save Settings
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="flex justify-end pt-4 border-t">
+                    <Button onClick={saveSystemLogRetention} disabled={isSavingSystemLogRetention}>
+                      {isSavingSystemLogRetention ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="mr-2 h-4 w-4" />
+                          Save Settings
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
 
           {/* Alert Clustering */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Alert Clustering</CardTitle>
-              <CardDescription>Group alerts from the same detection rule within a time window to reduce noise</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+          <Collapsible>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Alert Clustering</CardTitle>
+                      <CardDescription>Group alerts from the same detection rule to reduce noise</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Enable Alert Clustering</Label>
@@ -2264,26 +2318,28 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              <div className="flex justify-end pt-4 border-t">
-                <Button
-                  onClick={saveAlertClusteringSettings}
-                  disabled={isSavingAlertClustering}
-                >
-                  {isSavingAlertClustering ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Settings
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="flex justify-end pt-4 border-t">
+                    <Button
+                      onClick={saveAlertClusteringSettings}
+                      disabled={isSavingAlertClustering}
+                    >
+                      {isSavingAlertClustering ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4 mr-2" />
+                          Save Settings
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
         </div>
       )}
 

@@ -87,9 +87,23 @@ export function StatCard({
 
   const variantStyles = {
     default: '',
-    warning: 'border-l-4 border-l-yellow-500',
-    danger: 'border-l-4 border-l-red-500',
-    success: 'border-l-4 border-l-green-500',
+    warning: 'border-l-4 border-l-yellow-500 bg-yellow-500/5',
+    danger: 'border-l-4 border-l-red-500 bg-red-500/5',
+    success: 'border-l-4 border-l-green-500 bg-green-500/5',
+  }
+
+  const iconBgStyles = {
+    default: 'bg-muted/50',
+    warning: 'bg-yellow-500/10',
+    danger: 'bg-red-500/10',
+    success: 'bg-green-500/10',
+  }
+
+  const iconColorStyles = {
+    default: 'text-muted-foreground',
+    warning: 'text-yellow-600 dark:text-yellow-500',
+    danger: 'text-red-600 dark:text-red-500',
+    success: 'text-green-600 dark:text-green-500',
   }
 
   return (
@@ -103,19 +117,22 @@ export function StatCard({
       onClick={onClick}
     >
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
         {Icon && (
-          <div className={cn('relative', shouldShowRing && 'urgency-ring')}>
+          <div className={cn(
+            'p-2 rounded-lg',
+            shouldShowRing ? 'urgency-ring bg-red-500/10' : iconBgStyles[variant]
+          )}>
             <Icon className={cn(
-              'h-4 w-4 text-muted-foreground',
-              shouldShowRing && 'text-red-500'
+              'h-4 w-4',
+              shouldShowRing ? 'text-red-500' : iconColorStyles[variant]
             )} />
           </div>
         )}
       </CardHeader>
       <CardContent>
         <div className="flex items-baseline gap-2">
-          <div className="text-2xl font-bold">{value}</div>
+          <div className="text-3xl font-bold tracking-tight">{value}</div>
           {trend && (
             <div
               className={cn(

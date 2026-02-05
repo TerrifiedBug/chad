@@ -2,16 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { statsApi, DashboardStats } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   Table,
   TableBody,
@@ -20,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { AlertTriangle, ChevronDown, Clock, FileText } from 'lucide-react'
+import { AlertTriangle, Clock, FileText } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { cn } from '@/lib/utils'
@@ -31,8 +22,7 @@ import { ErrorAlert } from '@/components/ui/error-alert'
 import { ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/dashboard/StatCard'
-
-const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
+import { SeverityPills } from '@/components/filters/SeverityPills'
 
 type RecentAlert = DashboardStats['recent_alerts'][number]
 
@@ -229,62 +219,20 @@ export default function Dashboard() {
 
       {/* Recent Alerts */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle>Recent Alerts</CardTitle>
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                  Severity
-                  {severityFilter.length > 0 && (
-                    <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
-                      {severityFilter.length}
-                    </Badge>
-                  )}
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Filter by Severity</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {SEVERITIES.map((severity) => (
-                  <DropdownMenuCheckboxItem
-                    key={severity}
-                    checked={severityFilter.includes(severity)}
-                    onCheckedChange={() => toggleSeverityFilter(severity)}
-                    onSelect={(e) => e.preventDefault()}
-                  >
-                    <span
-                      className={cn(
-                        'mr-2 inline-block w-2 h-2 rounded-full',
-                        severity === 'critical' && 'bg-red-500',
-                        severity === 'high' && 'bg-orange-500',
-                        severity === 'medium' && 'bg-yellow-500',
-                        severity === 'low' && 'bg-blue-500',
-                        severity === 'informational' && 'bg-gray-500'
-                      )}
-                    />
-                    {capitalize(severity)} ({stats?.alerts.by_severity?.[severity] || 0})
-                  </DropdownMenuCheckboxItem>
-                ))}
-                {severityFilter.length > 0 && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start text-muted-foreground"
-                      onClick={() => setSeverityFilter([])}
-                    >
-                      Clear filters
-                    </Button>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+        <CardHeader className="pb-2">
+          <div className="flex flex-row items-center justify-between">
+            <CardTitle>Recent Alerts</CardTitle>
             <Link to="/alerts" className="text-sm text-primary hover:underline">
               View all
             </Link>
+          </div>
+          <div className="pt-2">
+            <SeverityPills
+              selected={severityFilter}
+              onChange={toggleSeverityFilter}
+              showCounts={stats?.alerts.by_severity}
+              size="sm"
+            />
           </div>
         </CardHeader>
         <CardContent>

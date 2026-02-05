@@ -38,7 +38,6 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
-import { PageHeader } from '@/components/PageHeader'
 
 const PAGE_SIZE = 50
 
@@ -208,31 +207,24 @@ export default function AuditLogPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
-      <PageHeader
-        title="Audit Log"
-        description="View system activity and changes"
-        breadcrumb={[
-          { label: 'Settings', href: '/settings/hub' },
-          { label: 'Audit Log' },
-        ]}
-        actions={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline">
-                <Download className="mr-2 h-4 w-4" /> Export
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => handleExport('csv')}>
-                Export as CSV
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExport('json')}>
-                Export as JSON
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        }
-      />
+      {/* Export button */}
+      <div className="flex justify-end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline">
+              <Download className="mr-2 h-4 w-4" /> Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => handleExport('csv')}>
+              Export as CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport('json')}>
+              Export as JSON
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {/* Filters */}
       <Card>

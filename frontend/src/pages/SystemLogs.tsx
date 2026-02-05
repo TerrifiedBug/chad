@@ -29,7 +29,6 @@ import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { cn } from '@/lib/utils'
-import { PageHeader } from '@/components/PageHeader'
 
 const PAGE_SIZE = 50
 
@@ -242,21 +241,14 @@ export default function SystemLogsPage() {
   const totalPages = logsData ? Math.ceil(logsData.total / PAGE_SIZE) : 0
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <PageHeader
-        title="System Logs"
-        description="View application logs and background task activity"
-        breadcrumb={[
-          { label: 'Settings', href: '/settings/hub' },
-          { label: 'System Logs' },
-        ]}
-        actions={
-          <Button variant="outline" size="sm" onClick={loadLogs} disabled={isLoading}>
-            <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
-            Refresh
-          </Button>
-        }
-      />
+    <div className="space-y-6">
+      {/* Refresh button */}
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={loadLogs} disabled={isLoading}>
+          <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+          Refresh
+        </Button>
+      </div>
 
       {/* Filters */}
       <Card>

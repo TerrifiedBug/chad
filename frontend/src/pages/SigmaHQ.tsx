@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import yaml from 'js-yaml'
 import {
   sigmahqApi,
   indexPatternsApi,
@@ -43,24 +44,25 @@ import {
   RefreshCw,
   Search,
   Folder,
+  FolderOpen,
   FileText,
+  FileSearch,
   Download,
   Loader2,
   GitBranch,
   X,
   Zap,
 } from 'lucide-react'
-import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
+import { SEVERITY_COLORS, SIGMA_STATUS_COLORS_SUBTLE, capitalize } from '@/lib/constants'
 import { LoadingState } from '@/components/ui/loading-state'
+import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/PageHeader'
 
-// SigmaHQ rule stability status colors (different from alert status)
+// Use centralized sigma status colors, with fallbacks for deprecated/unsupported
 const sigmaStatusColors: Record<string, string> = {
-  stable: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-  test: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-  experimental: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-  deprecated: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-  unsupported: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+  ...SIGMA_STATUS_COLORS_SUBTLE,
+  deprecated: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  unsupported: 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
 }
 
 type CategoryTreeItemProps = {
@@ -71,6 +73,7 @@ type CategoryTreeItemProps = {
   expandedPaths: Set<string>
   onToggleExpand: (path: string) => void
   onSelectCategory: (path: string) => void
+  depth?: number
 }
 
 function CategoryTreeItem({
@@ -81,16 +84,17 @@ function CategoryTreeItem({
   expandedPaths,
   onToggleExpand,
   onSelectCategory,
+  depth = 0,
 }: CategoryTreeItemProps) {
   const isExpanded = expandedPaths.has(path)
   const isSelected = selectedPath === path
   const hasChildren = Object.keys(category.children).length > 0
 
   return (
-    <div>
+    <div className="relative">
       <div
-        className={`flex items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted ${
-          isSelected ? 'bg-muted font-medium' : ''
+        className={`flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer transition-colors hover:bg-muted ${
+          isSelected ? 'bg-primary/10 font-medium border-l-2 border-primary' : ''
         }`}
         onClick={() => {
           if (hasChildren) {
@@ -108,14 +112,14 @@ function CategoryTreeItem({
         ) : (
           <span className="w-4" />
         )}
-        <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
         <span className="truncate text-sm">{name}</span>
-        <span className="ml-auto text-xs text-muted-foreground">
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {category.count}
         </span>
       </div>
       {isExpanded && hasChildren && (
-        <div className="ml-4">
+        <div className="ml-4 relative before:absolute before:left-2 before:top-0 before:bottom-2 before:w-px before:bg-border">
           {Object.entries(category.children)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([childName, childCategory]) => (
@@ -128,6 +132,7 @@ function CategoryTreeItem({
                 expandedPaths={expandedPaths}
                 onToggleExpand={onToggleExpand}
                 onSelectCategory={onSelectCategory}
+                depth={depth + 1}
               />
             ))}
         </div>
@@ -175,6 +180,42 @@ export default function SigmaHQPage() {
   const [isImporting, setIsImporting] = useState(false)
   const [importError, setImportError] = useState('')
   const [importSuccess, setImportSuccess] = useState('')
+
+  // Extract detection fields from YAML for preview
+  const detectionFields = useMemo(() => {
+    if (!ruleContent?.content) return []
+    try {
+      const parsed = yaml.load(ruleContent.content) as Record<string, unknown>
+      const detection = parsed?.detection as Record<string, unknown> | undefined
+      if (!detection) return []
+
+      const fields = new Set<string>()
+      const extractFields = (obj: unknown, prefix = ''): void => {
+        if (!obj || typeof obj !== 'object') return
+        if (Array.isArray(obj)) {
+          obj.forEach(item => extractFields(item, prefix))
+          return
+        }
+        Object.entries(obj as Record<string, unknown>).forEach(([key, value]) => {
+          // Skip condition and special sigma keywords
+          if (['condition', 'timeframe'].includes(key)) return
+          if (key.startsWith('selection') || key.startsWith('filter') || key === 'all of them' || key === '1 of them') {
+            extractFields(value, '')
+          } else if (key.endsWith('|contains') || key.endsWith('|startswith') || key.endsWith('|endswith') || key.endsWith('|re')) {
+            fields.add(key.split('|')[0])
+          } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+            extractFields(value, key)
+          } else {
+            fields.add(key)
+          }
+        })
+      }
+      extractFields(detection)
+      return Array.from(fields).sort()
+    } catch {
+      return []
+    }
+  }, [ruleContent?.content])
 
   // Define loadCategories first (no dependencies)
   const loadCategories = useCallback(async (type: SigmaHQRuleType) => {
@@ -263,6 +304,27 @@ export default function SigmaHQPage() {
       return next
     })
   }
+
+  // Get all category paths for expand/collapse all
+  const getAllCategoryPaths = useCallback((cats: Record<string, SigmaHQCategory>, prefix = ''): string[] => {
+    const paths: string[] = []
+    Object.entries(cats).forEach(([name, cat]) => {
+      const path = prefix ? `${prefix}/${name}` : name
+      paths.push(path)
+      if (Object.keys(cat.children).length > 0) {
+        paths.push(...getAllCategoryPaths(cat.children, path))
+      }
+    })
+    return paths
+  }, [])
+
+  const handleExpandAll = useCallback(() => {
+    setExpandedPaths(new Set(getAllCategoryPaths(categories)))
+  }, [categories, getAllCategoryPaths])
+
+  const handleCollapseAll = useCallback(() => {
+    setExpandedPaths(new Set())
+  }, [])
 
   const handleSelectCategory = async (path: string) => {
     setSelectedPath(path)
@@ -450,7 +512,7 @@ export default function SigmaHQPage() {
 
   // Cloned - show browser
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-full gap-6">
       <PageHeader
         title="SigmaHQ Rules"
         description="Browse and import rules from the SigmaHQ community repository"
@@ -538,13 +600,33 @@ export default function SigmaHQPage() {
       </div>
 
       {/* Main content - 3 column layout */}
-      <div className="grid grid-cols-12 gap-4 h-[calc(100vh-340px)] min-h-[500px]">
+      <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
         {/* Category tree */}
-        <div className="col-span-3 border rounded-lg overflow-auto">
-          <div className="p-3 border-b bg-muted/50">
+        <div className="col-span-3 border rounded-lg flex flex-col min-h-0">
+          <div className="p-3 border-b bg-muted/50 shrink-0 flex items-center justify-between">
             <h3 className="font-medium text-sm">Categories</h3>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={handleExpandAll}
+                title="Expand all"
+              >
+                <FolderOpen className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={handleCollapseAll}
+                title="Collapse all"
+              >
+                <Folder className="h-3 w-3" />
+              </Button>
+            </div>
           </div>
-          <div className="p-2">
+          <div className="p-2 flex-1 overflow-auto custom-scrollbar">
             {Object.entries(categories)
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([name, category]) => (
@@ -563,8 +645,8 @@ export default function SigmaHQPage() {
         </div>
 
         {/* Rules list */}
-        <div className="col-span-4 border rounded-lg overflow-auto">
-          <div className="p-3 border-b bg-muted/50 flex items-center justify-between">
+        <div className="col-span-4 border rounded-lg flex flex-col min-h-0">
+          <div className="p-3 border-b bg-muted/50 flex items-center justify-between shrink-0">
             <h3 className="font-medium text-sm">
               {isSearchActive
                 ? `Search Results (${rules.length})`
@@ -574,7 +656,7 @@ export default function SigmaHQPage() {
             </h3>
             {isSearching && <Loader2 className="h-4 w-4 animate-spin" />}
           </div>
-          <div className="divide-y">
+          <div className="divide-y flex-1 overflow-auto custom-scrollbar">
             {isLoadingRules ? (
               <div className="p-4 text-center text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin mx-auto" />
@@ -724,9 +806,12 @@ export default function SigmaHQPage() {
                 </div>
               </div>
             ) : (
-              <div className="p-4 text-center text-muted-foreground text-sm">
-                Select a rule to preview its content
-              </div>
+              <EmptyState
+                icon={<FileSearch className="h-12 w-12" />}
+                title="Select a rule to preview"
+                description="Browse categories or search to find rules"
+                tips={['Use search for quick access', 'Click Import to add rules']}
+              />
             )}
           </div>
         </div>
@@ -744,6 +829,27 @@ export default function SigmaHQPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* Detection field preview */}
+            {detectionFields.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Detection Fields</Label>
+                <div className="flex flex-wrap gap-1">
+                  {detectionFields.slice(0, 12).map((field) => (
+                    <Badge key={field} variant="secondary" className="text-xs font-mono">
+                      {field}
+                    </Badge>
+                  ))}
+                  {detectionFields.length > 12 && (
+                    <Badge variant="outline" className="text-xs">
+                      +{detectionFields.length - 12} more
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Ensure your index pattern contains these fields for optimal detection.
+                </p>
+              </div>
+            )}
             {indexPatterns.length === 0 ? (
               <div className="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 p-3 rounded-md text-sm">
                 No index patterns configured. Please create an index pattern first.

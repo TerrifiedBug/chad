@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/use-auth'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,6 +19,7 @@ import { TwoFactorSetup } from '@/components/TwoFactorSetup'
 import { authApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { useTheme } from '@/hooks/use-theme'
+import { PageHeader } from '@/components/PageHeader'
 
 const SEVERITY_OPTIONS = [
   { value: 'critical', label: 'Critical', color: 'bg-red-500' },
@@ -133,101 +134,100 @@ export default function AccountPage() {
   if (!user) return null
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold mb-8">Account Settings</h1>
+    <div className="space-y-6 max-w-3xl">
+      <PageHeader
+        title="Account"
+        description="Manage your profile, security, and preferences"
+      />
 
-      {/* Top row - Profile and Security side by side */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Profile Info */}
-        <Card className="flex flex-col">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              Profile
+      {/* Profile Section - Compact inline display */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <div className="p-1.5 bg-primary/10 rounded-md">
+              <User className="h-4 w-4 text-primary" />
+            </div>
+            Profile
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Email</p>
+              <p className="text-sm font-medium truncate">{user.email}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Role</p>
+              <p className="text-sm font-medium capitalize">{user.role}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Auth Method</p>
+              <p className="text-sm font-medium">{user.auth_method === 'sso' ? 'SSO' : 'Local'}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Security - 2FA */}
+      {user.auth_method === 'local' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="p-1.5 bg-primary/10 rounded-md">
+                <Shield className="h-4 w-4 text-primary" />
+              </div>
+              Security
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-muted-foreground">Email</Label>
-              <p className="font-medium">{user.email}</p>
-            </div>
-            <div>
-              <Label className="text-muted-foreground">Role</Label>
-              <p className="font-medium capitalize">{user.role}</p>
-            </div>
-            <div>
-              <Label className="text-muted-foreground">Authentication Method</Label>
-              <p className="font-medium">{user.auth_method === 'sso' ? 'Single Sign-On (SSO)' : 'Local Account'}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Security - 2FA */}
-        {user.auth_method === 'local' && (
-          <Card className="flex flex-col">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5" />
-                Security
-              </CardTitle>
-              <CardDescription>
-                Manage your account security settings
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          <CardContent>
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {user.totp_enabled ? (
-                  <ShieldCheck className="h-8 w-8 text-green-500 flex-shrink-0" />
+                  <ShieldCheck className="h-5 w-5 text-green-500 flex-shrink-0" />
                 ) : (
-                  <ShieldOff className="h-8 w-8 text-muted-foreground flex-shrink-0" />
+                  <ShieldOff className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                 )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium">Two-Factor Authentication</p>
-                  <p className="text-sm text-muted-foreground">
+                <div>
+                  <p className="text-sm font-medium">Two-Factor Authentication</p>
+                  <p className="text-xs text-muted-foreground">
                     {user.totp_enabled
                       ? 'Your account is protected with 2FA'
                       : 'Add an extra layer of security'}
                   </p>
                 </div>
               </div>
-              <div className="mt-4">
-                {user.totp_enabled ? (
-                  <Button variant="outline" onClick={() => setShowDisable(true)}>
-                    Disable 2FA
-                  </Button>
-                ) : (
-                  <Button onClick={() => setShowSetup(true)}>
-                    Enable 2FA
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              {user.totp_enabled ? (
+                <Button variant="outline" size="sm" onClick={() => setShowDisable(true)}>
+                  Disable
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => setShowSetup(true)}>
+                  Enable
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      </div>
-
-      {/* Bottom row - Notifications and Appearance side by side */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Browser Notifications */}
-        <Card className="flex flex-col">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
+      {/* Browser Notifications */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <div className="p-1.5 bg-primary/10 rounded-md">
+              <Bell className="h-4 w-4 text-primary" />
+            </div>
             Browser Notifications
           </CardTitle>
-          <CardDescription>
-            Receive desktop notifications when new alerts are triggered
-          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">Enable Notifications</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm font-medium">Enable Notifications</p>
+              <p className="text-xs text-muted-foreground">
                 {notificationPermission === 'denied'
-                  ? 'Notifications are blocked. Please enable in browser settings.'
-                  : 'Get notified when alerts match the selected severities'}
+                  ? 'Notifications are blocked in browser settings'
+                  : 'Get notified when alerts match selected severities'}
               </p>
             </div>
             <Switch
@@ -238,25 +238,24 @@ export default function AccountPage() {
           </div>
 
           {notificationsEnabled && (
-            <div className="space-y-3">
-              <Label>Notify for severities:</Label>
-              <div className="space-y-2">
+            <div className="pt-2 border-t">
+              <p className="text-xs text-muted-foreground mb-3">Notify for severities:</p>
+              <div className="flex flex-wrap gap-2">
                 {SEVERITY_OPTIONS.map((severity) => (
-                  <div key={severity.value} className="flex items-center space-x-3">
+                  <label
+                    key={severity.value}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer hover:bg-muted/50 transition-colors text-sm"
+                  >
                     <Checkbox
                       id={`severity-${severity.value}`}
                       checked={notificationSeverities.includes(severity.value)}
                       onCheckedChange={() => handleSeverityToggle(severity.value)}
                       disabled={savingNotifications}
+                      className="h-3.5 w-3.5"
                     />
-                    <label
-                      htmlFor={`severity-${severity.value}`}
-                      className="flex items-center gap-2 text-sm font-medium cursor-pointer"
-                    >
-                      <span className={`w-2 h-2 rounded-full ${severity.color}`} />
-                      {severity.label}
-                    </label>
-                  </div>
+                    <span className={`w-2 h-2 rounded-full ${severity.color}`} />
+                    {severity.label}
+                  </label>
                 ))}
               </div>
             </div>
@@ -264,85 +263,85 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
-        {/* Appearance */}
-        <Card className="flex flex-col">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sun className="h-5 w-5" />
-              Appearance
-            </CardTitle>
-            <CardDescription>
-              Customize how CHAD looks on your device
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label>Theme</Label>
-              <div className="flex gap-2">
-                <Button
-                  variant={theme === 'light' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setTheme('light')}
-                  className="flex-1"
-                >
-                  <Sun className="h-4 w-4 mr-2" />
-                  Light
-                </Button>
-                <Button
-                  variant={theme === 'dark' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setTheme('dark')}
-                  className="flex-1"
-                >
-                  <Moon className="h-4 w-4 mr-2" />
-                  Dark
-                </Button>
-                <Button
-                  variant={theme === 'system' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setTheme('system')}
-                  className="flex-1"
-                >
-                  <Monitor className="h-4 w-4 mr-2" />
-                  System
-                </Button>
-              </div>
+      {/* Appearance */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <div className="p-1.5 bg-primary/10 rounded-md">
+              <Sun className="h-4 w-4 text-primary" />
             </div>
+            Appearance
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Theme</p>
+              <p className="text-xs text-muted-foreground">Select your preferred theme</p>
+            </div>
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <Button
+                variant={theme === 'light' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setTheme('light')}
+                className="h-8 px-3"
+              >
+                <Sun className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={theme === 'dark' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setTheme('dark')}
+                className="h-8 px-3"
+              >
+                <Moon className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={theme === 'system' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setTheme('system')}
+                className="h-8 px-3"
+              >
+                <Monitor className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
 
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
+          <div className="flex items-center justify-between pt-2 border-t">
+            <div>
+              <p className="text-sm font-medium flex items-center gap-2">
                 <Palette className="h-4 w-4" />
                 Color Palette
-              </Label>
-              <div className="flex gap-2">
-                <Button
-                  variant={palette === 'sentinel' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setPalette('sentinel')}
-                  className="flex-1"
-                >
-                  <span className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
-                  Sentinel
-                </Button>
-                <Button
-                  variant={palette === 'classic' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setPalette('classic')}
-                  className="flex-1"
-                >
-                  <span className="w-3 h-3 rounded-full bg-slate-900 dark:bg-slate-100 mr-2" />
-                  Classic
-                </Button>
-              </div>
+              </p>
               <p className="text-xs text-muted-foreground">
                 {palette === 'sentinel'
-                  ? 'Security-focused blue palette optimized for dark mode'
-                  : 'Original neutral palette with dark/light contrast'}
+                  ? 'Security-focused blue palette'
+                  : 'Neutral dark/light contrast'}
               </p>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <Button
+                variant={palette === 'sentinel' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setPalette('sentinel')}
+                className="h-8 px-3 gap-2"
+              >
+                <span className="w-3 h-3 rounded-full bg-blue-500" />
+                Sentinel
+              </Button>
+              <Button
+                variant={palette === 'classic' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setPalette('classic')}
+                className="h-8 px-3 gap-2"
+              >
+                <span className="w-3 h-3 rounded-full bg-slate-900 dark:bg-slate-100" />
+                Classic
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 2FA Setup Dialog */}
       <TwoFactorSetup

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { usersApi, settingsApiExtended, UserInfo } from '@/lib/api'
+import { useSearchParams } from 'react-router-dom'
+import { usersApi, settingsApiExtended, permissionsApi, UserInfo } from '@/lib/api'
+import { ROLE_COLORS_SUBTLE } from '@/lib/constants'
+import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -30,12 +33,13 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { Check, Copy, KeyRound, Pencil, Plus, Trash2, X, Lock, Unlock, Loader2, Users } from 'lucide-react'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
+import { Check, Copy, KeyRound, Pencil, Plus, Trash2, X, Lock, Unlock, Loader2, Users, ShieldCheck } from 'lucide-react'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
-import { PageHeader } from '@/components/PageHeader'
 
 // Password complexity validation
 function validatePasswordComplexity(password: string) {
@@ -57,7 +61,121 @@ function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
   )
 }
 
+// Roles Tab Component - Simplified with pill toggles
+function RolesTab() {
+  const { showToast } = useToast()
+  const [isLoading, setIsLoading] = useState(true)
+  const [permissions, setPermissions] = useState<Record<string, Record<string, boolean>>>({})
+  const [permissionDescriptions, setPermissionDescriptions] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadPermissions()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const loadPermissions = async () => {
+    try {
+      const data = await permissionsApi.getAll()
+      setPermissions(data.roles)
+      setPermissionDescriptions(data.descriptions)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to load permissions', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const togglePermission = async (role: string, perm: string) => {
+    const key = `${role}-${perm}`
+    setSaving(key)
+    try {
+      const newValue = !(permissions[role]?.[perm] ?? false)
+      await permissionsApi.update(role, perm, newValue)
+      setPermissions((prev) => ({
+        ...prev,
+        [role]: { ...prev[role], [perm]: newValue },
+      }))
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update permission', 'error')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  if (isLoading) {
+    return <LoadingState message="Loading permissions..." />
+  }
+
+  const permissionList = Object.entries(permissionDescriptions)
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardDescription>
+          Admin users have all permissions. Configure what Analyst and Viewer roles can do.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-8">
+          {['analyst', 'viewer'].map((role) => {
+            const enabledCount = permissionList.filter(
+              ([perm]) => permissions[role]?.[perm] ?? false
+            ).length
+            return (
+              <div key={role}>
+                <div className="flex items-center gap-3 mb-4">
+                  <h3 className="text-base font-semibold text-foreground">
+                    {role.charAt(0).toUpperCase() + role.slice(1)}
+                  </h3>
+                  <span className="text-xs font-medium text-primary px-2.5 py-1 bg-primary/10 rounded-full">
+                    {enabledCount} of {permissionList.length}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {permissionList.map(([perm, desc]) => {
+                    const isEnabled = permissions[role]?.[perm] ?? false
+                    const isSaving = saving === `${role}-${perm}`
+                    return (
+                      <button
+                        key={perm}
+                        onClick={() => togglePermission(role, perm)}
+                        disabled={isSaving}
+                        title={desc}
+                        className={`
+                          inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all
+                          ${isEnabled
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                          }
+                          ${isSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                        `}
+                      >
+                        {isEnabled && <Check className="h-3 w-3" />}
+                        {perm.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                        {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+          {permissionList.length === 0 && (
+            <p className="text-muted-foreground text-sm">
+              No permissions configured.
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function UsersPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Use subtab param for internal tabs to avoid conflict with SettingsHub's tab param
+  const activeTab = searchParams.get('subtab') || 'users'
   const [users, setUsers] = useState<UserInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -306,60 +424,68 @@ export default function UsersPage() {
     }
   }
 
-  const roleColors: Record<string, string> = {
-    admin: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    analyst: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-    viewer: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
-  }
+  // Use centralized role colors from constants
 
   return (
     <TooltipProvider>
       <div className="space-y-6">
-      <PageHeader
-        title="Users"
-        description="Manage user accounts"
-        breadcrumb={[
-          { label: 'Settings', href: '/settings/hub' },
-          { label: 'Users' },
-        ]}
-        actions={
+      {/* Tab bar with Add User button */}
+      <div className="flex items-center justify-between">
+        <Tabs value={activeTab} onValueChange={(value) => {
+          const newParams = new URLSearchParams(searchParams)
+          newParams.set('subtab', value)
+          setSearchParams(newParams)
+        }}>
+          <TabsList>
+            <TabsTrigger value="users" className="gap-2">
+              <Users className="h-4 w-4" />
+              Users
+            </TabsTrigger>
+            <TabsTrigger value="roles" className="gap-2">
+              <ShieldCheck className="h-4 w-4" />
+              Roles
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {activeTab === 'users' && (
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" /> Add User
               </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create User</DialogTitle>
-              <DialogDescription>
-                The user will be required to change their password on first login.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {createError && (
-                <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
-                  {createError}
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create User</DialogTitle>
+                <DialogDescription>
+                  The user will be required to change their password on first login.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                {createError && (
+                  <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
+                    {createError}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="user@example.com"
+                  />
                 </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="user@example.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter password"
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter password"
                 />
                 <div className="space-y-1 pt-1">
                   <PasswordRequirement met={passwordComplexity.minLength} text="At least 12 characters" />
@@ -391,40 +517,40 @@ export default function UsersPage() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
-        }
-      />
+          </Dialog>
+        )}
+      </div>
 
-      {error && (
-        <div className="bg-destructive/10 text-destructive p-3 rounded-md">
-          {error}
-        </div>
-      )}
+      {activeTab === 'users' && (
+        <>
+          {error && (
+            <div className="bg-destructive/10 text-destructive p-3 rounded-md">
+              {error}
+            </div>
+          )}
 
-      <div className="border rounded-lg">
+          <div className="border rounded-lg overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Auth</TableHead>
-              <TableHead>2FA</TableHead>
+              <TableHead>Authentication</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Lock</TableHead>
               <TableHead>Created</TableHead>
-              <TableHead className="w-[100px]">Actions</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="table-striped">
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8}>
+                <TableCell colSpan={6}>
                   <LoadingState message="Loading users..." />
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8}>
+                <TableCell colSpan={6}>
                   <EmptyState
                     icon={<Users className="h-12 w-12" />}
                     title="No users found"
@@ -437,68 +563,54 @@ export default function UsersPage() {
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.email}</TableCell>
                   <TableCell>
-                    <Badge className={roleColors[user.role] || roleColors.viewer}>
-                      {user.role}
+                    <Badge className={`${ROLE_COLORS_SUBTLE[user.role] || ROLE_COLORS_SUBTLE.viewer} rounded-full font-medium`}>
+                      {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        user.auth_method === 'sso'
-                          ? 'border-purple-300 text-purple-700 dark:border-purple-700 dark:text-purple-300'
-                          : 'border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300'
-                      }
-                    >
-                      {user.auth_method === 'sso' ? 'SSO' : 'Local'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {user.auth_method === 'local' && (
+                    <div className="flex items-center gap-2">
                       <Badge
                         variant="outline"
-                        className={
-                          user.totp_enabled
-                            ? 'border-green-300 text-green-700 dark:border-green-700 dark:text-green-300'
-                            : 'border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400'
-                        }
+                        className={`rounded-full ${
+                          user.auth_method === 'sso'
+                            ? 'border-purple-300 text-purple-700 dark:border-purple-700 dark:text-purple-300'
+                            : 'border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300'
+                        }`}
                       >
-                        {user.totp_enabled ? 'Enabled' : 'Off'}
+                        {user.auth_method === 'sso' ? 'SSO' : 'Local'}
                       </Badge>
-                    )}
+                      {user.auth_method === 'local' && user.totp_enabled && (
+                        <Badge
+                          variant="outline"
+                          className="rounded-full border-green-300 text-green-700 dark:border-green-700 dark:text-green-300"
+                        >
+                          2FA
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant={user.is_active ? 'default' : 'secondary'}
-                      className={
-                        user.is_active
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                          : ''
-                      }
-                    >
-                      {user.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {user.auth_method === 'local' ? (
-                      isLoadingLockStatus ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : lockStatuses[user.email]?.locked ? (
-                        <div className="flex items-center gap-1 text-orange-600">
-                          <Lock className="h-4 w-4" />
-                          <span className="text-xs">
-                            {lockStatuses[user.email].remaining_minutes}m
-                          </span>
-                        </div>
+                    <div className="flex items-center gap-2">
+                      {user.is_active ? (
+                        <Badge
+                          variant="default"
+                          className="rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                        >
+                          Active
+                        </Badge>
                       ) : (
-                        <div className="flex items-center gap-1 text-green-600">
-                          <Unlock className="h-4 w-4" />
-                          <span className="text-xs">Open</span>
-                        </div>
-                      )
-                    ) : (
-                      <span className="text-muted-foreground text-xs">N/A</span>
-                    )}
+                        <Badge variant="secondary" className="rounded-full">Inactive</Badge>
+                      )}
+                      {user.auth_method === 'local' && lockStatuses[user.email]?.locked && (
+                        <Badge
+                          variant="outline"
+                          className="rounded-full border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-300"
+                        >
+                          <Lock className="h-3 w-3 mr-1" />
+                          Locked
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     <TimestampTooltip timestamp={user.created_at}>
@@ -532,6 +644,10 @@ export default function UsersPage() {
           </TableBody>
         </Table>
       </div>
+        </>
+      )}
+
+      {activeTab === 'roles' && <RolesTab />}
 
       {/* Edit User Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={(open) => !open && closeEditDialog()}>

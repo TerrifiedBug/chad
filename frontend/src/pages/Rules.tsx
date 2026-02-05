@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, Clock, Download, ExternalLink, FileCode, FileText, Link2, Plus, RotateCcw, Rocket, Search, Trash2, X } from 'lucide-react'
+import { ChevronDown, Clock, Download, ExternalLink, FileCode, LayoutList, Link2, List, Plus, RotateCcw, Rocket, Search, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -46,6 +46,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { RulesExportDialog } from '@/components/RulesExportDialog'
 import { PageHeader } from '@/components/PageHeader'
+import { SourceIcon } from '@/components/SourceIcon'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -95,6 +96,28 @@ export default function RulesPage() {
   const [correlationError, setCorrelationError] = useState('')
   const [correlationLoaded, setCorrelationLoaded] = useState(false)
   const [selectedCorrelationRules, setSelectedCorrelationRules] = useState<Set<string>>(new Set())
+
+  // Compact mode state with localStorage persistence
+  const [isCompact, setIsCompact] = useState(() => {
+    const saved = localStorage.getItem('rules-compact-mode')
+    return saved ? JSON.parse(saved) : false
+  })
+
+  // Correlation compact mode state with localStorage persistence
+  const [isCorrelationCompact, setIsCorrelationCompact] = useState(() => {
+    const saved = localStorage.getItem('correlation-compact-mode')
+    return saved ? JSON.parse(saved) : false
+  })
+
+  // Persist compact mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('rules-compact-mode', JSON.stringify(isCompact))
+  }, [isCompact])
+
+  // Persist correlation compact mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('correlation-compact-mode', JSON.stringify(isCorrelationCompact))
+  }, [isCorrelationCompact])
 
   // Initialize filters from URL params
   const [filters, setFilters] = useState<Filters>(() => {
@@ -718,7 +741,6 @@ export default function RulesPage() {
 
         <TabsContent value="sigma" className="mt-4 space-y-4">
           {/* Filter Bar */}
-          <div className="space-y-3">
           <div className="flex flex-wrap gap-3 items-center">
         {/* Search input */}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -774,45 +796,6 @@ export default function RulesPage() {
                 </DropdownMenuCheckboxItem>
               ))
             )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Severity multi-select */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              Severity
-              {filters.severity.length > 0 && (
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
-                  {filters.severity.length}
-                </Badge>
-              )}
-              <ChevronDown className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuLabel>Severity Levels</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {SEVERITIES.map((severity) => (
-              <DropdownMenuCheckboxItem
-                key={severity}
-                checked={filters.severity.includes(severity)}
-                onCheckedChange={() => toggleFilter('severity', severity)}
-                onSelect={(e) => e.preventDefault()}
-              >
-                <span
-                  className={cn(
-                    'mr-2 inline-block w-2 h-2 rounded-full',
-                    severity === 'critical' && 'bg-red-500',
-                    severity === 'high' && 'bg-orange-500',
-                    severity === 'medium' && 'bg-yellow-500',
-                    severity === 'low' && 'bg-blue-500',
-                    severity === 'informational' && 'bg-gray-500'
-                  )}
-                />
-                {capitalize(severity)}
-              </DropdownMenuCheckboxItem>
-            ))}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -894,14 +877,33 @@ export default function RulesPage() {
 
       </div>
 
-      {/* Secondary row: Severity Pills */}
+      {/* Severity Pills - Secondary Row */}
       <div className="flex flex-wrap items-center gap-3">
         <SeverityPills
           selected={filters.severity}
           onChange={(severity) => toggleFilter('severity', severity)}
           size="sm"
         />
-      </div>
+        <div className="ml-auto">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsCompact(!isCompact)}
+            className="text-muted-foreground"
+          >
+            {isCompact ? (
+              <>
+                <LayoutList className="h-4 w-4 mr-1" />
+                Comfortable
+              </>
+            ) : (
+              <>
+                <List className="h-4 w-4 mr-1" />
+                Compact
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Active filters display */}
@@ -1021,7 +1023,7 @@ export default function RulesPage() {
       ) : (
         <TooltipProvider>
           <div className="border rounded-lg">
-            <Table>
+            <Table className={cn(isCompact && 'table-compact')}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
@@ -1063,24 +1065,7 @@ export default function RulesPage() {
                     </TableCell>
                     <TableCell className="font-medium">{rule.title}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        {rule.source === 'sigmahq' ? (
-                          <>
-                            <FileCode className="h-4 w-4 text-blue-500" />
-                            <span className="text-xs text-muted-foreground">SigmaHQ</span>
-                          </>
-                        ) : rule.source === 'misp' ? (
-                          <>
-                            <ExternalLink className="h-4 w-4 text-purple-500" />
-                            <span className="text-xs text-muted-foreground">MISP</span>
-                          </>
-                        ) : (
-                          <>
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">User</span>
-                          </>
-                        )}
-                      </div>
+                      <SourceIcon source={rule.source} />
                     </TableCell>
                     <TableCell>
                       <span
@@ -1338,6 +1323,28 @@ export default function RulesPage() {
                 Clear
               </Button>
             )}
+
+            {/* Compact mode toggle */}
+            <div className="ml-auto">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsCorrelationCompact(!isCorrelationCompact)}
+                className="text-muted-foreground"
+              >
+                {isCorrelationCompact ? (
+                  <>
+                    <LayoutList className="h-4 w-4 mr-1" />
+                    Comfortable
+                  </>
+                ) : (
+                  <>
+                    <List className="h-4 w-4 mr-1" />
+                    Compact
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
           {correlationError && (
@@ -1365,7 +1372,7 @@ export default function RulesPage() {
           ) : (
             <TooltipProvider>
               <div className="border rounded-lg">
-                <Table>
+                <Table className={cn(isCorrelationCompact && 'table-compact')}>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12">

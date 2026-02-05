@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import {
   Card,
@@ -460,36 +459,40 @@ export default function Notifications() {
   }, [loadData])
 
   const SystemEventsSection = ({ webhookId }: { webhookId: string }) => (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <h4 className="font-medium text-sm">System Events</h4>
-      {SYSTEM_EVENT_GROUPS.map(group => (
-        <div key={group.name} className="space-y-2">
-          <p className="text-xs text-muted-foreground font-medium">{group.name}</p>
-          <div className="space-y-2 pl-2">
-            {group.events.map(event => {
-              const isEnabled = isSystemEventEnabled(event.id, webhookId)
-              const isSaving = savingSystem === `${event.id}-${webhookId}`
-              const hasDescription = 'description' in event
-              return (
-                <div key={event.id} className="space-y-1">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={isEnabled}
-                      onCheckedChange={() => toggleSystemEvent(event.id, webhookId)}
-                      disabled={isSaving}
-                    />
-                    <span className="text-sm">{event.label}</span>
+      <div className="space-y-3">
+        {SYSTEM_EVENT_GROUPS.map(group => (
+          <div key={group.name}>
+            <p className="text-xs text-muted-foreground font-medium mb-2">{group.name}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {group.events.map(event => {
+                const isEnabled = isSystemEventEnabled(event.id, webhookId)
+                const isSaving = savingSystem === `${event.id}-${webhookId}`
+                return (
+                  <button
+                    key={event.id}
+                    onClick={() => toggleSystemEvent(event.id, webhookId)}
+                    disabled={isSaving}
+                    title={'description' in event ? event.description : undefined}
+                    className={`
+                      inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs transition-colors
+                      ${isEnabled
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-background text-muted-foreground hover:bg-muted'
+                      }
+                      ${isSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                    `}
+                  >
+                    {event.label}
                     {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
-                  </label>
-                  {hasDescription && (
-                    <p className="text-xs text-muted-foreground pl-6">{event.description}</p>
-                  )}
-                </div>
-              )
-            })}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 
@@ -1017,31 +1020,35 @@ export default function Notifications() {
               {/* Alert Severities */}
               <div className="space-y-2">
                 <Label>Alert Severities for Ticket Creation</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {ALERT_SEVERITIES.map(severity => (
-                    <div key={severity.id} className="flex items-center gap-2 p-2 border rounded">
-                      <Checkbox
-                        id={`severity-${severity.id}`}
-                        checked={jiraFormData.alert_severities?.includes(severity.id) || false}
-                        onCheckedChange={checked => {
+                <div className="flex flex-wrap gap-2">
+                  {ALERT_SEVERITIES.map(severity => {
+                    const isSelected = jiraFormData.alert_severities?.includes(severity.id) || false
+                    return (
+                      <button
+                        key={severity.id}
+                        type="button"
+                        onClick={() => {
                           const current = jiraFormData.alert_severities || []
                           setJiraFormData({
                             ...jiraFormData,
-                            alert_severities: checked
-                              ? [...current, severity.id]
-                              : current.filter(s => s !== severity.id),
+                            alert_severities: isSelected
+                              ? current.filter(s => s !== severity.id)
+                              : [...current, severity.id],
                           })
                         }}
-                      />
-                      <label
-                        htmlFor={`severity-${severity.id}`}
-                        className="text-sm cursor-pointer flex items-center gap-2"
+                        className={`
+                          inline-flex items-center gap-2 px-3 py-1.5 rounded-md border transition-colors
+                          ${isSelected
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-background text-muted-foreground hover:bg-muted'
+                          }
+                        `}
                       >
-                        <span className={`w-3 h-3 rounded-full ${severity.color}`} />
-                        {severity.label}
-                      </label>
-                    </div>
-                  ))}
+                        <span className={`w-2 h-2 rounded-full ${severity.color}`} />
+                        <span className="text-sm">{severity.label}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 

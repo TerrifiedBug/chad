@@ -4,7 +4,6 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { AppHeader } from '@/components/AppHeader'
 import { AppRail } from '@/components/AppRail'
-import { SettingsSidebar } from '@/components/SettingsSidebar'
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useLocalStorage } from '@/hooks/use-local-storage'
@@ -25,9 +24,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [railExpanded, setRailExpanded] = useLocalStorage('rail-expanded', true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const isMobile = useMediaQuery('(max-width: 767px)')
-
-  // Use SettingsSidebar for settings pages (except the hub which uses AppRail)
-  const useSettingsSidebar = location.pathname.startsWith('/settings') && location.pathname !== '/settings/hub'
 
   const focusSearch = useCallback(() => {
     const searchInput = document.querySelector<HTMLInputElement>(
@@ -74,8 +70,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     ],
   })
 
-  const SidebarComponent = useSettingsSidebar ? SettingsSidebar : AppRail
-
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
@@ -86,7 +80,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Desktop sidebar (fixed position) */}
       {!isMobile && (
-        <SidebarComponent
+        <AppRail
           expanded={railExpanded}
           onExpandedChange={setRailExpanded}
         />
@@ -96,7 +90,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       {isMobile && (
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetContent side="left" className="w-[200px] p-0">
-            <SidebarComponent expanded={true} onExpandedChange={() => {}} />
+            <AppRail expanded={true} onExpandedChange={() => {}} />
           </SheetContent>
         </Sheet>
       )}

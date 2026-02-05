@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/PageHeader'
+import { MODE_COLORS_SUBTLE } from '@/lib/constants'
 
 const HealthStatusIcon = ({ status }: { status: HealthStatus }) => {
   switch (status) {
@@ -286,13 +287,7 @@ export default function IndexPatternsPage() {
                     {pattern.pattern}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      className={
-                        pattern.mode === 'push'
-                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                          : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-                      }
-                    >
+                    <Badge className={MODE_COLORS_SUBTLE[pattern.mode] || MODE_COLORS_SUBTLE.pull}>
                       {pattern.mode === 'push' ? 'Push' : `Pull (${pattern.poll_interval_minutes}m)`}
                     </Badge>
                   </TableCell>

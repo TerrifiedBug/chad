@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,16 +19,23 @@ import {
   ChevronRight,
   Lock,
   FileText,
-  Key,
   ScrollText,
+  ArrowLeft,
+  Archive,
 } from 'lucide-react'
 import { LucideIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import SettingsContent from '@/pages/Settings'
+import UsersPage from '@/pages/Users'
+import AuditLogPage from '@/pages/AuditLog'
+import SystemLogsPage from '@/pages/SystemLogs'
 
 interface SettingsCategory {
   title: string
   description: string
   icon: LucideIcon
   href: string
+  tab?: string
   permission?: string
   badge?: string
 }
@@ -41,20 +48,23 @@ const settingsCategories: { section: string; items: SettingsCategory[] }[] = [
         title: 'General',
         description: 'Background sync, version cleanup',
         icon: Settings2,
-        href: '/settings?tab=general',
+        href: '/settings/hub?tab=general',
+        tab: 'general',
       },
       {
         title: 'AI Assistant',
         description: 'OpenAI, Anthropic, Ollama',
         icon: Bot,
-        href: '/settings?tab=ai',
+        href: '/settings/hub?tab=ai',
+        tab: 'ai',
         badge: 'Beta',
       },
       {
         title: 'Notifications',
         description: 'Email, Slack, Discord webhooks',
         icon: Bell,
-        href: '/settings?tab=notifications',
+        href: '/settings/hub?tab=notifications',
+        tab: 'notifications',
       },
     ],
   },
@@ -65,36 +75,25 @@ const settingsCategories: { section: string; items: SettingsCategory[] }[] = [
         title: 'Security',
         description: 'Sessions, 2FA, rate limiting',
         icon: Shield,
-        href: '/settings?tab=security',
+        href: '/settings/hub?tab=security',
+        tab: 'security',
         permission: 'manage_settings',
       },
       {
         title: 'SSO',
         description: 'OIDC provider configuration',
         icon: KeyRound,
-        href: '/settings?tab=sso',
+        href: '/settings/hub?tab=sso',
+        tab: 'sso',
         permission: 'manage_settings',
       },
       {
-        title: 'Users',
-        description: 'Manage users & roles',
+        title: 'Users & Roles',
+        description: 'Manage users and role permissions',
         icon: Users,
-        href: '/settings/users',
+        href: '/settings/hub?tab=users',
+        tab: 'users',
         permission: 'manage_users',
-      },
-      {
-        title: 'Permissions',
-        description: 'Role permissions',
-        icon: Lock,
-        href: '/settings/permissions',
-        permission: 'manage_users',
-      },
-      {
-        title: 'API Keys',
-        description: 'Manage API access',
-        icon: Key,
-        href: '/settings/api-keys',
-        permission: 'manage_api_keys',
       },
     ],
   },
@@ -105,19 +104,22 @@ const settingsCategories: { section: string; items: SettingsCategory[] }[] = [
         title: 'GeoIP',
         description: 'MaxMind database updates',
         icon: Globe,
-        href: '/settings?tab=geoip',
+        href: '/settings/hub?tab=geoip',
+        tab: 'geoip',
       },
       {
         title: 'Threat Intel',
         description: 'MISP, feeds, IOC sources',
         icon: Target,
-        href: '/settings?tab=ti',
+        href: '/settings/hub?tab=ti',
+        tab: 'ti',
       },
       {
         title: 'Webhooks',
         description: 'Custom enrichment endpoints',
         icon: Webhook,
-        href: '/settings?tab=webhooks',
+        href: '/settings/hub?tab=webhooks',
+        tab: 'webhooks',
         badge: 'New',
       },
     ],
@@ -129,43 +131,58 @@ const settingsCategories: { section: string; items: SettingsCategory[] }[] = [
         title: 'OpenSearch',
         description: 'Connection status & settings',
         icon: Database,
-        href: '/settings?tab=opensearch',
+        href: '/settings/hub?tab=opensearch',
+        tab: 'opensearch',
       },
       {
         title: 'Health Monitoring',
         description: 'Thresholds & alerting',
         icon: Activity,
-        href: '/settings?tab=health',
+        href: '/settings/hub?tab=health',
+        tab: 'health',
       },
       {
         title: 'Queue Settings',
         description: 'Push mode queue config',
         icon: HardDrive,
-        href: '/settings?tab=queue',
+        href: '/settings/hub?tab=queue',
+        tab: 'queue',
       },
       {
         title: 'Backup & Restore',
         description: 'Export/import configuration',
-        icon: HardDrive,
-        href: '/settings?tab=backup',
+        icon: Archive,
+        href: '/settings/hub?tab=backup',
+        tab: 'backup',
       },
       {
         title: 'Audit Log',
         description: 'View system audit trail',
         icon: ScrollText,
-        href: '/settings/audit',
+        href: '/settings/hub?tab=audit',
+        tab: 'audit',
         permission: 'view_audit',
       },
       {
         title: 'System Logs',
         description: 'View application logs',
         icon: FileText,
-        href: '/settings/system-logs',
+        href: '/settings/hub?tab=system-logs',
+        tab: 'system-logs',
         permission: 'view_audit',
       },
     ],
   },
 ]
+
+// Find category by tab name for header display
+function findCategoryByTab(tab: string): SettingsCategory | undefined {
+  for (const section of settingsCategories) {
+    const found = section.items.find(item => item.tab === tab)
+    if (found) return found
+  }
+  return undefined
+}
 
 function SettingsCategoryCard({
   category,
@@ -201,11 +218,11 @@ function SettingsCategoryCard({
   }
 
   return (
-    <Link to={category.href}>
-      <Card className="card-interactive cursor-pointer hover:border-primary/50">
+    <Link to={category.href} className="group">
+      <Card className="card-interactive cursor-pointer hover:border-primary/50 transition-colors h-full">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
-            <div className="p-2 bg-primary/10 rounded-lg w-fit">
+            <div className="p-2 bg-primary/10 rounded-lg w-fit group-hover:bg-primary/20 transition-colors">
               <Icon className="h-5 w-5 text-primary" />
             </div>
             {category.badge && (
@@ -240,7 +257,55 @@ function SettingsCategoryCard({
 
 export default function SettingsHub() {
   const { hasPermission } = useAuth()
+  const [searchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab')
 
+  // Render content based on active tab
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'users':
+        return <UsersPage />
+      case 'audit':
+        return <AuditLogPage />
+      case 'system-logs':
+        return <SystemLogsPage />
+      default:
+        return <SettingsContent />
+    }
+  }
+
+  // If a tab is specified, render the settings content for that tab
+  if (activeTab) {
+    const category = findCategoryByTab(activeTab)
+    const Icon = category?.icon || Settings2
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Link to="/settings/hub">
+            <Button variant="ghost" size="sm" className="gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Settings
+            </Button>
+          </Link>
+        </div>
+        <PageHeader
+          title={
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Icon className="h-5 w-5 text-primary" />
+              </div>
+              <span>{category?.title || 'Settings'}</span>
+            </div>
+          }
+          description={category?.description}
+        />
+        {renderTabContent()}
+      </div>
+    )
+  }
+
+  // Show the settings hub card grid
   return (
     <div className="space-y-8">
       <PageHeader

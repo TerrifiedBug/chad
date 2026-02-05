@@ -118,7 +118,18 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Better selection colors */
+  ::selection {
+    @apply bg-primary/20 text-foreground;
   }
 }
 
@@ -128,11 +139,14 @@
     transform: scale(0.98);
   }
 
-  /* Card hover lift */
+  /* Card hover lift - professional smooth effect */
   .card-interactive {
-    @apply transition-all duration-200;
+    @apply transition-all duration-200 ease-out;
   }
   .card-interactive:hover {
+    @apply shadow-lg -translate-y-1 border-primary/20;
+  }
+  .card-interactive:active {
     @apply shadow-md -translate-y-0.5;
   }
 
@@ -294,19 +308,24 @@
 
   /* Task 1: Urgency ring for critical items */
   @keyframes urgency-ring {
-    0% { box-shadow: 0 0 0 0 hsl(0 72% 51% / 0.7); }
-    70% { box-shadow: 0 0 0 6px hsl(0 72% 51% / 0); }
+    0% { box-shadow: 0 0 0 0 hsl(0 72% 51% / 0.6); }
+    50% { box-shadow: 0 0 0 4px hsl(0 72% 51% / 0.3); }
     100% { box-shadow: 0 0 0 0 hsl(0 72% 51% / 0); }
   }
   .urgency-ring {
-    animation: urgency-ring 1.5s infinite;
-    border-radius: 50%;
+    animation: urgency-ring 1.5s ease-in-out infinite;
   }
 
   /* Task 1: Subtle pulse for critical stat cards */
   @keyframes pulse-subtle {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.85; }
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.9;
+      transform: scale(1.01);
+    }
   }
   .animate-pulse-subtle {
     animation: pulse-subtle 2s ease-in-out infinite;

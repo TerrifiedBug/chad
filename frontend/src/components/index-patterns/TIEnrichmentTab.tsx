@@ -13,7 +13,6 @@ import {
   TISourceType,
 } from '@/lib/api'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -22,13 +21,6 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Loader2, X, Search, ChevronDown, Shield } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Link } from 'react-router-dom'
 
 interface TIEnrichmentTabProps {
@@ -44,11 +36,13 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
   const [isLoading, setIsLoading] = useState(true)
   const [availableFields, setAvailableFields] = useState<string[]>([])
 
-  // Track pending field additions per source (field search text and selected field)
-  const [fieldSearches, setFieldSearches] = useState<Record<string, string>>({})
-  const [selectedFields, setSelectedFields] = useState<Record<string, string>>({})
-  const [showDropdowns, setShowDropdowns] = useState<Record<string, boolean>>({})
+  // Track expansion state for sources and types
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({})
+  const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({})
+
+  // Track search and dropdown state per source+type combination
+  const [fieldSearches, setFieldSearches] = useState<Record<string, string>>({})
+  const [showDropdowns, setShowDropdowns] = useState<Record<string, boolean>>({})
   const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Load TI sources and available fields
@@ -80,9 +74,9 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
   // Handle click outside to close dropdowns
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      Object.entries(dropdownRefs.current).forEach(([sourceType, ref]) => {
+      Object.entries(dropdownRefs.current).forEach(([key, ref]) => {
         if (ref && !ref.contains(event.target as Node)) {
-          setShowDropdowns(prev => ({ ...prev, [sourceType]: false }))
+          setShowDropdowns(prev => ({ ...prev, [key]: false }))
         }
       })
     }
@@ -114,21 +108,12 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
     }
   }
 
-  const selectField = (sourceType: string, field: string) => {
-    setSelectedFields(prev => ({ ...prev, [sourceType]: field }))
-    setFieldSearches(prev => ({ ...prev, [sourceType]: field }))
-    setShowDropdowns(prev => ({ ...prev, [sourceType]: false }))
-  }
-
-  const addFieldWithType = (sourceType: string, indicatorType: TIIndicatorType) => {
-    const field = selectedFields[sourceType]
-    if (!field) return
-
+  const addField = (sourceType: string, indicatorType: TIIndicatorType, field: string) => {
     const sourceConfig = tiConfig[sourceType] || { enabled: true, fields: [] }
     const fieldConfig: TIFieldConfig = { field, type: indicatorType }
 
-    // Check if field already exists
-    if (sourceConfig.fields.some(f => f.field === field)) {
+    // Check if field already exists for this type
+    if (sourceConfig.fields.some(f => f.field === field && f.type === indicatorType)) {
       return
     }
 
@@ -140,40 +125,53 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
       },
     })
 
-    // Clear selection
-    setSelectedFields(prev => {
-      const updated = { ...prev }
-      delete updated[sourceType]
-      return updated
-    })
-    setFieldSearches(prev => {
-      const updated = { ...prev }
-      delete updated[sourceType]
-      return updated
-    })
+    // Clear search
+    const key = `${sourceType}-${indicatorType}`
+    setFieldSearches(prev => ({ ...prev, [key]: '' }))
+    setShowDropdowns(prev => ({ ...prev, [key]: false }))
   }
 
-  const removeField = (sourceType: string, field: string) => {
+  const removeField = (sourceType: string, field: string, indicatorType: TIIndicatorType) => {
     const sourceConfig = tiConfig[sourceType]
     if (sourceConfig) {
       setTiConfig({
         ...tiConfig,
         [sourceType]: {
           ...sourceConfig,
-          fields: sourceConfig.fields.filter(f => f.field !== field),
+          fields: sourceConfig.fields.filter(f => !(f.field === field && f.type === indicatorType)),
         },
       })
     }
   }
 
   // Toggle source expansion
-  const toggleExpanded = (sourceType: string) => {
+  const toggleSourceExpanded = (sourceType: string) => {
     setExpandedSources(prev => ({ ...prev, [sourceType]: !prev[sourceType] }))
   }
 
+  // Toggle type expansion within a source
+  const toggleTypeExpanded = (sourceType: string, indicatorType: TIIndicatorType) => {
+    const key = `${sourceType}-${indicatorType}`
+    setExpandedTypes(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
   // Get configured field count for a source
-  const getFieldCount = (sourceType: string): number => {
+  const getSourceFieldCount = (sourceType: string): number => {
     return tiConfig[sourceType]?.fields?.length || 0
+  }
+
+  // Get configured field count for a specific type within a source
+  const getTypeFieldCount = (sourceType: string, indicatorType: TIIndicatorType): number => {
+    const sourceConfig = tiConfig[sourceType]
+    if (!sourceConfig) return 0
+    return sourceConfig.fields.filter(f => f.type === indicatorType).length
+  }
+
+  // Get fields configured for a specific type within a source
+  const getFieldsForType = (sourceType: string, indicatorType: TIIndicatorType): TIFieldConfig[] => {
+    const sourceConfig = tiConfig[sourceType]
+    if (!sourceConfig) return []
+    return sourceConfig.fields.filter(f => f.type === indicatorType)
   }
 
   // Get display name for a TI source type
@@ -187,11 +185,11 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
     return TI_SOURCE_SUPPORTED_TYPES[sourceType as TISourceType] || []
   }
 
-  // Get filtered fields for a source (excluding already configured)
-  const getFilteredFields = (sourceType: string) => {
-    const search = fieldSearches[sourceType] || ''
-    const sourceConfig = tiConfig[sourceType]
-    const configuredFields = sourceConfig?.fields?.map(f => f.field) || []
+  // Get filtered fields for a source+type (excluding already configured for that type)
+  const getFilteredFields = (sourceType: string, indicatorType: TIIndicatorType) => {
+    const key = `${sourceType}-${indicatorType}`
+    const search = fieldSearches[key] || ''
+    const configuredFields = getFieldsForType(sourceType, indicatorType).map(f => f.field)
 
     return availableFields
       .filter(f => !configuredFields.includes(f))
@@ -212,7 +210,7 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
         <h3 className="text-lg font-medium">Threat Intelligence Enrichment</h3>
         <p className="text-sm text-muted-foreground">
           Configure which threat intelligence sources to use for enriching logs from this index pattern.
-          For each source, select fields and specify what type of indicator they contain.
+          For each source, map your log fields to indicator types.
         </p>
       </div>
 
@@ -228,31 +226,27 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {tiSources.map((source) => {
             const sourceType = source.source_type
             const sourceConfig = tiConfig[sourceType]
             const isEnabled = !!sourceConfig?.enabled
             const displayName = getSourceDisplayName(sourceType)
             const supportedTypes = getSupportedTypes(sourceType)
-            const selectedField = selectedFields[sourceType]
-            const fieldSearch = fieldSearches[sourceType] || ''
-            const showDropdown = showDropdowns[sourceType]
-            const filteredFields = getFilteredFields(sourceType)
-            const isExpanded = expandedSources[sourceType] ?? false
-            const fieldCount = getFieldCount(sourceType)
+            const isSourceExpanded = expandedSources[sourceType] ?? false
+            const sourceFieldCount = getSourceFieldCount(sourceType)
 
             return (
               <Collapsible
                 key={sourceType}
-                open={isExpanded}
-                onOpenChange={() => toggleExpanded(sourceType)}
+                open={isSourceExpanded}
+                onOpenChange={() => toggleSourceExpanded(sourceType)}
               >
                 <div className="border rounded-lg">
                   <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-muted/50">
                     <div className="flex items-center gap-3">
                       <ChevronDown
-                        className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-0' : '-rotate-90'}`}
+                        className={`h-4 w-4 transition-transform ${isSourceExpanded ? 'rotate-0' : '-rotate-90'}`}
                       />
                       <div className="text-left">
                         <div className="font-medium">{displayName}</div>
@@ -262,15 +256,15 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={isEnabled && fieldCount > 0 ? 'default' : 'secondary'}>
-                        {fieldCount} field{fieldCount !== 1 ? 's' : ''}
+                      <Badge variant={isEnabled && sourceFieldCount > 0 ? 'default' : 'secondary'}>
+                        {sourceFieldCount} field{sourceFieldCount !== 1 ? 's' : ''}
                       </Badge>
                       <Switch
                         checked={isEnabled}
                         onCheckedChange={(checked) => {
                           toggleSource(sourceType, checked)
                           // Auto-expand when enabling
-                          if (checked && !isExpanded) {
+                          if (checked && !isSourceExpanded) {
                             setExpandedSources(prev => ({ ...prev, [sourceType]: true }))
                           }
                         }}
@@ -280,110 +274,122 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
                   </CollapsibleTrigger>
 
                   <CollapsibleContent>
-                    {isEnabled && (
-                      <div className="px-4 pb-4 pt-2 border-t space-y-3">
-                        <Label className="text-sm">Fields to Check</Label>
+                    {isEnabled ? (
+                      <div className="px-4 pb-4 pt-2 border-t space-y-2">
+                        {/* Indicator Type Categories */}
+                        {supportedTypes.map((indicatorType) => {
+                          const key = `${sourceType}-${indicatorType}`
+                          const isTypeExpanded = expandedTypes[key] ?? false
+                          const typeFieldCount = getTypeFieldCount(sourceType, indicatorType)
+                          const fieldsForType = getFieldsForType(sourceType, indicatorType)
+                          const fieldSearch = fieldSearches[key] || ''
+                          const showDropdown = showDropdowns[key]
+                          const filteredFields = getFilteredFields(sourceType, indicatorType)
+                          const typeInfo = TI_INDICATOR_TYPE_INFO[indicatorType]
 
-                        {/* Field Selection with Search */}
-                        <div className="flex gap-2">
-                          <div
-                            ref={(el) => { dropdownRefs.current[sourceType] = el }}
-                            className="relative flex-1"
-                          >
-                            <div className="relative">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                value={fieldSearch}
-                                onChange={(e) => {
-                                  setFieldSearches(prev => ({ ...prev, [sourceType]: e.target.value }))
-                                  setSelectedFields(prev => ({ ...prev, [sourceType]: e.target.value }))
-                                  setShowDropdowns(prev => ({ ...prev, [sourceType]: true }))
-                                }}
-                                onFocus={() => setShowDropdowns(prev => ({ ...prev, [sourceType]: true }))}
-                                placeholder="Search and add fields..."
-                                className="pl-9"
-                              />
-                            </div>
-                            {showDropdown && availableFields.length > 0 && (
-                              <div className="absolute z-50 mt-1 w-full bg-popover border rounded-md shadow-md max-h-60 overflow-y-auto">
-                                {filteredFields.length === 0 ? (
-                                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                                    No matching fields
-                                  </div>
-                                ) : (
-                                  filteredFields.slice(0, 100).map((field) => (
-                                    <button
-                                      key={field}
-                                      type="button"
-                                      className="w-full px-3 py-2 text-left text-sm font-mono hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground outline-none"
-                                      onClick={() => selectField(sourceType, field)}
-                                    >
-                                      {field}
-                                    </button>
-                                  ))
-                                )}
-                                {filteredFields.length > 100 && (
-                                  <div className="px-3 py-2 text-xs text-muted-foreground border-t">
-                                    Showing first 100 of {filteredFields.length} matches
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Indicator Type Selection - only show when field is selected */}
-                          {selectedField && (
-                            <Select
-                              value=""
-                              onValueChange={(type) => addFieldWithType(sourceType, type as TIIndicatorType)}
+                          return (
+                            <Collapsible
+                              key={key}
+                              open={isTypeExpanded}
+                              onOpenChange={() => toggleTypeExpanded(sourceType, indicatorType)}
                             >
-                              <SelectTrigger className="w-48">
-                                <SelectValue placeholder="Select type..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {supportedTypes.map((type) => (
-                                  <SelectItem key={type} value={type}>
-                                    {TI_INDICATOR_TYPE_INFO[type].label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </div>
-
-                        {/* Configured Fields List */}
-                        {sourceConfig?.fields && sourceConfig.fields.length > 0 ? (
-                          <div className="space-y-2">
-                            {sourceConfig.fields.map((fieldConfig) => (
-                              <div
-                                key={fieldConfig.field}
-                                className="flex items-center justify-between p-2 bg-muted/50 rounded"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <code className="text-sm font-mono">{fieldConfig.field}</code>
-                                  <Badge variant="outline" className="text-xs">
-                                    {TI_INDICATOR_TYPE_INFO[fieldConfig.type]?.label || fieldConfig.type}
+                              <div className={`border rounded-lg ${isTypeExpanded ? 'ring-1 ring-primary/50' : ''}`}>
+                                <CollapsibleTrigger className="flex items-center justify-between w-full p-3 hover:bg-muted/50">
+                                  <div className="flex items-center gap-2">
+                                    <ChevronDown
+                                      className={`h-3.5 w-3.5 transition-transform ${isTypeExpanded ? 'rotate-0' : '-rotate-90'}`}
+                                    />
+                                    <div className="text-left">
+                                      <div className="font-medium text-sm">{typeInfo.label}</div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {typeInfo.description}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Badge variant={typeFieldCount > 0 ? 'default' : 'secondary'} className="text-xs">
+                                    {typeFieldCount} field{typeFieldCount !== 1 ? 's' : ''}
                                   </Badge>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => removeField(sourceType, fieldConfig.field)}
-                                  className="hover:bg-muted rounded-full p-1"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground italic">
-                            No fields configured. Search and select a field, then choose its indicator type.
-                          </p>
-                        )}
-                      </div>
-                    )}
+                                </CollapsibleTrigger>
 
-                    {!isEnabled && (
+                                <CollapsibleContent>
+                                  <div className="px-3 pb-3 pt-2 border-t space-y-3">
+                                    {/* Field Search */}
+                                    <div
+                                      ref={(el) => { dropdownRefs.current[key] = el }}
+                                      className="relative"
+                                    >
+                                      <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                          value={fieldSearch}
+                                          onChange={(e) => {
+                                            setFieldSearches(prev => ({ ...prev, [key]: e.target.value }))
+                                            setShowDropdowns(prev => ({ ...prev, [key]: true }))
+                                          }}
+                                          onFocus={() => setShowDropdowns(prev => ({ ...prev, [key]: true }))}
+                                          placeholder="Search and add fields..."
+                                          className="pl-9"
+                                        />
+                                      </div>
+                                      {showDropdown && availableFields.length > 0 && (
+                                        <div className="absolute z-50 mt-1 w-full bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
+                                          {filteredFields.length === 0 ? (
+                                            <div className="px-3 py-2 text-sm text-muted-foreground">
+                                              No matching fields
+                                            </div>
+                                          ) : (
+                                            filteredFields.slice(0, 50).map((field) => (
+                                              <button
+                                                key={field}
+                                                type="button"
+                                                className="w-full px-3 py-2 text-left text-sm font-mono hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground outline-none"
+                                                onClick={() => addField(sourceType, indicatorType, field)}
+                                              >
+                                                {field}
+                                              </button>
+                                            ))
+                                          )}
+                                          {filteredFields.length > 50 && (
+                                            <div className="px-3 py-2 text-xs text-muted-foreground border-t">
+                                              Showing first 50 of {filteredFields.length} matches
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Configured Fields List */}
+                                    {fieldsForType.length > 0 ? (
+                                      <div className="space-y-1">
+                                        {fieldsForType.map((fieldConfig) => (
+                                          <div
+                                            key={fieldConfig.field}
+                                            className="flex items-center justify-between py-1.5 px-2 bg-muted/50 rounded text-sm"
+                                          >
+                                            <code className="font-mono">{fieldConfig.field}</code>
+                                            <button
+                                              type="button"
+                                              onClick={() => removeField(sourceType, fieldConfig.field, indicatorType)}
+                                              className="hover:bg-muted rounded-full p-1"
+                                            >
+                                              <X className="h-3.5 w-3.5" />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-muted-foreground italic">
+                                        No fields mapped. Search and select fields above.
+                                      </p>
+                                    )}
+                                  </div>
+                                </CollapsibleContent>
+                              </div>
+                            </Collapsible>
+                          )
+                        })}
+                      </div>
+                    ) : (
                       <div className="px-4 pb-4 pt-2 border-t">
                         <p className="text-xs text-muted-foreground italic">
                           Enable this source to configure field mappings.
@@ -397,7 +403,6 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
           })}
         </div>
       )}
-
     </div>
   )
 }

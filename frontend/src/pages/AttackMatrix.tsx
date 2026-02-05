@@ -18,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { RefreshCw, ExternalLink, X, ChevronRight, Shield, Target, Download, Loader2 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
+import { SeverityPills } from '@/components/filters/SeverityPills'
 
 type CoverageLevel = 'none' | 'low' | 'medium' | 'high'
 
@@ -306,19 +307,11 @@ export default function AttackMatrixPage() {
                 Deployed rules only
               </label>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Severity:</span>
-              {['critical', 'high', 'medium', 'low'].map((sev) => (
-                <Badge
-                  key={sev}
-                  variant={selectedSeverities.includes(sev) ? 'default' : 'outline'}
-                  className="cursor-pointer capitalize"
-                  onClick={() => toggleSeverity(sev)}
-                >
-                  {sev}
-                </Badge>
-              ))}
-            </div>
+            <SeverityPills
+              selected={selectedSeverities}
+              onChange={toggleSeverity}
+              size="sm"
+            />
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Index:</span>
               <Select value={selectedIndexPattern || 'all'} onValueChange={(v) => setSelectedIndexPattern(v === 'all' ? '' : v)}>
