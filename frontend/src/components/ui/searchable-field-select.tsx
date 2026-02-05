@@ -14,6 +14,8 @@ interface SearchableFieldSelectProps {
   clearOnSelect?: boolean
   /** Exclude these fields from the dropdown */
   excludeFields?: string[]
+  /** Maximum height of dropdown (default: 15rem / 240px) */
+  maxDropdownHeight?: string
   className?: string
 }
 
@@ -25,6 +27,7 @@ export function SearchableFieldSelect({
   onChange,
   clearOnSelect = false,
   excludeFields = [],
+  maxDropdownHeight = '15rem',
   className,
 }: SearchableFieldSelectProps) {
   const [search, setSearch] = useState(value)
@@ -78,7 +81,10 @@ export function SearchableFieldSelect({
         />
       </div>
       {showDropdown && fields.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full bg-popover border rounded-md shadow-md max-h-60 overflow-y-auto">
+        <div
+          className="absolute z-50 mt-1 w-full bg-popover border rounded-md shadow-md overflow-y-auto"
+          style={{ maxHeight: maxDropdownHeight }}
+        >
           {filteredFields.length === 0 ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">
               No matching fields
