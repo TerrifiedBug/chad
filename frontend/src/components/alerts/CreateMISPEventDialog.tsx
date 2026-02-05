@@ -187,7 +187,7 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Create MISP Event</DialogTitle>
           <DialogDescription>
@@ -209,7 +209,7 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
             </a>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
             <div>
               <Label>Event Info (title)</Label>
               <Input
