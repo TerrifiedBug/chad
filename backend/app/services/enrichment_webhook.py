@@ -278,6 +278,7 @@ async def call_enrichment_webhook(
                     if "error" in error_body:
                         error_msg_detail = str(error_body["error"])[:200]
                 except Exception:
+                    # Response body isn't valid JSON or lacks error field - use HTTP status
                     pass
 
                 logger.warning(
