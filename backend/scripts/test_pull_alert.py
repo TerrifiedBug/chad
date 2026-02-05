@@ -75,7 +75,7 @@ def create_test_log(with_ioc: bool = False) -> dict:
             "pid": 5678,
         },
         "user": {
-            "name": "test_user",
+            "name": "admin",
             "domain": "WORKGROUP",
         },
         "host": {
