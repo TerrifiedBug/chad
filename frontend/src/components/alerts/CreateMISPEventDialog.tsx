@@ -209,7 +209,7 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
             </a>
           </div>
         ) : (
-          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+          <div className="space-y-4">
             <div>
               <Label>Event Info (title)</Label>
               <Input
@@ -258,6 +258,7 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
               />
             </div>
 
+            {/* Field selector outside scroll container so dropdown isn't clipped */}
             <div>
               <Label className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
@@ -272,14 +273,15 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
                 onSelect={addAttribute}
                 clearOnSelect={true}
                 excludeFields={selectedPaths}
-                maxDropdownHeight="12rem"
+                maxDropdownHeight="10rem"
               />
             </div>
 
-            {attributes.length > 0 && (
+            {/* Only the attributes list scrolls */}
+            {attributes.length > 0 ? (
               <div>
                 <Label>Selected Attributes ({attributes.length})</Label>
-                <div className="mt-2 border rounded-lg divide-y">
+                <div className="mt-2 border rounded-lg divide-y max-h-48 overflow-y-auto">
                   {attributes.map((attr, idx) => (
                     <div key={idx} className="p-3 flex items-start gap-3">
                       <div className="flex-1 min-w-0">
@@ -317,9 +319,7 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
                   ))}
                 </div>
               </div>
-            )}
-
-            {attributes.length === 0 && (
+            ) : (
               <div className="text-sm text-muted-foreground py-4 text-center border border-dashed rounded-lg">
                 No attributes added yet. Use the field selector above to add IOC values.
               </div>
