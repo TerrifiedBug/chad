@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers, Upload } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, ChevronDown, Clock, User, FileText, Globe, ShieldAlert, Link as LinkIcon, Link2, Loader2, Trash2, Plus, X, ShieldX, Pencil, Check, Layers, Upload, Webhook } from 'lucide-react'
 import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { IOCMatchesCard } from '@/components/alerts/IOCMatchesCard'
@@ -68,6 +68,7 @@ const indicatorTypeLabels: Record<string, string> = {
 
 // TI Enrichment card component
 function TIEnrichmentCard({ indicators }: { indicators: TIEnrichmentIndicator[] }) {
+  const [isOpen, setIsOpen] = useState(false)
   const [expandedIndicator, setExpandedIndicator] = useState<string | null>(null)
 
   // Sort by risk level (critical first)
@@ -76,15 +77,37 @@ function TIEnrichmentCard({ indicators }: { indicators: TIEnrichmentIndicator[] 
     return order.indexOf(a.overall_risk_level) - order.indexOf(b.overall_risk_level)
   })
 
+  // Count high-risk indicators for summary
+  const highRiskCount = indicators.filter((i) =>
+    ['critical', 'high'].includes(i.overall_risk_level)
+  ).length
+
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <ShieldAlert className="h-4 w-4" />
-          Threat Intelligence
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger className="w-full">
+          <CardHeader className="pb-3 hover:bg-muted/50 rounded-t-lg transition-colors">
+            <CardTitle className="text-sm font-medium flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4" />
+                Threat Intelligence
+                <Badge variant="secondary" className="text-xs">
+                  {indicators.length}
+                </Badge>
+                {highRiskCount > 0 && (
+                  <Badge variant="destructive" className="text-xs">
+                    {highRiskCount} high risk
+                  </Badge>
+                )}
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+              />
+            </CardTitle>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="space-y-3 pt-0">
         {sortedIndicators.map((indicator) => (
           <Collapsible
             key={`${indicator.indicator_type}-${indicator.indicator}`}
@@ -177,12 +200,14 @@ function TIEnrichmentCard({ indicators }: { indicators: TIEnrichmentIndicator[] 
             </CollapsibleContent>
           </Collapsible>
         ))}
-        {sortedIndicators.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            No threat intelligence data available
-          </p>
-        )}
-      </CardContent>
+            {sortedIndicators.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No threat intelligence data available
+              </p>
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   )
 }
@@ -484,6 +509,126 @@ function getFieldValue(logDoc: Record<string, unknown>, fieldPath: string): stri
   }
 
   return String(value ?? '')
+}
+
+// Custom Enrichment Card - displays webhook enrichment data
+interface EnrichmentStatus {
+  status: 'success' | 'failed' | 'timeout' | 'circuit_open' | 'pending'
+  error?: string
+  completed_at?: string
+}
+
+function CustomEnrichmentCard({ logDocument }: { logDocument: Record<string, unknown> }) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  // Extract enrichment_status from log document
+  const enrichmentStatus = logDocument.enrichment_status as Record<string, EnrichmentStatus> | undefined
+
+  // If no enrichment status, nothing to show
+  if (!enrichmentStatus || Object.keys(enrichmentStatus).length === 0) {
+    return null
+  }
+
+  // Get namespaces from enrichment_status
+  const namespaces = Object.keys(enrichmentStatus)
+
+  // Extract enrichment data for each namespace (stored under log_document.enrichment)
+  const getEnrichmentData = (namespace: string): Record<string, unknown> | undefined => {
+    const enrichment = logDocument.enrichment as Record<string, unknown> | undefined
+    if (!enrichment) return undefined
+
+    const data = enrichment[namespace]
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      return data as Record<string, unknown>
+    }
+    return undefined
+  }
+
+  // Count matches and failures for summary
+  const matchCount = namespaces.filter((ns) => {
+    const data = getEnrichmentData(ns)
+    return data && Object.keys(data).length > 0
+  }).length
+  const failCount = namespaces.filter((ns) => enrichmentStatus[ns].status !== 'success').length
+
+  return (
+    <Card>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger className="w-full">
+          <CardHeader className="pb-3 hover:bg-muted/50 rounded-t-lg transition-colors">
+            <CardTitle className="text-sm font-medium flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Webhook className="h-4 w-4" />
+                Custom Enrichment
+                {matchCount > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {matchCount} {matchCount === 1 ? 'match' : 'matches'}
+                  </Badge>
+                )}
+                {failCount > 0 && (
+                  <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                    {failCount} failed
+                  </Badge>
+                )}
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+              />
+            </CardTitle>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="space-y-4 pt-0">
+            {namespaces.map((namespace) => {
+              const status = enrichmentStatus[namespace]
+              const data = getEnrichmentData(namespace)
+              const hasData = data && Object.keys(data).length > 0
+              const isFailed = status.status !== 'success'
+
+              return (
+                <div key={namespace} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">{namespace}</span>
+                    {isFailed && (
+                      <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                        {status.status === 'circuit_open' ? 'Circuit Open' : capitalize(status.status)}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Show error for failures */}
+                  {status.error && (
+                    <div className="text-xs text-red-600 dark:text-red-400 pl-2">
+                      {status.error}
+                    </div>
+                  )}
+
+                  {/* Show enrichment data if available */}
+                  {hasData && (
+                    <div className="pl-2 border-l-2 border-muted space-y-1 text-xs">
+                      {Object.entries(data).map(([key, value]) => (
+                        <div key={key} className="flex gap-2">
+                          <span className="text-muted-foreground shrink-0">{key}:</span>
+                          <span className="font-mono break-all">
+                            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* No match message for success with no data */}
+                  {!hasData && !isFailed && (
+                    <div className="text-xs text-muted-foreground pl-2">No match</div>
+                  )}
+                </div>
+              )
+            })}
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  )
 }
 
 export default function AlertDetailPage() {
@@ -885,36 +1030,9 @@ export default function AlertDetailPage() {
           <Button variant="ghost" size="icon" onClick={() => navigate('/alerts')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              {alert.tags.includes('correlation') ? (
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
-                  <Link2 className="h-3 w-3" />
-                  <span>Correlation</span>
-                </div>
-              ) : alert.rule_id === 'ioc-detection' ? (
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
-                  <ShieldAlert className="h-3 w-3" />
-                  <span>IOC Match</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
-                  <FileText className="h-3 w-3" />
-                  <span>Sigma</span>
-                </div>
-              )}
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold">{alert.rule_title}</h1>
         </div>
         <div className="flex items-center gap-4">
-          <span
-            className={`px-3 py-1 rounded text-sm font-medium ${
-              SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
-            }`}
-          >
-            {capitalize(alert.severity)}
-          </span>
           {alert.exception_created && (
             <Tooltip>
               <TooltipTrigger>
@@ -931,27 +1049,6 @@ export default function AlertDetailPage() {
                 <p className="text-xs text-muted-foreground">
                   {new Date(alert.exception_created.created_at).toLocaleString()}
                 </p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-          {relatedAlerts && relatedAlerts.clustering_enabled && relatedAlerts.related_count > 0 && (
-            <Tooltip>
-              <TooltipTrigger>
-                <Badge variant="secondary" className="gap-1">
-                  <Layers className="h-3 w-3" />
-                  Cluster ({relatedAlerts.related_count + 1})
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="font-medium">Part of alert cluster</p>
-                <p className="text-sm text-muted-foreground">
-                  {relatedAlerts.related_count} related alert{relatedAlerts.related_count > 1 ? 's' : ''} from the same rule
-                </p>
-                {relatedAlerts.window_minutes && (
-                  <p className="text-xs text-muted-foreground">
-                    Within {relatedAlerts.window_minutes} minute window
-                  </p>
-                )}
               </TooltipContent>
             </Tooltip>
           )}
@@ -1029,15 +1126,56 @@ export default function AlertDetailPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4" />
-                Status
+                Overview
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <span
-                className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
-              >
-                {ALERT_STATUS_LABELS[alert.status]}
-              </span>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <span
+                  className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
+                >
+                  {ALERT_STATUS_LABELS[alert.status]}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Severity</span>
+                <span
+                  className={`px-2 py-1 rounded text-xs font-medium ${
+                    SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
+                  }`}
+                >
+                  {capitalize(alert.severity)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Type</span>
+                {alert.tags.includes('correlation') ? (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
+                    <Link2 className="h-3 w-3" />
+                    <span>Correlation</span>
+                  </div>
+                ) : alert.rule_id === 'ioc-detection' ? (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                    <ShieldAlert className="h-3 w-3" />
+                    <span>IOC Match</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                    <FileText className="h-3 w-3" />
+                    <span>Sigma</span>
+                  </div>
+                )}
+              </div>
+              {relatedAlerts && relatedAlerts.clustering_enabled && relatedAlerts.related_count > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Cluster</span>
+                  <Badge variant="secondary" className="gap-1">
+                    <Layers className="h-3 w-3" />
+                    {relatedAlerts.related_count + 1} alerts
+                  </Badge>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1124,39 +1262,6 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
-          {/* Rule card - only show for Sigma rule alerts (not correlation or IOC-only) */}
-          {!(alert.log_document as Record<string, unknown>)?.correlation &&
-           alert.rule_id !== 'ioc-detection' && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Rule
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Link
-                  to={`/rules/${alert.rule_id}`}
-                  className="text-sm text-primary hover:underline"
-                >
-                  View Rule
-                </Link>
-                {alert.tags.length > 0 && (
-                  <div className="flex gap-1 flex-wrap mt-2">
-                    {alert.tags.map((tag, i) => (
-                      <span
-                        key={i}
-                        className="px-1.5 py-0.5 bg-muted rounded text-xs"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
           {/* GeoIP Data - shown if enrichment data exists */}
           {(() => {
             const geoData = extractGeoIPData(alert.log_document as Record<string, unknown>)
@@ -1199,6 +1304,9 @@ export default function AlertDetailPage() {
           {alert.ioc_matches && alert.ioc_matches.length > 0 && (
             <IOCMatchesCard matches={alert.ioc_matches} />
           )}
+
+          {/* Custom Enrichment from webhooks - shown if enrichment_status exists */}
+          <CustomEnrichmentCard logDocument={alert.log_document as Record<string, unknown>} />
 
           {/* Correlation Alert Details - shown if this is a correlation alert */}
           <CorrelationAlertDetails logDocument={alert.log_document as Record<string, unknown>} />
@@ -1272,15 +1380,43 @@ export default function AlertDetailPage() {
           )}
         </div>
 
-        {/* Log Document */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">
-              Triggering Log Document
-            </CardTitle>
+        {/* Log Document - stretches to fill available height */}
+        <Card className="flex flex-col">
+          <CardHeader className="shrink-0">
+            <div className="flex items-center justify-between gap-4">
+              <CardTitle className="text-sm font-medium">
+                Triggering Log Document
+              </CardTitle>
+              <div className="flex items-center gap-3">
+                {/* Tags */}
+                {alert.tags.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {alert.tags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {/* View Rule link - only for Sigma rule alerts */}
+                {!(alert.log_document as Record<string, unknown>)?.correlation &&
+                 alert.rule_id !== 'ioc-detection' && (
+                  <Link
+                    to={`/rules/${alert.rule_id}`}
+                    className="text-sm text-primary hover:underline flex items-center gap-1 shrink-0"
+                  >
+                    <FileText className="h-3 w-3" />
+                    View Rule
+                  </Link>
+                )}
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
-            <pre className="p-4 bg-muted rounded-lg overflow-auto max-h-[600px] text-xs font-mono">
+          <CardContent className="flex-1 flex flex-col min-h-0">
+            <pre className="p-4 bg-muted rounded-lg overflow-auto flex-1 min-h-[300px] text-xs font-mono">
               {JSON.stringify(alert.log_document, null, 2)}
             </pre>
           </CardContent>

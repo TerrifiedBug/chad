@@ -1,21 +1,14 @@
 import { useState, useEffect } from 'react'
 import { IndexPattern, indexPatternsApi } from '@/lib/api'
-import { useToast } from '@/components/ui/toast-provider'
-import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, X } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { SearchableFieldSelect } from '@/components/ui/searchable-field-select'
+import { Loader2, X } from 'lucide-react'
 
 interface GeoIPTabProps {
   pattern: IndexPattern
-  onPatternUpdated: (pattern: IndexPattern) => void
+  onDirtyChange?: (isDirty: boolean) => void
+  onPendingChange?: (changes: Partial<IndexPattern>) => void
 }
 
 // Common IP fields that are typically used for GeoIP enrichment
@@ -30,12 +23,11 @@ const COMMON_IP_FIELDS = [
   'network.forwarded_ip',
 ]
 
-export function GeoIPTab({ pattern, onPatternUpdated }: GeoIPTabProps) {
-  const { showToast } = useToast()
+export function GeoIPTab({ pattern, onDirtyChange, onPendingChange }: GeoIPTabProps) {
   const [geoipFields, setGeoipFields] = useState<string[]>(pattern.geoip_fields || [])
+  const [originalFields] = useState<string[]>(pattern.geoip_fields || [])
   const [availableFields, setAvailableFields] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
 
   // Load available fields from the index
   useEffect(() => {
@@ -65,20 +57,16 @@ export function GeoIPTab({ pattern, onPatternUpdated }: GeoIPTabProps) {
     setGeoipFields(pattern.geoip_fields || [])
   }, [pattern.geoip_fields])
 
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
-      const updated = await indexPatternsApi.update(pattern.id, {
+  // Track dirty state and report pending changes
+  useEffect(() => {
+    const isDirty = JSON.stringify(geoipFields) !== JSON.stringify(originalFields)
+    onDirtyChange?.(isDirty)
+    if (isDirty) {
+      onPendingChange?.({
         geoip_fields: geoipFields.length > 0 ? geoipFields : undefined,
       })
-      onPatternUpdated(updated)
-      showToast('GeoIP settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
-    } finally {
-      setIsSaving(false)
     }
-  }
+  }, [geoipFields, originalFields, onDirtyChange, onPendingChange])
 
   const addField = (field: string) => {
     if (field && !geoipFields.includes(field)) {
@@ -110,20 +98,13 @@ export function GeoIPTab({ pattern, onPatternUpdated }: GeoIPTabProps) {
       <div className="space-y-4">
         <div className="space-y-2">
           <Label>IP Fields to Enrich</Label>
-          <Select value="" onValueChange={addField}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select an IP field to add..." />
-            </SelectTrigger>
-            <SelectContent>
-              {availableFields
-                .filter(f => !geoipFields.includes(f))
-                .map((field) => (
-                  <SelectItem key={field} value={field}>
-                    {field}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          <SearchableFieldSelect
+            fields={availableFields}
+            placeholder="Search and select an IP field..."
+            onSelect={addField}
+            clearOnSelect={true}
+            excludeFields={geoipFields}
+          />
         </div>
 
         {geoipFields.length > 0 ? (
@@ -161,21 +142,6 @@ export function GeoIPTab({ pattern, onPatternUpdated }: GeoIPTabProps) {
         </div>
       </div>
 
-      <div className="flex justify-end pt-4 border-t">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
-            </>
-          )}
-        </Button>
-      </div>
     </div>
   )
 }

@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Alert, mispFeedbackApi, mispApi, MISPEventAttribute } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, ExternalLink } from 'lucide-react'
+import { SearchableFieldSelect } from '@/components/ui/searchable-field-select'
+import { Loader2, ExternalLink, X, Plus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 const THREAT_LEVELS = [
@@ -45,23 +46,22 @@ const IOC_TYPES = [
   { value: 'url', label: 'URL' },
   { value: 'md5', label: 'MD5' },
   { value: 'sha256', label: 'SHA256' },
+  { value: 'sha1', label: 'SHA1' },
   { value: 'filename', label: 'Filename' },
+  { value: 'email-src', label: 'Email (source)' },
+  { value: 'email-dst', label: 'Email (destination)' },
+  { value: 'hostname', label: 'Hostname' },
 ]
 
-// Patterns to detect potential IOCs in log values
-const IOC_PATTERNS: Record<string, RegExp> = {
-  'ip-dst': /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-  'domain': /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/,
-  'url': /^https?:\/\/.+/,
-  'md5': /^[a-fA-F0-9]{32}$/,
-  'sha256': /^[a-fA-F0-9]{64}$/,
-}
-
-interface ExtractedAttribute {
+interface SelectedAttribute {
   field: string
   value: string
   type: string
-  selected: boolean
+}
+
+interface FieldInfo {
+  path: string
+  value: string
 }
 
 interface CreateMISPEventDialogProps {
@@ -76,7 +76,7 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
   const [threatLevel, setThreatLevel] = useState('2')
   const [distribution, setDistribution] = useState('0')
   const [tags, setTags] = useState('source:chad')
-  const [attributes, setAttributes] = useState<ExtractedAttribute[]>([])
+  const [attributes, setAttributes] = useState<SelectedAttribute[]>([])
   const [createdEventUrl, setCreatedEventUrl] = useState<string | null>(null)
 
   // Check MISP status
@@ -85,34 +85,18 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
     queryFn: () => mispApi.getStatus(),
   })
 
-  // Extract potential IOCs from log document
-  useEffect(() => {
-    if (!open) return
-
-    setInfo(`CHAD Alert: ${alert.rule_title}`)
-    setCreatedEventUrl(null)
-
-    const extracted: ExtractedAttribute[] = []
-    const seen = new Set<string>()
+  // Extract all string fields from log document for selection
+  const availableFields = useMemo(() => {
+    const fields: FieldInfo[] = []
 
     const extractFromObject = (obj: Record<string, unknown>, prefix = '') => {
       for (const [key, value] of Object.entries(obj)) {
         const fieldPath = prefix ? `${prefix}.${key}` : key
 
         if (typeof value === 'string' && value.length > 0 && value.length < 500) {
-          // Check if value matches any IOC pattern
-          for (const [type, pattern] of Object.entries(IOC_PATTERNS)) {
-            if (pattern.test(value) && !seen.has(value)) {
-              seen.add(value)
-              extracted.push({
-                field: fieldPath,
-                value,
-                type,
-                selected: type === 'ip-dst' || type === 'domain' || type === 'md5' || type === 'sha256',
-              })
-              break
-            }
-          }
+          fields.push({ path: fieldPath, value })
+        } else if (typeof value === 'number') {
+          fields.push({ path: fieldPath, value: String(value) })
         } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
           extractFromObject(value as Record<string, unknown>, fieldPath)
         }
@@ -120,18 +104,60 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
     }
 
     extractFromObject(alert.log_document)
-    setAttributes(extracted)
+    return fields
+  }, [alert.log_document])
+
+  // Field paths for the searchable select
+  const fieldPaths = useMemo(() =>
+    availableFields.map(f => f.path).sort(),
+    [availableFields]
+  )
+
+  // Already selected field paths
+  const selectedPaths = useMemo(() =>
+    attributes.map(a => a.field),
+    [attributes]
+  )
+
+  // Reset state when dialog opens
+  useEffect(() => {
+    if (!open) return
+    setInfo(`CHAD Alert: ${alert.rule_title}`)
+    setCreatedEventUrl(null)
+    setAttributes([])
   }, [open, alert])
+
+  const addAttribute = (fieldPath: string) => {
+    const fieldInfo = availableFields.find(f => f.path === fieldPath)
+    if (!fieldInfo) return
+
+    setAttributes(prev => [
+      ...prev,
+      {
+        field: fieldPath,
+        value: fieldInfo.value,
+        type: 'ip-dst', // Default type
+      },
+    ])
+  }
+
+  const removeAttribute = (index: number) => {
+    setAttributes(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const updateAttributeType = (index: number, type: string) => {
+    setAttributes(prev => prev.map((a, i) =>
+      i === index ? { ...a, type } : a
+    ))
+  }
 
   const createMutation = useMutation({
     mutationFn: () => {
-      const selectedAttrs: MISPEventAttribute[] = attributes
-        .filter(a => a.selected)
-        .map(a => ({
-          type: a.type,
-          value: a.value,
-          to_ids: true,
-        }))
+      const selectedAttrs: MISPEventAttribute[] = attributes.map(a => ({
+        type: a.type,
+        value: a.value,
+        to_ids: true,
+      }))
 
       const tagList = tags.split(',').map(t => t.trim()).filter(Boolean)
 
@@ -159,23 +185,9 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
     },
   })
 
-  const toggleAttribute = (index: number) => {
-    setAttributes(prev => prev.map((a, i) =>
-      i === index ? { ...a, selected: !a.selected } : a
-    ))
-  }
-
-  const updateAttributeType = (index: number, type: string) => {
-    setAttributes(prev => prev.map((a, i) =>
-      i === index ? { ...a, type } : a
-    ))
-  }
-
-  const selectedCount = attributes.filter(a => a.selected).length
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Create MISP Event</DialogTitle>
           <DialogDescription>
@@ -246,44 +258,72 @@ export function CreateMISPEventDialog({ alert, open, onOpenChange }: CreateMISPE
               />
             </div>
 
+            {/* Field selector outside scroll container so dropdown isn't clipped */}
             <div>
-              <Label>Attributes to Include ({selectedCount} selected)</Label>
-              <div className="mt-2 border rounded-lg max-h-64 overflow-y-auto">
-                {attributes.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground text-sm">
-                    No potential IOCs detected in log document
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {attributes.map((attr, idx) => (
-                      <div key={idx} className="p-3 flex items-center gap-3">
-                        <Checkbox
-                          checked={attr.selected}
-                          onCheckedChange={() => toggleAttribute(idx)}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <code className="text-sm font-mono break-all">{attr.value}</code>
-                          <div className="text-xs text-muted-foreground">{attr.field}</div>
-                        </div>
-                        <Select
-                          value={attr.type}
-                          onValueChange={(type) => updateAttributeType(idx, type)}
-                        >
-                          <SelectTrigger className="w-36">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {IOC_TYPES.map(({ value, label }) => (
-                              <SelectItem key={value} value={value}>{label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Label className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Add IOC Attributes
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1 mb-2">
+                Select fields from the alert log to include as IOC attributes.
+              </p>
+              <SearchableFieldSelect
+                fields={fieldPaths}
+                placeholder="Search for a field to add..."
+                onSelect={addAttribute}
+                clearOnSelect={true}
+                excludeFields={selectedPaths}
+                maxDropdownHeight="10rem"
+              />
             </div>
+
+            {/* Only the attributes list scrolls */}
+            {attributes.length > 0 ? (
+              <div>
+                <Label>Selected Attributes ({attributes.length})</Label>
+                <div className="mt-2 border rounded-lg divide-y max-h-48 overflow-y-auto">
+                  {attributes.map((attr, idx) => (
+                    <div key={idx} className="p-3 flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {attr.field}
+                          </Badge>
+                        </div>
+                        <code className="text-sm font-mono break-all text-muted-foreground">
+                          {attr.value}
+                        </code>
+                      </div>
+                      <Select
+                        value={attr.type}
+                        onValueChange={(type) => updateAttributeType(idx, type)}
+                      >
+                        <SelectTrigger className="w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {IOC_TYPES.map(({ value, label }) => (
+                            <SelectItem key={value} value={value}>{label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeAttribute(idx)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground py-4 text-center border border-dashed rounded-lg">
+                No attributes added yet. Use the field selector above to add IOC values.
+              </div>
+            )}
           </div>
         )}
 

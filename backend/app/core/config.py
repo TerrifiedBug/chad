@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     # Trusted proxies (for X-Forwarded-* headers)
     TRUSTED_PROXIES: str = "*"  # Trust all proxies in production
 
+    # Allow webhooks to internal/private IP addresses (for development/internal infrastructure)
+    # WARNING: Only enable if you understand the SSRF implications
+    ALLOW_INTERNAL_WEBHOOK_IPS: bool = False
+
     @field_validator('JWT_SECRET_KEY', 'SESSION_SECRET_KEY')
     @classmethod
     def validate_secrets(cls, v: str, info) -> str:

@@ -1,4 +1,5 @@
 from app.models.alert import Alert
+from app.models.enrichment_webhook import EnrichmentWebhook, IndexPatternEnrichmentWebhook
 from app.models.alert_comment import AlertComment
 from app.models.api_key import APIKey
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
@@ -36,6 +37,7 @@ __all__ = [
     "AlertComment",
     "AlertNotificationSetting",
     "APIKey",
+    "EnrichmentWebhook",
     "AttackTechnique",
     "AuditLog",
     "CorrelationRule",
@@ -51,6 +53,7 @@ __all__ = [
     "DEFAULT_ROLE_PERMISSIONS",
     "ExceptionOperator",
     "IndexPattern",
+    "IndexPatternEnrichmentWebhook",
     "IndexPatternPollState",
     "LoginAttempt",
     "NotificationSettings",

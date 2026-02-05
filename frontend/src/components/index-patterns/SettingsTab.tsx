@@ -27,7 +27,6 @@ interface SettingsTabProps {
   pattern: IndexPattern | null
   isNew: boolean
   onSave: (data: Partial<IndexPattern>) => Promise<void>
-  isSaving?: boolean
   onDirtyChange?: (isDirty: boolean) => void
 }
 
@@ -38,7 +37,7 @@ interface FormData {
   description: string
 }
 
-export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyChange }: SettingsTabProps) {
+export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsTabProps) {
   const { isPullOnly, supportsPush } = useMode()
 
   // Form state
@@ -73,7 +72,7 @@ export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyC
         percolator_index: pattern.percolator_index,
         description: pattern.description || '',
       })
-      setDetectionMode(pattern.mode)
+      setDetectionMode(pattern.mode || (isPullOnly ? 'pull' : 'push'))
       setPollIntervalMinutes(pattern.poll_interval_minutes || 5)
       setTimestampField(pattern.timestamp_field || '@timestamp')
     } else {
@@ -185,6 +184,12 @@ export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyC
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault()
     setSaveError('')
+
+    // Validate mode before saving
+    if (!detectionMode || !['push', 'pull'].includes(detectionMode)) {
+      setSaveError('Invalid detection mode. Please select Push or Pull.')
+      return
+    }
 
     const data: Partial<IndexPattern> = {
       name: formData.name,
@@ -416,21 +421,6 @@ export function SettingsTab({ pattern, isNew, onSave, isSaving = false, onDirtyC
         </div>
       )}
 
-      {/* Save Button */}
-      <div className="flex justify-end pt-4 border-t">
-        <Button type="submit" disabled={isSaving || !formData.name || !formData.pattern}>
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : isNew ? (
-            'Create Pattern'
-          ) : (
-            'Save Changes'
-          )}
-        </Button>
-      </div>
     </form>
   )
 }

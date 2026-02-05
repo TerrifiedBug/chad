@@ -5,8 +5,6 @@ import {
   indexPatternsApi,
   mispApi,
 } from '@/lib/api'
-import { useToast } from '@/components/ui/toast-provider'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -20,7 +18,6 @@ import {
   AlertTriangle,
   ChevronDown,
   Loader2,
-  Save,
   Search,
   X,
 } from 'lucide-react'
@@ -37,16 +34,17 @@ const IOC_TYPES = [
 
 interface IOCDetectionTabProps {
   pattern: IndexPattern
-  onPatternUpdated: (pattern: IndexPattern) => void
+  onDirtyChange?: (isDirty: boolean) => void
+  onPendingChange?: (changes: Partial<IndexPattern>) => void
 }
 
-export function IOCDetectionTab({ pattern, onPatternUpdated }: IOCDetectionTabProps) {
-  const { showToast } = useToast()
+export function IOCDetectionTab({ pattern, onDirtyChange, onPendingChange }: IOCDetectionTabProps) {
   const [iocEnabled, setIocEnabled] = useState(pattern.ioc_detection_enabled)
   const [fieldMappings, setFieldMappings] = useState<Record<string, string[]>>(
     pattern.ioc_field_mappings || {}
   )
-  const [isSaving, setIsSaving] = useState(false)
+  const [originalEnabled] = useState(pattern.ioc_detection_enabled)
+  const [originalMappings] = useState<Record<string, string[]>>(pattern.ioc_field_mappings || {})
   const [availableFields, setAvailableFields] = useState<string[]>([])
   const [isLoadingFields, setIsLoadingFields] = useState(true)
 
@@ -98,9 +96,13 @@ export function IOCDetectionTab({ pattern, onPatternUpdated }: IOCDetectionTabPr
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
+  // Track dirty state and report pending changes
+  useEffect(() => {
+    const isDirty =
+      iocEnabled !== originalEnabled ||
+      JSON.stringify(fieldMappings) !== JSON.stringify(originalMappings)
+    onDirtyChange?.(isDirty)
+    if (isDirty) {
       // Clean up empty arrays from field mappings
       const cleanedMappings: Record<string, string[]> = {}
       for (const [iocType, fields] of Object.entries(fieldMappings)) {
@@ -108,19 +110,12 @@ export function IOCDetectionTab({ pattern, onPatternUpdated }: IOCDetectionTabPr
           cleanedMappings[iocType] = fields
         }
       }
-
-      const updated = await indexPatternsApi.update(pattern.id, {
+      onPendingChange?.({
         ioc_detection_enabled: iocEnabled,
         ioc_field_mappings: Object.keys(cleanedMappings).length > 0 ? cleanedMappings : null,
       })
-      onPatternUpdated(updated)
-      showToast('IOC detection settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
-    } finally {
-      setIsSaving(false)
     }
-  }
+  }, [iocEnabled, fieldMappings, originalEnabled, originalMappings, onDirtyChange, onPendingChange])
 
   const toggleExpanded = (iocType: string) => {
     setExpandedTypes(prev => ({ ...prev, [iocType]: !prev[iocType] }))
@@ -348,21 +343,6 @@ export function IOCDetectionTab({ pattern, onPatternUpdated }: IOCDetectionTabPr
         </div>
       )}
 
-      <div className="flex justify-end pt-4 border-t">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
-            </>
-          )}
-        </Button>
-      </div>
     </div>
   )
 }

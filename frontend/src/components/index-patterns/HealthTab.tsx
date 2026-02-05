@@ -1,15 +1,14 @@
 import { useState, useEffect } from 'react'
-import { IndexPattern, indexPatternsApi, healthApi } from '@/lib/api'
-import { useToast } from '@/components/ui/toast-provider'
-import { Button } from '@/components/ui/button'
+import { IndexPattern, healthApi } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Loader2, Save, Info } from 'lucide-react'
+import { Loader2, Info } from 'lucide-react'
 
 interface HealthTabProps {
   pattern: IndexPattern
-  onPatternUpdated: (pattern: IndexPattern) => void
+  onDirtyChange?: (isDirty: boolean) => void
+  onPendingChange?: (changes: Partial<IndexPattern>) => void
 }
 
 interface HealthOverrides {
@@ -21,10 +20,18 @@ interface HealthOverrides {
   queue_critical: string
 }
 
-export function HealthTab({ pattern, onPatternUpdated }: HealthTabProps) {
-  const { showToast } = useToast()
+export function HealthTab({ pattern, onDirtyChange, onPendingChange }: HealthTabProps) {
   const [enableHealthAlerting, setEnableHealthAlerting] = useState(pattern.health_alerting_enabled ?? true)
+  const [originalEnableHealthAlerting] = useState(pattern.health_alerting_enabled ?? true)
   const [healthOverrides, setHealthOverrides] = useState<HealthOverrides>({
+    detection_latency_warning_seconds: '',
+    detection_latency_critical_seconds: '',
+    error_rate_percent: '',
+    no_data_minutes: '',
+    queue_warning: '',
+    queue_critical: '',
+  })
+  const [originalHealthOverrides, setOriginalHealthOverrides] = useState<HealthOverrides>({
     detection_latency_warning_seconds: '',
     detection_latency_critical_seconds: '',
     error_rate_percent: '',
@@ -41,7 +48,6 @@ export function HealthTab({ pattern, onPatternUpdated }: HealthTabProps) {
     queue_critical: 100000,
   })
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
 
   // Load global defaults
   useEffect(() => {
@@ -70,7 +76,7 @@ export function HealthTab({ pattern, onPatternUpdated }: HealthTabProps) {
   useEffect(() => {
     setEnableHealthAlerting(pattern.health_alerting_enabled ?? true)
     const overrides = pattern.health_overrides || {}
-    setHealthOverrides({
+    const initialOverrides = {
       detection_latency_warning_seconds: overrides.detection_latency_warning_ms
         ? String(overrides.detection_latency_warning_ms / 1000) : '',
       detection_latency_critical_seconds: overrides.detection_latency_critical_ms
@@ -79,12 +85,18 @@ export function HealthTab({ pattern, onPatternUpdated }: HealthTabProps) {
       no_data_minutes: overrides.no_data_minutes ? String(overrides.no_data_minutes) : '',
       queue_warning: overrides.queue_warning ? String(overrides.queue_warning) : '',
       queue_critical: overrides.queue_critical ? String(overrides.queue_critical) : '',
-    })
+    }
+    setHealthOverrides(initialOverrides)
+    setOriginalHealthOverrides(initialOverrides)
   }, [pattern])
 
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
+  // Track dirty state and report pending changes
+  useEffect(() => {
+    const isDirty =
+      enableHealthAlerting !== originalEnableHealthAlerting ||
+      JSON.stringify(healthOverrides) !== JSON.stringify(originalHealthOverrides)
+    onDirtyChange?.(isDirty)
+    if (isDirty) {
       // Build health overrides object
       const healthOverridesData: Record<string, number> = {}
       if (healthOverrides.detection_latency_warning_seconds) {
@@ -106,18 +118,12 @@ export function HealthTab({ pattern, onPatternUpdated }: HealthTabProps) {
         healthOverridesData.queue_critical = parseInt(healthOverrides.queue_critical)
       }
 
-      const updated = await indexPatternsApi.update(pattern.id, {
+      onPendingChange?.({
         health_alerting_enabled: enableHealthAlerting,
         health_overrides: Object.keys(healthOverridesData).length > 0 ? healthOverridesData : undefined,
       })
-      onPatternUpdated(updated)
-      showToast('Health settings saved')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
-    } finally {
-      setIsSaving(false)
     }
-  }
+  }, [enableHealthAlerting, healthOverrides, originalEnableHealthAlerting, originalHealthOverrides, onDirtyChange, onPendingChange])
 
   if (isLoading) {
     return (
@@ -278,21 +284,6 @@ export function HealthTab({ pattern, onPatternUpdated }: HealthTabProps) {
         </div>
       )}
 
-      <div className="flex justify-end pt-4 border-t">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
-            </>
-          )}
-        </Button>
-      </div>
     </div>
   )
 }

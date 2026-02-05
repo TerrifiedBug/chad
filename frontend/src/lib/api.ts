@@ -2507,3 +2507,96 @@ export const queueApi = {
     api.delete(`/queue/dead-letter/${messageId}`),
 }
 
+// Enrichment Webhook types
+export type EnrichmentWebhookMethod = 'POST' | 'GET'
+
+export type EnrichmentWebhook = {
+  id: string
+  name: string
+  url: string
+  namespace: string
+  method: EnrichmentWebhookMethod
+  header_name: string | null
+  has_credentials: boolean
+  timeout_seconds: number
+  max_concurrent_calls: number
+  cache_ttl_seconds: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type EnrichmentWebhookCreate = {
+  name: string
+  url: string
+  namespace: string
+  method?: EnrichmentWebhookMethod
+  header_name?: string
+  header_value?: string
+  timeout_seconds?: number
+  max_concurrent_calls?: number
+  cache_ttl_seconds?: number
+  is_active?: boolean
+}
+
+export type EnrichmentWebhookUpdate = Partial<Omit<EnrichmentWebhookCreate, 'namespace'>>
+
+export type EnrichmentWebhookTestRequest = {
+  url: string
+  method?: EnrichmentWebhookMethod
+  header_name?: string
+  header_value?: string
+  timeout_seconds?: number
+}
+
+export type EnrichmentWebhookTestResponse = {
+  success: boolean
+  status_code?: number
+  response_body?: Record<string, unknown> | null
+  duration_ms?: number
+  error?: string
+}
+
+// Index Pattern Enrichment Config types
+export type IndexPatternEnrichmentConfig = {
+  webhook_id: string
+  webhook_name: string
+  webhook_namespace: string
+  field_to_send: string
+  is_enabled: boolean
+}
+
+// Backend returns array directly
+export type IndexPatternEnrichmentsResponse = IndexPatternEnrichmentConfig[]
+
+export type IndexPatternEnrichmentsUpdate = {
+  enrichments: Array<{
+    webhook_id: string
+    field_to_send: string
+    is_enabled: boolean
+  }>
+}
+
+// Enrichment Webhooks API
+export const enrichmentWebhooksApi = {
+  list: () => api.get<EnrichmentWebhook[]>('/enrichment-webhooks'),
+  get: (id: string) => api.get<EnrichmentWebhook>(`/enrichment-webhooks/${id}`),
+  create: (data: EnrichmentWebhookCreate) =>
+    api.post<EnrichmentWebhook>('/enrichment-webhooks', data),
+  update: (id: string, data: EnrichmentWebhookUpdate) =>
+    api.patch<EnrichmentWebhook>(`/enrichment-webhooks/${id}`, data),
+  delete: (id: string) => api.delete(`/enrichment-webhooks/${id}`),
+  test: (id: string) =>
+    api.post<EnrichmentWebhookTestResponse>(`/enrichment-webhooks/${id}/test`),
+  testUrl: (data: EnrichmentWebhookTestRequest) =>
+    api.post<EnrichmentWebhookTestResponse>('/enrichment-webhooks/test', data),
+}
+
+// Index Pattern Enrichments API
+export const indexPatternEnrichmentsApi = {
+  get: (indexPatternId: string) =>
+    api.get<IndexPatternEnrichmentsResponse>(`/index-patterns/${indexPatternId}/enrichments`),
+  update: (indexPatternId: string, data: IndexPatternEnrichmentsUpdate) =>
+    api.put<IndexPatternEnrichmentsResponse>(`/index-patterns/${indexPatternId}/enrichments`, data),
+}
+

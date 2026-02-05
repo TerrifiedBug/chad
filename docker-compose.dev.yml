@@ -59,6 +59,8 @@ services:
       - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}
       # Development mode - allows insecure defaults with warning
       - DEBUG=true
+      # Allow webhooks to internal IPs (for testing with mock-webhook service)
+      - ALLOW_INTERNAL_WEBHOOK_IPS=true
       # Frontend URL for SSO redirects (local dev needs explicit URL due to different ports)
       - FRONTEND_URL=http://localhost:3000
       - APP_URL=http://localhost:3000
@@ -103,6 +105,8 @@ services:
       - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-dev-session-key-change-in-prod}
       # Development mode
       - DEBUG=true
+      # Allow webhooks to internal IPs (for testing with mock-webhook service)
+      - ALLOW_INTERNAL_WEBHOOK_IPS=true
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
@@ -129,6 +133,22 @@ services:
       - ./frontend:/app
       - /app/node_modules
     command: npm run dev -- --host 0.0.0.0
+
+  # Mock enrichment webhook server for testing custom enrichment webhooks
+  # Start with: docker compose -f docker-compose.dev.yml up mock-webhook
+  mock-webhook:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./backend:/app
+      - ./tools:/app/tools
+    entrypoint: []
+    command: python /app/tools/mock_enrichment_webhook.py
+    profiles:
+      - testing
 
 volumes:
   pgdata:

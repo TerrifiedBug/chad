@@ -61,27 +61,32 @@ def _validate_url_components(url: str) -> tuple[bool, str, Any]:
         if not hostname:
             return False, "URL must have a valid hostname", None
 
-        # Block localhost variants
-        if hostname in ("localhost", "0.0.0.0"):
+        # Check if internal IPs are explicitly allowed (for dev/internal infrastructure)
+        from app.core.config import settings
+        allow_internal = settings.ALLOW_INTERNAL_WEBHOOK_IPS
+
+        # Block localhost variants (unless explicitly allowed)
+        if hostname in ("localhost", "0.0.0.0") and not allow_internal:
             return False, "Localhost URLs are not allowed", None
 
         # Resolve hostname to IP and check against blocked ranges
-        try:
-            # Get all IP addresses for the hostname
-            addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
-            for family, _, _, _, sockaddr in addr_info:
-                ip_str = sockaddr[0]
-                try:
-                    ip = ipaddress.ip_address(ip_str)
-                    for blocked_range in BLOCKED_IP_RANGES:
-                        if ip in blocked_range:
-                            return False, "URL resolves to a private/internal IP address", None
-                except ValueError:
-                    continue
-        except socket.gaierror:
-            # DNS resolution failed - could be temporary, allow the request
-            # The actual HTTP request will fail if the host is unreachable
-            pass
+        if not allow_internal:
+            try:
+                # Get all IP addresses for the hostname
+                addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
+                for family, _, _, _, sockaddr in addr_info:
+                    ip_str = sockaddr[0]
+                    try:
+                        ip = ipaddress.ip_address(ip_str)
+                        for blocked_range in BLOCKED_IP_RANGES:
+                            if ip in blocked_range:
+                                return False, "URL resolves to a private/internal IP address", None
+                    except ValueError:
+                        continue
+            except socket.gaierror:
+                # DNS resolution failed - could be temporary, allow the request
+                # The actual HTTP request will fail if the host is unreachable
+                pass
 
         return True, "", parsed
 

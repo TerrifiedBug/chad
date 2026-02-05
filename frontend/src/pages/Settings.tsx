@@ -4,6 +4,7 @@ import { settingsApiExtended, settingsApi, statsApi, api, configApi, ImportMode,
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
+import EnrichmentWebhooksSettings from '@/pages/EnrichmentWebhooksSettings'
 import { useToast } from '@/components/ui/toast-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -1343,11 +1344,12 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* Enrichment Section - combines geoip and threat-intel */}
+      {/* Enrichment Section - combines geoip, threat-intel, and custom webhooks */}
       {activeTab === 'enrichment' && (
         <div className="space-y-6">
           <GeoIPSettings />
           <TISettings />
+          <EnrichmentWebhooksSettings />
         </div>
       )}
 

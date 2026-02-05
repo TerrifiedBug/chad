@@ -193,6 +193,10 @@ async def enrich_alert(
     db: AsyncSession,
     log_doc: dict,
     index_pattern: IndexPattern,
+    alert_id: str | None = None,
+    rule_id: str | None = None,
+    rule_title: str | None = None,
+    severity: str | None = None,
 ) -> dict:
     """
     Enrich a log document with additional context.
@@ -201,6 +205,10 @@ async def enrich_alert(
         db: Database session
         log_doc: The matched log document
         index_pattern: The index pattern configuration
+        alert_id: The alert ID (for webhook enrichment)
+        rule_id: The rule ID (for webhook enrichment)
+        rule_title: The rule title (for webhook enrichment)
+        severity: The alert severity (for webhook enrichment)
 
     Returns:
         Enriched log document (copy, original not modified)
@@ -216,6 +224,9 @@ async def enrich_alert(
 
     # MISP IOC cache enrichment (local cache lookups)
     await _enrich_ioc_cache(enriched, log_doc, index_pattern)
+
+    # Custom webhook enrichment
+    await _enrich_webhooks(db, enriched, log_doc, index_pattern, alert_id, rule_id, rule_title, severity)
 
     return enriched
 
@@ -446,3 +457,43 @@ async def _enrich_ioc_cache(
 
     except Exception as e:
         logger.warning("IOC cache enrichment failed: %s", e)
+
+
+async def _enrich_webhooks(
+    db: AsyncSession,
+    enriched: dict,
+    log_doc: dict,
+    index_pattern: IndexPattern,
+    alert_id: str | None,
+    rule_id: str | None,
+    rule_title: str | None,
+    severity: str | None,
+) -> None:
+    """Add custom webhook enrichment to the document."""
+    try:
+        from app.services.enrichment_webhook import enrich_alert_with_webhooks
+
+        webhook_data, webhook_status = await enrich_alert_with_webhooks(
+            db=db,
+            index_pattern_id=index_pattern.id,
+            alert_id=alert_id or "pending",
+            rule_id=rule_id or "unknown",
+            rule_title=rule_title or "Unknown Rule",
+            severity=severity or "medium",
+            log_document=log_doc,
+        )
+
+        # Add enrichment data under enrichment.<namespace>
+        if webhook_data:
+            if "enrichment" not in enriched:
+                enriched["enrichment"] = {}
+            enriched["enrichment"].update(webhook_data)
+
+        # Add enrichment status under enrichment_status.<namespace>
+        if webhook_status:
+            if "enrichment_status" not in enriched:
+                enriched["enrichment_status"] = {}
+            enriched["enrichment_status"].update(webhook_status)
+
+    except Exception as e:
+        logger.warning("Webhook enrichment failed: %s", type(e).__name__)
