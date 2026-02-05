@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
+import { PageHeader } from '@/components/PageHeader'
 
 export default function FieldMappingsPage() {
   const { showToast } = useToast()
@@ -302,18 +303,16 @@ export default function FieldMappingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Field Mappings</h1>
-          <p className="text-muted-foreground">
-            Map Sigma rule field names to your log field names
-          </p>
-        </div>
-        <Button onClick={openAddModal}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Mapping
-        </Button>
-      </div>
+      <PageHeader
+        title="Field Mappings"
+        description="Map Sigma rule field names to your log field names"
+        actions={
+          <Button onClick={openAddModal}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Mapping
+          </Button>
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex-wrap h-auto gap-1">

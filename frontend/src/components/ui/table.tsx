@@ -1,38 +1,66 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
-const Table = React.forwardRef<
-  HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
-    <table
-      ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
-      {...props}
-    />
-  </div>
-))
+interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  /** Add ARIA role="grid" for keyboard navigable tables */
+  navigable?: boolean
+  /** Accessible label for the table */
+  label?: string
+}
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, navigable, label, ...props }, ref) => (
+    <div className="relative w-full overflow-auto custom-scrollbar">
+      <table
+        ref={ref}
+        role={navigable ? "grid" : undefined}
+        aria-label={label}
+        className={cn("w-full caption-bottom text-sm", className)}
+        {...props}
+      />
+    </div>
+  )
+)
 Table.displayName = "Table"
 
-const TableHeader = React.forwardRef<
-  HTMLTableSectionElement,
-  React.HTMLAttributes<HTMLTableSectionElement>
->(({ className, ...props }, ref) => (
-  <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
-))
+interface TableHeaderProps extends React.HTMLAttributes<HTMLTableSectionElement> {
+  /** Make header sticky when scrolling */
+  sticky?: boolean
+}
+
+const TableHeader = React.forwardRef<HTMLTableSectionElement, TableHeaderProps>(
+  ({ className, sticky, ...props }, ref) => (
+    <thead
+      ref={ref}
+      className={cn(
+        "[&_tr]:border-b bg-muted/50",
+        sticky && "sticky top-0 z-10 backdrop-blur-sm bg-background/95",
+        className
+      )}
+      {...props}
+    />
+  )
+)
 TableHeader.displayName = "TableHeader"
 
-const TableBody = React.forwardRef<
-  HTMLTableSectionElement,
-  React.HTMLAttributes<HTMLTableSectionElement>
->(({ className, ...props }, ref) => (
-  <tbody
-    ref={ref}
-    className={cn("[&_tr:last-child]:border-0", className)}
-    {...props}
-  />
-))
+interface TableBodyProps extends React.HTMLAttributes<HTMLTableSectionElement> {
+  /** Enable zebra striping */
+  striped?: boolean
+}
+
+const TableBody = React.forwardRef<HTMLTableSectionElement, TableBodyProps>(
+  ({ className, striped, ...props }, ref) => (
+    <tbody
+      ref={ref}
+      className={cn(
+        "[&_tr:last-child]:border-0",
+        striped && "table-striped",
+        className
+      )}
+      {...props}
+    />
+  )
+)
 TableBody.displayName = "TableBody"
 
 const TableFooter = React.forwardRef<
@@ -50,19 +78,77 @@ const TableFooter = React.forwardRef<
 ))
 TableFooter.displayName = "TableFooter"
 
-const TableRow = React.forwardRef<
-  HTMLTableRowElement,
-  React.HTMLAttributes<HTMLTableRowElement>
->(({ className, ...props }, ref) => (
-  <tr
-    ref={ref}
-    className={cn(
-      "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
-      className
-    )}
-    {...props}
-  />
-))
+interface TableRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
+  /** Whether to highlight this row as selected */
+  selected?: boolean
+  /** Whether this row is interactive/clickable */
+  interactive?: boolean
+  /** Enable keyboard navigation (adds tabIndex and focus styles) */
+  focusable?: boolean
+  /** Index for keyboard navigation */
+  rowIndex?: number
+}
+
+const TableRow = React.forwardRef<HTMLTableRowElement, TableRowProps>(
+  ({ className, selected, interactive, focusable, rowIndex, onKeyDown, ...props }, ref) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+      if (onKeyDown) {
+        onKeyDown(e)
+      }
+
+      // Handle keyboard navigation
+      if (focusable) {
+        const row = e.currentTarget
+        const tbody = row.parentElement
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          const nextRow = row.nextElementSibling as HTMLTableRowElement | null
+          nextRow?.focus()
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          const prevRow = row.previousElementSibling as HTMLTableRowElement | null
+          prevRow?.focus()
+        } else if (e.key === 'Home' && tbody) {
+          e.preventDefault()
+          const firstRow = tbody.querySelector('tr[tabindex]') as HTMLTableRowElement | null
+          firstRow?.focus()
+        } else if (e.key === 'End' && tbody) {
+          e.preventDefault()
+          const rows = tbody.querySelectorAll('tr[tabindex]')
+          const lastRow = rows[rows.length - 1] as HTMLTableRowElement | null
+          lastRow?.focus()
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          // Trigger click if row is interactive
+          if (interactive && props.onClick) {
+            e.preventDefault()
+            row.click()
+          }
+        }
+      }
+    }
+
+    return (
+      <tr
+        ref={ref}
+        data-state={selected ? "selected" : undefined}
+        tabIndex={focusable ? 0 : undefined}
+        role={focusable ? "row" : undefined}
+        aria-rowindex={rowIndex}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          "border-b transition-colors duration-150",
+          "hover:bg-muted/50",
+          "data-[state=selected]:bg-primary/5 data-[state=selected]:border-l-2 data-[state=selected]:border-l-primary",
+          interactive && "cursor-pointer",
+          focusable && "table-row-focusable",
+          className
+        )}
+        {...props}
+      />
+    )
+  }
+)
 TableRow.displayName = "TableRow"
 
 const TableHead = React.forwardRef<

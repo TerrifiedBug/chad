@@ -26,6 +26,8 @@ import {
   ScrollText,
   KeyRound,
   ShieldCheck,
+  Target,
+  Webhook,
 } from 'lucide-react'
 
 type SettingsItem = {
@@ -50,21 +52,23 @@ const settingsGroups: SettingsGroup[] = [
       { id: 'security', label: 'Security', icon: Shield },
       { id: 'sso', label: 'SSO', icon: KeyRound },
       { id: 'notifications', label: 'Notifications', icon: Bell },
+      { id: 'ai', label: 'AI', icon: Bot },
     ],
   },
   {
-    label: 'Integrations',
+    label: 'Enrichment',
     permission: 'manage_settings',
     items: [
-      { id: 'ai', label: 'AI', icon: Bot },
-      { id: 'enrichment', label: 'Enrichment', icon: Globe },
-      { id: 'opensearch', label: 'OpenSearch', icon: Search },
+      { id: 'geoip', label: 'GeoIP', icon: Globe },
+      { id: 'ti', label: 'Threat Intel', icon: Target },
+      { id: 'webhooks', label: 'Webhooks', icon: Webhook },
     ],
   },
   {
     label: 'System',
     permission: 'manage_settings',
     items: [
+      { id: 'opensearch', label: 'OpenSearch', icon: Search },
       { id: 'queue', label: 'Queue', icon: Inbox },
       { id: 'health', label: 'Health', icon: Activity },
       { id: 'backup', label: 'Backup', icon: HardDrive },
@@ -115,12 +119,8 @@ export function SettingsSidebar({ expanded, onExpandedChange }: SettingsSidebarP
   }
 
   const handleBack = () => {
-    // Navigate to previous page or dashboard
-    if (window.history.length > 2) {
-      navigate(-1)
-    } else {
-      navigate('/')
-    }
+    // Navigate to settings hub
+    navigate('/settings/hub')
   }
 
   // Check if we're on main settings page (not a subpage)

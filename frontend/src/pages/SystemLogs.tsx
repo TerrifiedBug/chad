@@ -241,9 +241,9 @@ export default function SystemLogsPage() {
   const totalPages = logsData ? Math.ceil(logsData.total / PAGE_SIZE) : 0
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">System Log</h1>
+    <div className="space-y-6">
+      {/* Refresh button */}
+      <div className="flex justify-end">
         <Button variant="outline" size="sm" onClick={loadLogs} disabled={isLoading}>
           <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
           Refresh

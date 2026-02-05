@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useVersion } from '@/hooks/use-version'
+import { useTheme } from '@/hooks/use-theme'
 import { NotificationBell } from '@/components/NotificationBell'
 import { AboutDialog } from '@/components/AboutDialog'
 import { Button } from '@/components/ui/button'
@@ -14,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { LogOut, Settings, Key, Lock, User, Info, Menu } from 'lucide-react'
+import { LogOut, Key, Lock, User, Info, Menu, Sun, Moon, Monitor } from 'lucide-react'
 
 interface AppHeaderProps {
   onMobileMenuToggle?: () => void
@@ -32,8 +33,17 @@ function getUserInitial(email: string): string {
 export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = true }: AppHeaderProps) {
   const { isAuthenticated, user, logout, hasPermission } = useAuth()
   const { version, updateAvailable } = useVersion()
+  const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const [showAboutDialog, setShowAboutDialog] = useState(false)
+
+  const cycleTheme = () => {
+    if (theme === 'light') setTheme('dark')
+    else if (theme === 'dark') setTheme('system')
+    else setTheme('light')
+  }
+
+  const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
 
   return (
     <>
@@ -72,12 +82,23 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
           </div>
 
           <div className="flex items-center gap-2">
+            {isAuthenticated && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={cycleTheme}
+                className="h-9 w-9"
+                aria-label={`Current theme: ${theme}. Click to change.`}
+              >
+                <ThemeIcon className="h-5 w-5" />
+              </Button>
+            )}
             {isAuthenticated && <NotificationBell />}
 
             {isAuthenticated && user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full h-9 w-9">
+                  <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 focus-visible:ring-0 focus-visible:ring-offset-0">
                     <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium">
                       {getUserInitial(user.email)}
                     </div>
@@ -97,12 +118,6 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
                     <User className="mr-2 h-4 w-4" />
                     Account
                   </DropdownMenuItem>
-                  {hasPermission('manage_settings') && (
-                    <DropdownMenuItem onClick={() => navigate('/settings')}>
-                      <Settings className="mr-2 h-4 w-4" />
-                      Settings
-                    </DropdownMenuItem>
-                  )}
                   {hasPermission('manage_api_keys') && (
                     <DropdownMenuItem onClick={() => navigate('/settings/api-keys')}>
                       <Key className="mr-2 h-4 w-4" />

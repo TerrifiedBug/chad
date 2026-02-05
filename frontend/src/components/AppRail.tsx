@@ -1,4 +1,5 @@
 // frontend/src/components/AppRail.tsx
+import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
@@ -25,19 +26,40 @@ type NavItem = {
   exact?: boolean
   permission?: string
   badge?: number
+  showStatus?: boolean
 }
 
-const navItems: NavItem[] = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-  { href: '/alerts', label: 'Alerts', icon: Bell },
-  { href: '/rules', label: 'Rules', icon: ScrollText },
-  { href: '/attack', label: 'ATT&CK', icon: Target },
-  { href: '/index-patterns', label: 'Index Patterns', icon: Database, permission: 'manage_index_config' },
-  { href: '/health', label: 'Health', icon: Activity },
+type NavSection = {
+  label: string
+  items: NavItem[]
+}
+
+const navSections: NavSection[] = [
+  {
+    label: 'Operations',
+    items: [
+      { href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+      { href: '/alerts', label: 'Alerts', icon: Bell },
+      { href: '/rules', label: 'Rules', icon: ScrollText },
+    ],
+  },
+  {
+    label: 'Intelligence',
+    items: [
+      { href: '/attack', label: 'ATT&CK', icon: Target },
+      { href: '/index-patterns', label: 'Index Patterns', icon: Database, permission: 'manage_index_config' },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { href: '/health', label: 'Health', icon: Activity, showStatus: true },
+    ],
+  },
 ]
 
 const settingsItem: NavItem = {
-  href: '/settings',
+  href: '/settings/hub',
   label: 'Settings',
   icon: Settings,
   permission: 'manage_settings',
@@ -47,15 +69,44 @@ interface AppRailProps {
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
   alertCount?: number
+  healthStatus?: 'healthy' | 'warning' | 'critical'
 }
 
-export function AppRail({ expanded, onExpandedChange, alertCount }: AppRailProps) {
+export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }: AppRailProps) {
   const location = useLocation()
   const { hasPermission } = useAuth()
 
-  const visibleItems = navItems.filter(item =>
-    !item.permission || hasPermission(item.permission)
-  )
+  // Track previous alert count for animation
+  const [prevAlertCount, setPrevAlertCount] = useState(alertCount)
+  const [badgeAnimating, setBadgeAnimating] = useState(false)
+  const animationTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (alertCount !== prevAlertCount && alertCount !== undefined) {
+      setBadgeAnimating(true)
+      // Clear any existing timeout
+      if (animationTimeoutRef.current) {
+        window.clearTimeout(animationTimeoutRef.current)
+      }
+      animationTimeoutRef.current = window.setTimeout(() => {
+        setBadgeAnimating(false)
+        setPrevAlertCount(alertCount)
+      }, 300)
+    }
+    return () => {
+      if (animationTimeoutRef.current) {
+        window.clearTimeout(animationTimeoutRef.current)
+      }
+    }
+  }, [alertCount, prevAlertCount])
+
+  // Filter sections to only include items the user has permission for
+  const visibleSections = navSections.map(section => ({
+    ...section,
+    items: section.items.filter(item =>
+      !item.permission || hasPermission(item.permission)
+    ),
+  })).filter(section => section.items.length > 0)
 
   const showSettings = !settingsItem.permission || hasPermission(settingsItem.permission)
 
@@ -66,9 +117,19 @@ export function AppRail({ expanded, onExpandedChange, alertCount }: AppRailProps
     return location.pathname.startsWith(item.href)
   }
 
+  const getStatusColor = (status?: 'healthy' | 'warning' | 'critical') => {
+    switch (status) {
+      case 'critical': return 'bg-red-500'
+      case 'warning': return 'bg-yellow-500'
+      case 'healthy': return 'bg-green-500'
+      default: return 'bg-muted-foreground'
+    }
+  }
+
   const NavLink = ({ item, badge }: { item: NavItem; badge?: number }) => {
     const active = isActive(item)
     const Icon = item.icon
+    const showHealthDot = item.showStatus && healthStatus
 
     const content = (
       <Link
@@ -80,12 +141,29 @@ export function AppRail({ expanded, onExpandedChange, alertCount }: AppRailProps
           !expanded && 'justify-center px-2'
         )}
       >
-        <Icon className="h-5 w-5 flex-shrink-0" />
+        <div className="relative">
+          <Icon className="h-5 w-5 flex-shrink-0" />
+          {!expanded && showHealthDot && (
+            <span className={cn(
+              'absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full',
+              getStatusColor(healthStatus)
+            )} />
+          )}
+        </div>
         {expanded && (
           <>
             <span className="flex-1">{item.label}</span>
+            {showHealthDot && (
+              <span className={cn(
+                'h-2 w-2 rounded-full',
+                getStatusColor(healthStatus)
+              )} />
+            )}
             {badge !== undefined && badge > 0 && (
-              <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+              <span className={cn(
+                "rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground",
+                badgeAnimating && "animate-bounce-once"
+              )}>
                 {badge > 99 ? '99+' : badge}
               </span>
             )}
@@ -106,12 +184,22 @@ export function AppRail({ expanded, onExpandedChange, alertCount }: AppRailProps
           <TooltipContent side="right">
             {item.label}
             {badge !== undefined && badge > 0 && ` (${badge})`}
+            {showHealthDot && ` - System ${healthStatus}`}
           </TooltipContent>
         </Tooltip>
       )
     }
 
     return content
+  }
+
+  const SectionLabel = ({ label }: { label: string }) => {
+    if (!expanded) return null
+    return (
+      <div className="px-3 pt-4 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        {label}
+      </div>
+    )
   }
 
   return (
@@ -123,13 +211,21 @@ export function AppRail({ expanded, onExpandedChange, alertCount }: AppRailProps
         )}
       >
         {/* Main navigation - starts at top */}
-        <nav className="flex-1 space-y-1 p-2 pt-3">
-          {visibleItems.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              badge={item.href === '/alerts' ? alertCount : undefined}
-            />
+        <nav className="flex-1 p-2 pt-1 overflow-y-auto">
+          {visibleSections.map((section, idx) => (
+            <div key={section.label}>
+              {idx > 0 && !expanded && <div className="my-2 mx-2 border-t border-border" />}
+              <SectionLabel label={section.label} />
+              <div className="space-y-1">
+                {section.items.map((item) => (
+                  <NavLink
+                    key={item.href}
+                    item={item}
+                    badge={item.href === '/alerts' ? alertCount : undefined}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 

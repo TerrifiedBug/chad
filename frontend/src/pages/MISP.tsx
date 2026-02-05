@@ -30,6 +30,15 @@ import {
   Filter,
 } from 'lucide-react'
 import { LoadingState } from '@/components/ui/loading-state'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/PageHeader'
+import { THREAT_LEVEL_COLORS_SUBTLE } from '@/lib/constants'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 const IOCS_PER_PAGE = 100
 
@@ -210,14 +219,8 @@ export default function MISPPage() {
   }
 
   const getThreatLevelBadge = (level: string) => {
-    switch (level) {
-      case 'High':
-        return <Badge variant="destructive">{level}</Badge>
-      case 'Medium':
-        return <Badge>{level}</Badge>
-      default:
-        return <Badge variant="secondary">{level}</Badge>
-    }
+    const colorClass = THREAT_LEVEL_COLORS_SUBTLE[level.toLowerCase()] || THREAT_LEVEL_COLORS_SUBTLE.undefined
+    return <Badge className={colorClass}>{level}</Badge>
   }
 
   // Loading state
@@ -229,12 +232,10 @@ export default function MISPPage() {
   if (!mispStatus?.configured) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">MISP Integration</h1>
-          <p className="text-muted-foreground">
-            Import threat intelligence from MISP events as detection rules
-          </p>
-        </div>
+        <PageHeader
+          title="MISP Integration"
+          description="Import threat intelligence from MISP events as detection rules"
+        />
 
         <Card className="max-w-2xl">
           <CardHeader>
@@ -265,12 +266,10 @@ export default function MISPPage() {
   if (!mispStatus?.connected) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">MISP Integration</h1>
-          <p className="text-muted-foreground">
-            Import threat intelligence from MISP events as detection rules
-          </p>
-        </div>
+        <PageHeader
+          title="MISP Integration"
+          description="Import threat intelligence from MISP events as detection rules"
+        />
 
         <Card className="max-w-2xl border-destructive">
           <CardHeader>
@@ -302,23 +301,33 @@ export default function MISPPage() {
   // Main content - connected state
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">MISP Integration</h1>
-          <p className="text-muted-foreground">
-            Import threat intelligence from MISP events as detection rules
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          {mispStatus?.instance_url && (
-            <span className="text-sm text-muted-foreground">{mispStatus.instance_url}</span>
-          )}
-          <Button variant="outline" size="sm" onClick={() => refetchEvents()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="MISP Integration"
+        description="Import threat intelligence from MISP events as detection rules"
+        actions={
+          <div className="flex items-center gap-4">
+            {mispStatus?.instance_url && (
+              <span className="text-sm text-muted-foreground">{mispStatus.instance_url}</span>
+            )}
+            <Select value={selectedIndexPattern} onValueChange={setSelectedIndexPattern}>
+              <SelectTrigger className="w-[280px]">
+                <SelectValue placeholder="Select index pattern" />
+              </SelectTrigger>
+              <SelectContent>
+                {indexPatterns?.map((pattern) => (
+                  <SelectItem key={pattern.id} value={pattern.id}>
+                    {pattern.name} ({pattern.pattern})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => refetchEvents()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
+        }
+      />
 
       {/* Warning banner */}
       <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
@@ -340,6 +349,13 @@ export default function MISPPage() {
             className="pl-10"
           />
         </div>
+
+        {/* Search results count */}
+        {events && (
+          <Badge variant="secondary" className="text-xs">
+            {events.length} event{events.length !== 1 ? 's' : ''}
+          </Badge>
+        )}
 
         <div className="flex gap-4 items-center text-sm">
           <span className="text-muted-foreground">Threat Level:</span>
@@ -364,25 +380,6 @@ export default function MISPPage() {
         </div>
       </div>
 
-      {/* Index Pattern Selector */}
-      <div className="flex items-center gap-4">
-        <span className="text-sm font-medium">Target Index Pattern:</span>
-        <Select value={selectedIndexPattern} onValueChange={setSelectedIndexPattern}>
-          <SelectTrigger className="w-[300px]">
-            <SelectValue placeholder="Select index pattern for rules" />
-          </SelectTrigger>
-          <SelectContent>
-            {indexPatterns?.map((pattern) => (
-              <SelectItem key={pattern.id} value={pattern.id}>
-                {pattern.name} ({pattern.pattern})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {!selectedIndexPattern && (
-          <span className="text-sm text-muted-foreground">Required to create rules</span>
-        )}
-      </div>
 
       {/* Events List */}
       <div className="border rounded-lg">
@@ -446,24 +443,26 @@ export default function MISPPage() {
                     value={selectedIOCType || sortedIOCTypes[0].type}
                     onValueChange={handleTypeChange}
                   >
-                    <TabsList className="flex-wrap h-auto gap-1">
-                      {sortedIOCTypes.map(({ type, count }) => (
-                        <TabsTrigger
-                          key={type}
-                          value={type}
-                          className="text-xs"
-                          disabled={!isTypeSupported(type)}
-                        >
-                          {type}
-                          <Badge
-                            variant={isTypeSupported(type) ? 'secondary' : 'outline'}
-                            className="ml-1.5 text-xs px-1.5"
+                    <div className="overflow-x-auto custom-scrollbar pb-2">
+                      <TabsList className="inline-flex w-auto min-w-full gap-1">
+                        {sortedIOCTypes.map(({ type, count }) => (
+                          <TabsTrigger
+                            key={type}
+                            value={type}
+                            className="text-xs whitespace-nowrap"
+                            disabled={!isTypeSupported(type)}
                           >
-                            {count.toLocaleString()}
-                          </Badge>
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
+                            {type}
+                            <Badge
+                              variant={isTypeSupported(type) ? 'secondary' : 'outline'}
+                              className="ml-1.5 text-xs px-1.5"
+                            >
+                              {count.toLocaleString()}
+                            </Badge>
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </div>
                   </Tabs>
 
                   {/* Selected IOC Type Content */}
@@ -542,8 +541,13 @@ export default function MISPPage() {
                       </div>
 
                       {iocsLoading ? (
-                        <div className="flex items-center justify-center py-8">
-                          <Loader2 className="h-5 w-5 animate-spin" />
+                        <div className="p-2 space-y-1">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <div key={i} className="flex items-center gap-2 p-2">
+                              <Skeleton className="h-4 w-4 rounded" />
+                              <Skeleton className="h-4 flex-1" />
+                            </div>
+                          ))}
                         </div>
                       ) : (
                         <>
@@ -573,12 +577,24 @@ export default function MISPPage() {
                                     {ioc.value}
                                   </span>
                                   {ioc.on_warning_list && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs shrink-0 text-yellow-600"
-                                    >
-                                      {ioc.warning_list_name || 'warning list'}
-                                    </Badge>
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Badge
+                                            variant="outline"
+                                            className="text-xs shrink-0 text-yellow-600 cursor-help"
+                                          >
+                                            {ioc.warning_list_name || 'warning list'}
+                                          </Badge>
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs">
+                                          <p className="text-xs">
+                                            This IOC appears on a MISP warning list and may produce false positives.
+                                            Review carefully before importing.
+                                          </p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
                                   )}
                                 </label>
                               ))}

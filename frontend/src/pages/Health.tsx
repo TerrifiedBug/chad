@@ -19,6 +19,10 @@ import {
 import { api } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
+import { PageHeader } from '@/components/PageHeader'
+import { HEALTH_COLORS, HEALTH_BG_COLORS } from '@/lib/constants'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 interface ServiceHealth {
   service_type: string
@@ -42,17 +46,9 @@ interface ServiceHealthResponse {
   unhealthy_ti_sources?: number
 }
 
-const statusColors: Record<HealthStatus, string> = {
-  healthy: 'text-green-600',
-  warning: 'text-yellow-600',
-  critical: 'text-red-600',
-}
-
-const statusBgColors: Record<HealthStatus, string> = {
-  healthy: 'bg-green-50 dark:bg-green-900/20',
-  warning: 'bg-yellow-50 dark:bg-yellow-900/20',
-  critical: 'bg-red-50 dark:bg-red-900/20',
-}
+// Use centralized health colors from constants
+const statusColors = HEALTH_COLORS
+const statusBgColors = HEALTH_BG_COLORS
 
 const StatusIcon = ({ status }: { status: HealthStatus | string }) => {
   switch (status) {
@@ -314,26 +310,25 @@ export default function HealthPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">System Health</h1>
-          <p className="text-muted-foreground">Monitor index pattern health and performance</p>
-        </div>
-        <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg ${statusBgColors[overallStatus]} hover:${statusBgColors[overallStatus]}`}
-            >
-              <StatusIcon status={overallStatus} />
-              <span className={`font-medium capitalize ${statusColors[overallStatus]}`}>
-                {overallStatus === 'healthy' ? 'All Systems Healthy' : `System ${overallStatus}`}
-              </span>
-              {(problematicPatterns.length > 0 || problematicPullPatterns.length > 0 || problematicServices.length > 0) && (
-                <ChevronDown className={`h-4 w-4 transition-transform ${statusPopoverOpen ? 'rotate-180' : ''}`} />
-              )}
-            </Button>
-          </PopoverTrigger>
+      <PageHeader
+        title="System Health"
+        description="Monitor index pattern health and performance"
+        actions={
+          <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg ${statusBgColors[overallStatus]} hover:${statusBgColors[overallStatus]}`}
+              >
+                <StatusIcon status={overallStatus} />
+                <span className={`font-medium capitalize ${statusColors[overallStatus]}`}>
+                  {overallStatus === 'healthy' ? 'All Systems Healthy' : `System ${overallStatus}`}
+                </span>
+                {(problematicPatterns.length > 0 || problematicPullPatterns.length > 0 || problematicServices.length > 0) && (
+                  <ChevronDown className={`h-4 w-4 transition-transform ${statusPopoverOpen ? 'rotate-180' : ''}`} />
+                )}
+              </Button>
+            </PopoverTrigger>
           <PopoverContent className="w-80" align="end">
             {(problematicPatterns.length === 0 && problematicPullPatterns.length === 0 && problematicServices.length === 0) ? (
               <div className="text-sm text-muted-foreground">All systems operating normally</div>
@@ -418,7 +413,8 @@ export default function HealthPage() {
             )}
           </PopoverContent>
         </Popover>
-      </div>
+        }
+      />
 
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
@@ -440,31 +436,35 @@ export default function HealthPage() {
         </div>
       )}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* Summary Cards - Primary metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                <Activity className="h-5 w-5 text-blue-600" />
+              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <Activity className="h-6 w-6 text-blue-600" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Push Logs (24h)</p>
-                <p className="text-2xl font-bold">{formatNumber(totals.logs)}</p>
+                <p className="text-3xl font-bold">{formatNumber(totals.logs)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={cn(
+          totals.errors > 100 && "ring-2 ring-red-500/50 animate-pulse-subtle"
+        )}>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                <AlertCircle className="h-5 w-5 text-red-600" />
+              <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                <AlertCircle className="h-6 w-6 text-red-600" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Errors (24h)</p>
-                <p className="text-2xl font-bold">{formatNumber(totals.errors)}</p>
+                <p className={cn("text-3xl font-bold", totals.errors > 0 && "text-red-600")}>
+                  {formatNumber(totals.errors)}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -473,54 +473,61 @@ export default function HealthPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-              <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                <Bell className="h-5 w-5 text-yellow-600" />
+              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                <Bell className="h-6 w-6 text-yellow-600" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Alerts (24h)</p>
-                <p className="text-2xl font-bold">{formatNumber(totals.alerts)}</p>
+                <p className="text-3xl font-bold">{formatNumber(totals.alerts)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
+      </div>
 
+      {/* Summary Cards - Secondary metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3">
               <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <Zap className="h-5 w-5 text-green-600" />
+                <Zap className="h-4 w-4 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Index Patterns</p>
-                <p className="text-2xl font-bold">{health.length}</p>
+                <p className="text-xs text-muted-foreground">Index Patterns</p>
+                <p className="text-xl font-semibold">{health.length}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
+        <Card className={cn(
+          queueStats && queueStats.total_depth > 1000 && "ring-2 ring-purple-500/50"
+        )}>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3">
               <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                <Layers className="h-5 w-5 text-purple-600" />
+                <Layers className="h-4 w-4 text-purple-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Queue Depth</p>
-                <p className="text-2xl font-bold">{queueStats ? formatNumber(queueStats.total_depth) : '-'}</p>
+                <p className="text-xs text-muted-foreground">Queue Depth</p>
+                <p className="text-xl font-semibold">{queueStats ? formatNumber(queueStats.total_depth) : '-'}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
+        <Card className={cn(
+          queueStats && queueStats.dead_letter_count > 10 && "ring-2 ring-orange-500/50 animate-pulse-subtle"
+        )}>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3">
               <div className={`p-2 rounded-lg ${queueStats && queueStats.dead_letter_count > 0 ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-gray-100 dark:bg-gray-800'}`}>
-                <AlertTriangle className={`h-5 w-5 ${queueStats && queueStats.dead_letter_count > 0 ? 'text-orange-600' : 'text-gray-400'}`} />
+                <AlertTriangle className={`h-4 w-4 ${queueStats && queueStats.dead_letter_count > 0 ? 'text-orange-600' : 'text-gray-400'}`} />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Dead Letter</p>
-                <p className={`text-2xl font-bold ${queueStats && queueStats.dead_letter_count > 0 ? 'text-orange-600' : ''}`}>
+                <p className="text-xs text-muted-foreground">Dead Letter</p>
+                <p className={cn("text-xl font-semibold", queueStats && queueStats.dead_letter_count > 0 && "text-orange-600")}>
                   {queueStats ? formatNumber(queueStats.dead_letter_count) : '-'}
                 </p>
               </div>
@@ -621,6 +628,11 @@ export default function HealthPage() {
                   </span>
                 )}
               </CardTitle>
+              {!pushModeOpen && queueStats && queueStats.dead_letter_count > 0 && (
+                <Badge variant="destructive" className="text-xs animate-badge-pulse">
+                  {queueStats.dead_letter_count} dead letter{queueStats.dead_letter_count > 1 ? 's' : ''}
+                </Badge>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -720,14 +732,31 @@ export default function HealthPage() {
                           </Button>
                         </div>
                       )}
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                      <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
                         {deadLetterMessages.map((msg, i) => (
                           <div key={i} className="p-3 border rounded-lg text-sm">
-                            <div className="flex justify-between mb-1">
+                            <div className="flex justify-between items-start mb-2">
                               <span className="font-mono text-muted-foreground">{msg.original_stream}</span>
-                              <span className="text-xs text-muted-foreground">ID: {msg.original_id}</span>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                {'timestamp' in msg && !!(msg.timestamp) && (
+                                  <TimestampTooltip timestamp={msg.timestamp as string}>
+                                    <span>{formatDateTime(msg.timestamp as string)}</span>
+                                  </TimestampTooltip>
+                                )}
+                                <span>ID: {msg.original_id}</span>
+                              </div>
                             </div>
-                            <p className="text-destructive">{msg.reason}</p>
+                            <p className="text-destructive mb-2">{msg.reason}</p>
+                            {'payload' in msg && !!(msg.payload) && (
+                              <details className="mt-2">
+                                <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                                  View payload
+                                </summary>
+                                <pre className="mt-2 p-2 bg-muted rounded text-xs font-mono overflow-x-auto max-h-32 custom-scrollbar">
+                                  {typeof msg.payload === 'string' ? msg.payload : JSON.stringify(msg.payload, null, 2)}
+                                </pre>
+                              </details>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -758,6 +787,11 @@ export default function HealthPage() {
                 <span className="text-sm font-normal text-muted-foreground">
                   ({pullModeHealth.patterns.length})
                 </span>
+                {!pullModeOpen && problematicPullPatterns.length > 0 && (
+                  <Badge variant="destructive" className="text-xs animate-badge-pulse">
+                    {problematicPullPatterns.length} issue{problematicPullPatterns.length > 1 ? 's' : ''}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -816,7 +850,7 @@ export default function HealthPage() {
                       <th className="text-right p-3 font-medium">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-striped">
                     {pullModeHealth.patterns.map((pattern) => (
                       <tr key={pattern.index_pattern_id} className="border-b last:border-0">
                         <td className="p-3">
@@ -898,6 +932,11 @@ export default function HealthPage() {
                   <span className="text-sm font-normal text-muted-foreground">
                     ({health.length})
                   </span>
+                )}
+                {!indexesOpen && problematicPatterns.length > 0 && (
+                  <Badge variant="destructive" className="text-xs animate-badge-pulse">
+                    {problematicPatterns.length} issue{problematicPatterns.length > 1 ? 's' : ''}
+                  </Badge>
                 )}
               </CardTitle>
               <CardDescription>

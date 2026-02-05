@@ -9,6 +9,7 @@ import { Activity, Wifi, WifiOff, Trash2, AlertCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { SEVERITY_COLORS_SUBTLE } from '@/lib/constants'
+import { PageHeader } from '@/components/PageHeader'
 
 export default function LiveAlertFeedPage() {
   const navigate = useNavigate()
@@ -27,38 +28,31 @@ export default function LiveAlertFeedPage() {
     <TooltipProvider>
       <div className="space-y-6 w-full">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <PageHeader
+        title="Live Alert Feed"
+        description="Real-time alerts as they are created"
+        actions={
           <div className="flex items-center gap-2">
-            <Activity className="h-6 w-6" />
-            <div>
-              <h1 className="text-2xl font-bold">Live Alert Feed</h1>
-              <p className="text-sm text-muted-foreground">
-                Real-time alerts as they are created
-              </p>
-            </div>
+            {isConnected ? (
+              <div className="flex items-center gap-2 text-sm text-green-600">
+                <Wifi className="h-4 w-4" />
+                <span>Connected</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-yellow-600">
+                <WifiOff className="h-4 w-4" />
+                <span>Disconnected</span>
+              </div>
+            )}
+            {alerts.length > 0 && (
+              <Button variant="outline" size="sm" onClick={clearAlerts}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Clear
+              </Button>
+            )}
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {isConnected ? (
-            <div className="flex items-center gap-2 text-sm text-green-600">
-              <Wifi className="h-4 w-4" />
-              <span>Connected</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-yellow-600">
-              <WifiOff className="h-4 w-4" />
-              <span>Disconnected</span>
-            </div>
-          )}
-          {alerts.length > 0 && (
-            <Button variant="outline" size="sm" onClick={clearAlerts}>
-              <Trash2 className="h-4 w-4 mr-2" />
-              Clear
-            </Button>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       {/* Error Display */}
       {error && (

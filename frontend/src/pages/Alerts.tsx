@@ -28,7 +28,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import {
@@ -39,17 +38,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert, ExternalLink } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert, ExternalLink, X, RotateCcw, LayoutList, List } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { DateRange } from 'react-day-picker'
 import { cn } from '@/lib/utils'
-import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
+import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize, SEVERITY_CONFIG } from '@/lib/constants'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
-import { LoadingState } from '@/components/ui/loading-state'
+import { Skeleton, SkeletonTable } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
+import { PageHeader } from '@/components/PageHeader'
+import { StatCard } from '@/components/dashboard/StatCard'
+import { SeverityPills } from '@/components/filters/SeverityPills'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 const ALERT_TYPES = ['sigma', 'ioc', 'correlation'] as const
@@ -120,6 +122,17 @@ export default function AlertsPage() {
     )
   }
   const [pageSize, setPageSize] = useState(25)
+
+  // Compact mode state with localStorage persistence
+  const [isCompact, setIsCompact] = useState(() => {
+    const saved = localStorage.getItem('alerts-compact-mode')
+    return saved ? JSON.parse(saved) : false
+  })
+
+  // Persist compact mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('alerts-compact-mode', JSON.stringify(isCompact))
+  }, [isCompact])
 
   // Bulk selection state
   const [selectedAlerts, setSelectedAlerts] = useState<Set<string>>(new Set())
@@ -461,177 +474,214 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Alerts</h1>
-        <Button variant="outline" onClick={() => setShowExportDialog(true)}>
-          <Download className="h-4 w-4 mr-2" />
-          Export Report
-        </Button>
-      </div>
+      <PageHeader
+        title={
+          <div className="flex items-center gap-3">
+            <span>Alerts</span>
+            {isClustered && totalClusters > 0 && (
+              <div className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">
+                <Layers className="h-3.5 w-3.5" />
+                <span>{totalClusters} clusters from {total} alerts</span>
+              </div>
+            )}
+          </div>
+        }
+        description="Monitor and manage security alerts"
+        actions={
+          <Button variant="outline" onClick={() => setShowExportDialog(true)}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Report
+          </Button>
+        }
+      />
 
       {/* Stats Cards */}
       {counts && (
         <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Alerts</CardTitle>
-              <Bell className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{counts.total}</div>
-              <p className="text-xs text-muted-foreground">
-                {counts.last_24h} in last 24h
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">New</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{counts.by_status['new'] || 0}</div>
-              <p className="text-xs text-muted-foreground">Requires attention</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Critical</CardTitle>
-              <XCircle className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{counts.by_severity['critical'] || 0}</div>
-              <p className="text-xs text-muted-foreground">High priority</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Resolved</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{counts.by_status['resolved'] || 0}</div>
-              <p className="text-xs text-muted-foreground">Investigated</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Total Alerts"
+            value={counts.total}
+            subtext={`${counts.last_24h} in last 24h`}
+            icon={Bell}
+            onClick={() => setStatusFilter('all')}
+          />
+          <StatCard
+            title="New"
+            value={counts.by_status['new'] || 0}
+            subtext="Requires attention"
+            icon={AlertTriangle}
+            onClick={() => setStatusFilter('new')}
+            variant={(counts.by_status['new'] || 0) > 10 ? 'warning' : 'default'}
+            showUrgencyRing={(counts.by_status['new'] || 0) > 10}
+            pulseOnCritical
+            criticalThreshold={10}
+          />
+          <StatCard
+            title="Critical"
+            value={counts.by_severity['critical'] || 0}
+            subtext="High priority"
+            icon={XCircle}
+            onClick={() => {
+              setSeverityFilter(['critical'])
+              setStatusFilter('all')
+            }}
+            variant={(counts.by_severity['critical'] || 0) > 0 ? 'danger' : 'default'}
+            showUrgencyRing={(counts.by_severity['critical'] || 0) > 0}
+            pulseOnCritical
+            criticalThreshold={0}
+          />
+          <StatCard
+            title="Resolved"
+            value={counts.by_status['resolved'] || 0}
+            subtext="Investigated"
+            icon={CheckCircle2}
+            onClick={() => setStatusFilter('resolved')}
+            variant="success"
+          />
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search alerts..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <Select
-          value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value as AlertStatus | 'all')}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent className="z-50 bg-popover">
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="new">New</SelectItem>
-            <SelectItem value="acknowledged">Acknowledged</SelectItem>
-            <SelectItem value="resolved">Resolved</SelectItem>
-            <SelectItem value="false_positive">False Positive</SelectItem>
-          </SelectContent>
-        </Select>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="w-40 justify-between">
-              Severity
-              {severityFilter.length > 0 && (
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
-                  {severityFilter.length}
-                </Badge>
-              )}
-              <ChevronDown className="h-4 w-4 ml-auto" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="z-50">
-            <DropdownMenuLabel>Filter by Severity</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {SEVERITIES.map((severity) => (
+      {/* Filters - Primary Row */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search alerts..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as AlertStatus | 'all')}
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent className="z-50 bg-popover">
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="new">New</SelectItem>
+              <SelectItem value="acknowledged">Acknowledged</SelectItem>
+              <SelectItem value="resolved">Resolved</SelectItem>
+              <SelectItem value="false_positive">False Positive</SelectItem>
+            </SelectContent>
+          </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="w-32 justify-between">
+                Type
+                {alertTypeFilter.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                    {alertTypeFilter.length}
+                  </Badge>
+                )}
+                <ChevronDown className="h-4 w-4 ml-auto" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="z-50">
+              <DropdownMenuLabel>Filter by Type</DropdownMenuLabel>
+              <DropdownMenuSeparator />
               <DropdownMenuCheckboxItem
-                key={severity}
-                checked={severityFilter.includes(severity)}
-                onCheckedChange={() => toggleSeverityFilter(severity)}
+                checked={alertTypeFilter.includes('sigma')}
+                onCheckedChange={() => toggleAlertTypeFilter('sigma')}
                 onSelect={(e) => e.preventDefault()}
               >
-                <span
-                  className={cn(
-                    'mr-2 inline-block w-2 h-2 rounded-full',
-                    severity === 'critical' && 'bg-red-500',
-                    severity === 'high' && 'bg-orange-500',
-                    severity === 'medium' && 'bg-yellow-500',
-                    severity === 'low' && 'bg-blue-500',
-                    severity === 'informational' && 'bg-gray-500'
-                  )}
-                />
-                {capitalize(severity)} ({counts?.by_severity?.[severity] || 0})
+                <FileText className="h-3 w-3 mr-2 text-blue-500" />
+                Sigma
               </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="w-32 justify-between">
-              Type
-              {alertTypeFilter.length > 0 && (
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
-                  {alertTypeFilter.length}
-                </Badge>
-              )}
-              <ChevronDown className="h-4 w-4 ml-auto" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="z-50">
-            <DropdownMenuLabel>Filter by Type</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem
-              checked={alertTypeFilter.includes('sigma')}
-              onCheckedChange={() => toggleAlertTypeFilter('sigma')}
-              onSelect={(e) => e.preventDefault()}
-            >
-              <FileText className="h-3 w-3 mr-2 text-blue-500" />
-              Sigma
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={alertTypeFilter.includes('ioc')}
-              onCheckedChange={() => toggleAlertTypeFilter('ioc')}
-              onSelect={(e) => e.preventDefault()}
-            >
-              <ShieldAlert className="h-3 w-3 mr-2 text-red-500" />
-              IOC
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={alertTypeFilter.includes('correlation')}
-              onCheckedChange={() => toggleAlertTypeFilter('correlation')}
-              onSelect={(e) => e.preventDefault()}
-            >
-              <Link2 className="h-3 w-3 mr-2 text-purple-500" />
-              Correlation
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="my-alerts"
-            checked={ownerFilter === 'me'}
-            onCheckedChange={(checked) => setOwnerFilter(checked ? 'me' : null)}
-          />
-          <Label htmlFor="my-alerts" className="text-sm cursor-pointer">Assigned to me</Label>
+              <DropdownMenuCheckboxItem
+                checked={alertTypeFilter.includes('ioc')}
+                onCheckedChange={() => toggleAlertTypeFilter('ioc')}
+                onSelect={(e) => e.preventDefault()}
+              >
+                <ShieldAlert className="h-3 w-3 mr-2 text-red-500" />
+                IOC
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={alertTypeFilter.includes('correlation')}
+                onCheckedChange={() => toggleAlertTypeFilter('correlation')}
+                onSelect={(e) => e.preventDefault()}
+              >
+                <Link2 className="h-3 w-3 mr-2 text-purple-500" />
+                Correlation
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="my-alerts"
+              checked={ownerFilter === 'me'}
+              onCheckedChange={(checked) => setOwnerFilter(checked ? 'me' : null)}
+            />
+            <Label htmlFor="my-alerts" className="text-sm cursor-pointer">Assigned to me</Label>
+          </div>
         </div>
-        <Button variant="outline" onClick={loadData}>
-          Refresh
-        </Button>
+
+        {/* Filters - Secondary Row: Severity Pills + Clustering Info */}
+        <div className="flex flex-wrap items-center gap-3">
+          <SeverityPills
+            selected={severityFilter}
+            onChange={toggleSeverityFilter}
+            showCounts={counts?.by_severity}
+            size="sm"
+          />
+
+          {/* Clear All Filters */}
+          {(search || statusFilter !== 'all' || severityFilter.length > 0 || alertTypeFilter.length > 0 || ownerFilter) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearch('')
+                setStatusFilter('all')
+                setSeverityFilter([])
+                setAlertTypeFilter([])
+                setOwnerFilter(null)
+              }}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3 mr-1" />
+              Clear all filters
+            </Button>
+          )}
+
+          {/* Refresh and Compact toggle */}
+          <div className="ml-auto flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={loadData} title="Refresh" className="text-muted-foreground">
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsCompact(!isCompact)}
+              className="text-muted-foreground"
+            >
+              {isCompact ? (
+                <>
+                  <LayoutList className="h-4 w-4 mr-1" />
+                  Comfortable
+                </>
+              ) : (
+                <>
+                  <List className="h-4 w-4 mr-1" />
+                  Compact
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Bulk Action Bar */}
@@ -709,18 +759,17 @@ export default function AlertsPage() {
         </div>
       )}
 
-      {/* Clustering indicator */}
-      {isClustered && totalClusters > 0 && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-3 py-2 rounded-md">
-          <Layers className="h-4 w-4" />
-          <span>
-            Alert clustering is enabled. Showing {totalClusters} cluster{totalClusters !== 1 ? 's' : ''} from {total} alert{total !== 1 ? 's' : ''}.
-          </span>
-        </div>
-      )}
-
       {isLoading ? (
-        <LoadingState message="Loading alerts..." />
+        <div className="space-y-4">
+          {/* Skeleton for filter bar */}
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-64" />
+            <Skeleton className="h-10 w-32" />
+            <Skeleton className="h-10 w-32" />
+          </div>
+          {/* Skeleton table */}
+          <SkeletonTable rows={10} columns={7} />
+        </div>
       ) : (isClustered ? filteredClusters.length === 0 : filteredAlerts.length === 0) ? (
         <EmptyState
           icon={<Bell className="h-12 w-12" />}
@@ -732,7 +781,7 @@ export default function AlertsPage() {
       ) : (
         <TooltipProvider>
           <div className="border rounded-lg">
-            <Table>
+            <Table className={cn(isCompact && 'table-compact')}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
@@ -767,7 +816,7 @@ export default function AlertsPage() {
                           key={clusterId}
                           className={cn(
                             "cursor-pointer hover:bg-muted/50",
-                            hasMultiple && "border-l-2 border-l-primary"
+                            hasMultiple ? "border-l-2 border-l-primary" : SEVERITY_CONFIG[alert.severity]?.rowClass
                           )}
                           onClick={(e) => {
                             // Don't navigate if clicking checkbox or expand button
@@ -860,21 +909,21 @@ export default function AlertsPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-1 flex-wrap">
+                            <div className="flex gap-1">
                               {alert.tags
                                 .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
-                                .slice(0, 3)
+                                .slice(0, 2)
                                 .map((tag, i) => (
                                   <span
                                     key={i}
-                                    className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                                    className="px-1.5 py-0.5 bg-muted rounded text-xs truncate max-w-[80px]"
                                   >
                                     {tag}
                                   </span>
                                 ))}
-                              {alert.tags.filter(tag => tag !== 'correlation').length > 3 && (
-                                <span className="text-xs text-muted-foreground">
-                                  +{alert.tags.filter(tag => tag !== 'correlation').length - 3}
+                              {alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length > 2 && (
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  +{alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length - 2}
                                 </span>
                               )}
                             </div>
@@ -997,7 +1046,10 @@ export default function AlertsPage() {
                   filteredAlerts.map((alert) => (
                     <TableRow
                       key={alert.alert_id}
-                      className="cursor-pointer hover:bg-muted/50"
+                      className={cn(
+                        "cursor-pointer hover:bg-muted/50",
+                        SEVERITY_CONFIG[alert.severity]?.rowClass
+                      )}
                       onClick={(e) => {
                         // Don't navigate if clicking checkbox
                         if ((e.target as HTMLElement).closest('input[type="checkbox"]')) {
@@ -1060,21 +1112,21 @@ export default function AlertsPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-1 flex-wrap">
+                        <div className="flex gap-1">
                           {alert.tags
                             .filter(tag => tag !== 'correlation' && tag !== 'ioc-match')
-                            .slice(0, 3)
+                            .slice(0, 2)
                             .map((tag, i) => (
                               <span
                                 key={i}
-                                className="px-1.5 py-0.5 bg-muted rounded text-xs"
+                                className="px-1.5 py-0.5 bg-muted rounded text-xs truncate max-w-[80px]"
                               >
                                 {tag}
                               </span>
                             ))}
-                          {alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length > 3 && (
-                            <span className="text-xs text-muted-foreground">
-                              +{alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length - 3}
+                          {alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length > 2 && (
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              +{alert.tags.filter(tag => tag !== 'correlation' && tag !== 'ioc-match').length - 2}
                             </span>
                           )}
                         </div>
