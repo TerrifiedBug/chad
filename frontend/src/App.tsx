@@ -17,6 +17,7 @@ import IndexPatternDetailPage from '@/pages/IndexPatternDetail'
 import AlertsPage from '@/pages/Alerts'
 import AlertDetailPage from '@/pages/AlertDetail'
 import SettingsPage from '@/pages/Settings'
+import SettingsHub from '@/pages/SettingsHub'
 import UsersPage from '@/pages/Users'
 import PermissionsPage from '@/pages/Permissions'
 import ChangePasswordPage from '@/pages/ChangePassword'
@@ -185,6 +186,11 @@ function AppRoutes() {
         <AuthRoute>
           <AppLayout><LiveAlertFeedPage /></AppLayout>
         </AuthRoute>
+      } />
+      <Route path="/settings/hub" element={
+        <ProtectedRoute permission="manage_settings">
+          <AppLayout><SettingsHub /></AppLayout>
+        </ProtectedRoute>
       } />
       <Route path="/settings" element={
         <ProtectedRoute permission="manage_settings">

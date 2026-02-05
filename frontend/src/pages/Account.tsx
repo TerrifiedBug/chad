@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Shield, ShieldCheck, ShieldOff, User, Loader2, Bell, Sun, Moon, Monitor } from 'lucide-react'
+import { Shield, ShieldCheck, ShieldOff, User, Loader2, Bell, Sun, Moon, Monitor, Palette } from 'lucide-react'
 import { TwoFactorSetup } from '@/components/TwoFactorSetup'
 import { authApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
@@ -31,7 +31,7 @@ const SEVERITY_OPTIONS = [
 export default function AccountPage() {
   const { user, refreshUser } = useAuth()
   const { showToast } = useToast()
-  const { theme, setTheme } = useTheme()
+  const { theme, setTheme, palette, setPalette } = useTheme()
   const [showSetup, setShowSetup] = useState(false)
   const [showDisable, setShowDisable] = useState(false)
   const [disableCode, setDisableCode] = useState('')
@@ -275,7 +275,7 @@ export default function AccountPage() {
               Customize how CHAD looks on your device
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
             <div className="space-y-2">
               <Label>Theme</Label>
               <div className="flex gap-2">
@@ -307,6 +307,38 @@ export default function AccountPage() {
                   System
                 </Button>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Palette className="h-4 w-4" />
+                Color Palette
+              </Label>
+              <div className="flex gap-2">
+                <Button
+                  variant={palette === 'sentinel' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPalette('sentinel')}
+                  className="flex-1"
+                >
+                  <span className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
+                  Sentinel
+                </Button>
+                <Button
+                  variant={palette === 'classic' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPalette('classic')}
+                  className="flex-1"
+                >
+                  <span className="w-3 h-3 rounded-full bg-slate-900 dark:bg-slate-100 mr-2" />
+                  Classic
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {palette === 'sentinel'
+                  ? 'Security-focused blue palette optimized for dark mode'
+                  : 'Original neutral palette with dark/light contrast'}
+              </p>
             </div>
           </CardContent>
         </Card>

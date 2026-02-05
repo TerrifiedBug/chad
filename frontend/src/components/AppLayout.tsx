@@ -26,8 +26,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const isMobile = useMediaQuery('(max-width: 767px)')
 
-  // Use SettingsSidebar for all settings pages
-  const useSettingsSidebar = location.pathname.startsWith('/settings')
+  // Use SettingsSidebar for settings pages (except the hub which uses AppRail)
+  const useSettingsSidebar = location.pathname.startsWith('/settings') && location.pathname !== '/settings/hub'
 
   const focusSearch = useCallback(() => {
     const searchInput = document.querySelector<HTMLInputElement>(

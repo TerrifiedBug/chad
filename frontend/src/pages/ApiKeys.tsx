@@ -32,6 +32,7 @@ import { Plus, Trash2, Copy, Check, AlertTriangle, Key } from 'lucide-react'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
+import { PageHeader } from '@/components/PageHeader'
 
 export default function ApiKeysPage() {
   const [apiKeys, setApiKeys] = useState<APIKey[]>([])
@@ -135,18 +136,20 @@ export default function ApiKeysPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">API Keys</h1>
-          <p className="text-muted-foreground">
-            Manage API keys for external integrations
-          </p>
-        </div>
-        <Button onClick={() => setIsCreateOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create API Key
-        </Button>
-      </div>
+      <PageHeader
+        title="API Keys"
+        description="Manage API keys for external integrations"
+        breadcrumb={[
+          { label: 'Settings', href: '/settings/hub' },
+          { label: 'API Keys' },
+        ]}
+        actions={
+          <Button onClick={() => setIsCreateOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create API Key
+          </Button>
+        }
+      />
 
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">

@@ -52,6 +52,7 @@ import {
 } from 'lucide-react'
 import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
 import { LoadingState } from '@/components/ui/loading-state'
+import { PageHeader } from '@/components/PageHeader'
 
 // SigmaHQ rule stability status colors (different from alert status)
 const sigmaStatusColors: Record<string, string> = {
@@ -397,12 +398,10 @@ export default function SigmaHQPage() {
   if (!status?.cloned) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">SigmaHQ Rules</h1>
-          <p className="text-muted-foreground">
-            Browse and import rules from the SigmaHQ community repository
-          </p>
-        </div>
+        <PageHeader
+          title="SigmaHQ Rules"
+          description="Browse and import rules from the SigmaHQ community repository"
+        />
 
         <Card className="max-w-2xl">
           <CardHeader>
@@ -452,36 +451,34 @@ export default function SigmaHQPage() {
   // Cloned - show browser
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">SigmaHQ Rules</h1>
-          <p className="text-muted-foreground">
-            Browse and import rules from the SigmaHQ community repository
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-sm text-muted-foreground">
-            {status.rule_counts && (
-              <>
-                {Object.values(status.rule_counts).reduce((a, b) => a + b, 0).toLocaleString()} total rules
-              </>
-            )}
-            {status.commit_hash && (
-              <span className="ml-2 font-mono text-xs">
-                @ {status.commit_hash.substring(0, 7)}
-              </span>
-            )}
+      <PageHeader
+        title="SigmaHQ Rules"
+        description="Browse and import rules from the SigmaHQ community repository"
+        actions={
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              {status.rule_counts && (
+                <>
+                  {Object.values(status.rule_counts).reduce((a, b) => a + b, 0).toLocaleString()} total rules
+                </>
+              )}
+              {status.commit_hash && (
+                <span className="ml-2 font-mono text-xs">
+                  @ {status.commit_hash.substring(0, 7)}
+                </span>
+              )}
+            </div>
+            <Button variant="outline" onClick={handleSync} disabled={isSyncing}>
+              {isSyncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="ml-2">Sync</span>
+            </Button>
           </div>
-          <Button variant="outline" onClick={handleSync} disabled={isSyncing}>
-            {isSyncing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            <span className="ml-2">Sync</span>
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       {syncError && (
         <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm">

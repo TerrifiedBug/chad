@@ -1344,13 +1344,19 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* Enrichment Section - combines geoip, threat-intel, and custom webhooks */}
-      {activeTab === 'enrichment' && (
-        <div className="space-y-6">
-          <GeoIPSettings />
-          <TISettings />
-          <EnrichmentWebhooksSettings />
-        </div>
+      {/* GeoIP Settings */}
+      {activeTab === 'geoip' && (
+        <GeoIPSettings />
+      )}
+
+      {/* Threat Intel Settings */}
+      {activeTab === 'ti' && (
+        <TISettings />
+      )}
+
+      {/* Custom Enrichment Webhooks */}
+      {activeTab === 'webhooks' && (
+        <EnrichmentWebhooksSettings />
       )}
 
       {/* Queue Section - combines push-queue and pull-queue */}

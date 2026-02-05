@@ -30,12 +30,12 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ArrowLeft, Check, Copy, KeyRound, Pencil, Plus, Trash2, X, Lock, Unlock, Loader2, Users } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Check, Copy, KeyRound, Pencil, Plus, Trash2, X, Lock, Unlock, Loader2, Users } from 'lucide-react'
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
+import { PageHeader } from '@/components/PageHeader'
 
 // Password complexity validation
 function validatePasswordComplexity(password: string) {
@@ -315,23 +315,19 @@ export default function UsersPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
-            <Link to="/settings">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">Users</h1>
-            <p className="text-muted-foreground">Manage user accounts</p>
-          </div>
-        </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Add User
-            </Button>
+      <PageHeader
+        title="Users"
+        description="Manage user accounts"
+        breadcrumb={[
+          { label: 'Settings', href: '/settings/hub' },
+          { label: 'Users' },
+        ]}
+        actions={
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Add User
+              </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
@@ -396,7 +392,8 @@ export default function UsersPage() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
       {error && (
         <div className="bg-destructive/10 text-destructive p-3 rounded-md">

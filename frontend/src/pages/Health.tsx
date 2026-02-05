@@ -19,6 +19,7 @@ import {
 import { api } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
+import { PageHeader } from '@/components/PageHeader'
 
 interface ServiceHealth {
   service_type: string
@@ -314,26 +315,25 @@ export default function HealthPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">System Health</h1>
-          <p className="text-muted-foreground">Monitor index pattern health and performance</p>
-        </div>
-        <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg ${statusBgColors[overallStatus]} hover:${statusBgColors[overallStatus]}`}
-            >
-              <StatusIcon status={overallStatus} />
-              <span className={`font-medium capitalize ${statusColors[overallStatus]}`}>
-                {overallStatus === 'healthy' ? 'All Systems Healthy' : `System ${overallStatus}`}
-              </span>
-              {(problematicPatterns.length > 0 || problematicPullPatterns.length > 0 || problematicServices.length > 0) && (
-                <ChevronDown className={`h-4 w-4 transition-transform ${statusPopoverOpen ? 'rotate-180' : ''}`} />
-              )}
-            </Button>
-          </PopoverTrigger>
+      <PageHeader
+        title="System Health"
+        description="Monitor index pattern health and performance"
+        actions={
+          <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg ${statusBgColors[overallStatus]} hover:${statusBgColors[overallStatus]}`}
+              >
+                <StatusIcon status={overallStatus} />
+                <span className={`font-medium capitalize ${statusColors[overallStatus]}`}>
+                  {overallStatus === 'healthy' ? 'All Systems Healthy' : `System ${overallStatus}`}
+                </span>
+                {(problematicPatterns.length > 0 || problematicPullPatterns.length > 0 || problematicServices.length > 0) && (
+                  <ChevronDown className={`h-4 w-4 transition-transform ${statusPopoverOpen ? 'rotate-180' : ''}`} />
+                )}
+              </Button>
+            </PopoverTrigger>
           <PopoverContent className="w-80" align="end">
             {(problematicPatterns.length === 0 && problematicPullPatterns.length === 0 && problematicServices.length === 0) ? (
               <div className="text-sm text-muted-foreground">All systems operating normally</div>
@@ -418,7 +418,8 @@ export default function HealthPage() {
             )}
           </PopoverContent>
         </Popover>
-      </div>
+        }
+      />
 
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md flex items-center gap-2">

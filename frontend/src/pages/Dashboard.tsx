@@ -24,10 +24,13 @@ import { AlertTriangle, ChevronDown, Clock, FileText } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { cn } from '@/lib/utils'
+import { SEVERITY_CONFIG } from '@/lib/constants'
 import { SeverityBadge } from '@/components/ui/severity-badge'
-import { LoadingState } from '@/components/ui/loading-state'
+import { Skeleton, SkeletonTable } from '@/components/ui/skeleton'
 import { ErrorAlert } from '@/components/ui/error-alert'
 import { ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
+import { PageHeader } from '@/components/PageHeader'
+import { StatCard } from '@/components/dashboard/StatCard'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
@@ -64,7 +67,13 @@ function RecentAlertsTable({ alerts, severityFilter }: RecentAlertsTableProps): 
         </TableHeader>
         <TableBody>
           {filteredAlerts.map((alert) => (
-            <TableRow key={alert.alert_id}>
+            <TableRow
+              key={alert.alert_id}
+              className={cn(
+                "cursor-pointer hover:bg-muted/50",
+                SEVERITY_CONFIG[alert.severity]?.rowClass
+              )}
+            >
               <TableCell>
                 <SeverityBadge severity={alert.severity} />
               </TableCell>
@@ -123,7 +132,40 @@ export default function Dashboard() {
   }
 
   if (isLoading) {
-    return <LoadingState message="Loading dashboard..." />
+    return (
+      <div className="space-y-6">
+        {/* Skeleton page header */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-4 w-56" />
+          </div>
+          <Skeleton className="h-10 w-24" />
+        </div>
+
+        {/* Skeleton stat cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="rounded-lg border bg-card p-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-8 w-8 rounded-md" />
+              </div>
+              <Skeleton className="h-8 w-12" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          ))}
+        </div>
+
+        {/* Skeleton recent alerts table */}
+        <div className="rounded-lg border bg-card">
+          <div className="p-6 border-b">
+            <Skeleton className="h-6 w-32" />
+          </div>
+          <SkeletonTable rows={5} columns={4} />
+        </div>
+      </div>
+    )
   }
 
   if (error) {
@@ -132,68 +174,57 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Overview of your detection system
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          className="gap-2 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
-          onClick={() => navigate('/live')}
-        >
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-          </span>
-          Live Feed
-        </Button>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description="Overview of your detection system"
+        actions={
+          <Button
+            variant="outline"
+            className="gap-2 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+            onClick={() => navigate('/live')}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+            Live Feed
+          </Button>
+        }
+      />
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Rules</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.rules.total || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats?.rules.deployed || 0} deployed
-            </p>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Rules"
+          value={stats?.rules.total || 0}
+          subtext={`${stats?.rules.deployed || 0} deployed`}
+          icon={FileText}
+          onClick={() => navigate('/rules')}
+        />
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Alerts Today</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.alerts.today || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats?.alerts.total || 0} total
-            </p>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Alerts Today"
+          value={stats?.alerts.today || 0}
+          subtext={`${stats?.alerts.total || 0} total`}
+          icon={AlertTriangle}
+          onClick={() => navigate('/alerts')}
+          variant={(stats?.alerts.today || 0) > 10 ? 'warning' : 'default'}
+          showUrgencyRing={(stats?.alerts.today || 0) > 10}
+          pulseOnCritical
+          criticalThreshold={10}
+        />
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">New Alerts</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {stats?.alerts.by_status?.new || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {stats?.alerts.by_status?.acknowledged || 0} acknowledged
-            </p>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="New Alerts"
+          value={stats?.alerts.by_status?.new || 0}
+          subtext={`${stats?.alerts.by_status?.acknowledged || 0} acknowledged`}
+          icon={Clock}
+          onClick={() => navigate('/alerts?status=new')}
+          variant={(stats?.alerts.by_status?.new || 0) > 5 ? 'danger' : 'default'}
+          showUrgencyRing={(stats?.alerts.by_status?.new || 0) > 5}
+          pulseOnCritical
+          criticalThreshold={5}
+        />
       </div>
 
       {/* Recent Alerts */}
@@ -236,6 +267,19 @@ export default function Dashboard() {
                     {capitalize(severity)} ({stats?.alerts.by_severity?.[severity] || 0})
                   </DropdownMenuCheckboxItem>
                 ))}
+                {severityFilter.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-muted-foreground"
+                      onClick={() => setSeverityFilter([])}
+                    >
+                      Clear filters
+                    </Button>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             <Link to="/alerts" className="text-sm text-primary hover:underline">

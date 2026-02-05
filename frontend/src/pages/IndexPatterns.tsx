@@ -35,6 +35,7 @@ import { Plus, Trash2, Check, Loader2, Copy, Eye, EyeOff, RefreshCw, CheckCircle
 import { Badge } from '@/components/ui/badge'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
+import { PageHeader } from '@/components/PageHeader'
 
 const HealthStatusIcon = ({ status }: { status: HealthStatus }) => {
   switch (status) {
@@ -205,13 +206,16 @@ export default function IndexPatternsPage() {
   return (
     <TooltipProvider>
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Index Patterns</h1>
-        <Button onClick={handleCreatePattern}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Pattern
-        </Button>
-      </div>
+      <PageHeader
+        title="Index Patterns"
+        description="Configure how CHAD matches rules against your OpenSearch indices"
+        actions={
+          <Button onClick={handleCreatePattern}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Pattern
+          </Button>
+        }
+      />
 
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">

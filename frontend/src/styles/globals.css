@@ -4,6 +4,70 @@
 
 @layer base {
   :root {
+    /* Sentinel Color Palette - Light Mode (default) */
+    --background: 210 20% 98%;         /* #f8fafc */
+    --foreground: 222 47% 11%;         /* #1e293b */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;            /* #3b82f6 - Trust blue */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96.1%;           /* Muted for better contrast */
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;          /* #ef4444 */
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+
+    /* Semantic severity colors */
+    --severity-critical: 0 72% 51%;    /* #ef4444 */
+    --severity-high: 25 95% 53%;       /* #f97316 */
+    --severity-medium: 45 93% 47%;     /* #eab308 */
+    --severity-low: 217 91% 60%;       /* #60a5fa */
+    --severity-info: 215 16% 47%;      /* #6b7280 */
+    --success: 142 71% 45%;            /* #22c55e */
+
+    /* Z-index scale */
+    --z-dropdown: 50;
+    --z-sticky: 40;
+    --z-modal: 50;
+    --z-modal-dropdown: 60;
+    --z-popover: 50;
+    --z-tooltip: 60;
+  }
+
+  .dark {
+    /* Sentinel Color Palette - Dark Mode */
+    --background: 224 35% 8%;          /* #0d1117 */
+    --foreground: 210 30% 94%;         /* #eef2f6 */
+    --card: 224 30% 11%;               /* #141922 */
+    --card-foreground: 210 30% 94%;
+    --popover: 224 30% 11%;
+    --popover-foreground: 210 30% 94%;
+    --primary: 221 83% 53%;            /* #3b82f6 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 224 25% 15%;          /* #1c2333 */
+    --secondary-foreground: 210 30% 94%;
+    --muted: 224 25% 15%;
+    --muted-foreground: 215 15% 55%;   /* #808a96 */
+    --accent: 224 25% 20%;             /* Muted blue-gray for better contrast */
+    --accent-foreground: 210 30% 94%;  /* Light text on muted background */
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 224 20% 20%;
+    --input: 224 20% 20%;
+    --ring: 221 83% 53%;
+  }
+
+  /* Classic Palette - Light Mode (original shadcn/ui defaults) */
+  :root.palette-classic {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -23,36 +87,28 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
-
-    /* Z-index scale */
-    --z-dropdown: 50;
-    --z-sticky: 40;
-    --z-modal: 50;
-    --z-modal-dropdown: 60;
-    --z-popover: 50;
-    --z-tooltip: 60;
   }
 
-  .dark {
+  /* Classic Palette - Dark Mode */
+  .dark.palette-classic {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
-    --popover: 224 71% 10%;
+    --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
     --primary: 210 40% 98%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 70%;
+    --muted-foreground: 215 20.2% 65.1%;
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 25%;
-    --input: 217.2 32.6% 25%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
   }
 }
@@ -63,6 +119,252 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* Button press effect */
+  .btn-interactive:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  /* Card hover lift */
+  .card-interactive {
+    @apply transition-all duration-200;
+  }
+  .card-interactive:hover {
+    @apply shadow-md -translate-y-0.5;
+  }
+
+  /* Success flash */
+  @keyframes success-flash {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: hsl(var(--success) / 0.1); }
+  }
+  .animate-success {
+    animation: success-flash 0.5s ease-out;
+  }
+
+  /* Error shake */
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+  }
+  .animate-shake {
+    animation: shake 0.3s ease-out;
+  }
+
+  /* Skeleton shimmer effect */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted-foreground) / 0.1) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* Severity row treatments */
+  .severity-row-critical {
+    @apply border-l-4 border-l-red-500 bg-red-500/5 dark:bg-red-500/10;
+  }
+  .severity-row-high {
+    @apply border-l-4 border-l-orange-500 bg-orange-500/5 dark:bg-orange-500/10;
+  }
+  .severity-row-medium {
+    @apply border-l-2 border-l-yellow-500;
+  }
+
+  /* Table zebra striping (apply to tbody) */
+  .table-striped tr:nth-child(even) {
+    @apply bg-muted/30;
+  }
+
+  /* Table compact variant */
+  .table-compact th,
+  .table-compact td {
+    @apply py-2 px-3;
+  }
+
+  /* Table row focus for keyboard navigation */
+  .table-row-focusable:focus-visible {
+    @apply outline-none ring-2 ring-inset ring-primary;
+  }
+
+  /* Enhanced focus ring styles */
+  .focus-ring {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+  }
+
+  .focus-ring-inset {
+    @apply outline-none ring-2 ring-inset ring-primary;
+  }
+
+  /* Skip to content link for accessibility */
+  .skip-to-content {
+    @apply sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100];
+    @apply focus:bg-primary focus:text-primary-foreground focus:px-4 focus:py-2 focus:rounded-md;
+  }
+
+  /* Custom scrollbar styling */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 3px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Form input states */
+  .input-error {
+    @apply border-red-500 focus-visible:ring-red-500;
+  }
+  .input-error:focus-visible {
+    @apply ring-red-500;
+  }
+
+  .input-success {
+    @apply border-green-500;
+  }
+  .input-success:focus-visible {
+    @apply ring-green-500;
+  }
+
+  /* Form field with inline icon */
+  .input-with-icon {
+    @apply pl-10;
+  }
+  .input-icon-left {
+    @apply absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none;
+  }
+  .input-icon-right {
+    @apply absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground;
+  }
+
+  /* Inline validation feedback */
+  .field-error {
+    @apply text-sm text-red-500 mt-1 flex items-center gap-1;
+  }
+  .field-success {
+    @apply text-sm text-green-500 mt-1 flex items-center gap-1;
+  }
+  .field-hint {
+    @apply text-sm text-muted-foreground mt-1;
+  }
+
+  /* Task 5: Enhanced table row hover states */
+  .table-row-actionable:hover .table-action-cell {
+    @apply bg-muted/80;
+  }
+
+  /* Task 6: Navigation badge animations */
+  @keyframes bounce-once {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+  }
+  .animate-bounce-once {
+    animation: bounce-once 0.3s ease-out;
+  }
+
+  @keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  .animate-badge-pulse {
+    animation: badge-pulse 2s ease-in-out infinite;
+  }
+
+  /* Task 1: Urgency ring for critical items */
+  @keyframes urgency-ring {
+    0% { box-shadow: 0 0 0 0 hsl(0 72% 51% / 0.7); }
+    70% { box-shadow: 0 0 0 6px hsl(0 72% 51% / 0); }
+    100% { box-shadow: 0 0 0 0 hsl(0 72% 51% / 0); }
+  }
+  .urgency-ring {
+    animation: urgency-ring 1.5s infinite;
+    border-radius: 50%;
+  }
+
+  /* Task 1: Subtle pulse for critical stat cards */
+  @keyframes pulse-subtle {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.85; }
+  }
+  .animate-pulse-subtle {
+    animation: pulse-subtle 2s ease-in-out infinite;
+  }
+
+  /* Task 1: Trend arrow animation */
+  @keyframes trend-arrow {
+    0% { transform: translateY(2px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+  .animate-trend-arrow {
+    animation: trend-arrow 0.3s ease-out;
+  }
+
+  /* Task 10: Checkbox check animation */
+  @keyframes check-pop {
+    0% { transform: scale(0); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+  }
+  .animate-check-pop {
+    animation: check-pop 0.2s ease-out;
+  }
+
+  /* Task 10: Badge count change */
+  @keyframes count-bump {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+  .animate-count-bump {
+    animation: count-bump 0.2s ease-out;
+  }
+
+  /* Task 10: Success row flash (after bulk action) */
+  @keyframes row-success {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: hsl(var(--success) / 0.2); }
+  }
+  .animate-row-success {
+    animation: row-success 0.5s ease-out;
+  }
+
+  /* Task 10: Fade in animation for new items */
+  @keyframes fade-in-up {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in-up {
+    animation: fade-in-up 0.3s ease-out;
+  }
+
+  /* Task 10: Slide in for modals/dialogs */
+  @keyframes slide-in-bottom {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .animate-slide-in-bottom {
+    animation: slide-in-bottom 0.2s ease-out;
   }
 }
 

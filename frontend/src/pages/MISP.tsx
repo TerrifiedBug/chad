@@ -30,6 +30,7 @@ import {
   Filter,
 } from 'lucide-react'
 import { LoadingState } from '@/components/ui/loading-state'
+import { PageHeader } from '@/components/PageHeader'
 
 const IOCS_PER_PAGE = 100
 
@@ -229,12 +230,10 @@ export default function MISPPage() {
   if (!mispStatus?.configured) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">MISP Integration</h1>
-          <p className="text-muted-foreground">
-            Import threat intelligence from MISP events as detection rules
-          </p>
-        </div>
+        <PageHeader
+          title="MISP Integration"
+          description="Import threat intelligence from MISP events as detection rules"
+        />
 
         <Card className="max-w-2xl">
           <CardHeader>
@@ -265,12 +264,10 @@ export default function MISPPage() {
   if (!mispStatus?.connected) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">MISP Integration</h1>
-          <p className="text-muted-foreground">
-            Import threat intelligence from MISP events as detection rules
-          </p>
-        </div>
+        <PageHeader
+          title="MISP Integration"
+          description="Import threat intelligence from MISP events as detection rules"
+        />
 
         <Card className="max-w-2xl border-destructive">
           <CardHeader>
@@ -302,23 +299,21 @@ export default function MISPPage() {
   // Main content - connected state
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">MISP Integration</h1>
-          <p className="text-muted-foreground">
-            Import threat intelligence from MISP events as detection rules
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          {mispStatus?.instance_url && (
-            <span className="text-sm text-muted-foreground">{mispStatus.instance_url}</span>
-          )}
-          <Button variant="outline" size="sm" onClick={() => refetchEvents()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="MISP Integration"
+        description="Import threat intelligence from MISP events as detection rules"
+        actions={
+          <div className="flex items-center gap-4">
+            {mispStatus?.instance_url && (
+              <span className="text-sm text-muted-foreground">{mispStatus.instance_url}</span>
+            )}
+            <Button variant="outline" size="sm" onClick={() => refetchEvents()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
+        }
+      />
 
       {/* Warning banner */}
       <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">

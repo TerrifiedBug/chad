@@ -36,7 +36,8 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { SEVERITY_COLORS, capitalize } from '@/lib/constants'
+import { SEVERITY_COLORS, SEVERITY_CONFIG, capitalize } from '@/lib/constants'
+import { SeverityPills } from '@/components/filters/SeverityPills'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
@@ -44,6 +45,7 @@ import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { RulesExportDialog } from '@/components/RulesExportDialog'
+import { PageHeader } from '@/components/PageHeader'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -632,70 +634,68 @@ export default function RulesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Rules</h1>
-          <p className="text-muted-foreground">
-            Manage your Sigma rules and correlation rules
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {activeTab === 'sigma' && hasPermission('manage_sigmahq') && (
-            <Button variant="outline" onClick={() => navigate('/sigmahq')}>
-              <FileCode className="h-4 w-4 mr-2 text-blue-500" />
-              SigmaHQ
-            </Button>
-          )}
-          {activeTab === 'sigma' && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span tabIndex={0}>
-                    <Button
-                      variant="outline"
-                      onClick={() => navigate('/misp')}
-                      disabled={!mispStatus?.configured}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-2 text-purple-500" />
-                      MISP
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {!mispStatus?.configured && (
-                  <TooltipContent>
-                    Configure MISP in Settings &gt; Threat Intel
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          <Button variant="outline" onClick={() => setShowExportDialog(true)}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Report
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button disabled={!canManageRules()}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Rule
-                <ChevronDown className="h-4 w-4 ml-2" />
+      <PageHeader
+        title="Rules"
+        description="Manage your Sigma rules and correlation rules"
+        actions={
+          <div className="flex gap-2">
+            {activeTab === 'sigma' && hasPermission('manage_sigmahq') && (
+              <Button variant="outline" onClick={() => navigate('/sigmahq')}>
+                <FileCode className="h-4 w-4 mr-2 text-blue-500" />
+                SigmaHQ
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuItem onClick={() => navigate('/rules/new')} className="flex items-center gap-2">
-                <FileCode className="h-4 w-4 shrink-0" />
-                <span className="whitespace-nowrap">Sigma Rule</span>
-                <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Detection logic</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/correlation/new')} className="flex items-center gap-2">
-                <Link2 className="h-4 w-4 shrink-0" />
-                <span className="whitespace-nowrap">Correlation Rule</span>
-                <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Multi-event</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+            )}
+            {activeTab === 'sigma' && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0}>
+                      <Button
+                        variant="outline"
+                        onClick={() => navigate('/misp')}
+                        disabled={!mispStatus?.configured}
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2 text-purple-500" />
+                        MISP
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {!mispStatus?.configured && (
+                    <TooltipContent>
+                      Configure MISP in Settings &gt; Threat Intel
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            <Button variant="outline" onClick={() => setShowExportDialog(true)}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Report
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={!canManageRules()}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Rule
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuItem onClick={() => navigate('/rules/new')} className="flex items-center gap-2">
+                  <FileCode className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">Sigma Rule</span>
+                  <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Detection logic</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/correlation/new')} className="flex items-center gap-2">
+                  <Link2 className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">Correlation Rule</span>
+                  <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">Multi-event</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
+      />
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -718,6 +718,7 @@ export default function RulesPage() {
 
         <TabsContent value="sigma" className="mt-4 space-y-4">
           {/* Filter Bar */}
+          <div className="space-y-3">
           <div className="flex flex-wrap gap-3 items-center">
         {/* Search input */}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -729,6 +730,16 @@ export default function RulesPage() {
             className="pl-10"
             aria-label="Search rules"
           />
+          {filters.search && (
+            <button
+              type="button"
+              onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Index Pattern multi-select */}
@@ -883,6 +894,16 @@ export default function RulesPage() {
 
       </div>
 
+      {/* Secondary row: Severity Pills */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SeverityPills
+          selected={filters.severity}
+          onChange={(severity) => toggleFilter('severity', severity)}
+          size="sm"
+        />
+      </div>
+      </div>
+
       {/* Active filters display */}
       {hasActiveFilters && (
         <div className="flex flex-wrap gap-2 items-center">
@@ -1025,7 +1046,8 @@ export default function RulesPage() {
                     key={rule.id}
                     className={cn(
                       'cursor-pointer hover:bg-muted/50',
-                      selectedRules.has(rule.id) && 'bg-muted/50'
+                      selectedRules.has(rule.id) && 'bg-muted/50',
+                      SEVERITY_CONFIG[rule.severity]?.rowClass
                     )}
                     onClick={() => navigate(`/rules/${rule.id}`)}
                   >
@@ -1372,7 +1394,8 @@ export default function RulesPage() {
                         key={rule.id}
                         className={cn(
                           'cursor-pointer hover:bg-muted/50',
-                          selectedCorrelationRules.has(rule.id) && 'bg-muted/50'
+                          selectedCorrelationRules.has(rule.id) && 'bg-muted/50',
+                          SEVERITY_CONFIG[rule.severity]?.rowClass
                         )}
                         onClick={() => navigate(`/correlation/${rule.id}`)}
                       >
