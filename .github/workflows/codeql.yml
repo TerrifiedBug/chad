@@ -37,6 +37,11 @@ jobs:
           config: |
             paths-ignore:
               - backend/alembic/versions/**
+              - backend/tests/**
+              - backend/scripts/**
+              - frontend/src/**/*.test.ts
+              - frontend/src/**/*.test.tsx
+              - tools/**
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4
