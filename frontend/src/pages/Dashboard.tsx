@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { AlertTriangle, Clock, FileText } from 'lucide-react'
+import { AlertTriangle, Clock, ShieldAlert } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { cn } from '@/lib/utils'
@@ -25,13 +25,15 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { SeverityPills } from '@/components/filters/SeverityPills'
 
 type RecentAlert = DashboardStats['recent_alerts'][number]
+type AlertTypeFilter = 'all' | 'alerts' | 'ioc'
 
 interface RecentAlertsTableProps {
   alerts: RecentAlert[] | undefined
   severityFilter: string[]
+  hasFilters: boolean
 }
 
-function RecentAlertsTable({ alerts, severityFilter }: RecentAlertsTableProps): React.ReactElement {
+function RecentAlertsTable({ alerts, severityFilter, hasFilters }: RecentAlertsTableProps): React.ReactElement {
   const filteredAlerts = severityFilter.length > 0
     ? alerts?.filter(a => severityFilter.includes(a.severity))
     : alerts
@@ -39,7 +41,7 @@ function RecentAlertsTable({ alerts, severityFilter }: RecentAlertsTableProps): 
   if (!filteredAlerts || filteredAlerts.length === 0) {
     return (
       <p className="text-center text-muted-foreground py-8">
-        {severityFilter.length > 0 ? 'No alerts matching the selected severity filters' : 'No alerts yet'}
+        {hasFilters ? 'No alerts matching the selected filters' : 'No alerts yet'}
       </p>
     )
   }
@@ -93,6 +95,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [severityFilter, setSeverityFilter] = useState<string[]>([])
+  const [alertTypeFilter, setAlertTypeFilter] = useState<AlertTypeFilter>('all')
 
   const toggleSeverityFilter = (severity: string) => {
     setSeverityFilter(prev =>
@@ -162,6 +165,31 @@ export default function Dashboard() {
     return <ErrorAlert message={error} onRetry={loadStats} />
   }
 
+  const alertTypeButtons: { value: AlertTypeFilter; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'alerts', label: 'Alerts' },
+    { value: 'ioc', label: 'IOC Matches' },
+  ]
+
+  // Severity counts based on active filter, using full backend stats
+  const severityCounts = (() => {
+    if (!stats) return undefined
+    if (alertTypeFilter === 'alerts') {
+      return stats.alerts.by_severity
+    }
+    if (alertTypeFilter === 'ioc') {
+      // IOC stats use by_threat_level which maps to severity
+      return stats.ioc_matches?.by_threat_level || {}
+    }
+    // "all" - combine alert severity counts with IOC threat levels
+    const alertSev = { ...stats.alerts.by_severity }
+    const tl = stats.ioc_matches?.by_threat_level || {}
+    for (const [level, count] of Object.entries(tl)) {
+      alertSev[level] = (alertSev[level] || 0) + count
+    }
+    return alertSev
+  })()
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -185,14 +213,6 @@ export default function Dashboard() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <StatCard
-          title="Rules"
-          value={stats?.rules.total || 0}
-          subtext={`${stats?.rules.deployed || 0} deployed`}
-          icon={FileText}
-          onClick={() => navigate('/rules')}
-        />
-
-        <StatCard
           title="Alerts Today"
           value={stats?.alerts.today || 0}
           subtext={`${stats?.alerts.total || 0} total`}
@@ -215,13 +235,41 @@ export default function Dashboard() {
           pulseOnCritical
           criticalThreshold={5}
         />
+
+        <StatCard
+          title="IOC Matches Today"
+          value={stats?.ioc_matches?.today || 0}
+          subtext={`${stats?.ioc_matches?.total || 0} total`}
+          icon={ShieldAlert}
+          onClick={() => navigate('/ioc-matches')}
+          variant={(stats?.ioc_matches?.today || 0) > 5 ? 'danger' : (stats?.ioc_matches?.today || 0) > 0 ? 'warning' : 'default'}
+        />
       </div>
 
       {/* Recent Alerts */}
       <Card>
         <CardHeader className="pb-2">
           <div className="flex flex-row items-center justify-between">
-            <CardTitle>Recent Alerts</CardTitle>
+            <div className="flex items-center gap-3">
+              <CardTitle>Recent Alerts</CardTitle>
+              <div className="flex items-center rounded-md border">
+                {alertTypeButtons.map((btn) => (
+                  <button
+                    key={btn.value}
+                    onClick={() => setAlertTypeFilter(btn.value)}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-medium transition-colors",
+                      "first:rounded-l-md last:rounded-r-md",
+                      alertTypeFilter === btn.value
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    )}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <Link to="/alerts" className="text-sm text-primary hover:underline">
               View all
             </Link>
@@ -230,15 +278,24 @@ export default function Dashboard() {
             <SeverityPills
               selected={severityFilter}
               onChange={toggleSeverityFilter}
-              showCounts={stats?.alerts.by_severity}
+              showCounts={severityCounts}
               size="sm"
             />
           </div>
         </CardHeader>
         <CardContent>
           <RecentAlertsTable
-            alerts={stats?.recent_alerts}
+            alerts={
+              alertTypeFilter === 'ioc'
+                ? stats?.recent_ioc_alerts
+                : alertTypeFilter === 'alerts'
+                  ? stats?.recent_alerts
+                  : [...(stats?.recent_alerts || []), ...(stats?.recent_ioc_alerts || [])].sort(
+                      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                    )
+            }
             severityFilter={severityFilter}
+            hasFilters={severityFilter.length > 0 || alertTypeFilter !== 'all'}
           />
         </CardContent>
       </Card>

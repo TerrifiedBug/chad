@@ -1486,6 +1486,10 @@ export default function RulesPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Pre-deployment dry-run checks are performed for individual rule deployments.
+              Bulk deployment skips dry-run checks. Ensure rules have been individually tested.
+            </p>
             <div className="space-y-2">
               <Label htmlFor="bulk-deploy-reason">Reason *</Label>
               <Textarea

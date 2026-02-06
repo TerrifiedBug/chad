@@ -43,6 +43,7 @@ def _webhook_to_response(webhook: EnrichmentWebhook) -> EnrichmentWebhookRespons
         max_concurrent_calls=webhook.max_concurrent_calls,
         cache_ttl_seconds=webhook.cache_ttl_seconds,
         is_active=webhook.is_active,
+        include_ioc_alerts=webhook.include_ioc_alerts,
         created_at=webhook.created_at,
         updated_at=webhook.updated_at,
     )
@@ -98,6 +99,7 @@ async def create_enrichment_webhook(
         max_concurrent_calls=data.max_concurrent_calls,
         cache_ttl_seconds=data.cache_ttl_seconds,
         is_active=data.is_active,
+        include_ioc_alerts=data.include_ioc_alerts,
     )
     db.add(webhook)
     await db.commit()

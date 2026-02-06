@@ -133,6 +133,7 @@ async def _set_cached_enrichment(
 async def get_enabled_enrichment_webhooks(
     db: AsyncSession,
     index_pattern_id: UUID,
+    is_ioc_alert: bool = False,
 ) -> list[tuple[EnrichmentWebhook, str]]:
     """
     Get enabled enrichment webhooks for an index pattern.
@@ -149,11 +150,11 @@ async def get_enabled_enrichment_webhooks(
     )
     configs = result.scalars().all()
 
-    # Filter to active webhooks only
+    # Filter to active webhooks only, respecting IOC toggle
     return [
         (c.webhook, c.field_to_send)
         for c in configs
-        if c.webhook.is_active
+        if c.webhook.is_active and (not is_ioc_alert or c.webhook.include_ioc_alerts)
     ]
 
 
@@ -352,13 +353,14 @@ async def enrich_alert_with_webhooks(
     rule_title: str,
     severity: str,
     log_document: dict,
+    is_ioc_alert: bool = False,
 ) -> tuple[dict, dict]:
     """
     Call all enabled enrichment webhooks for an alert.
 
     Returns (enrichment_data, enrichment_status) dicts.
     """
-    webhooks = await get_enabled_enrichment_webhooks(db, index_pattern_id)
+    webhooks = await get_enabled_enrichment_webhooks(db, index_pattern_id, is_ioc_alert=is_ioc_alert)
 
     if not webhooks:
         return {}, {}

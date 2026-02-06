@@ -197,6 +197,7 @@ async def enrich_alert(
     rule_id: str | None = None,
     rule_title: str | None = None,
     severity: str | None = None,
+    is_ioc_alert: bool = False,
 ) -> dict:
     """
     Enrich a log document with additional context.
@@ -209,6 +210,7 @@ async def enrich_alert(
         rule_id: The rule ID (for webhook enrichment)
         rule_title: The rule title (for webhook enrichment)
         severity: The alert severity (for webhook enrichment)
+        is_ioc_alert: Skip TI enrichment for IOC alerts (circular — already based on threat intel)
 
     Returns:
         Enriched log document (copy, original not modified)
@@ -219,14 +221,19 @@ async def enrich_alert(
     # GeoIP enrichment
     await _enrich_geoip(db, enriched, log_doc, index_pattern)
 
-    # Threat Intelligence enrichment (real-time API lookups)
-    await _enrich_ti(db, enriched, log_doc, index_pattern)
+    # Skip TI enrichment for IOC alerts — circular (already based on threat intel)
+    if not is_ioc_alert:
+        # Threat Intelligence enrichment (real-time API lookups)
+        await _enrich_ti(db, enriched, log_doc, index_pattern)
 
-    # MISP IOC cache enrichment (local cache lookups)
-    await _enrich_ioc_cache(enriched, log_doc, index_pattern)
+        # MISP IOC cache enrichment (local cache lookups)
+        await _enrich_ioc_cache(enriched, log_doc, index_pattern)
 
     # Custom webhook enrichment
-    await _enrich_webhooks(db, enriched, log_doc, index_pattern, alert_id, rule_id, rule_title, severity)
+    await _enrich_webhooks(
+        db, enriched, log_doc, index_pattern, alert_id, rule_id, rule_title, severity,
+        is_ioc_alert=is_ioc_alert,
+    )
 
     return enriched
 
@@ -468,6 +475,7 @@ async def _enrich_webhooks(
     rule_id: str | None,
     rule_title: str | None,
     severity: str | None,
+    is_ioc_alert: bool = False,
 ) -> None:
     """Add custom webhook enrichment to the document."""
     try:
@@ -481,6 +489,7 @@ async def _enrich_webhooks(
             rule_title=rule_title or "Unknown Rule",
             severity=severity or "medium",
             log_document=log_doc,
+            is_ioc_alert=is_ioc_alert,
         )
 
         # Add enrichment data under enrichment.<namespace>

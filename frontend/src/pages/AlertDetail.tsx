@@ -37,6 +37,7 @@ import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { IOCMatchesCard } from '@/components/alerts/IOCMatchesCard'
 import { CreateMISPEventDialog } from '@/components/alerts/CreateMISPEventDialog'
 import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
+import { useOpenSearchStatus } from '@/contexts/OpenSearchStatus'
 
 // Type for exception conditions (for AND grouping)
 type ExceptionCondition = {
@@ -635,6 +636,7 @@ export default function AlertDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { hasPermission, user, isAdmin } = useAuth()
+  const { isAvailable: osAvailable } = useOpenSearchStatus()
   const [alert, setAlert] = useState<Alert | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -646,6 +648,7 @@ export default function AlertDetailPage() {
   // Exception dialog state
   const [showExceptionDialog, setShowExceptionDialog] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteReason, setDeleteReason] = useState('')
   const [exceptionFields, setExceptionFields] = useState<string[]>([])
   const [isExtractingFields, setIsExtractingFields] = useState(false)
 
@@ -836,6 +839,7 @@ export default function AlertDetailPage() {
   }
 
   const handleDelete = () => {
+    setDeleteReason('')
     setShowDeleteConfirm(true)
   }
 
@@ -844,7 +848,7 @@ export default function AlertDetailPage() {
     setIsUpdating(true)
     setShowDeleteConfirm(false)
     try {
-      await alertsApi.delete(id)
+      await alertsApi.delete(id, deleteReason.trim() || undefined)
       navigate('/alerts')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete alert')
@@ -1052,17 +1056,12 @@ export default function AlertDetailPage() {
               </TooltipContent>
             </Tooltip>
           )}
-          {alert.owner_username && (
-            <Badge variant="secondary">
-              Owner: {alert.owner_username}
-            </Badge>
-          )}
           <Button
             variant={alert.owner_id === user?.id ? 'destructive' : 'outline'}
             size="sm"
             onClick={handleToggleOwnership}
-            disabled={isAssigning || !hasPermission('manage_alerts')}
-            title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
+            disabled={isAssigning || !hasPermission('manage_alerts') || !osAvailable}
+            title={!osAvailable ? 'Unavailable while OpenSearch is offline' : !hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
           >
             {isAssigning ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1075,7 +1074,7 @@ export default function AlertDetailPage() {
           <Select
             value={alert.status}
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}
-            disabled={isUpdating || !hasPermission('manage_rules')}
+            disabled={isUpdating || !hasPermission('manage_rules') || !osAvailable}
           >
             <SelectTrigger className="w-40 h-9">
               <SelectValue />
@@ -1166,6 +1165,12 @@ export default function AlertDetailPage() {
                     <span>Sigma</span>
                   </div>
                 )}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Owner</span>
+                <span className="text-sm">
+                  {alert.owner_username || 'Unassigned'}
+                </span>
               </div>
               {relatedAlerts && relatedAlerts.clustering_enabled && relatedAlerts.related_count > 0 && (
                 <div className="flex items-center justify-between">
@@ -1710,6 +1715,16 @@ export default function AlertDetailPage() {
               Are you sure you want to delete this alert? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="delete-reason">Reason</Label>
+            <Textarea
+              id="delete-reason"
+              placeholder="Provide a reason for this deletion..."
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              rows={3}
+            />
+          </div>
           <DialogFooter>
             <Button
               variant="outline"
@@ -1721,7 +1736,7 @@ export default function AlertDetailPage() {
             <Button
               variant="destructive"
               onClick={confirmDelete}
-              disabled={isUpdating}
+              disabled={isUpdating || !deleteReason.trim()}
             >
               {isUpdating ? (
                 <>

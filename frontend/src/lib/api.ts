@@ -262,6 +262,11 @@ export const settingsApi = {
     api.get<HealthSettings>('/health/settings'),
   updateHealthSettings: (data: Partial<HealthSettings>) =>
     api.put<HealthSettings>('/health/settings', data),
+  // Rule settings
+  getRuleSettings: () =>
+    api.get<{ deployment_alert_threshold: number }>('/rules/settings'),
+  updateRuleSettings: (data: { deployment_alert_threshold: number }) =>
+    api.put<{ deployment_alert_threshold: number }>('/rules/settings', data),
 }
 
 // Exception types
@@ -491,8 +496,8 @@ export const rulesApi = {
     api.delete(`/rules/${id}`, changeReason ? { change_reason: changeReason } : undefined),
   validate: (yaml_content: string, index_pattern_id?: string) =>
     api.post<RuleValidateResponse>('/rules/validate', { yaml_content, index_pattern_id }),
-  test: (yaml_content: string, sample_logs: Record<string, unknown>[]) =>
-    api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs }),
+  test: (yaml_content: string, sample_logs: Record<string, unknown>[], index_pattern_id?: string) =>
+    api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs, index_pattern_id: index_pattern_id || null }),
   deploy: async (id: string, changeReason: string): Promise<RuleDeployResponse> => {
     const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
       method: 'POST',
@@ -839,6 +844,8 @@ export type Alert = {
 export type AlertListResponse = {
   total: number
   alerts: Alert[]
+  cached?: boolean
+  opensearch_available?: boolean
 }
 
 export type AlertCountsResponse = {
@@ -860,6 +867,8 @@ export const alertsApi = {
     owner?: string | null
     limit?: number
     offset?: number
+    exclude_ioc?: boolean
+    cluster?: boolean
   }) => {
     const searchParams = new URLSearchParams()
     if (params?.status) searchParams.set('status', params.status)
@@ -868,24 +877,28 @@ export const alertsApi = {
     if (params?.owner) searchParams.set('owner', params.owner)
     if (params?.limit) searchParams.set('limit', params.limit.toString())
     if (params?.offset) searchParams.set('offset', params.offset.toString())
+    if (params?.exclude_ioc) searchParams.set('exclude_ioc', 'true')
+    if (params?.cluster === false) searchParams.set('cluster', 'false')
     const query = searchParams.toString()
     return api.get<AlertListResponse>(`/alerts${query ? `?${query}` : ''}`)
   },
   get: (id: string) =>
     api.get<Alert>(`/alerts/${id}`),
-  getCounts: () =>
-    api.get<AlertCountsResponse>('/alerts/counts'),
+  getCounts: (params?: { exclude_ioc?: boolean }) => {
+    const query = params?.exclude_ioc ? '?exclude_ioc=true' : ''
+    return api.get<AlertCountsResponse>(`/alerts/counts${query}`)
+  },
   updateStatus: (id: string, status: AlertStatus) =>
     api.patch<{ success: boolean; status: AlertStatus }>(`/alerts/${id}/status`, { status }),
-  delete: (id: string) =>
-    api.delete(`/alerts/${id}`).then(() => {
+  delete: (id: string, changeReason?: string) =>
+    api.delete(`/alerts/${id}${changeReason ? `?change_reason=${encodeURIComponent(changeReason)}` : ''}`).then(() => {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
     }),
-  bulkUpdateStatus: (data: { alert_ids: string[]; status: AlertStatus }) =>
-    api.patch<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data).then(() => {
+  bulkUpdateStatus: (data: { alert_ids: string[]; status: AlertStatus; change_reason?: string }) =>
+    api.post<{ success: boolean; updated_count: number }>('/alerts/bulk/status', data).then(() => {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
     }),
-  bulkDelete: (data: { alert_ids: string[] }) =>
+  bulkDelete: (data: { alert_ids: string[]; change_reason?: string }) =>
     api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data).then(() => {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
     }),
@@ -938,6 +951,15 @@ export type RecentAlert = {
   severity: string
   status: string
   created_at: string
+  rule_id?: string
+}
+
+export type IOCMatchStats = {
+  total: number
+  today: number
+  by_threat_level: Record<string, number>
+  by_type: Record<string, number>
+  top_iocs: Array<{ value: string; count: number }>
 }
 
 export type DashboardStats = {
@@ -953,7 +975,9 @@ export type DashboardStats = {
     today: number
   }
   recent_alerts: RecentAlert[]
+  recent_ioc_alerts?: RecentAlert[]
   generated_at: string
+  ioc_matches?: IOCMatchStats
 }
 
 // Stats API
@@ -962,6 +986,12 @@ export const statsApi = {
     api.get<DashboardStats>('/stats/dashboard'),
   getHealth: () =>
     api.get<{ status: string; opensearch?: unknown; error?: string }>('/stats/health'),
+}
+
+// IOC Stats API
+export const iocStatsApi = {
+  getStats: () =>
+    api.get<IOCMatchStats>('/stats/ioc-matches'),
 }
 
 // User types
@@ -1620,6 +1650,13 @@ export const healthApi = {
     api.get<PullModeSettings>('/health/pull-mode/settings'),
   updatePullModeSettings: (data: PullModeSettings) =>
     api.put<PullModeSettings>('/health/pull-mode/settings', data),
+  getOpenSearchStatus: () =>
+    api.get<{
+      available: boolean
+      circuit_state: 'closed' | 'open' | 'half_open'
+      failure_count: number
+      last_failure_time: number | null
+    }>('/health/opensearch'),
 }
 
 // Notification settings types
@@ -1633,6 +1670,7 @@ export type AlertNotificationConfig = {
   webhook_name: string
   severities: string[]
   enabled: boolean
+  include_ioc_alerts?: boolean
 }
 
 export type NotificationSettings = {
@@ -1645,8 +1683,8 @@ export const notificationsApi = {
   get: () => api.get<NotificationSettings>('/notifications'),
   updateSystem: (event_type: string, webhook_ids: string[]) =>
     api.put<{ success: boolean }>('/notifications/system', { event_type, webhook_ids }),
-  updateAlert: (webhook_id: string, severities: string[], enabled: boolean) =>
-    api.put<{ success: boolean }>('/notifications/alerts', { webhook_id, severities, enabled }),
+  updateAlert: (webhook_id: string, severities: string[], enabled: boolean, include_ioc_alerts?: boolean) =>
+    api.put<{ success: boolean }>('/notifications/alerts', { webhook_id, severities, enabled, include_ioc_alerts: include_ioc_alerts ?? false }),
 }
 
 // GeoIP types
@@ -2522,6 +2560,7 @@ export type EnrichmentWebhook = {
   max_concurrent_calls: number
   cache_ttl_seconds: number
   is_active: boolean
+  include_ioc_alerts: boolean
   created_at: string
   updated_at: string
 }
@@ -2537,6 +2576,7 @@ export type EnrichmentWebhookCreate = {
   max_concurrent_calls?: number
   cache_ttl_seconds?: number
   is_active?: boolean
+  include_ioc_alerts?: boolean
 }
 
 export type EnrichmentWebhookUpdate = Partial<Omit<EnrichmentWebhookCreate, 'namespace'>>
@@ -2599,4 +2639,5 @@ export const indexPatternEnrichmentsApi = {
   update: (indexPatternId: string, data: IndexPatternEnrichmentsUpdate) =>
     api.put<IndexPatternEnrichmentsResponse>(`/index-patterns/${indexPatternId}/enrichments`, data),
 }
+
 

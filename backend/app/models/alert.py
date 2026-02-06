@@ -34,10 +34,10 @@ class Alert(Base, UUIDMixin, TimestampMixin):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     """Alert title (typically rule title)"""
 
-    rule_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("rules.id"), nullable=False
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("rules.id", ondelete="SET NULL"), nullable=True
     )
-    """Rule that generated this alert"""
+    """Rule that generated this alert (NULL if rule was deleted)"""
 
     # Alert status
     status: Mapped[str] = mapped_column(

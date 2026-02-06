@@ -56,6 +56,7 @@ import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { MISPOriginPanel } from '@/components/MISPOriginPanel'
+import { PreDeploymentModal } from '@/components/rules/PreDeploymentModal'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -232,6 +233,10 @@ export default function RuleEditorPage() {
   const [showUndeployReason, setShowUndeployReason] = useState(false)
   const [deployReason, setDeployReason] = useState('')
 
+  // Pre-deployment validation state
+  const [showPreDeployment, setShowPreDeployment] = useState(false)
+  const [deploymentThreshold, setDeploymentThreshold] = useState(100)
+
   // Linked correlations state (shown in undeploy dialog)
   const [linkedCorrelations, setLinkedCorrelations] = useState<{ id: string; name: string; deployed: boolean }[]>([])
 
@@ -383,6 +388,14 @@ export default function RuleEditorPage() {
           console.error('Failed to load activity data for user emails:', err)
         }
       }
+
+      // Load deployment alert threshold
+      try {
+        const ruleSettings = await settingsApi.getRuleSettings()
+        setDeploymentThreshold(ruleSettings.deployment_alert_threshold)
+      } catch {
+        // Use default of 100
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule')
     } finally {
@@ -510,7 +523,13 @@ export default function RuleEditorPage() {
       let logs: Record<string, unknown>[]
       try {
         const parsed = JSON.parse(sampleLog)
-        logs = Array.isArray(parsed) ? parsed : [parsed]
+        const rawLogs = Array.isArray(parsed) ? parsed : [parsed]
+        // Unwrap OpenSearch hit envelopes: if a log has _source, use that instead
+        logs = rawLogs.map((log: Record<string, unknown>) =>
+          log._source && typeof log._source === 'object' && !Array.isArray(log._source)
+            ? (log._source as Record<string, unknown>)
+            : log
+        )
       } catch {
         setTestResults([])
         setError('Invalid JSON in sample log')
@@ -518,7 +537,7 @@ export default function RuleEditorPage() {
         return
       }
 
-      const result = await rulesApi.test(yamlContent, logs)
+      const result = await rulesApi.test(yamlContent, logs, indexPatternId || undefined)
       if (result.errors.length > 0) {
         setValidationErrors(result.errors)
         setIsValid(false)
@@ -707,10 +726,14 @@ export default function RuleEditorPage() {
 
   const handleDeploy = () => {
     if (!id) return
+    setShowPreDeployment(true)
+  }
+
+  const handlePreDeploymentProceed = () => {
+    setShowPreDeployment(false)
     setDeployReason('')
     setShowDeployReason(true)
   }
-
   const handleDeployConfirm = async () => {
     if (!id || !deployReason.trim()) return
     setShowDeployReason(false)
@@ -1273,6 +1296,12 @@ export default function RuleEditorPage() {
               Activity
             </Button>
           )}
+          {!isNew && indexPatternId && (
+            <Button variant="outline" onClick={() => setShowHistoricalTest(true)}>
+              <Beaker className="h-4 w-4 mr-2" />
+              Dry Run
+            </Button>
+          )}
           {!isNew && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1690,28 +1719,18 @@ export default function RuleEditorPage() {
             )}
           </Card>
 
-          {/* Historical Dry-Run Test - Only show for existing rules with index pattern */}
-          {!isNew && indexPatternId && (
-            <Card>
-              <CardHeader
-                className="py-3 cursor-pointer"
-                onClick={() => setShowHistoricalTest(!showHistoricalTest)}
-              >
-                <CardTitle className="text-sm font-medium flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <History className="h-4 w-4" />
-                    Historical Dry-Run Test
-                  </span>
-                  {showHistoricalTest ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </CardTitle>
-              </CardHeader>
-              {showHistoricalTest && (
-                <CardContent className="pt-0">
-                  <HistoricalTestPanel ruleId={id!} />
-                </CardContent>
-              )}
-            </Card>
-          )}
+          {/* Historical Dry-Run Test Modal */}
+          <Dialog open={showHistoricalTest} onOpenChange={setShowHistoricalTest}>
+            <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Historical Dry-Run Test</DialogTitle>
+                <DialogDescription>
+                  Test this rule against historical logs to see how many matches it would produce.
+                </DialogDescription>
+              </DialogHeader>
+              <HistoricalTestPanel ruleId={id!} />
+            </DialogContent>
+          </Dialog>
 
           {/* Threshold Alerting Card */}
           <Card>
@@ -2545,6 +2564,18 @@ export default function RuleEditorPage() {
         </DialogContent>
       </Dialog>
 
+
+      {/* Pre-Deployment Validation Modal */}
+      {id && (
+        <PreDeploymentModal
+          open={showPreDeployment}
+          onOpenChange={setShowPreDeployment}
+          ruleId={id}
+          ruleName={title || 'Untitled Rule'}
+          threshold={deploymentThreshold}
+          onProceed={handlePreDeploymentProceed}
+        />
+      )}
       {/* Deploy Reason Modal */}
       <Dialog open={showDeployReason} onOpenChange={setShowDeployReason}>
         <DialogContent>

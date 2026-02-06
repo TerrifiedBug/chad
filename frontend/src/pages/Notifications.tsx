@@ -405,7 +405,8 @@ export default function Notifications() {
         : [...currentSeverities, severity]
 
       const enabled = newSeverities.length > 0
-      await notificationsApi.updateAlert(webhookId, newSeverities, enabled)
+      const includeIoc = config?.include_ioc_alerts ?? false
+      await notificationsApi.updateAlert(webhookId, newSeverities, enabled, includeIoc)
 
       setSettings(prev => {
         if (!prev) return prev
@@ -424,6 +425,45 @@ export default function Notifications() {
             webhook_name: webhook?.name ?? 'Unknown',
             severities: newSeverities,
             enabled,
+          })
+        }
+        return { ...prev, alert_notifications: newAlertNotifications }
+      })
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update', 'error')
+    } finally {
+      setSavingAlert(null)
+    }
+  }
+
+  // Toggle IOC alerts for a webhook
+  const toggleIocAlerts = async (webhookId: string, includeIoc: boolean) => {
+    if (!settings) return
+
+    setSavingAlert(`${webhookId}-ioc`)
+    try {
+      const config = getAlertConfig(webhookId)
+      const severities = config?.severities ?? []
+      const enabled = config?.enabled ?? false
+      await notificationsApi.updateAlert(webhookId, severities, enabled, includeIoc)
+
+      setSettings(prev => {
+        if (!prev) return prev
+        const existingIndex = prev.alert_notifications.findIndex(a => a.webhook_id === webhookId)
+        const webhook = webhooks.find(w => w.id === webhookId)
+        const newAlertNotifications = [...prev.alert_notifications]
+        if (existingIndex >= 0) {
+          newAlertNotifications[existingIndex] = {
+            ...newAlertNotifications[existingIndex],
+            include_ioc_alerts: includeIoc,
+          }
+        } else {
+          newAlertNotifications.push({
+            webhook_id: webhookId,
+            webhook_name: webhook?.name ?? 'Unknown',
+            severities: [],
+            enabled: false,
+            include_ioc_alerts: includeIoc,
           })
         }
         return { ...prev, alert_notifications: newAlertNotifications }
@@ -534,6 +574,18 @@ export default function Notifications() {
           No alert notifications enabled for this webhook.
         </p>
       )}
+      <div className="flex items-center justify-between pt-2 border-t">
+        <div>
+          <Label className="text-sm">Include IOC Alerts</Label>
+          <p className="text-xs text-muted-foreground">
+            Send notifications for IOC detection matches
+          </p>
+        </div>
+        <Switch
+          checked={getAlertConfig(webhookId)?.include_ioc_alerts ?? false}
+          onCheckedChange={(checked) => toggleIocAlerts(webhookId, checked)}
+        />
+      </div>
     </div>
   )
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { Fragment, useEffect, useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { alertsApi, Alert, AlertStatus, AlertCountsResponse, reportsApi, ReportFormat, AlertCluster, ClusteredAlertListResponse, AlertListResponse, mispApi, mispFeedbackApi } from '@/lib/api'
@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -38,7 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ShieldAlert, ExternalLink, X, RotateCcw, LayoutList, List } from 'lucide-react'
+import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ExternalLink, X, RotateCcw, LayoutList, List } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -46,15 +47,17 @@ import { DateRange } from 'react-day-picker'
 import { cn } from '@/lib/utils'
 import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize, SEVERITY_CONFIG } from '@/lib/constants'
 import { useAuth } from '@/hooks/use-auth'
+import { useOpenSearchStatus } from '@/contexts/OpenSearchStatus'
 import { useToast } from '@/components/ui/toast-provider'
 import { Skeleton, SkeletonTable } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { SeverityPills } from '@/components/filters/SeverityPills'
+import { chunkedBulkOperation, type BulkProgress } from '@/lib/bulk-utils'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
-const ALERT_TYPES = ['sigma', 'ioc', 'correlation'] as const
+const ALERT_TYPES = ['sigma', 'correlation'] as const
 type AlertType = typeof ALERT_TYPES[number]
 
 // Type guard to check if response is clustered
@@ -65,6 +68,7 @@ function isClusteredResponse(response: AlertListResponse | ClusteredAlertListRes
 export default function AlertsPage() {
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
+  const { isAvailable: osAvailable } = useOpenSearchStatus()
   const { showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [alerts, setAlerts] = useState<Alert[]>([])
@@ -138,7 +142,9 @@ export default function AlertsPage() {
   const [selectedAlerts, setSelectedAlerts] = useState<Set<string>>(new Set())
   const [selectAll, setSelectAll] = useState(false)
   const [isBulkUpdating, setIsBulkUpdating] = useState(false)
-  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+  const [pendingBulkAction, setPendingBulkAction] = useState<'delete' | null>(null)
+  const [bulkActionReason, setBulkActionReason] = useState('')
+  const [bulkProgress, setBulkProgress] = useState<BulkProgress | null>(null)
 
   // Export state
   const [showExportDialog, setShowExportDialog] = useState(false)
@@ -184,8 +190,9 @@ export default function AlertsPage() {
           owner: ownerFilter,
           limit: pageSize,
           offset,
+          exclude_ioc: true,
         }) as Promise<AlertListResponse | ClusteredAlertListResponse>,
-        alertsApi.getCounts(),
+        alertsApi.getCounts({ exclude_ioc: true }),
       ])
 
       // Handle clustered or non-clustered response
@@ -242,7 +249,6 @@ export default function AlertsPage() {
   // Helper to determine alert type
   const getAlertType = (alert: Alert): AlertType => {
     if (alert.tags.includes('correlation')) return 'correlation'
-    if (alert.rule_id === 'ioc-detection') return 'ioc'
     return 'sigma'
   }
 
@@ -336,14 +342,19 @@ export default function AlertsPage() {
 
   const handleBulkStatusUpdate = async (newStatus: AlertStatus) => {
     if (selectedAlerts.size === 0) return
-
     setIsBulkUpdating(true)
+    setBulkProgress(null)
     setError('')
     try {
-      await alertsApi.bulkUpdateStatus({
-        alert_ids: Array.from(selectedAlerts),
-        status: newStatus
-      })
+      const ids = Array.from(selectedAlerts)
+      const result = await chunkedBulkOperation(
+        ids,
+        (batch) => alertsApi.bulkUpdateStatus({ alert_ids: batch, status: newStatus }),
+        (progress) => setBulkProgress(progress),
+      )
+      if (result.errors.length > 0) {
+        setError(`Updated ${result.totalProcessed} alerts. ${result.totalFailed} failed: ${result.errors[0]}`)
+      }
       setSelectedAlerts(new Set())
       setSelectAll(false)
       await loadData()
@@ -351,12 +362,43 @@ export default function AlertsPage() {
       setError(err instanceof Error ? err.message : 'Failed to update alerts')
     } finally {
       setIsBulkUpdating(false)
+      setBulkProgress(null)
     }
   }
 
   const handleBulkDelete = () => {
     if (selectedAlerts.size === 0) return
-    setShowBulkDeleteConfirm(true)
+    setPendingBulkAction('delete')
+    setBulkActionReason('')
+  }
+
+  const confirmBulkDelete = async () => {
+    if (selectedAlerts.size === 0) return
+    setIsBulkUpdating(true)
+    setBulkProgress(null)
+    setError('')
+    const reason = bulkActionReason.trim()
+    setPendingBulkAction(null)
+    setBulkActionReason('')
+    try {
+      const ids = Array.from(selectedAlerts)
+      const result = await chunkedBulkOperation(
+        ids,
+        (batch) => alertsApi.bulkDelete({ alert_ids: batch, change_reason: reason || undefined }),
+        (progress) => setBulkProgress(progress),
+      )
+      if (result.errors.length > 0) {
+        setError(`Deleted ${result.totalProcessed} alerts. ${result.totalFailed} failed: ${result.errors[0]}`)
+      }
+      setSelectedAlerts(new Set())
+      setSelectAll(false)
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete alerts')
+    } finally {
+      setIsBulkUpdating(false)
+      setBulkProgress(null)
+    }
   }
 
   const handleBulkTakeOwnership = async () => {
@@ -378,24 +420,6 @@ export default function AlertsPage() {
     }
   }
 
-  const confirmBulkDelete = async () => {
-    if (selectedAlerts.size === 0) return
-    setIsBulkUpdating(true)
-    setError('')
-    setShowBulkDeleteConfirm(false)
-    try {
-      await alertsApi.bulkDelete({
-        alert_ids: Array.from(selectedAlerts)
-      })
-      setSelectedAlerts(new Set())
-      setSelectAll(false)
-      await loadData()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete alerts')
-    } finally {
-      setIsBulkUpdating(false)
-    }
-  }
 
   // Handle bulk MISP export
   const handleBulkMISPExport = async () => {
@@ -602,14 +626,6 @@ export default function AlertsPage() {
                 Sigma
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
-                checked={alertTypeFilter.includes('ioc')}
-                onCheckedChange={() => toggleAlertTypeFilter('ioc')}
-                onSelect={(e) => e.preventDefault()}
-              >
-                <ShieldAlert className="h-3 w-3 mr-2 text-red-500" />
-                IOC
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
                 checked={alertTypeFilter.includes('correlation')}
                 onCheckedChange={() => toggleAlertTypeFilter('correlation')}
                 onSelect={(e) => e.preventDefault()}
@@ -684,73 +700,6 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* Bulk Action Bar */}
-      {selectedAlerts.size > 0 && (
-        <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-          <div className="text-sm font-medium">
-            {selectedAlerts.size} alert{selectedAlerts.size !== 1 ? 's' : ''} selected
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkStatusUpdate('acknowledged')}
-              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
-              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
-            >
-              Acknowledge
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkStatusUpdate('resolved')}
-              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
-              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
-            >
-              Resolve
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkStatusUpdate('false_positive')}
-              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
-              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
-            >
-              False Positive
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleBulkTakeOwnership}
-              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
-              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
-            >
-              <UserPlus className="h-4 w-4 mr-1" />
-              Take Ownership
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowBulkMISPExport(true)}
-              disabled={isBulkUpdating || !mispStatus?.configured}
-              title={!mispStatus?.configured ? 'MISP not configured' : undefined}
-            >
-              <ExternalLink className="h-4 w-4 mr-1 text-purple-500" />
-              Export to MISP
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleBulkDelete}
-              disabled={isBulkUpdating || !hasPermission('manage_alerts')}
-              title={!hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              Delete
-            </Button>
-          </div>
-        </div>
-      )}
 
 
       {error && (
@@ -810,10 +759,9 @@ export default function AlertsPage() {
                     const hasMultiple = cluster.count > 1
 
                     return (
-                      <>
+                      <Fragment key={clusterId}>
                         {/* Cluster header row */}
                         <TableRow
-                          key={clusterId}
                           className={cn(
                             "cursor-pointer hover:bg-muted/50",
                             hasMultiple ? "border-l-2 border-l-primary" : SEVERITY_CONFIG[alert.severity]?.rowClass
@@ -870,13 +818,7 @@ export default function AlertsPage() {
                                   <span>Correlation</span>
                                 </div>
                               )}
-                              {alert.rule_id === 'ioc-detection' && (
-                                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
-                                  <ShieldAlert className="h-3 w-3" />
-                                  <span>IOC</span>
-                                </div>
-                              )}
-                              {!alert.tags.includes('correlation') && alert.rule_id !== 'ioc-detection' && (
+                              {!alert.tags.includes('correlation') && (
                                 <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
                                   <FileText className="h-3 w-3" />
                                   <span>Sigma</span>
@@ -975,13 +917,7 @@ export default function AlertsPage() {
                                     <span>Correlation</span>
                                   </div>
                                 )}
-                                {clusterAlert.rule_id === 'ioc-detection' && (
-                                  <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
-                                    <ShieldAlert className="h-3 w-3" />
-                                    <span>IOC</span>
-                                  </div>
-                                )}
-                                {!clusterAlert.tags.includes('correlation') && clusterAlert.rule_id !== 'ioc-detection' && (
+                                {!clusterAlert.tags.includes('correlation') && (
                                   <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
                                     <FileText className="h-3 w-3" />
                                     <span>Sigma</span>
@@ -1038,7 +974,7 @@ export default function AlertsPage() {
                             </TableCell>
                           </TableRow>
                         ))}
-                      </>
+                      </Fragment>
                     )
                   })
                 ) : (
@@ -1073,13 +1009,7 @@ export default function AlertsPage() {
                               <span>Correlation</span>
                             </div>
                           )}
-                          {alert.rule_id === 'ioc-detection' && (
-                            <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs font-medium">
-                              <ShieldAlert className="h-3 w-3" />
-                              <span>IOC</span>
-                            </div>
-                          )}
-                          {!alert.tags.includes('correlation') && alert.rule_id !== 'ioc-detection' && (
+                          {!alert.tags.includes('correlation') && (
                             <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
                               <FileText className="h-3 w-3" />
                               <span>Sigma</span>
@@ -1198,12 +1128,95 @@ export default function AlertsPage() {
         </div>
       )}
 
+      {/* Floating Bulk Action Bar */}
+      {selectedAlerts.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg p-4 flex items-center gap-4 z-50">
+          <span className="text-sm font-medium">
+            {bulkProgress
+              ? `Processing ${bulkProgress.completed}/${bulkProgress.total}...`
+              : `${selectedAlerts.size} alert${selectedAlerts.size !== 1 ? 's' : ''} selected`
+            }
+          </span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleBulkStatusUpdate('acknowledged')}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts') || !osAvailable}
+              title={!osAvailable ? 'Unavailable while OpenSearch is offline' : undefined}
+            >
+              Acknowledge
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleBulkStatusUpdate('resolved')}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts') || !osAvailable}
+              title={!osAvailable ? 'Unavailable while OpenSearch is offline' : undefined}
+            >
+              Resolve
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleBulkStatusUpdate('false_positive')}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts') || !osAvailable}
+              title={!osAvailable ? 'Unavailable while OpenSearch is offline' : undefined}
+            >
+              False Positive
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleBulkTakeOwnership}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts') || !osAvailable}
+              title={!osAvailable ? 'Unavailable while OpenSearch is offline' : undefined}
+            >
+              <UserPlus className="h-4 w-4 mr-1" />
+              Take Ownership
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowBulkMISPExport(true)}
+              disabled={isBulkUpdating || !mispStatus?.configured || !osAvailable}
+              title={!mispStatus?.configured ? 'MISP not configured' : !osAvailable ? 'Unavailable while OpenSearch is offline' : undefined}
+            >
+              <ExternalLink className="h-4 w-4 mr-1 text-purple-500" />
+              Export to MISP
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => handleBulkDelete()}
+              disabled={isBulkUpdating || !hasPermission('manage_alerts') || !osAvailable}
+              title={!osAvailable ? 'Unavailable while OpenSearch is offline' : undefined}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
+            </Button>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setSelectedAlerts(new Set())
+              setSelectAll(false)
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+
       {/* Bulk Delete Confirmation Dialog */}
       <Dialog
-        open={showBulkDeleteConfirm}
+        open={pendingBulkAction === 'delete'}
         onOpenChange={(open) => {
-          if (isBulkUpdating) return
-          setShowBulkDeleteConfirm(open)
+          if (!open) {
+            setPendingBulkAction(null)
+            setBulkActionReason('')
+          }
         }}
       >
         <DialogContent>
@@ -1213,20 +1226,32 @@ export default function AlertsPage() {
               Are you sure you want to delete {selectedAlerts.size} alert{selectedAlerts.size !== 1 ? 's' : ''}? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="bulk-reason">Reason</Label>
+            <Textarea
+              id="bulk-reason"
+              placeholder="Provide a reason for this deletion..."
+              value={bulkActionReason}
+              onChange={(e) => setBulkActionReason(e.target.value)}
+              rows={3}
+            />
+          </div>
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setShowBulkDeleteConfirm(false)}
-              disabled={isBulkUpdating}
+              onClick={() => {
+                setPendingBulkAction(null)
+                setBulkActionReason('')
+              }}
             >
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={confirmBulkDelete}
-              disabled={isBulkUpdating}
+              disabled={!bulkActionReason.trim()}
             >
-              {isBulkUpdating ? 'Deleting...' : 'Delete'}
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

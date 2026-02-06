@@ -192,6 +192,9 @@ export default function SettingsPage() {
   const [alertClusteringForm, setAlertClusteringForm] = useState<AlertClusteringSettings>(alertClusteringSettings)
   const [isSavingAlertClustering, setIsSavingAlertClustering] = useState(false)
 
+  // Rule deployment settings
+  const [deploymentThreshold, setDeploymentThreshold] = useState(100)
+
   // Queue settings
   const [queueSettings, setQueueSettings] = useState<QueueSettings>({
     max_queue_size: 100000,
@@ -212,6 +215,7 @@ export default function SettingsPage() {
     loadHealthSettings()
     loadAlertClusteringSettings()
     loadQueueSettings()
+    loadRuleSettings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -258,6 +262,15 @@ export default function SettingsPage() {
       setAlertClusteringForm(settings)
     } catch (err) {
       console.error('Failed to load alert clustering settings:', err)
+    }
+  }
+
+  const loadRuleSettings = async () => {
+    try {
+      const ruleSettings = await settingsApi.getRuleSettings()
+      setDeploymentThreshold(ruleSettings.deployment_alert_threshold)
+    } catch {
+      // Use default
     }
   }
 
@@ -2335,6 +2348,58 @@ export default function SettingsPage() {
                         </>
                       )}
                     </Button>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
+          {/* Rule Deployment */}
+          <Collapsible>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Rule Deployment</CardTitle>
+                      <CardDescription>Configure rule deployment safety checks</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="deployment-threshold">Alert Threshold</Label>
+                    <p className="text-sm text-muted-foreground">
+                      When deploying a rule, warn if a dry-run against the last 24 hours matches more than this number of logs.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="deployment-threshold"
+                        type="number"
+                        min={1}
+                        max={100000}
+                        value={deploymentThreshold}
+                        onChange={(e) => setDeploymentThreshold(Number(e.target.value))}
+                        className="w-32"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await settingsApi.updateRuleSettings({ deployment_alert_threshold: deploymentThreshold })
+                            showToast('Deployment threshold saved')
+                          } catch {
+                            showToast('Failed to save threshold', 'error')
+                          }
+                        }}
+                      >
+                        <Save className="h-4 w-4 mr-1" />
+                        Save
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </CollapsibleContent>

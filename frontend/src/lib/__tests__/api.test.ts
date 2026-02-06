@@ -124,7 +124,7 @@ describe('Alerts API - Cache Invalidation', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         '/api/alerts/bulk/status',
         expect.objectContaining({
-          method: 'PATCH',
+          method: 'POST',
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
           }),

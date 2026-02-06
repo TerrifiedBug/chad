@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Bell,
   ScrollText,
+  ShieldAlert,
   Target,
   Database,
   Activity,
@@ -40,6 +41,7 @@ const navSections: NavSection[] = [
     items: [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
       { href: '/alerts', label: 'Alerts', icon: Bell },
+      { href: '/ioc-matches', label: 'IOC Matches', icon: ShieldAlert },
       { href: '/rules', label: 'Rules', icon: ScrollText },
     ],
   },
