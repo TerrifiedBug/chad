@@ -121,6 +121,7 @@ class RuleValidateResponse(BaseModel):
 class RuleTestRequest(BaseModel):
     yaml_content: str
     sample_logs: list[dict]
+    index_pattern_id: UUID | None = None
 
 
 class LogMatchResult(BaseModel):
