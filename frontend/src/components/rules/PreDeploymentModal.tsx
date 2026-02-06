@@ -139,7 +139,7 @@ export function PreDeploymentModal({
                 <div>
                   <div className="text-sm font-medium mb-2">Sample Matches</div>
                   <div className="max-h-48 overflow-auto rounded border bg-muted">
-                    <pre className="p-3 text-xs">
+                    <pre className="p-3 text-xs whitespace-pre-wrap break-all">
                       {JSON.stringify(result.matches.slice(0, 5), null, 2)}
                     </pre>
                   </div>

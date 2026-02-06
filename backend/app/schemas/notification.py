@@ -19,6 +19,7 @@ class AlertNotificationConfig(BaseModel):
     webhook_name: str
     severities: list[str]  # Which severities this webhook receives
     enabled: bool
+    include_ioc_alerts: bool = False
 
 
 class NotificationSettingsResponse(BaseModel):
@@ -41,6 +42,7 @@ class UpdateAlertNotificationRequest(BaseModel):
     webhook_id: UUID
     severities: list[str]
     enabled: bool
+    include_ioc_alerts: bool = False
 
 
 class MandatoryCommentsConfig(BaseModel):

@@ -236,10 +236,10 @@ class LogProcessor:
 
                 log = logs[log_idx]
 
-                # Enrich the log
+                # Enrich the log (skip TI — IOC alerts are already based on threat intel)
                 if index_pattern:
                     try:
-                        enriched_log = await enrich_alert(db, log, index_pattern)
+                        enriched_log = await enrich_alert(db, log, index_pattern, is_ioc_alert=True)
                     except Exception as e:
                         logger.debug("Enrichment failed for IOC-only log: %s", e)
                         enriched_log = log
@@ -457,6 +457,7 @@ class LogProcessor:
                     severity=alert.get("severity", "medium"),
                     matched_log=alert.get("log_document", {}),
                     alert_url=alert_url,
+                    is_ioc=alert.get("rule_id") == "ioc-detection",
                 )
             except Exception as e:
                 logger.warning("Failed to send notification for alert %s: %s", alert['alert_id'], e)

@@ -22,6 +22,7 @@ class EnrichmentWebhookBase(BaseModel):
     max_concurrent_calls: int = Field(default=5, ge=1, le=50)
     cache_ttl_seconds: int = Field(default=0, ge=0, le=86400)  # 0 = no cache, max 24h
     is_active: bool = Field(default=True)
+    include_ioc_alerts: bool = Field(default=False)
 
     @field_validator("namespace")
     @classmethod
@@ -59,6 +60,7 @@ class EnrichmentWebhookUpdate(BaseModel):
     max_concurrent_calls: int | None = Field(default=None, ge=1, le=50)
     cache_ttl_seconds: int | None = Field(default=None, ge=0, le=86400)
     is_active: bool | None = None
+    include_ioc_alerts: bool | None = None
 
     @field_validator("url")
     @classmethod
@@ -82,6 +84,7 @@ class EnrichmentWebhookResponse(BaseModel):
     max_concurrent_calls: int
     cache_ttl_seconds: int
     is_active: bool
+    include_ioc_alerts: bool
     created_at: datetime
     updated_at: datetime
 

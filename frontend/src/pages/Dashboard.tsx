@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { AlertTriangle, Clock, FileText } from 'lucide-react'
+import { AlertTriangle, Clock, FileText, ShieldAlert } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { cn } from '@/lib/utils'
@@ -183,7 +183,7 @@ export default function Dashboard() {
       />
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Rules"
           value={stats?.rules.total || 0}
@@ -214,6 +214,15 @@ export default function Dashboard() {
           showUrgencyRing={(stats?.alerts.by_status?.new || 0) > 5}
           pulseOnCritical
           criticalThreshold={5}
+        />
+
+        <StatCard
+          title="IOC Matches"
+          value={stats?.ioc_matches?.today || 0}
+          subtext={`${stats?.ioc_matches?.total || 0} total`}
+          icon={ShieldAlert}
+          onClick={() => navigate('/ioc-matches')}
+          variant={(stats?.ioc_matches?.today || 0) > 5 ? 'danger' : (stats?.ioc_matches?.today || 0) > 0 ? 'warning' : 'default'}
         />
       </div>
 

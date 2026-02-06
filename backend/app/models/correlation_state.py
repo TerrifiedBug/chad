@@ -19,7 +19,7 @@ class CorrelationState(Base, UUIDMixin):
         UUID(as_uuid=True), ForeignKey("correlation_rules.id"), nullable=False
     )
     entity_value: Mapped[str] = mapped_column(String(500), nullable=False)
-    rule_id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.id"), nullable=False)
+    rule_id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.id", ondelete="CASCADE"), nullable=False)
     alert_id: Mapped[str] = mapped_column(String(100), nullable=False)
     triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

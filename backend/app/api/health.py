@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_opensearch_client, require_admin
 from app.background.tasks.health_checks import get_ti_source_display_name
+from app.core.circuit_breaker import CircuitState, get_circuit_breaker
 from app.models.health_check import HealthCheckLog
 from app.models.jira_config import JiraConfig
 from app.models.setting import Setting
@@ -74,6 +75,28 @@ class HealthSettingsUpdate(BaseModel):
     opensearch_latency_critical_ms: int = Field(default=5000, ge=100)
     data_freshness_warning_minutes: int = Field(default=60, ge=1)
     data_freshness_critical_minutes: int = Field(default=240, ge=1)
+
+
+@router.get("/opensearch")
+async def get_opensearch_health(
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Get OpenSearch availability status from circuit breaker state.
+
+    Lightweight endpoint - reads circuit breaker state, does NOT query OpenSearch.
+    """
+    cb = get_circuit_breaker(
+        "opensearch_alerts",
+        failure_threshold=3,
+        recovery_timeout=30.0,
+    )
+    state = cb.get_state()
+    return {
+        "available": state != CircuitState.OPEN,
+        "circuit_state": state.value,
+        "failure_count": cb.get_failure_count(),
+        "last_failure_time": cb._last_failure_time or None,
+    }
 
 
 @router.get("/indices")

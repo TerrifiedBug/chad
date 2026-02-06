@@ -157,6 +157,7 @@ class PullDetector:
                     severity=alert.get("severity", "medium"),
                     matched_log=alert.get("log_document", {}),
                     alert_url=alert_url,
+                    is_ioc=alert.get("rule_id") == "ioc-detection",
                 )
             except Exception as e:
                 logger.warning("Failed to send notification for alert %s: %s", alert['alert_id'], e)
@@ -510,9 +511,9 @@ class PullDetector:
                 if not matched_ioc_info:
                     continue
 
-                # Enrich log
+                # Enrich log (skip TI — IOC alerts are already based on threat intel)
                 try:
-                    enriched_log = await enrich_alert(db, log_document, index_pattern)
+                    enriched_log = await enrich_alert(db, log_document, index_pattern, is_ioc_alert=True)
                 except Exception as e:
                     logger.warning("Enrichment failed for IOC log: %s", e)
                     enriched_log = log_document

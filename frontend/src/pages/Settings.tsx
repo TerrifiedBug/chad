@@ -2355,45 +2355,56 @@ export default function SettingsPage() {
           </Collapsible>
 
           {/* Rule Deployment */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Rule Deployment</CardTitle>
-              <CardDescription>Configure rule deployment safety checks</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="deployment-threshold">Alert Threshold</Label>
-                <p className="text-sm text-muted-foreground">
-                  When deploying a rule, warn if a dry-run against the last 24 hours matches more than this number of logs.
-                </p>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="deployment-threshold"
-                    type="number"
-                    min={1}
-                    max={100000}
-                    value={deploymentThreshold}
-                    onChange={(e) => setDeploymentThreshold(Number(e.target.value))}
-                    className="w-32"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await settingsApi.updateRuleSettings({ deployment_alert_threshold: deploymentThreshold })
-                        showToast('Deployment threshold saved')
-                      } catch {
-                        showToast('Failed to save threshold', 'error')
-                      }
-                    }}
-                  >
-                    <Save className="h-4 w-4 mr-1" />
-                    Save
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <Collapsible>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Rule Deployment</CardTitle>
+                      <CardDescription>Configure rule deployment safety checks</CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="deployment-threshold">Alert Threshold</Label>
+                    <p className="text-sm text-muted-foreground">
+                      When deploying a rule, warn if a dry-run against the last 24 hours matches more than this number of logs.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="deployment-threshold"
+                        type="number"
+                        min={1}
+                        max={100000}
+                        value={deploymentThreshold}
+                        onChange={(e) => setDeploymentThreshold(Number(e.target.value))}
+                        className="w-32"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await settingsApi.updateRuleSettings({ deployment_alert_threshold: deploymentThreshold })
+                            showToast('Deployment threshold saved')
+                          } catch {
+                            showToast('Failed to save threshold', 'error')
+                          }
+                        }}
+                      >
+                        <Save className="h-4 w-4 mr-1" />
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
         </div>
       )}
 

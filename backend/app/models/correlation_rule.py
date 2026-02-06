@@ -22,8 +22,8 @@ class CorrelationRule(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "correlation_rules"
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    rule_a_id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.id"), nullable=False)
-    rule_b_id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.id"), nullable=False)
+    rule_a_id: Mapped[PyUUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.id", ondelete="SET NULL"), nullable=True)
+    rule_b_id: Mapped[PyUUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.id", ondelete="SET NULL"), nullable=True)
     entity_field: Mapped[str] = mapped_column(String(100), nullable=False)
     entity_field_type: Mapped[str] = mapped_column(String(10), nullable=False, default="sigma")
     time_window_minutes: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { AppHeader } from '@/components/AppHeader'
+import { OpenSearchBanner } from '@/components/OpenSearchBanner'
 import { AppRail } from '@/components/AppRail'
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
@@ -77,6 +78,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         showMobileMenu={isMobile}
         railExpanded={railExpanded}
       />
+      <OpenSearchBanner />
 
       {/* Desktop sidebar (fixed position) */}
       {!isMobile && (

@@ -6,7 +6,7 @@ import yaml
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from opensearchpy import OpenSearch
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -53,8 +53,8 @@ from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
 from app.services.rule_testing import run_historical_test
-from app.services.sigma import sigma_service
 from app.services.settings import get_setting, set_setting
+from app.services.sigma import sigma_service
 from app.utils.request import get_client_ip
 
 
@@ -624,6 +624,18 @@ async def delete_rule(
     if change_reason:
         audit_details["change_reason"] = change_reason
     await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), audit_details, ip_address=get_client_ip(request))
+
+    # Undeploy any correlation rules that reference this rule
+    corr_result = await db.execute(
+        select(CorrelationRule).where(
+            or_(CorrelationRule.rule_a_id == rule_id, CorrelationRule.rule_b_id == rule_id),
+            CorrelationRule.deployed_at.isnot(None),
+        )
+    )
+    for corr_rule in corr_result.scalars().all():
+        corr_rule.deployed_at = None
+        corr_rule.deployed_version = None
+
     await db.delete(rule)
     await db.commit()
 
@@ -853,7 +865,7 @@ async def test_rule(
     """
     import uuid as uuid_module
 
-    # Parse and translate the rule
+    # Parse and translate the rule, applying field mappings if index pattern provided
     result = sigma_service.translate_and_validate(request.yaml_content)
 
     if not result.success:
@@ -869,6 +881,22 @@ async def test_rule(
                 for e in (result.errors or [])
             ],
         )
+
+    # Re-translate with field mappings so the query uses actual log field names
+    if request.index_pattern_id and result.fields:
+        sigma_fields = list(result.fields)
+        field_mappings = await resolve_mappings(
+            db, sigma_fields, request.index_pattern_id
+        )
+        field_mappings_dict = {
+            k: v for k, v in field_mappings.items() if v is not None
+        }
+        if field_mappings_dict:
+            mapped_result = sigma_service.translate_with_mappings(
+                request.yaml_content, field_mappings_dict
+            )
+            if mapped_result.success and mapped_result.query:
+                result = mapped_result
 
     if os_client is None:
         return RuleTestResponse(
@@ -955,6 +983,9 @@ async def test_rule(
         # Test each sample log against the percolator
         matches = []
         for idx, log in enumerate(request.sample_logs):
+            # Unwrap OpenSearch hit envelopes (users may paste raw hits)
+            if "_source" in log and isinstance(log["_source"], dict):
+                log = log["_source"]
             try:
                 response = os_client.search(
                     index=test_index,
@@ -1429,7 +1460,6 @@ async def undeploy_linked_correlations(
 
     Returns list of undeployed correlation rule names.
     """
-    from sqlalchemy import or_
 
     # Find deployed correlation rules that reference this rule
     result = await db.execute(
@@ -1483,7 +1513,6 @@ async def snooze_linked_correlations(
 
     Returns list of snoozed correlation rule names.
     """
-    from sqlalchemy import or_
 
     # Find deployed correlation rules that reference this rule (and not already snoozed)
     result = await db.execute(
@@ -1540,7 +1569,6 @@ async def unsnooze_linked_correlations(
 
     Returns list of unsnoozed correlation rule names.
     """
-    from sqlalchemy import or_
 
     # Find snoozed correlation rules that reference this rule
     result = await db.execute(
@@ -2387,7 +2415,6 @@ async def get_linked_correlations(
     Returns a list of correlation rules where this rule is either rule_a or rule_b.
     By default, only returns deployed correlations (useful for undeploy warnings).
     """
-    from sqlalchemy import or_
 
     # Find correlation rules that reference this rule
     query = select(CorrelationRule).where(
@@ -2442,6 +2469,20 @@ async def bulk_delete_rules(
                     percolator = PercolatorService(os_client)
                     percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
                     percolator.undeploy_rule(percolator_index, str(rule.id))
+
+                # Undeploy any correlation rules that reference this rule
+                corr_result = await db.execute(
+                    select(CorrelationRule).where(
+                        or_(
+                            CorrelationRule.rule_a_id == rule_id,
+                            CorrelationRule.rule_b_id == rule_id,
+                        ),
+                        CorrelationRule.deployed_at.isnot(None),
+                    )
+                )
+                for corr_rule in corr_result.scalars().all():
+                    corr_rule.deployed_at = None
+                    corr_rule.deployed_version = None
 
                 await db.delete(rule)
                 success.append(rule_id)

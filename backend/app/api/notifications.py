@@ -104,6 +104,7 @@ async def get_notification_settings(
                     webhook_name=webhook.name,
                     severities=setting.severities,
                     enabled=setting.enabled,
+                    include_ioc_alerts=setting.include_ioc_alerts,
                 )
             )
 
@@ -116,6 +117,7 @@ async def get_notification_settings(
                     webhook_name=webhook.name,
                     severities=[],
                     enabled=False,
+                    include_ioc_alerts=False,
                 )
             )
 
@@ -194,11 +196,13 @@ async def update_alert_notification(
     if setting:
         setting.severities = data.severities
         setting.enabled = data.enabled
+        setting.include_ioc_alerts = data.include_ioc_alerts
     else:
         setting = AlertNotificationSetting(
             webhook_id=data.webhook_id,
             severities=data.severities,
             enabled=data.enabled,
+            include_ioc_alerts=data.include_ioc_alerts,
         )
         db.add(setting)
 

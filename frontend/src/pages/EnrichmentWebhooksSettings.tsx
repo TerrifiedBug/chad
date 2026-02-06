@@ -55,6 +55,7 @@ type WebhookFormData = {
   max_concurrent_calls: number
   cache_ttl_seconds: number
   is_active: boolean
+  include_ioc_alerts: boolean
 }
 
 const DEFAULT_FORM_DATA: WebhookFormData = {
@@ -68,6 +69,7 @@ const DEFAULT_FORM_DATA: WebhookFormData = {
   max_concurrent_calls: 5,
   cache_ttl_seconds: 300,
   is_active: true,
+  include_ioc_alerts: false,
 }
 
 export default function EnrichmentWebhooksSettings() {
@@ -115,6 +117,7 @@ export default function EnrichmentWebhooksSettings() {
         max_concurrent_calls: webhook.max_concurrent_calls,
         cache_ttl_seconds: webhook.cache_ttl_seconds,
         is_active: webhook.is_active,
+        include_ioc_alerts: webhook.include_ioc_alerts,
       })
     } else {
       setEditingWebhook(null)
@@ -224,6 +227,7 @@ export default function EnrichmentWebhooksSettings() {
           max_concurrent_calls: formData.max_concurrent_calls,
           cache_ttl_seconds: formData.cache_ttl_seconds,
           is_active: formData.is_active,
+          include_ioc_alerts: formData.include_ioc_alerts,
         })
         setWebhooks((prev) =>
           prev.map((w) => (w.id === editingWebhook.id ? updated : w))
@@ -240,6 +244,7 @@ export default function EnrichmentWebhooksSettings() {
           max_concurrent_calls: formData.max_concurrent_calls,
           cache_ttl_seconds: formData.cache_ttl_seconds,
           is_active: formData.is_active,
+          include_ioc_alerts: formData.include_ioc_alerts,
         }
         if (formData.header_name) {
           createData.header_name = formData.header_name
@@ -546,15 +551,27 @@ export default function EnrichmentWebhooksSettings() {
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="is_active"
-                checked={formData.is_active}
-                onCheckedChange={(checked) =>
-                  setFormData((prev) => ({ ...prev, is_active: checked }))
-                }
-              />
-              <Label htmlFor="is_active">Active</Label>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="is_active"
+                  checked={formData.is_active}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, is_active: checked }))
+                  }
+                />
+                <Label htmlFor="is_active">Active</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="include_ioc"
+                  checked={formData.include_ioc_alerts}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, include_ioc_alerts: checked }))
+                  }
+                />
+                <Label htmlFor="include_ioc" className="text-sm">Include IOC alerts</Label>
+              </div>
             </div>
 
             {/* Test Result */}

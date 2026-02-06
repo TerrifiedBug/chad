@@ -5,7 +5,7 @@ from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -47,4 +47,4 @@ class MISPImportedRule(Base):
     )
 
     # Relationship
-    rule = relationship("Rule", backref="misp_import")
+    rule = relationship("Rule", backref=backref("misp_import", passive_deletes=True))

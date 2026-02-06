@@ -76,6 +76,8 @@ class AlertNotificationSetting(Base, UUIDMixin):
     # Severities to notify on, e.g., ["critical", "high", "medium", "low", "informational"]
     severities: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Whether to include IOC detection alerts (default: off)
+    include_ioc_alerts: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

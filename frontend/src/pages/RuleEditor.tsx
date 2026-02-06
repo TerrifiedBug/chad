@@ -523,7 +523,13 @@ export default function RuleEditorPage() {
       let logs: Record<string, unknown>[]
       try {
         const parsed = JSON.parse(sampleLog)
-        logs = Array.isArray(parsed) ? parsed : [parsed]
+        const rawLogs = Array.isArray(parsed) ? parsed : [parsed]
+        // Unwrap OpenSearch hit envelopes: if a log has _source, use that instead
+        logs = rawLogs.map((log: Record<string, unknown>) =>
+          log._source && typeof log._source === 'object' && !Array.isArray(log._source)
+            ? (log._source as Record<string, unknown>)
+            : log
+        )
       } catch {
         setTestResults([])
         setError('Invalid JSON in sample log')
@@ -1290,6 +1296,12 @@ export default function RuleEditorPage() {
               Activity
             </Button>
           )}
+          {!isNew && indexPatternId && (
+            <Button variant="outline" onClick={() => setShowHistoricalTest(true)}>
+              <Beaker className="h-4 w-4 mr-2" />
+              Dry Run
+            </Button>
+          )}
           {!isNew && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1707,28 +1719,18 @@ export default function RuleEditorPage() {
             )}
           </Card>
 
-          {/* Historical Dry-Run Test - Only show for existing rules with index pattern */}
-          {!isNew && indexPatternId && (
-            <Card>
-              <CardHeader
-                className="py-3 cursor-pointer"
-                onClick={() => setShowHistoricalTest(!showHistoricalTest)}
-              >
-                <CardTitle className="text-sm font-medium flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <History className="h-4 w-4" />
-                    Historical Dry-Run Test
-                  </span>
-                  {showHistoricalTest ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </CardTitle>
-              </CardHeader>
-              {showHistoricalTest && (
-                <CardContent className="pt-0">
-                  <HistoricalTestPanel ruleId={id!} />
-                </CardContent>
-              )}
-            </Card>
-          )}
+          {/* Historical Dry-Run Test Modal */}
+          <Dialog open={showHistoricalTest} onOpenChange={setShowHistoricalTest}>
+            <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Historical Dry-Run Test</DialogTitle>
+                <DialogDescription>
+                  Test this rule against historical logs to see how many matches it would produce.
+                </DialogDescription>
+              </DialogHeader>
+              <HistoricalTestPanel ruleId={id!} />
+            </DialogContent>
+          </Dialog>
 
           {/* Threshold Alerting Card */}
           <Card>

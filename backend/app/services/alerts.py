@@ -19,7 +19,6 @@ from dateutil import parser as date_parser
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.alert import Alert
 from app.models.rule_exception import ExceptionOperator
 from app.services.system_log import LogCategory, system_log_service
 
@@ -596,6 +595,74 @@ class AlertService:
                 return cached
             raise OpenSearchUnavailableError(str(os_error))
 
+    def get_ioc_stats(self, index_pattern: str = "chad-alerts-*") -> dict[str, Any]:
+        """Get IOC match statistics from OpenSearch."""
+        from datetime import timezone
+
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+        try:
+            result = self.client.search(
+                index=index_pattern,
+                body={
+                    "size": 0,
+                    "query": {
+                        "term": {"rule_id": "ioc-detection"}
+                    },
+                    "aggs": {
+                        "today_count": {
+                            "filter": {
+                                "range": {"created_at": {"gte": today.isoformat()}}
+                            }
+                        },
+                        "by_threat_level": {
+                            "terms": {"field": "severity", "size": 10}
+                        },
+                        "by_ioc_type": {
+                            "terms": {"field": "tags", "include": "ioc-type:.*", "size": 20}
+                        },
+                        "top_iocs": {
+                            "terms": {"field": "rule_title.keyword", "size": 10}
+                        },
+                    },
+                },
+            )
+
+            aggs = result["aggregations"]
+            total = result["hits"]["total"]["value"]
+            today_count = aggs["today_count"]["doc_count"]
+
+            by_threat_level = {
+                b["key"]: b["doc_count"]
+                for b in aggs["by_threat_level"]["buckets"]
+            }
+
+            by_type = {}
+            for b in aggs["by_ioc_type"]["buckets"]:
+                type_name = b["key"].replace("ioc-type:", "")
+                by_type[type_name] = b["doc_count"]
+
+            top_iocs = [
+                {"value": b["key"], "count": b["doc_count"]}
+                for b in aggs["top_iocs"]["buckets"]
+            ]
+
+            return {
+                "total": total,
+                "today": today_count,
+                "by_threat_level": by_threat_level,
+                "by_type": by_type,
+                "top_iocs": top_iocs,
+            }
+        except Exception:
+            return {
+                "total": 0,
+                "today": 0,
+                "by_threat_level": {},
+                "by_type": {},
+                "top_iocs": [],
+            }
+
     def get_alert(
         self,
         index_pattern: str,
@@ -704,117 +771,59 @@ class AlertService:
         db: AsyncSession,
         alert_id: UUID,
         current_user_id: UUID,
-        ip_address: str
+        ip_address: str,
+        change_reason: str | None = None,
     ) -> bool:
-        """Delete an alert.
+        """Delete an alert from OpenSearch.
 
         Args:
-            db: Database session
-            alert_id: OpenSearch alert document ID (UUID)
+            db: Database session (for audit logging)
+            alert_id: OpenSearch alert document ID
             current_user_id: User performing the deletion
             ip_address: Client IP for audit
+            change_reason: Optional reason for deletion
 
         Returns:
             True if deleted, False if not found
         """
-        from sqlalchemy import delete as sql_delete
-        from sqlalchemy import select
+        try:
+            search_result = self.client.search(
+                index="chad-alerts-*",
+                body={"query": {"term": {"alert_id": str(alert_id)}}}
+            )
+            hits = search_result.get("hits", {}).get("hits", [])
 
-        # Get alert from database by alert_id (OpenSearch document ID)
-        result = await db.execute(select(Alert).where(Alert.alert_id == str(alert_id)))
-        alert = result.scalar_one_or_none()
-
-        # If not in database, try to delete from OpenSearch only
-        if not alert:
-            # Check if alert exists in OpenSearch
-            try:
-                # Search for the alert across all alert indices
-                search_result = self.client.search(
-                    index="chad-alerts-*",
-                    body={"query": {"term": {"alert_id": str(alert_id)}}}
-                )
-                hits = search_result.get("hits", {}).get("hits", [])
-
-                if not hits:
-                    return False
-
-                # Alert exists in OpenSearch but not in database
-                # Delete from OpenSearch and create minimal audit log
-                hit = hits[0]
-                alert_index = hit["_index"]
-                alert_source = hit["_source"]
-
-                self.client.delete(index=alert_index, id=str(alert_id), refresh=True)
-
-                # Create audit log entry (alert has been deleted)
-                from app.services.audit import audit_log
-                await audit_log(
-                    db,
-                    current_user_id,
-                    "alert.delete",
-                    "alert",
-                    str(alert_id),
-                    {
-                        "title": alert_source.get("title", alert_source.get("rule_title", "Unknown")),
-                        "note": "Alert deleted from OpenSearch only (no DB record)"
-                    },
-                    ip_address=ip_address
-                )
-                await db.commit()
-
-                return True
-            except Exception as e:
-                logger.error("Failed to delete alert from OpenSearch: %s", e)
-                await system_log_service.log_error(
-                    db,
-                    category=LogCategory.ALERTS,
-                    service="alerts",
-                    message="Failed to delete alert from OpenSearch",
-                    details={
-                        "alert_id": str(alert_id),
-                        "error": str(e),
-                        "error_type": type(e).__name__,
-                    },
-                )
+            if not hits:
                 return False
 
-        # Alert exists in database, delete from both places
-        # Log before delete
-        from app.services.audit import audit_log
-        await audit_log(
-            db,
-            current_user_id,
-            "alert.delete",
-            "alert",
-            str(alert_id),
-            {"title": alert.title, "rule_id": str(alert.rule_id)},
-            ip_address=ip_address
-        )
+            hit = hits[0]
+            alert_source = hit["_source"]
 
-        # Delete from OpenSearch
-        try:
-            self.client.delete(
-                index=alert.alert_index,
-                id=alert.alert_id,
-                refresh=True
+            self.client.delete(index=hit["_index"], id=str(alert_id), refresh=True)
+
+            from app.services.audit import audit_log
+            title = alert_source.get("title", alert_source.get("rule_title", "Unknown"))
+            details: dict = {"title": title}
+            if change_reason:
+                details["change_reason"] = change_reason
+            await audit_log(
+                db, current_user_id, "alert.delete", "alert",
+                str(alert_id), details, ip_address=ip_address,
             )
+            await db.commit()
+
+            return True
         except Exception as e:
-            logger.warning("Failed to delete alert from OpenSearch: %s", e)
-            await system_log_service.log_warning(
+            logger.error("Failed to delete alert from OpenSearch: %s", e)
+            await system_log_service.log_error(
                 db,
                 category=LogCategory.ALERTS,
                 service="alerts",
-                message="Failed to delete alert from OpenSearch (DB record will still be deleted)",
+                message="Failed to delete alert from OpenSearch",
                 details={
                     "alert_id": str(alert_id),
-                    "alert_index": alert.alert_index,
                     "error": str(e),
                     "error_type": type(e).__name__,
                 },
             )
-
-        # Delete from database
-        await db.execute(sql_delete(Alert).where(Alert.alert_id == str(alert_id)))
-        await db.commit()
-
-        return True
+            return False

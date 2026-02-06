@@ -1,11 +1,10 @@
-from app.models.alert import Alert
-from app.models.enrichment_webhook import EnrichmentWebhook, IndexPatternEnrichmentWebhook
 from app.models.alert_comment import AlertComment
 from app.models.api_key import APIKey
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.audit_log import AuditLog
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_rule_comment import CorrelationRuleComment
+from app.models.enrichment_webhook import EnrichmentWebhook, IndexPatternEnrichmentWebhook
 from app.models.field_mapping import FieldMapping, MappingOrigin
 from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.health_check import HealthCheckLog
@@ -33,7 +32,6 @@ from app.models.two_factor_token import TwoFactorToken
 from app.models.user import User, UserRole
 
 __all__ = [
-    "Alert",
     "AlertComment",
     "AlertNotificationSetting",
     "APIKey",

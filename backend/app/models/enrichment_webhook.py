@@ -48,6 +48,8 @@ class EnrichmentWebhook(Base, UUIDMixin, TimestampMixin):
     cache_ttl_seconds: Mapped[int] = mapped_column(Integer, default=0)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Whether to run this webhook for IOC detection alerts (default: off)
+    include_ioc_alerts: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     # Relationships
     index_pattern_configs: Mapped[list["IndexPatternEnrichmentWebhook"]] = relationship(

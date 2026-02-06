@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import { ModeProvider } from '@/hooks/useMode'
+import { OpenSearchStatusProvider } from '@/contexts/OpenSearchStatus'
 import { ToastProvider } from '@/components/ui/toast-provider'
 import { AppLayout } from '@/components/AppLayout'
 import { AppHeader } from '@/components/AppHeader'
@@ -27,6 +28,7 @@ import AttackMatrixPage from '@/pages/AttackMatrix'
 import AccountPage from '@/pages/Account'
 import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
 import LiveAlertFeedPage from '@/pages/LiveAlertFeed'
+import IOCMatchesPage from '@/pages/IOCMatches'
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -177,6 +179,11 @@ function AppRoutes() {
           <AppLayout><AlertDetailPage /></AppLayout>
         </AuthRoute>
       } />
+      <Route path="/ioc-matches" element={
+        <AuthRoute>
+          <AppLayout><IOCMatchesPage /></AppLayout>
+        </AuthRoute>
+      } />
       <Route path="/live" element={
         <AuthRoute>
           <AppLayout><LiveAlertFeedPage /></AppLayout>
@@ -248,9 +255,11 @@ export default function App() {
     <ThemeProvider defaultTheme="system" storageKey="chad-ui-theme">
       <ToastProvider>
         <AuthProvider>
-          <ModeProvider>
-            <AppRoutes />
-          </ModeProvider>
+          <OpenSearchStatusProvider>
+            <ModeProvider>
+              <AppRoutes />
+            </ModeProvider>
+          </OpenSearchStatusProvider>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>

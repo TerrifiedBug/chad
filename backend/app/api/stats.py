@@ -1,5 +1,6 @@
 """Dashboard statistics API."""
 
+import json
 import logging
 from datetime import datetime
 from typing import Annotated
@@ -12,8 +13,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_opensearch_client_optional
+from app.core.circuit_breaker import get_circuit_breaker
+from app.core.redis import get_redis
 from app.models.rule import Rule
 from app.models.user import User
+from app.services.alerts import AlertService
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -38,16 +42,33 @@ async def get_dashboard_stats(
     # Alert statistics from OpenSearch (if configured)
     alert_stats = {"total": 0, "by_status": {}, "by_severity": {}, "today": 0}
     recent_alerts: list = []
+    opensearch_available = False
 
     if os_client:
-        alert_stats = _get_alert_stats(os_client)
-        recent_alerts = _get_recent_alerts(os_client, limit=10)
+        try:
+            cb = get_circuit_breaker("opensearch_alerts", failure_threshold=3, recovery_timeout=30.0)
+            alert_stats = await cb.call(_get_alert_stats, os_client)
+            recent_alerts = _get_recent_alerts(os_client, limit=10)
+            opensearch_available = True
+        except Exception:
+            logger.warning("Dashboard stats: OpenSearch query failed", exc_info=True)
+
+    # IOC match statistics
+    ioc_stats = {"total": 0, "today": 0, "by_threat_level": {}, "by_type": {}, "top_iocs": []}
+    if os_client and opensearch_available:
+        try:
+            alert_service = AlertService(os_client)
+            ioc_stats = alert_service.get_ioc_stats()
+        except Exception:
+            logger.warning("Dashboard stats: IOC stats query failed", exc_info=True)
 
     return {
         "rules": rule_stats,
         "alerts": alert_stats,
         "recent_alerts": recent_alerts,
         "generated_at": datetime.utcnow().isoformat(),
+        "opensearch_available": opensearch_available,
+        "ioc_matches": ioc_stats,
     }
 
 
@@ -145,6 +166,49 @@ def _get_recent_alerts(os_client: OpenSearch, limit: int = 10) -> list:
         return [hit["_source"] for hit in result["hits"]["hits"]]
     except Exception:
         return []
+
+
+IOC_STATS_CACHE_KEY = "alerts:ioc_stats"
+IOC_STATS_TTL = 30
+
+
+@router.get("/ioc-matches")
+async def get_ioc_match_stats(
+    _: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+):
+    """Get IOC match statistics for the IOC Matches page widgets."""
+    empty_stats = {
+        "total": 0,
+        "today": 0,
+        "by_threat_level": {},
+        "by_type": {},
+        "top_iocs": [],
+    }
+
+    # Check cache first
+    try:
+        redis = await get_redis()
+        cached = await redis.get(IOC_STATS_CACHE_KEY)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    if not os_client:
+        return empty_stats
+
+    alert_service = AlertService(os_client)
+    result = alert_service.get_ioc_stats()
+
+    # Cache result
+    try:
+        redis = await get_redis()
+        await redis.setex(IOC_STATS_CACHE_KEY, IOC_STATS_TTL, json.dumps(result))
+    except Exception:
+        pass
+
+    return result
 
 
 @router.get("/health")

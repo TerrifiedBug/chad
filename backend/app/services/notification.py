@@ -104,6 +104,7 @@ async def send_alert_notification(
     severity: str,
     matched_log: dict,
     alert_url: str | None = None,
+    is_ioc: bool = False,
 ) -> list[dict]:
     """
     Send an alert notification to webhooks and Jira (if configured) for this severity.
@@ -123,7 +124,7 @@ async def send_alert_notification(
 
     # Send to webhooks
     webhook_results = await _send_alert_to_webhooks(
-        db, alert_id, rule_title, severity, matched_log, alert_url
+        db, alert_id, rule_title, severity, matched_log, alert_url, is_ioc=is_ioc
     )
     results.extend(webhook_results)
 
@@ -144,6 +145,7 @@ async def _send_alert_to_webhooks(
     severity: str,
     matched_log: dict,
     alert_url: str | None = None,
+    is_ioc: bool = False,
 ) -> list[dict]:
     """Send alert to configured webhooks."""
     result = await db.execute(
@@ -166,6 +168,10 @@ async def _send_alert_to_webhooks(
 
     results = []
     for setting in settings:
+        # Skip IOC alerts for webhooks that haven't opted in
+        if is_ioc and not setting.include_ioc_alerts:
+            continue
+
         # Check if this webhook should receive this severity
         if severity not in setting.severities:
             continue

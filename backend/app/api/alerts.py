@@ -12,7 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
+from app.core.circuit_breaker import CircuitBreakerError, get_circuit_breaker
 from app.core.errors import not_found
+from app.core.exceptions import OpenSearchUnavailableError
+from app.core.redis import get_redis
 from app.db.session import get_db
 from app.models.alert_comment import AlertComment
 from app.models.user import User
@@ -26,6 +29,7 @@ from app.schemas.alert import (
     RelatedAlertsResponse,
 )
 from app.schemas.alert_comment import AlertCommentCreate, AlertCommentResponse, AlertCommentUpdate
+from app.services.alert_cache import AlertCache
 from app.services.alerts import AlertService, cluster_alerts
 from app.services.audit import audit_log
 from app.services.settings import get_setting
@@ -43,6 +47,7 @@ MAX_BULK_OPERATIONS = 100
 class BulkAlertStatusUpdate(BaseModel):
     alert_ids: list[str] = Field(..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to update")
     status: str  # new, acknowledged, resolved, false_positive
+    change_reason: str | None = Field(None, min_length=1, max_length=10000)
 
     @field_validator('alert_ids')
     @classmethod
@@ -58,6 +63,7 @@ class BulkAlertStatusUpdate(BaseModel):
 
 class BulkAlertDelete(BaseModel):
     alert_ids: list[str] = Field(..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to delete")
+    change_reason: str | None = Field(None, min_length=1, max_length=10000)
 
     @field_validator('alert_ids')
     @classmethod
@@ -84,6 +90,7 @@ async def list_alerts(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     cluster: bool = Query(True, description="Apply alert clustering when enabled globally"),
+    exclude_ioc: bool = Query(False, description="Exclude IOC detection alerts"),
 ):
     """List alerts with optional filters and clustering."""
     owner_id = None
@@ -113,15 +120,50 @@ async def list_alerts(
         fetch_limit = 1000
         fetch_offset = 0
 
-    result = alert_service.get_alerts(
-        index_pattern=index_pattern,
-        status=status,
-        severity=severity,
-        rule_id=rule_id,
-        owner_id=owner_id,
-        limit=fetch_limit,
-        offset=fetch_offset,
-    )
+    # Use cached query path with circuit breaker protection
+    try:
+        redis = await get_redis()
+        cache = AlertCache(redis, ttl=30)
+    except Exception:
+        cache = None
+
+    cb = get_circuit_breaker("opensearch_alerts", failure_threshold=3, recovery_timeout=30.0)
+
+    try:
+        if cache:
+            result = await cb.call(
+                alert_service.get_alerts_cached,
+                cache=cache,
+                index_pattern=index_pattern,
+                status=status,
+                severity=severity,
+                rule_id=rule_id,
+                owner_id=owner_id,
+                limit=fetch_limit,
+                offset=fetch_offset,
+                exclude_ioc=exclude_ioc,
+            )
+        else:
+            # No Redis available - call OpenSearch directly through circuit breaker
+            result = await cb.call(
+                alert_service.get_alerts,
+                index_pattern=index_pattern,
+                status=status,
+                severity=severity,
+                rule_id=rule_id,
+                owner_id=owner_id,
+                limit=fetch_limit,
+                offset=fetch_offset,
+                exclude_ioc=exclude_ioc,
+            )
+            result["cached"] = False
+            result["opensearch_available"] = True
+    except (CircuitBreakerError, OpenSearchUnavailableError):
+        raise HTTPException(status_code=503, detail={
+            "message": "OpenSearch is currently unavailable",
+            "opensearch_available": False,
+            "cached": False,
+        })
 
     # Apply clustering if enabled
     if clustering_settings and clustering_settings.get("enabled", False):
@@ -332,6 +374,14 @@ async def update_alert_status(
     await audit_log(db, current_user.id, "alert.status_update", "alert", alert_id, {"status": update.status}, ip_address=get_client_ip(request))
     await db.commit()
 
+    # Invalidate alert cache after status change
+    try:
+        redis = await get_redis()
+        cache = AlertCache(redis)
+        await cache.invalidate()
+    except Exception:
+        pass  # Cache invalidation failure is non-critical
+
     return {"success": True, "status": update.status}
 
 
@@ -342,6 +392,7 @@ async def delete_alert(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    change_reason: str | None = None,
 ):
     """Delete an alert."""
     alert_service = AlertService(os_client)
@@ -349,11 +400,20 @@ async def delete_alert(
         db=db,
         alert_id=alert_id,
         current_user_id=current_user.id,
-        ip_address=get_client_ip(request)
+        ip_address=get_client_ip(request),
+        change_reason=change_reason,
     )
 
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Invalidate alert cache after deletion
+    try:
+        redis = await get_redis()
+        cache = AlertCache(redis)
+        await cache.invalidate()
+    except Exception:
+        pass  # Cache invalidation failure is non-critical
 
 
 @router.post("/bulk/status", response_model=dict)
@@ -362,40 +422,61 @@ async def bulk_update_alert_status(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
     """Update status for multiple alerts."""
-    from sqlalchemy import select
-
-    from app.models.alert import Alert
-
+    alert_service = AlertService(os_client)
     success = []
     failed = []
 
-    # Convert string IDs to UUIDs
-    alert_ids = [UUID(aid) for aid in data.alert_ids]
+    for alert_id_str in data.alert_ids:
+        try:
+            # Find alert in OpenSearch to get its index
+            search_result = os_client.search(
+                index="chad-alerts-*",
+                body={"query": {"term": {"alert_id": alert_id_str}}},
+            )
+            hits = search_result.get("hits", {}).get("hits", [])
+            if not hits:
+                failed.append({"id": alert_id_str, "error": "Not found"})
+                continue
 
-    # Single query with IN clause to avoid N+1
-    result = await db.execute(select(Alert).where(Alert.id.in_(alert_ids)))
-    alerts = {alert.id: alert for alert in result.scalars().all()}
+            alert_index = hits[0]["_index"]
+            old_status = hits[0]["_source"].get("status", "unknown")
 
-    for alert_id in alert_ids:
-        if alert_id in alerts:
-            try:
-                alert = alerts[alert_id]
-                old_status = alert.status
-                alert.status = data.status
+            # Update in OpenSearch
+            updated = alert_service.update_alert_status(
+                alerts_index=alert_index,
+                alert_id=alert_id_str,
+                status=data.status,
+                user_id=current_user.email,
+            )
+            if not updated:
+                failed.append({"id": alert_id_str, "error": "OpenSearch update failed"})
+                continue
 
-                await audit_log(db, current_user.id, "alert.bulk_status_update", "alert", str(alert_id),
-                              {"old_status": old_status, "new_status": alert.status},
-                              ip_address=get_client_ip(request))
-                success.append(str(alert_id))
-            except Exception as e:
-                logger.warning("Failed to update alert %s: %s", alert_id, e)
-                failed.append({"id": str(alert_id), "error": "Update failed"})
-        else:
-            failed.append({"id": str(alert_id), "error": "Not found"})
+            details: dict = {"old_status": old_status, "new_status": data.status}
+            if data.change_reason:
+                details["change_reason"] = data.change_reason
+            await audit_log(
+                db, current_user.id, "alert.bulk_status_update",
+                "alert", alert_id_str, details,
+                ip_address=get_client_ip(request),
+            )
+            success.append(alert_id_str)
+        except Exception as e:
+            logger.warning("Failed to update alert %s: %s", alert_id_str, e)
+            failed.append({"id": alert_id_str, "error": "Update failed"})
 
     await db.commit()
+
+    # Invalidate alert cache after bulk status change
+    try:
+        redis = await get_redis()
+        cache = AlertCache(redis)
+        await cache.invalidate()
+    except Exception:
+        pass  # Cache invalidation failure is non-critical
 
     return {"success": success, "failed": failed}
 
@@ -408,87 +489,57 @@ async def bulk_delete_alerts(
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
 ):
-    """Delete multiple alerts."""
-    from sqlalchemy import delete as sql_delete
-    from sqlalchemy import select
-
-    from app.models.alert import Alert
-
+    """Delete multiple alerts from OpenSearch."""
     success = []
     failed = []
 
-    # alert_ids are OpenSearch document IDs (SHA256 hex hashes, not UUIDs)
-    # Validate they are hex strings to prevent injection
+    # Validate alert IDs are hex strings to prevent injection
     alert_id_strs = []
     for aid in data.alert_ids:
-        # Validate hex string format (32 chars for truncated SHA256)
         if not all(c in '0123456789abcdefABCDEF-' for c in aid):
             failed.append({"id": aid, "error": "Invalid alert ID format"})
             continue
         alert_id_strs.append(aid)
 
-    # Query database by alert_id (OpenSearch document ID), not database id
-    result = await db.execute(select(Alert).where(Alert.alert_id.in_(alert_id_strs)))
-    alerts = {alert.alert_id: alert for alert in result.scalars().all()}
-
     for alert_id_str in alert_id_strs:
-        # Skip if already failed during validation
-        if any(f["id"] == alert_id_str for f in failed):
-            continue
-
         try:
-            # Check if alert exists in database
-            if alert_id_str in alerts:
-                alert = alerts[alert_id_str]
+            search_result = os_client.search(
+                index="chad-alerts-*",
+                body={"query": {"term": {"alert_id": alert_id_str}}},
+            )
+            hits = search_result.get("hits", {}).get("hits", [])
 
-                # Delete from OpenSearch first (fail fast)
-                # Use refresh=True to ensure immediate consistency for subsequent queries
-                try:
-                    os_client.delete(index=alert.alert_index, id=alert.alert_id, refresh=True)
-                except Exception as e:
-                    # Don't proceed with DB deletion if OpenSearch fails
-                    # Log sanitized alert ID (already validated as hex string)
-                    logger.warning("Failed to delete alert from OpenSearch: %s", str(e))
-                    failed.append({"id": alert_id_str, "error": "Failed to delete from OpenSearch"})
-                    continue
+            if not hits:
+                failed.append({"id": alert_id_str, "error": "Not found"})
+                continue
 
-                # Delete from database
-                await db.execute(sql_delete(Alert).where(Alert.alert_id == alert_id_str))
+            hit = hits[0]
+            os_client.delete(index=hit["_index"], id=hit["_id"], refresh=True)
 
-                await audit_log(db, current_user.id, "alert.bulk_delete", "alert", alert_id_str,
-                              {"title": alert.title}, ip_address=get_client_ip(request))
-                success.append(alert_id_str)
-            else:
-                # Alert not in database, try to delete from OpenSearch only
-                try:
-                    # Search for the alert in OpenSearch
-                    search_result = os_client.search(
-                        index="chad-alerts-*",
-                        body={"query": {"term": {"alert_id": alert_id_str}}}
-                    )
-                    hits = search_result.get("hits", {}).get("hits", [])
-
-                    if not hits:
-                        failed.append({"id": alert_id_str, "error": "Not found"})
-                        continue
-
-                    # Delete from OpenSearch
-                    # Use refresh=True to ensure immediate consistency for subsequent queries
-                    hit = hits[0]
-                    os_client.delete(index=hit["_index"], id=hit["_id"], refresh=True)
-
-                    await audit_log(db, current_user.id, "alert.bulk_delete", "alert", alert_id_str,
-                                  {"note": "Alert deleted from OpenSearch only (no DB record)"},
-                                  ip_address=get_client_ip(request))
-                    success.append(alert_id_str)
-                except Exception as e:
-                    logger.warning("Failed to delete alert %s: %s", alert_id_str, e)
-                    failed.append({"id": alert_id_str, "error": "Failed to delete alert"})
+            source = hit["_source"]
+            title = source.get("title", source.get("rule_title", "Unknown"))
+            delete_details: dict = {"title": title}
+            if data.change_reason:
+                delete_details["change_reason"] = data.change_reason
+            await audit_log(
+                db, current_user.id, "alert.bulk_delete", "alert",
+                alert_id_str, delete_details,
+                ip_address=get_client_ip(request),
+            )
+            success.append(alert_id_str)
         except Exception as e:
             logger.warning("Failed to delete alert %s: %s", alert_id_str, e)
             failed.append({"id": alert_id_str, "error": "Failed to delete alert"})
 
     await db.commit()
+
+    # Invalidate alert cache after bulk deletion
+    try:
+        redis = await get_redis()
+        cache = AlertCache(redis)
+        await cache.invalidate()
+    except Exception:
+        pass  # Cache invalidation failure is non-critical
 
     return {"success": success, "failed": failed}
 
