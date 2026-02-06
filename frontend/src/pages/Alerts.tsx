@@ -52,6 +52,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { SeverityPills } from '@/components/filters/SeverityPills'
+import { chunkedBulkOperation, type BulkProgress } from '@/lib/bulk-utils'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 const ALERT_TYPES = ['sigma', 'ioc', 'correlation'] as const
@@ -139,6 +140,7 @@ export default function AlertsPage() {
   const [selectAll, setSelectAll] = useState(false)
   const [isBulkUpdating, setIsBulkUpdating] = useState(false)
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState<BulkProgress | null>(null)
 
   // Export state
   const [showExportDialog, setShowExportDialog] = useState(false)
@@ -336,14 +338,19 @@ export default function AlertsPage() {
 
   const handleBulkStatusUpdate = async (newStatus: AlertStatus) => {
     if (selectedAlerts.size === 0) return
-
     setIsBulkUpdating(true)
+    setBulkProgress(null)
     setError('')
     try {
-      await alertsApi.bulkUpdateStatus({
-        alert_ids: Array.from(selectedAlerts),
-        status: newStatus
-      })
+      const ids = Array.from(selectedAlerts)
+      const result = await chunkedBulkOperation(
+        ids,
+        (batch) => alertsApi.bulkUpdateStatus({ alert_ids: batch, status: newStatus }),
+        (progress) => setBulkProgress(progress),
+      )
+      if (result.errors.length > 0) {
+        setError(`Updated ${result.totalProcessed} alerts. ${result.totalFailed} failed: ${result.errors[0]}`)
+      }
       setSelectedAlerts(new Set())
       setSelectAll(false)
       await loadData()
@@ -351,6 +358,7 @@ export default function AlertsPage() {
       setError(err instanceof Error ? err.message : 'Failed to update alerts')
     } finally {
       setIsBulkUpdating(false)
+      setBulkProgress(null)
     }
   }
 
@@ -381,12 +389,19 @@ export default function AlertsPage() {
   const confirmBulkDelete = async () => {
     if (selectedAlerts.size === 0) return
     setIsBulkUpdating(true)
+    setBulkProgress(null)
     setError('')
     setShowBulkDeleteConfirm(false)
     try {
-      await alertsApi.bulkDelete({
-        alert_ids: Array.from(selectedAlerts)
-      })
+      const ids = Array.from(selectedAlerts)
+      const result = await chunkedBulkOperation(
+        ids,
+        (batch) => alertsApi.bulkDelete({ alert_ids: batch }),
+        (progress) => setBulkProgress(progress),
+      )
+      if (result.errors.length > 0) {
+        setError(`Deleted ${result.totalProcessed} alerts. ${result.totalFailed} failed: ${result.errors[0]}`)
+      }
       setSelectedAlerts(new Set())
       setSelectAll(false)
       await loadData()
@@ -394,6 +409,7 @@ export default function AlertsPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete alerts')
     } finally {
       setIsBulkUpdating(false)
+      setBulkProgress(null)
     }
   }
 
@@ -688,7 +704,10 @@ export default function AlertsPage() {
       {selectedAlerts.size > 0 && (
         <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
           <div className="text-sm font-medium">
-            {selectedAlerts.size} alert{selectedAlerts.size !== 1 ? 's' : ''} selected
+            {bulkProgress
+              ? `Processing ${bulkProgress.completed}/${bulkProgress.total}...`
+              : `${selectedAlerts.size} alert${selectedAlerts.size !== 1 ? 's' : ''} selected`
+            }
           </div>
           <div className="flex gap-2">
             <Button
