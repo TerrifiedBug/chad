@@ -56,6 +56,7 @@ import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { MISPOriginPanel } from '@/components/MISPOriginPanel'
+import { PreDeploymentModal } from '@/components/rules/PreDeploymentModal'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -232,6 +233,10 @@ export default function RuleEditorPage() {
   const [showUndeployReason, setShowUndeployReason] = useState(false)
   const [deployReason, setDeployReason] = useState('')
 
+  // Pre-deployment validation state
+  const [showPreDeployment, setShowPreDeployment] = useState(false)
+  const [deploymentThreshold, setDeploymentThreshold] = useState(100)
+
   // Linked correlations state (shown in undeploy dialog)
   const [linkedCorrelations, setLinkedCorrelations] = useState<{ id: string; name: string; deployed: boolean }[]>([])
 
@@ -382,6 +387,14 @@ export default function RuleEditorPage() {
         } catch (err) {
           console.error('Failed to load activity data for user emails:', err)
         }
+      }
+
+      // Load deployment alert threshold
+      try {
+        const ruleSettings = await settingsApi.getRuleSettings()
+        setDeploymentThreshold(ruleSettings.deployment_alert_threshold)
+      } catch {
+        // Use default of 100
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule')
@@ -707,10 +720,14 @@ export default function RuleEditorPage() {
 
   const handleDeploy = () => {
     if (!id) return
+    setShowPreDeployment(true)
+  }
+
+  const handlePreDeploymentProceed = () => {
+    setShowPreDeployment(false)
     setDeployReason('')
     setShowDeployReason(true)
   }
-
   const handleDeployConfirm = async () => {
     if (!id || !deployReason.trim()) return
     setShowDeployReason(false)
@@ -2545,6 +2562,18 @@ export default function RuleEditorPage() {
         </DialogContent>
       </Dialog>
 
+
+      {/* Pre-Deployment Validation Modal */}
+      {id && (
+        <PreDeploymentModal
+          open={showPreDeployment}
+          onOpenChange={setShowPreDeployment}
+          ruleId={id}
+          ruleName={title || 'Untitled Rule'}
+          threshold={deploymentThreshold}
+          onProceed={handlePreDeploymentProceed}
+        />
+      )}
       {/* Deploy Reason Modal */}
       <Dialog open={showDeployReason} onOpenChange={setShowDeployReason}>
         <DialogContent>
