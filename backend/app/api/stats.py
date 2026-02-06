@@ -212,7 +212,7 @@ async def get_ioc_match_stats(
         if cached:
             return json.loads(cached)
     except Exception:
-        pass  # Redis unavailable — fall through to OpenSearch query
+        logger.debug("Redis cache read unavailable, falling through to OpenSearch")
 
     if not os_client:
         return empty_stats
@@ -225,7 +225,7 @@ async def get_ioc_match_stats(
         redis = await get_redis()
         await redis.setex(IOC_STATS_CACHE_KEY, IOC_STATS_TTL, json.dumps(result))
     except Exception:
-        pass  # Cache write failure is non-critical
+        logger.debug("Redis cache write failed, non-critical")
 
     return result
 

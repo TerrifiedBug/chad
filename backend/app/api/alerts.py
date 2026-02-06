@@ -466,7 +466,8 @@ async def bulk_update_alert_status(
             )
             success.append(alert_id_str)
         except Exception as e:
-            logger.warning("Failed to update alert %s: %s", alert_id_str, type(e).__name__)
+            safe_id = alert_id_str.replace("\n", "").replace("\r", "")
+            logger.warning("Failed to update alert %s: %s", safe_id, type(e).__name__)
             failed.append({"id": alert_id_str, "error": "Update failed"})
 
     await db.commit()
