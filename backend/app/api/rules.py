@@ -799,6 +799,7 @@ async def test_rule(
     request: RuleTestRequest,
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
     _: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """
     Test a Sigma rule against sample log data using OpenSearch percolate.
@@ -841,20 +842,37 @@ async def test_rule(
     # Create test index with percolator mapping
     # map_unmapped_fields_as_text allows queries to reference fields not in mapping
     try:
-        os_client.indices.create(
-            index=test_index,
-            body={
-                "settings": {
-                    "index.percolator.map_unmapped_fields_as_text": True,
-                },
-                "mappings": {
-                    "dynamic": True,
-                    "properties": {
-                        "query": {"type": "percolator"},
-                    }
+        # Build base mapping for test index
+        test_mapping = {
+            "settings": {
+                "index.percolator.map_unmapped_fields_as_text": True,
+            },
+            "mappings": {
+                "dynamic": True,
+                "properties": {
+                    "query": {"type": "percolator"},
                 }
             }
-        )
+        }
+
+        # Copy field mappings from source index if index_pattern_id provided
+        # This matches production behavior in percolator.py:86-93
+        if request.index_pattern_id:
+            try:
+                ip_result = await db.execute(
+                    select(IndexPattern).where(IndexPattern.id == request.index_pattern_id)
+                )
+                index_pattern = ip_result.scalar_one_or_none()
+                if index_pattern:
+                    source_mappings = os_client.indices.get_mapping(index=index_pattern.pattern)
+                    if source_mappings:
+                        first_index = list(source_mappings.keys())[0]
+                        source_props = source_mappings[first_index].get("mappings", {}).get("properties", {})
+                        test_mapping["mappings"]["properties"].update(source_props)
+            except Exception:
+                pass  # Fall back to dynamic mapping if source fetch fails
+
+        os_client.indices.create(index=test_index, body=test_mapping)
     except Exception as e:
         return RuleTestResponse(
             matches=[],
