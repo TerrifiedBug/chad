@@ -42,13 +42,15 @@ async def get_dashboard_stats(
     # Alert statistics from OpenSearch (if configured)
     alert_stats = {"total": 0, "by_status": {}, "by_severity": {}, "today": 0}
     recent_alerts: list = []
+    recent_ioc_alerts: list = []
     opensearch_available = False
 
     if os_client:
         try:
             cb = get_circuit_breaker("opensearch_alerts", failure_threshold=3, recovery_timeout=30.0)
             alert_stats = await cb.call(_get_alert_stats, os_client)
-            recent_alerts = _get_recent_alerts(os_client, limit=10)
+            recent_alerts = _get_recent_alerts(os_client, limit=10, exclude_ioc=True)
+            recent_ioc_alerts = _get_recent_alerts(os_client, limit=10, ioc_only=True)
             opensearch_available = True
         except Exception:
             logger.warning("Dashboard stats: OpenSearch query failed", exc_info=True)
@@ -66,6 +68,7 @@ async def get_dashboard_stats(
         "rules": rule_stats,
         "alerts": alert_stats,
         "recent_alerts": recent_alerts,
+        "recent_ioc_alerts": recent_ioc_alerts,
         "generated_at": datetime.utcnow().isoformat(),
         "opensearch_available": opensearch_available,
         "ioc_matches": ioc_stats,
@@ -105,6 +108,11 @@ def _get_alert_stats(os_client: OpenSearch) -> dict:
             index="chad-alerts-*",
             body={
                 "size": 0,
+                "query": {
+                    "bool": {
+                        "must_not": [{"term": {"rule_id": "ioc-detection"}}]
+                    }
+                },
                 "aggs": {
                     "by_status": {"terms": {"field": "status"}},
                     "by_severity": {"terms": {"field": "severity"}},
@@ -127,7 +135,10 @@ def _get_alert_stats(os_client: OpenSearch) -> dict:
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         today_result = os_client.count(
             index="chad-alerts-*",
-            body={"query": {"range": {"created_at": {"gte": today.isoformat()}}}},
+            body={"query": {"bool": {
+                "must": [{"range": {"created_at": {"gte": today.isoformat()}}}],
+                "must_not": [{"term": {"rule_id": "ioc-detection"}}]
+            }}},
         )
         today_count = today_result["count"]
 
@@ -146,23 +157,31 @@ def _get_alert_stats(os_client: OpenSearch) -> dict:
         }
 
 
-def _get_recent_alerts(os_client: OpenSearch, limit: int = 10) -> list:
-    """Get most recent alerts."""
+def _get_recent_alerts(
+    os_client: OpenSearch,
+    limit: int = 10,
+    exclude_ioc: bool = False,
+    ioc_only: bool = False,
+) -> list:
+    """Get most recent alerts, optionally filtered by IOC status."""
     try:
-        result = os_client.search(
-            index="chad-alerts-*",
-            body={
-                "size": limit,
-                "sort": [{"created_at": {"order": "desc"}}],
-                "_source": [
-                    "alert_id",
-                    "rule_title",
-                    "severity",
-                    "status",
-                    "created_at",
-                ],
-            },
-        )
+        body: dict = {
+            "size": limit,
+            "sort": [{"created_at": {"order": "desc"}}],
+            "_source": [
+                "alert_id",
+                "rule_title",
+                "severity",
+                "status",
+                "created_at",
+                "rule_id",
+            ],
+        }
+        if exclude_ioc:
+            body["query"] = {"bool": {"must_not": [{"term": {"rule_id": "ioc-detection"}}]}}
+        elif ioc_only:
+            body["query"] = {"bool": {"must": [{"term": {"rule_id": "ioc-detection"}}]}}
+        result = os_client.search(index="chad-alerts-*", body=body)
         return [hit["_source"] for hit in result["hits"]["hits"]]
     except Exception:
         return []
@@ -193,7 +212,7 @@ async def get_ioc_match_stats(
         if cached:
             return json.loads(cached)
     except Exception:
-        pass
+        pass  # Redis unavailable — fall through to OpenSearch query
 
     if not os_client:
         return empty_stats
@@ -206,7 +225,7 @@ async def get_ioc_match_stats(
         redis = await get_redis()
         await redis.setex(IOC_STATS_CACHE_KEY, IOC_STATS_TTL, json.dumps(result))
     except Exception:
-        pass
+        pass  # Cache write failure is non-critical
 
     return result
 

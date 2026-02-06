@@ -67,7 +67,7 @@ export const ALERT_STATUS_COLORS: Record<string, string> = {
   new: 'bg-blue-500 text-white',
   acknowledged: 'bg-yellow-500 text-black',
   resolved: 'bg-green-500 text-white',
-  false_positive: 'bg-gray-500 text-white',
+  false_positive: 'bg-gray-500 text-white whitespace-nowrap',
 }
 
 export const ALERT_STATUS_LABELS: Record<string, string> = {

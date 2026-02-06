@@ -198,10 +198,11 @@ async def get_alert_counts(
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     _: Annotated[User, Depends(get_current_user)],
     index_pattern: str = Query("chad-alerts-*", description="Alerts index pattern"),
+    exclude_ioc: bool = Query(False, description="Exclude IOC detection alerts from counts"),
 ):
     """Get alert counts by status and severity for dashboard."""
     alert_service = AlertService(os_client)
-    return alert_service.get_alert_counts(index_pattern=index_pattern)
+    return alert_service.get_alert_counts(index_pattern=index_pattern, exclude_ioc=exclude_ioc)
 
 
 @router.get("/{alert_id}", response_model=AlertResponse)
@@ -465,7 +466,7 @@ async def bulk_update_alert_status(
             )
             success.append(alert_id_str)
         except Exception as e:
-            logger.warning("Failed to update alert %s: %s", alert_id_str, e)
+            logger.warning("Failed to update alert %s: %s", alert_id_str, type(e).__name__)
             failed.append({"id": alert_id_str, "error": "Update failed"})
 
     await db.commit()

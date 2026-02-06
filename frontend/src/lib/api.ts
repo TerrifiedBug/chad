@@ -884,8 +884,10 @@ export const alertsApi = {
   },
   get: (id: string) =>
     api.get<Alert>(`/alerts/${id}`),
-  getCounts: () =>
-    api.get<AlertCountsResponse>('/alerts/counts'),
+  getCounts: (params?: { exclude_ioc?: boolean }) => {
+    const query = params?.exclude_ioc ? '?exclude_ioc=true' : ''
+    return api.get<AlertCountsResponse>(`/alerts/counts${query}`)
+  },
   updateStatus: (id: string, status: AlertStatus) =>
     api.patch<{ success: boolean; status: AlertStatus }>(`/alerts/${id}/status`, { status }),
   delete: (id: string, changeReason?: string) =>
@@ -949,6 +951,7 @@ export type RecentAlert = {
   severity: string
   status: string
   created_at: string
+  rule_id?: string
 }
 
 export type IOCMatchStats = {
@@ -972,6 +975,7 @@ export type DashboardStats = {
     today: number
   }
   recent_alerts: RecentAlert[]
+  recent_ioc_alerts?: RecentAlert[]
   generated_at: string
   ioc_matches?: IOCMatchStats
 }

@@ -192,7 +192,7 @@ export default function AlertsPage() {
           offset,
           exclude_ioc: true,
         }) as Promise<AlertListResponse | ClusteredAlertListResponse>,
-        alertsApi.getCounts(),
+        alertsApi.getCounts({ exclude_ioc: true }),
       ])
 
       // Handle clustered or non-clustered response

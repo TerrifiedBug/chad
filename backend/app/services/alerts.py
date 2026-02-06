@@ -179,12 +179,27 @@ def cluster_alerts(alerts: list[dict], settings: dict) -> list[dict]:
 
     window_minutes = settings.get("window_minutes", 60)
 
-    # Group alerts by rule_id only
+    # Group alerts by rule_id; for IOC alerts, also group by IOC value, type, and MISP event
+    # so that different IOC indicators don't collapse into one misleading cluster
     groups: dict[str, list[dict]] = defaultdict(list)
 
     for alert in alerts:
         rule_id = alert.get("rule_id", "")
-        groups[rule_id].append(alert)
+        if rule_id == "ioc-detection":
+            ioc_matches = alert.get("ioc_matches", [])
+            if ioc_matches:
+                ioc = ioc_matches[0]
+                group_key = "{}|{}|{}|{}".format(
+                    rule_id,
+                    ioc.get("value", ""),
+                    ioc.get("ioc_type", ""),
+                    ioc.get("misp_event_info", ""),
+                )
+            else:
+                group_key = rule_id
+        else:
+            group_key = rule_id
+        groups[group_key].append(alert)
 
     clusters = []
     window_delta = timedelta(minutes=window_minutes)
@@ -721,9 +736,10 @@ class AlertService:
     def get_alert_counts(
         self,
         index_pattern: str = "chad-alerts-*",
+        exclude_ioc: bool = False,
     ) -> dict[str, Any]:
         """Get alert counts by status and severity for dashboard."""
-        query = {
+        query: dict[str, Any] = {
             "size": 0,
             "aggs": {
                 "by_status": {
@@ -741,6 +757,15 @@ class AlertService:
                 }
             }
         }
+
+        if exclude_ioc:
+            query["query"] = {
+                "bool": {
+                    "must_not": [
+                        {"term": {"rule_id": "ioc-detection"}}
+                    ]
+                }
+            }
 
         try:
             result = self.client.search(index=index_pattern, body=query)
