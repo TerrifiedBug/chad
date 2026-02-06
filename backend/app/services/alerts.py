@@ -8,10 +8,11 @@ Alerts are stored in OpenSearch with the following structure:
 
 import hashlib
 import json
+import logging
 import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from dateutil import parser as date_parser
@@ -21,6 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.alert import Alert
 from app.models.rule_exception import ExceptionOperator
 from app.services.system_log import LogCategory, system_log_service
+
+if TYPE_CHECKING:
+    from app.services.alert_cache import AlertCache
+
+logger = logging.getLogger(__name__)
 
 
 def generate_deterministic_alert_id(rule_id: str, log_document: dict) -> str:
@@ -479,9 +485,6 @@ class AlertService:
             bulk_body.append(alert_doc)
 
         if bulk_body:
-            import logging
-            logger = logging.getLogger(__name__)
-
             result = self.client.bulk(body=bulk_body, refresh=False)
             if result.get("errors"):
                 logger.warning("Some bulk alert writes failed: %s", result)
@@ -497,6 +500,7 @@ class AlertService:
         owner_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        exclude_ioc: bool = False,
     ) -> dict[str, Any]:
         """Query alerts with filters."""
         must = []
@@ -510,6 +514,8 @@ class AlertService:
         if owner_id:
             # Use .keyword suffix for exact matching (dynamic mapping creates text + keyword multifield)
             must.append({"term": {"owner_id.keyword": owner_id}})
+        if exclude_ioc:
+            must.append({"bool": {"must_not": [{"term": {"rule_id": "ioc-detection"}}]}})
 
         query = {
             "query": {"bool": {"must": must}} if must else {"match_all": {}},
@@ -535,9 +541,60 @@ class AlertService:
                 "total": result["hits"]["total"]["value"],
                 "alerts": alerts,
             }
-        except Exception:
-            # Index may not exist yet
-            return {"total": 0, "alerts": []}
+        except Exception as e:
+            # Only swallow "index not found" errors, re-raise everything else
+            error_str = str(e)
+            if "index_not_found_exception" in error_str or "no such index" in error_str.lower():
+                return {"total": 0, "alerts": []}
+            raise
+
+    async def get_alerts_cached(
+        self,
+        cache: "AlertCache",
+        index_pattern: str = "chad-alerts-*",
+        status: str | None = None,
+        severity: str | None = None,
+        rule_id: str | None = None,
+        owner_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        exclude_ioc: bool = False,
+    ) -> dict[str, Any]:
+        """Query alerts with Redis cache fallback.
+
+        Tries OpenSearch first, falls back to cache on failure.
+        Raises OpenSearchUnavailableError if both fail.
+        """
+        from app.core.exceptions import OpenSearchUnavailableError
+
+        cache_kwargs = dict(
+            status=status, severity=severity, rule_id=rule_id,
+            owner_id=owner_id, index_pattern=index_pattern,
+            limit=limit, offset=offset, exclude_ioc=exclude_ioc,
+        )
+
+        try:
+            result = self.get_alerts(
+                index_pattern=index_pattern,
+                status=status, severity=severity,
+                rule_id=rule_id, owner_id=owner_id,
+                limit=limit, offset=offset,
+                exclude_ioc=exclude_ioc,
+            )
+            # Cache the fresh result
+            await cache.set_alerts(result, **cache_kwargs)
+            result["cached"] = False
+            result["opensearch_available"] = True
+            return result
+        except Exception as os_error:
+            logger.warning("OpenSearch query failed: %s", os_error)
+            # Try cache fallback
+            cached = await cache.get_alerts(**cache_kwargs)
+            if cached is not None:
+                cached["cached"] = True
+                cached["opensearch_available"] = False
+                return cached
+            raise OpenSearchUnavailableError(str(os_error))
 
     def get_alert(
         self,
@@ -707,8 +764,7 @@ class AlertService:
 
                 return True
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).error("Failed to delete alert from OpenSearch: %s", e)
+                logger.error("Failed to delete alert from OpenSearch: %s", e)
                 await system_log_service.log_error(
                     db,
                     category=LogCategory.ALERTS,
@@ -743,8 +799,7 @@ class AlertService:
                 refresh=True
             )
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning("Failed to delete alert from OpenSearch: %s", e)
+            logger.warning("Failed to delete alert from OpenSearch: %s", e)
             await system_log_service.log_warning(
                 db,
                 category=LogCategory.ALERTS,
