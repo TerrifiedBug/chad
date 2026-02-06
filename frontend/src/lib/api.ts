@@ -262,6 +262,11 @@ export const settingsApi = {
     api.get<HealthSettings>('/health/settings'),
   updateHealthSettings: (data: Partial<HealthSettings>) =>
     api.put<HealthSettings>('/health/settings', data),
+  // Rule settings
+  getRuleSettings: () =>
+    api.get<{ deployment_alert_threshold: number }>('/rules/settings'),
+  updateRuleSettings: (data: { deployment_alert_threshold: number }) =>
+    api.put<{ deployment_alert_threshold: number }>('/rules/settings', data),
 }
 
 // Exception types

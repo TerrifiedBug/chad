@@ -54,6 +54,7 @@ from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
 from app.services.rule_testing import run_historical_test
 from app.services.sigma import sigma_service
+from app.services.settings import get_setting, set_setting
 from app.utils.request import get_client_ip
 
 
@@ -282,6 +283,50 @@ async def check_title_availability(
         )
 
     return TitleCheckResponse(available=True)
+
+
+# --- Rule Settings ---
+
+DEFAULT_DEPLOYMENT_ALERT_THRESHOLD = 100
+
+
+class RuleSettingsResponse(BaseModel):
+    deployment_alert_threshold: int
+
+
+class RuleSettingsUpdate(BaseModel):
+    deployment_alert_threshold: int = Field(default=100, ge=1, le=100000)
+
+
+@router.get("/settings", response_model=RuleSettingsResponse)
+async def get_rule_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Get rule-related settings."""
+    setting = await get_setting(db, "rule_settings")
+    data = setting or {}
+    return RuleSettingsResponse(
+        deployment_alert_threshold=data.get("deployment_alert_threshold", DEFAULT_DEPLOYMENT_ALERT_THRESHOLD),
+    )
+
+
+@router.put("/settings", response_model=RuleSettingsResponse)
+async def update_rule_settings(
+    data: RuleSettingsUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_permission_dep("manage_settings"))],
+):
+    """Update rule-related settings."""
+    current = await get_setting(db, "rule_settings")
+    settings_data = current or {}
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        settings_data[key] = value
+    await set_setting(db, "rule_settings", settings_data)
+    return RuleSettingsResponse(
+        deployment_alert_threshold=settings_data.get("deployment_alert_threshold", DEFAULT_DEPLOYMENT_ALERT_THRESHOLD),
+    )
 
 
 @router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
