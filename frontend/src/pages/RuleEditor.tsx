@@ -518,7 +518,7 @@ export default function RuleEditorPage() {
         return
       }
 
-      const result = await rulesApi.test(yamlContent, logs)
+      const result = await rulesApi.test(yamlContent, logs, indexPatternId || undefined)
       if (result.errors.length > 0) {
         setValidationErrors(result.errors)
         setIsValid(false)

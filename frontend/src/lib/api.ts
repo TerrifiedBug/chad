@@ -491,8 +491,8 @@ export const rulesApi = {
     api.delete(`/rules/${id}`, changeReason ? { change_reason: changeReason } : undefined),
   validate: (yaml_content: string, index_pattern_id?: string) =>
     api.post<RuleValidateResponse>('/rules/validate', { yaml_content, index_pattern_id }),
-  test: (yaml_content: string, sample_logs: Record<string, unknown>[]) =>
-    api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs }),
+  test: (yaml_content: string, sample_logs: Record<string, unknown>[], index_pattern_id?: string) =>
+    api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs, index_pattern_id: index_pattern_id || null }),
   deploy: async (id: string, changeReason: string): Promise<RuleDeployResponse> => {
     const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
       method: 'POST',
