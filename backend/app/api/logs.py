@@ -880,10 +880,10 @@ async def receive_logs_queue(
     queue_settings = await get_queue_settings(db)
 
     # Get Redis client and queue service
-    from app.core.redis import get_redis
+    from app.core.redis import get_redis_queue
     from app.services.log_queue import LogQueueService
 
-    redis = await get_redis()
+    redis = await get_redis_queue()
     queue_service = LogQueueService(redis, max_queue_size=queue_settings.max_queue_size)
 
     # Check backpressure

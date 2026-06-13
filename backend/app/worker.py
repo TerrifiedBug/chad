@@ -11,7 +11,7 @@ import time
 from sqlalchemy import select
 
 from app.core.metrics import record_batch_failure
-from app.core.redis import close_redis, get_redis
+from app.core.redis import close_redis, get_redis_queue
 from app.db.session import async_session_maker
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
@@ -88,7 +88,7 @@ class Worker:
 
                 if age_seconds > queue_settings.message_ttl_seconds:
                     # Move to dead letter
-                    redis = await get_redis()
+                    redis = await get_redis_queue()
                     await redis.xadd(
                         "chad:logs:dead-letter",
                         {
@@ -175,7 +175,7 @@ class Worker:
         avg_latency_ms = int((elapsed_seconds * 1000) / logs_received) if logs_received > 0 else 0
 
         # Get current queue depth
-        redis = await get_redis()
+        redis = await get_redis_queue()
         stream_key = f"chad:logs:{index_suffix}"
         try:
             queue_depth = await redis.xlen(stream_key)
@@ -252,7 +252,7 @@ class Worker:
         """Main worker loop."""
         logger.info("Worker %s starting", self.consumer_name)
 
-        redis = await get_redis()
+        redis = await get_redis_queue()
 
         # Get OpenSearch client from database settings
         async with async_session_maker() as db_session:

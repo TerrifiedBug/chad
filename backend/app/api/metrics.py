@@ -8,7 +8,7 @@ from fastapi import APIRouter, Header, HTTPException, status
 from fastapi.responses import PlainTextResponse
 
 from app.core.config import settings
-from app.core.redis import get_redis
+from app.core.redis import get_redis_queue
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ async def metrics(authorization: Annotated[str | None, Header()] = None):
     lines.append("# TYPE chad_redis_connected gauge")
 
     try:
-        redis = await get_redis()
+        redis = await get_redis_queue()
 
         # Test connection
         await redis.ping()
