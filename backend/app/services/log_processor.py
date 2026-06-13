@@ -15,12 +15,17 @@ from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule
 from app.models.rule_exception import RuleException
 from app.services.alert_pubsub import publish_alert
-from app.services.alerts import AlertService, should_suppress_alert
+from app.services.alerts import (
+    AlertService,
+    generate_deterministic_alert_id,
+    should_suppress_alert,
+)
 from app.services.batch_percolate import batch_percolate_logs
 from app.services.correlation import check_correlation
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
+from app.services.threshold import check_threshold
 from app.services.ti.ioc_detector import IOCDetector
 
 logger = logging.getLogger(__name__)
@@ -85,6 +90,20 @@ class LogProcessor:
 
         return cache[rule_id]
 
+    async def _get_rule(self, db: AsyncSession, rule_id: str, cache: dict):
+        """Load a rule (for its threshold config) by id, with per-batch caching."""
+        if rule_id in cache:
+            return cache[rule_id]
+        rule = None
+        try:
+            result = await db.execute(select(Rule).where(Rule.id == UUID(rule_id)))
+            rule = result.scalar_one_or_none()
+        except (ValueError, Exception) as e:
+            logger.debug("Failed to load rule %s for threshold check: %s", rule_id, e)
+            rule = None
+        cache[rule_id] = rule
+        return rule
+
     async def process_batch(
         self,
         db: AsyncSession,
@@ -123,6 +142,8 @@ class LogProcessor:
 
         # Cache for rule exceptions (avoid repeated DB queries)
         rule_exceptions_cache: dict[str, list[dict]] = {}
+        # Cache for rule objects (threshold config lookup), per batch
+        rule_cache: dict = {}
 
         # IOC detection for Push Mode (check all logs against Redis IOC cache)
         ioc_matches_by_log: dict[int, list[dict]] = {}
@@ -190,6 +211,16 @@ class LogProcessor:
                 if should_suppress_alert(log, exceptions):
                     suppressed_count += 1
                     continue
+
+                # Threshold gating for count-based rules (push mode). The percolator
+                # match doesn't carry threshold config, so load the rule (cached).
+                # For threshold rules, only alert once the count is reached within
+                # the window; non-threshold rules pass through.
+                rule_obj = await self._get_rule(db, rule_id, rule_cache)
+                if rule_obj is not None and rule_obj.threshold_enabled:
+                    log_ref = generate_deterministic_alert_id(rule_id, log)
+                    if not await check_threshold(db, rule_obj, log, log_ref):
+                        continue
 
                 # Enrich log with GeoIP/TI data if configured
                 if index_pattern:

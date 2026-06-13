@@ -19,6 +19,7 @@ from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
 from app.services.system_log import LogCategory, system_log_service
+from app.services.threshold import check_threshold
 from app.services.ti.ioc_index import INDICATOR_INDEX_NAME
 from app.services.ti.ioc_query_builder import IOCQueryBuilder
 
@@ -813,6 +814,14 @@ class PullDetector:
                             # Check if alert should be suppressed by exception
                             if should_suppress_alert(log_document, exceptions):
                                 suppressed_count += 1
+                                continue
+
+                            # Threshold gating: for threshold-enabled rules this
+                            # records the match and only returns True once the
+                            # configured count is reached within the window, so a
+                            # single event no longer fires a "N in M minutes" rule.
+                            # Non-threshold rules pass through immediately.
+                            if not await check_threshold(db, rule, log_document, doc_id):
                                 continue
 
                             # Enrich log with GeoIP/TI data if configured

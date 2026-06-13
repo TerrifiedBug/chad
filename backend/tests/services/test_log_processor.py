@@ -108,6 +108,52 @@ class TestLogProcessorDuplicateAlertPrevention:
             assert call_kwargs["log_document"]["threat_intel"]["has_ioc_match"] is True
 
     @pytest.mark.asyncio
+    async def test_threshold_rule_does_not_alert_until_met(
+        self, mock_os_client, mock_db_session_factory, mock_db
+    ):
+        """A threshold-enabled rule must not alert while check_threshold returns
+        False (count not yet reached) - previously every match alerted."""
+        processor = LogProcessor(mock_os_client, mock_db_session_factory)
+        processor.ioc_detector.detect_iocs = AsyncMock(return_value=[])
+        processor.alert_service.create_alert = MagicMock()
+
+        mock_index_pattern = MagicMock()
+        mock_index_pattern.ioc_detection_enabled = False
+        mock_index_pattern.ioc_field_mappings = {}
+
+        threshold_rule = MagicMock()
+        threshold_rule.threshold_enabled = True
+
+        logs = [{"message": "failed login"}]
+
+        with patch.object(processor, '_get_index_pattern', new_callable=AsyncMock) as mock_get_ip, \
+             patch.object(processor, '_get_rule', new_callable=AsyncMock) as mock_get_rule, \
+             patch('app.services.log_processor.batch_percolate_logs') as mock_percolate, \
+             patch('app.services.log_processor.get_app_url', new_callable=AsyncMock) as mock_url, \
+             patch('app.services.log_processor.enrich_alert', new_callable=AsyncMock) as mock_enrich, \
+             patch('app.services.log_processor.should_suppress_alert') as mock_suppress, \
+             patch('app.services.log_processor.publish_alert', new_callable=AsyncMock), \
+             patch('app.services.log_processor.send_alert_notification', new_callable=AsyncMock), \
+             patch('app.services.log_processor.check_correlation', new_callable=AsyncMock), \
+             patch('app.services.log_processor.check_threshold', new_callable=AsyncMock) as mock_threshold:
+
+            mock_get_ip.return_value = mock_index_pattern
+            mock_get_rule.return_value = threshold_rule
+            mock_percolate.return_value = {
+                0: [{"rule_id": str(uuid4()), "rule_title": "Failed Logins", "severity": "high", "tags": [], "enabled": True}]
+            }
+            mock_url.return_value = None
+            mock_enrich.side_effect = lambda db, doc, ip: doc
+            mock_suppress.return_value = False
+            mock_threshold.return_value = False  # threshold not yet met
+
+            result = await processor.process_batch(mock_db, "test-index", logs)
+
+            mock_threshold.assert_awaited()
+            processor.alert_service.create_alert.assert_not_called()
+            assert result["alerts_created"] == 0
+
+    @pytest.mark.asyncio
     async def test_ioc_only_alert_when_no_sigma_match(
         self, mock_os_client, mock_db_session_factory, mock_db
     ):
