@@ -360,6 +360,8 @@ async def receive_logs(
     alerts_created = []
     # Sigma alerts whose slow TI/webhook enrichment is deferred to the background.
     deferred_enrichment: list[dict] = []
+    # IOC-only alerts accumulated across the batch, bulk-written once after the loop.
+    ioc_only_pending: list[dict] = []
 
     # Health metrics tracking
     logs_errored = 0
@@ -623,30 +625,45 @@ async def receive_logs(
                 logs_errored += 1
                 continue
 
-        # Create IOC-only alerts for logs with IOC matches but no behavioral matches
+        # Accumulate IOC-only alerts (logs with IOC matches but no behavioral
+        # matches). Bulk-written once after the loop so an IOC-feed match storm
+        # is a single OpenSearch write instead of one index() call per match.
         if ioc_matches and not matches:
             for ioc_match in ioc_matches:
-                try:
-                    ioc_alert = await asyncio.to_thread(
-                        alert_service.create_alert,
-                        alerts_index=alerts_index,
-                        rule_id="ioc-detection",
-                        rule_title=f"IOC Match: {ioc_match.ioc_type.value}",
-                        severity=_map_threat_level_to_severity(ioc_match.threat_level),
-                        tags=["ioc-match", f"misp:{ioc_match.misp_event_id}"] + ioc_match.tags,
-                        log_document={
-                            **log,
-                            "threat_intel": {
-                                "ioc_matches": [ioc_match.to_dict()],
-                                "has_ioc_match": True,
-                            },
+                ioc_only_pending.append({
+                    "rule_id": "ioc-detection",
+                    "rule_title": f"IOC Match: {ioc_match.ioc_type.value}",
+                    "severity": _map_threat_level_to_severity(ioc_match.threat_level),
+                    "tags": ["ioc-match", f"misp:{ioc_match.misp_event_id}"] + ioc_match.tags,
+                    "log_document": {
+                        **log,
+                        "threat_intel": {
+                            "ioc_matches": [ioc_match.to_dict()],
+                            "has_ioc_match": True,
                         },
-                        ensure_index=False,
-                    )
-                    alerts_created.append(ioc_alert)
-                    total_matches += 1
-                except Exception as e:
-                    logger.error("Failed to create IOC alert: %s", e)
+                    },
+                })
+
+    # Bulk-write the accumulated IOC-only alerts in a single OpenSearch call.
+    if ioc_only_pending:
+        try:
+            ioc_ids = await asyncio.to_thread(
+                alert_service.bulk_create_alerts,
+                alerts_index,
+                ioc_only_pending,
+                False,  # index already ensured once above
+            )
+            for data, aid in zip(ioc_only_pending, ioc_ids):
+                alerts_created.append({
+                    "alert_id": aid,
+                    "rule_id": "ioc-detection",
+                    "rule_title": data["rule_title"],
+                    "severity": data["severity"],
+                    "log_document": data["log_document"],
+                })
+                total_matches += 1
+        except Exception as e:
+            logger.error("Failed to bulk-create IOC alerts: %s", e)
 
     # Dispatch notifications in the BACKGROUND so external webhook/Jira fan-out
     # never blocks the ingest response (a slow destination must not back-pressure

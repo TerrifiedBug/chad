@@ -1,12 +1,54 @@
 """Tests for alert service exception matching."""
 
 
+from unittest.mock import MagicMock
+
 from app.models.rule_exception import ExceptionOperator
 from app.services.alerts import (
+    AlertService,
     check_exception_match,
     get_nested_value,
     should_suppress_alert,
 )
+
+
+class TestBulkCreateAlerts:
+    """Tests for AlertService.bulk_create_alerts."""
+
+    def test_empty_returns_no_ids_and_no_call(self):
+        client = MagicMock()
+        assert AlertService(client).bulk_create_alerts("idx", []) == []
+        client.bulk.assert_not_called()
+
+    def test_single_bulk_call_returns_ids(self):
+        client = MagicMock()
+        client.bulk.return_value = {"errors": False}
+        alerts = [
+            {"rule_id": "r1", "rule_title": "T1", "severity": "high", "log_document": {"a": 1}},
+            {"rule_id": "r2", "rule_title": "T2", "severity": "low", "log_document": {"b": 2}},
+        ]
+        ids = AlertService(client).bulk_create_alerts("chad-alerts-x", alerts, ensure_index=False)
+
+        assert len(ids) == 2
+        client.bulk.assert_called_once()
+        # ensure_index=False must skip the index existence round trip.
+        client.indices.exists.assert_not_called()
+
+    def test_ti_enrichment_lifted_to_top_level(self):
+        client = MagicMock()
+        client.bulk.return_value = {"errors": False}
+        alerts = [{
+            "rule_id": "r1", "rule_title": "T1", "severity": "high",
+            "log_document": {"a": 1, "ti_enrichment": {"indicators": ["x"]}},
+        }]
+        AlertService(client).bulk_create_alerts("idx", alerts, ensure_index=False)
+
+        _, kwargs = client.bulk.call_args
+        body = kwargs.get("body") or client.bulk.call_args[0][0]
+        # body = [action, doc]; doc carries ti_enrichment at top level, not in log_document
+        doc = body[1]
+        assert doc["ti_enrichment"] == {"indicators": ["x"]}
+        assert "ti_enrichment" not in doc["log_document"]
 
 
 class TestGetNestedValue:
