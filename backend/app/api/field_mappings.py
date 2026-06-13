@@ -312,6 +312,7 @@ async def update_field_mapping(
             )
 
     # Increment version if target_field changed
+    affected_rules: list = []
     if data.target_field and data.target_field != mapping.target_field:
         # lgtm[py/log-injection] Field names are schema metadata, not sensitive data
         import logging
@@ -364,6 +365,35 @@ async def update_field_mapping(
 
     if updated_mapping is None:
         raise HTTPException(status_code=404, detail="Mapping not found")
+
+    # Redeploy affected rules so their live percolators are recompiled with the
+    # new mapping. Without this, deployed detections keep matching on the stale
+    # target field (silent missed detections). Runs after update_mapping commits
+    # so resolve_mappings() inside the redeploy sees the new value. Per-rule
+    # failures are logged but do not fail the mapping change.
+    if affected_rules and os_client and mapping.index_pattern_id:
+        from app.services.rule_redeploy import redeploy_rule_to_percolator
+
+        ip_result = await db.execute(
+            select(IndexPattern).where(IndexPattern.id == mapping.index_pattern_id)
+        )
+        redeploy_ip = ip_result.scalar_one_or_none()
+        if redeploy_ip is not None:
+            redeploy_failures = []
+            for affected_rule in affected_rules:
+                outcome = await redeploy_rule_to_percolator(
+                    db, os_client, affected_rule, redeploy_ip
+                )
+                if outcome.get("status") == "failed":
+                    redeploy_failures.append(outcome["rule_id"])
+            if redeploy_failures:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Field mapping %s: %d of %d affected rules failed to redeploy",
+                    mapping_id,
+                    len(redeploy_failures),
+                    len(affected_rules),
+                )
 
     audit_data = {
         "changes": data.model_dump(exclude_none=True),
