@@ -447,3 +447,102 @@ async def test_field_mapping_change_does_not_redeploy_when_gated(
     assert resp.status_code == 200, resp.text
     # The bypass is closed: no silent percolator redeploy under dual-control.
     redeploy_mock.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# Capstone E2E: real maker->checker batch flow through the real apply path
+# (pull-mode so no OpenSearch needed; get_index_fields stubbed for introspection
+#  only). No mock of the deploy service — exercises real translate/tracking/audit.
+# --------------------------------------------------------------------------- #
+_VALID_YAML = (
+    "title: {title}\nlogsource:\n  category: test\n"
+    "detection:\n  selection:\n    fieldA: value\n  condition: selection\n"
+)
+
+
+async def _make_pull_rule(session, ip, user, title):
+    import uuid as _uuid
+
+    rule = Rule(id=_uuid.uuid4(), title=title, yaml_content=_VALID_YAML.format(title=title),
+                severity="low", status=RuleStatus.UNDEPLOYED, source=RuleSource.USER,
+                index_pattern_id=ip.id, created_by=user.id)
+    session.add(rule)
+    await session.flush()
+    session.add(RuleVersion(rule_id=rule.id, version_number=1,
+                            yaml_content=_VALID_YAML.format(title=title),
+                            changed_by=user.id, change_reason="init"))
+    await session.commit()
+    await session.refresh(rule)
+    return rule
+
+
+@pytest.mark.asyncio
+async def test_e2e_batch_maker_checker_flow(client, test_session, admin_user, monkeypatch):
+    import uuid as _uuid
+
+    from app.models.audit_log import AuditLog
+    from app.models.index_pattern import IndexPattern
+
+    await _enable_gate(test_session)
+    await _seed_opensearch(test_session)
+    monkeypatch.setattr("app.services.deployment.get_index_fields", lambda *a, **k: ["fieldA"])
+
+    ip = IndexPattern(id=_uuid.uuid4(), name="e2e-pull", pattern="e2e-*",
+                      percolator_index=".perc-e2e", mode="pull")
+    test_session.add(ip)
+    await test_session.flush()
+    r1 = await _make_pull_rule(test_session, ip, admin_user, "E2E One")
+    r2 = await _make_pull_rule(test_session, ip, admin_user, "E2E Two")
+
+    maker = admin_user  # has approve_deployments but cannot approve own request
+    checker = await _make_user(test_session, UserRole.ADMIN, "checker-e2e@example.com")
+
+    # 1. Maker deploys a batch via the gated bulk path -> 202 + one batch request.
+    gate_resp = await client.post(
+        "/api/rules/bulk/deploy",
+        json={"rule_ids": [str(r1.id), str(r2.id)], "change_reason": "ship batch"},
+        headers=_auth(maker),
+    )
+    assert gate_resp.status_code == 202, gate_resp.text
+    rid = gate_resp.json()["deployment_request_id"]
+
+    # 2. Maker cannot approve their own request (self-review, server-side).
+    self_resp = await client.post(
+        f"/api/deployment-requests/{rid}/approve", json={}, headers=_auth(maker)
+    )
+    assert self_resp.status_code == 403
+
+    # 3. Checker approves -> REAL apply (no mock) -> APPLIED, both rules DEPLOYED.
+    appr = await client.post(
+        f"/api/deployment-requests/{rid}/approve", json={}, headers=_auth(checker)
+    )
+    assert appr.status_code == 200, appr.text
+    body = appr.json()
+    assert body["status"] == DeploymentRequestStatus.APPLIED.value
+    assert {i["apply_status"] for i in body["items"]} == {"ok"}
+    assert body["reviewed_by"] == str(checker.id)
+
+    # Fresh column-select reflects the real apply (bypasses the stale identity map).
+    rows = (await test_session.execute(
+        select(Rule.status, Rule.deployed_version).where(Rule.id.in_([r1.id, r2.id]))
+    )).all()
+    assert len(rows) == 2
+    assert all(s == RuleStatus.DEPLOYED and dv == 1 for s, dv in rows)
+
+    # 4. Audit shows the maker filed and the checker approved/applied.
+    actions = (await test_session.execute(select(AuditLog.action, AuditLog.user_id))).all()
+    by_action = {a: u for a, u in actions}
+    assert by_action.get("deployment_request.created") == maker.id
+    assert by_action.get("deployment_request.approved") == checker.id
+    assert by_action.get("deployment_request.applied") == checker.id
+
+    # 5. A second request can be rejected with a reason.
+    rid2 = await _create_request(client, r1, maker)
+    rej = await client.post(
+        f"/api/deployment-requests/{rid2}/reject",
+        json={"review_note": "not now"},
+        headers=_auth(checker),
+    )
+    assert rej.status_code == 200
+    assert rej.json()["status"] == DeploymentRequestStatus.REJECTED.value
+    assert rej.json()["review_note"] == "not now"
