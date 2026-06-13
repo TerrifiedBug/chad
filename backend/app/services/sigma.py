@@ -153,18 +153,20 @@ class SigmaService:
         else:
             backend = self._backend
 
-        # Convert to OpenSearch query
-        queries = backend.convert(collection)
+        # Convert to OpenSearch query using the backend's structured DSL output
+        # (dsl_lucene) rather than hand-wrapping the raw Lucene string. This
+        # produces a proper {"query": {"bool": {"must": [{"query_string": {...,
+        # "analyze_wildcard": true}}]}}} document: analyze_wildcard fixes the
+        # common silent-miss where wildcard terms weren't analyzed, and the
+        # structured form is what pySigma serializes natively.
+        queries = backend.convert(collection, output_format="dsl_lucene")
 
         if not queries:
             return {"query": {"match_none": {}}}
 
-        # Backend returns list of query strings, we need the DSL
-        # The OpensearchLuceneBackend returns Lucene query strings
-        # We wrap it in a query_string query for percolator use
-        query_string = queries[0]
-
-        return {"query": {"query_string": {"query": query_string}}}
+        # dsl_lucene returns a list of full DSL dicts already shaped as
+        # {"query": {...}} — return the first directly.
+        return queries[0]
 
     def extract_fields(self, rule: SigmaRule) -> set[str]:
         """
