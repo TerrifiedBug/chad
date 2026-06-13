@@ -106,6 +106,6 @@ class TestMetricsTokenGate:
         mock_redis.ping = AsyncMock()
         mock_redis.scan = AsyncMock(return_value=(0, []))
         mock_redis.xlen = AsyncMock(return_value=0)
-        with patch("app.api.metrics.get_redis", return_value=mock_redis):
+        with patch("app.api.metrics.get_redis_queue", return_value=mock_redis):
             result = await metrics_mod.metrics(authorization="Bearer s3cret")
         assert "chad_redis_connected 1" in result

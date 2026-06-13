@@ -44,7 +44,11 @@ from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule
 from app.models.rule_exception import RuleException
-from app.services.alerts import AlertService, should_suppress_alert
+from app.services.alerts import (
+    AlertService,
+    generate_deterministic_alert_id,
+    should_suppress_alert,
+)
 from app.services.batch_percolate import batch_percolate_logs
 from app.services.correlation import check_correlation
 from app.services.enrichment import enrich_alert
@@ -360,6 +364,9 @@ async def receive_logs(
     alerts_created = []
     # Sigma alerts whose slow TI/webhook enrichment is deferred to the background.
     deferred_enrichment: list[dict] = []
+    # Primary sigma alerts accumulated across the batch, bulk-written once after
+    # the loop (correlation/broadcast below run inline against the deterministic id).
+    primary_pending: list[dict] = []
     # IOC-only alerts accumulated across the batch, bulk-written once after the loop.
     ioc_only_pending: list[dict] = []
 
@@ -478,20 +485,34 @@ async def receive_logs(
                         "has_ioc_match": True,
                     }
 
-                # Create alert (offloaded — sync OpenSearch index() call)
-                alert = await asyncio.to_thread(
-                    alert_service.create_alert,
-                    alerts_index=alerts_index,
-                    rule_id=rule_id,
-                    rule_title=match["rule_title"],
-                    severity=match["severity"],
-                    tags=match.get("tags", []),
-                    log_document=enriched_log,
-                    ensure_index=False,
-                )
+                # Build the alert inline with its deterministic id and defer the
+                # OpenSearch write to a single bulk_create_alerts after the loop.
+                # Correlation (DB-state keyed by id) and WebSocket broadcast below
+                # don't read the doc back, so they can run before the bulk write.
+                now_iso = datetime.now(UTC).isoformat()
+                alert_id = generate_deterministic_alert_id(rule_id, enriched_log)
+                alert = {
+                    "alert_id": alert_id,
+                    "rule_id": rule_id,
+                    "rule_title": match["rule_title"],
+                    "severity": match["severity"],
+                    "tags": match.get("tags", []),
+                    "status": "new",
+                    "log_document": enriched_log,
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                }
+                primary_pending.append({
+                    "alert_id": alert_id,
+                    "rule_id": rule_id,
+                    "rule_title": match["rule_title"],
+                    "severity": match["severity"],
+                    "tags": match.get("tags", []),
+                    "log_document": enriched_log,
+                })
                 alerts_created.append(alert)
                 deferred_enrichment.append({
-                    "alert_id": alert["alert_id"],
+                    "alert_id": alert_id,
                     "alerts_index": alerts_index,
                     "log_document": enriched_log,
                     "rule_id": rule_id,
@@ -657,6 +678,20 @@ async def receive_logs(
                         },
                     },
                 })
+
+    # Bulk-write the accumulated primary sigma alerts in a single OpenSearch call
+    # (instead of one index() per match). IDs are pre-set so they match what
+    # correlation/broadcast already referenced.
+    if primary_pending:
+        try:
+            await asyncio.to_thread(
+                alert_service.bulk_create_alerts,
+                alerts_index,
+                primary_pending,
+                False,  # index already ensured once above
+            )
+        except Exception as e:
+            logger.error("Failed to bulk-create primary alerts: %s", e)
 
     # Bulk-write the accumulated IOC-only alerts in a single OpenSearch call.
     if ioc_only_pending:
