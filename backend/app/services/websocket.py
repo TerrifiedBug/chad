@@ -5,6 +5,7 @@ Manages active WebSocket connections and broadcasts alerts to connected clients.
 Uses Redis pub/sub for cross-worker broadcasting in multi-worker deployments.
 """
 
+import asyncio
 import logging
 
 from fastapi import WebSocket
@@ -13,6 +14,11 @@ from pydantic import BaseModel
 from app.services.alert_pubsub import AlertSubscriber, publish_alert
 
 logger = logging.getLogger(__name__)
+
+# Max time to spend pushing a single message to one client. A hung/slow client
+# (TCP receive window full, not reading) must not stall broadcasts to everyone
+# else, so a timed-out send is treated as a dead connection and dropped.
+WS_SEND_TIMEOUT = 5.0
 
 
 class AlertBroadcast(BaseModel):
@@ -136,7 +142,9 @@ class ConnectionManager:
         disconnected = []
         for connection in self.active_connections[user_id]:
             try:
-                await connection.send_json(message)
+                await asyncio.wait_for(
+                    connection.send_json(message), timeout=WS_SEND_TIMEOUT
+                )
             except Exception as e:
                 logger.warning("Failed to send WebSocket message: %s", e)
                 disconnected.append(connection)
@@ -158,7 +166,9 @@ class ConnectionManager:
         disconnected = []
         for connection in list(self._all_connections):
             try:
-                await connection.send_json(message)
+                await asyncio.wait_for(
+                    connection.send_json(message), timeout=WS_SEND_TIMEOUT
+                )
             except Exception as e:
                 logger.warning("Failed to send WebSocket message: %s", e)
                 disconnected.append(connection)
