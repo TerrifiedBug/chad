@@ -285,6 +285,8 @@ class SigmaService:
         """
         import re
 
+        from app.core.regex_safe import safe_search
+
         # Handle simple field:value patterns
         # This is a simplified matcher - not full Lucene query syntax
         pattern = r'(\w+(?:\.\w+)*):(?:"([^"]+)"|(\S+))'
@@ -303,8 +305,10 @@ class SigmaService:
 
             # Handle wildcard patterns
             if "*" in value:
-                regex = value.replace("*", ".*")
-                if not re.search(regex, str(log_value), re.IGNORECASE):
+                # Timeout-bounded to prevent ReDoS: pattern derives from
+                # user-controlled Sigma values matched against log content.
+                wildcard_regex = value.replace("*", ".*")
+                if not safe_search(wildcard_regex, str(log_value), flags=re.IGNORECASE):
                     return False
             elif value.lower() not in str(log_value).lower():
                 return False

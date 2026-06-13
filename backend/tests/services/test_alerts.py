@@ -154,6 +154,24 @@ class TestExceptionMatching:
             is False
         )
 
+    def test_regex_catastrophic_backtracking_times_out(self):
+        # A classic ReDoS pattern against an adversarial non-matching string would
+        # hang the stdlib `re` engine. The timeout-bounded matcher must return
+        # quickly and fail closed (no suppression) instead of pegging the worker.
+        import time
+
+        log = {"user": {"name": "a" * 64 + "!"}}
+        start = time.monotonic()
+        result = check_exception_match(
+            log, "user.name", ExceptionOperator.REGEX, r"(a+)+$"
+        )
+        elapsed = time.monotonic() - start
+
+        assert result is False
+        # Bounded by the regex timeout (1s) plus slack; nowhere near the minutes
+        # the stdlib engine would take on this input.
+        assert elapsed < 5.0
+
     def test_in_list_matches(self):
         log = {"host": {"name": "DC01"}}
         assert (
