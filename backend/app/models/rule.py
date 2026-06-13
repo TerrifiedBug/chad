@@ -72,6 +72,10 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
+    # Owning team for resource-scoped RBAC (nullable = global / un-owned)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Relationships
     index_pattern: Mapped[IndexPattern] = relationship("IndexPattern")

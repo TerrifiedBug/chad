@@ -26,6 +26,7 @@ from app.models.rule_comment import RuleComment
 from app.models.rule_exception import ExceptionOperator, RuleException
 from app.models.setting import Setting
 from app.models.system_log import SystemLog
+from app.models.team import Team
 from app.models.threshold_state import ThresholdMatch
 from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.two_factor_token import TwoFactorToken
@@ -66,6 +67,7 @@ __all__ = [
     "Setting",
     "SystemLog",
     "SystemNotificationSetting",
+    "Team",
     "ThresholdMatch",
     "TISourceConfig",
     "TISourceType",

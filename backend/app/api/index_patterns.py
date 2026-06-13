@@ -62,9 +62,13 @@ async def list_index_patterns(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    result = await db.execute(
-        select(IndexPattern).options(selectinload(IndexPattern.updated_by))
+    from app.services.team_scope import apply_team_scope
+    query = apply_team_scope(
+        select(IndexPattern).options(selectinload(IndexPattern.updated_by)),
+        IndexPattern,
+        current_user,
     )
+    result = await db.execute(query)
     patterns = list(result.scalars().all())
     await _mask_tokens_if_unprivileged(db, current_user, patterns)
     return patterns
@@ -108,6 +112,7 @@ async def create_index_pattern(
         )
 
     pattern = IndexPattern(**pattern_data.model_dump())
+    pattern.team_id = current_user.team_id  # owned by the creator's team (None = global)
     db.add(pattern)
     await db.commit()
     await db.refresh(pattern)

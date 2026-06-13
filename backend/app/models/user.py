@@ -1,8 +1,11 @@
 from enum import Enum
 
-from sqlalchemy import Boolean, String
+import uuid
+
+from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import ENUM as SAEnum
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.encryption import decrypt_with_fallback, encrypt
@@ -51,6 +54,11 @@ class User(Base, UUIDMixin, TimestampMixin):
 
     # Token version for invalidating all tokens on password change
     token_version: Mapped[int] = mapped_column(default=0, nullable=False)
+
+    # Team membership for resource-scoped RBAC (nullable = no team / global user)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Browser notification preferences
     notification_preferences: Mapped[dict | None] = mapped_column(
