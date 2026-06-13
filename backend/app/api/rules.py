@@ -49,6 +49,10 @@ from app.schemas.rule_exception import (
 )
 from app.services.attack_sync import update_rule_attack_mappings
 from app.services.audit import audit_log
+from app.services.deployment import (
+    DeploymentApplyError,
+    apply_sigma_rule_deployment,
+)
 from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
 from app.services.percolator import PercolatorService
@@ -1246,148 +1250,39 @@ async def deploy_rule(
             detail="Rule not found",
         )
 
-    # First validate the rule
-    validation = sigma_service.translate_and_validate(rule.yaml_content)
-    if not validation.success:
-        errors_str = ", ".join(e.message for e in (validation.errors or []))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to translate rule: {errors_str}",
+    # Apply the deployment via the shared service (single source of truth for the
+    # validate -> resolve mappings -> translate -> percolator write -> tracking path).
+    try:
+        result = await apply_sigma_rule_deployment(
+            db,
+            os_client,
+            rule,
+            actor_id=current_user.id,
+            change_reason=change_reason,
+            request_ip=get_client_ip(request),
         )
-
-    # Extract fields and resolve mappings
-    sigma_fields = list(validation.fields or set())
-    field_mappings_dict: dict[str, str] = {}
-
-    if sigma_fields and rule.index_pattern_id:
-        # Resolve field mappings (per-index overrides global)
-        resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
-        # Build dict of only mapped fields (exclude None values)
-        field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
-
-        # Auto-correct field mappings that point to text fields
-        from app.services.field_type_detector import auto_correct_field_mapping
-
-        corrected_mappings = {}
-        for sigma_field, target_field in field_mappings_dict.items():
-            corrected_field, was_corrected = auto_correct_field_mapping(
-                os_client, rule.index_pattern.pattern, target_field
-            )
-            corrected_mappings[sigma_field] = corrected_field
-
-            if was_corrected:
-                import logging
-                logging.getLogger(__name__).warning(
-                    f"Field mapping '{sigma_field} -> {target_field}' should use "
-                    f"'{corrected_field}' for proper matching. Auto-correcting for deployment."
-                )
-
-        field_mappings_dict = corrected_mappings
-
-        # Get fields from the OpenSearch index (include .keyword for field mapping validation)
-        try:
-            index_fields = set(get_index_fields(os_client, rule.index_pattern.pattern, include_multi_fields=True))
-        except Exception:
-            index_fields = set()
-
-        # Check for unmapped fields that don't exist in the index
-        unmapped_fields = []
-        for sigma_field in sigma_fields:
-            # Field is OK if it has a mapping AND the target exists, OR it exists directly
-            if sigma_field in field_mappings_dict:
-                target_field = field_mappings_dict[sigma_field]
-                if target_field in index_fields:
-                    continue  # Has a valid mapping to an existing field
-                # Mapping target doesn't exist - still unmapped
-            elif sigma_field in index_fields:
-                continue  # Exists directly in index
-            unmapped_fields.append(sigma_field)
-
-        if unmapped_fields:
+    except DeploymentApplyError as e:
+        if e.kind == "unmapped":
             from fastapi.responses import JSONResponse
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content=UnmappedFieldsError(
-                    message=f"The following fields are not found in the index and have no mappings configured: {', '.join(unmapped_fields)}",
-                    unmapped_fields=unmapped_fields,
-                    index_pattern_id=rule.index_pattern_id,
+                    message=e.message,
+                    unmapped_fields=e.unmapped_fields,
+                    index_pattern_id=e.index_pattern_id,
                 ).model_dump(mode="json"),
             )
-
-    # Translate rule with field mappings applied
-    translation = sigma_service.translate_with_mappings(
-        rule.yaml_content, field_mappings_dict if field_mappings_dict else None
-    )
-    if not translation.success:
-        errors_str = ", ".join(e.message for e in (translation.errors or []))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to translate rule: {errors_str}",
-        )
-
-    # Extract rule metadata from YAML for the percolator doc
-    parsed_rule = yaml.safe_load(rule.yaml_content)
-    tags = parsed_rule.get("tags", [])
-
-    # Update ATT&CK mappings from rule tags
-    # This must happen before deployment so MITRE coverage is accurate
-    try:
-        await update_rule_attack_mappings(db, str(rule.id), tags)
-        await db.commit()
-    except Exception as e:
-        # Log but don't fail deployment if attack mapping fails
-        import logging
-        logging.getLogger(__name__).warning(f"Failed to update attack mappings for rule {rule.id}: {e}")
-
-    # Deploy to percolator (push mode only)
-    # Pull mode doesn't use percolator - rules are evaluated during scheduled polls
-    settings = get_settings()
-    use_percolator = not settings.is_pull_only and rule.index_pattern.mode == "push"
-    percolator_index = None  # Initialize for pull mode case
-
-    if use_percolator:
-        percolator = PercolatorService(os_client)
-        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
-
-        # Ensure the percolator index exists (copy mappings from source index)
-        percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
-
-        # Deploy the rule - extract inner query for percolator
-        # Sigma returns {"query": {"query_string": ...}}, percolator needs {"query_string": ...}
-        percolator_query = translation.query.get("query", translation.query)
-
-        percolator.deploy_rule(
-            percolator_index=percolator_index,
-            rule_id=str(rule.id),
-            query=percolator_query,
-            title=rule.title,
-            severity=rule.severity,
-            tags=tags,
-        )
-    else:
-        import logging
-        logging.getLogger(__name__).info(f"Skipping percolator deploy for rule {rule.id} (pull mode)")
-
-    # Update rule deployment tracking
-    now = datetime.now(UTC)
-    current_version = rule.versions[0].version_number if rule.versions else 1
-    rule.deployed_at = now
-    rule.deployed_version = current_version
-    # Set status to DEPLOYED (unless already snoozed)
-    if rule.status != RuleStatus.SNOOZED:
-        rule.status = RuleStatus.DEPLOYED
-
-    await db.commit()
-    await db.refresh(rule)
-    await audit_log(db, current_user.id, "rule.deploy", "rule", str(rule.id), {"title": rule.title, "percolator_index": percolator_index, "change_reason": change_reason}, ip_address=get_client_ip(request))
-    await db.commit()
+            detail=e.message,
+        ) from e
 
     return RuleDeployResponse(
         success=True,
-        rule_id=rule.id,
-        percolator_index=percolator_index,
-        deployed_version=current_version,
-        deployed_at=now,
+        rule_id=result.rule_id,
+        percolator_index=result.percolator_index,
+        deployed_version=result.deployed_version,
+        deployed_at=result.deployed_at,
     )
 
 @router.post("/bulk/undeploy", response_model=BulkOperationResult)
