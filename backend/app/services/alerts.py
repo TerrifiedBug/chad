@@ -474,7 +474,10 @@ class AlertService:
         now = datetime.now(UTC).isoformat()
 
         for alert_data in alerts:
-            alert_id = generate_deterministic_alert_id(
+            # Honor a caller-provided id (so an alert already referenced inline —
+            # e.g. by correlation/broadcast — maps to the same document and isn't
+            # re-derived across a minute boundary). Falls back to deterministic.
+            alert_id = alert_data.get("alert_id") or generate_deterministic_alert_id(
                 alert_data["rule_id"],
                 alert_data.get("log_document", {}),
             )
