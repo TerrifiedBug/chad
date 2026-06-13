@@ -8,6 +8,7 @@ import signal
 import sys
 import time
 
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy import select
 
 from app.core.metrics import record_batch_failure
@@ -297,13 +298,20 @@ class Worker:
                     stream_dict = {stream: ">" for stream in streams}
 
                     # Read from all streams
-                    messages = await redis.xreadgroup(
-                        CONSUMER_GROUP,
-                        self.consumer_name,
-                        stream_dict,
-                        count=500,  # Batch size
-                        block=5000,  # 5 second timeout
-                    )
+                    try:
+                        messages = await redis.xreadgroup(
+                            CONSUMER_GROUP,
+                            self.consumer_name,
+                            stream_dict,
+                            count=500,  # Batch size
+                            block=5000,  # 5 second timeout
+                        )
+                    except RedisTimeoutError:
+                        # The blocking read expired with no new messages. This is
+                        # the normal idle path (redis-py surfaces the BLOCK expiry
+                        # as a read timeout), NOT an error — loop and poll again
+                        # without the error log + back-off below.
+                        continue
 
                 if not messages:
                     continue
