@@ -27,7 +27,7 @@ import asyncio
 import ipaddress
 import logging
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -366,6 +366,10 @@ async def receive_logs(
     # Health metrics tracking
     logs_errored = 0
     latencies = []
+    # Per-log ingest lag (now - event @timestamp). Used as the latency signal
+    # when a batch produced no alerts, so a healthy-but-lagging pipeline still
+    # reports non-zero latency instead of masking the lag as 0.
+    ingest_lags: list[int] = []
     processing_errors = []
 
     # Cache exceptions per rule to avoid repeated DB queries
@@ -402,6 +406,16 @@ async def receive_logs(
             # Missing timestamp is an error
             processing_errors.append("Log missing @timestamp field")
             logs_errored += 1
+
+        # Record ingest lag for every log with a valid timestamp (not just
+        # matched ones) so the latency metric reflects pipeline lag even when
+        # nothing matched. Clamp negative values from minor clock skew.
+        if log_time is not None:
+            try:
+                lag_ms = int((datetime.now(UTC) - log_time).total_seconds() * 1000)
+                ingest_lags.append(max(0, lag_ms))
+            except (TypeError, ValueError):
+                pass
 
         # Matches for this log from the single batch percolate above.
         matches = matches_by_log.get(log_idx, [])
@@ -690,10 +704,15 @@ async def receive_logs(
 
     # Record health metrics for this batch of logs
     try:
-        # Calculate average latency
-        avg_latency = (
-            int(sum(latencies) / len(latencies)) if latencies else 0
-        )
+        # Average detection latency (event -> alert). Fall back to ingest lag
+        # (event -> processed) when nothing matched, so a healthy-but-lagging
+        # pipeline reports real latency instead of a misleading 0.
+        if latencies:
+            avg_latency = int(sum(latencies) / len(latencies))
+        elif ingest_lags:
+            avg_latency = int(sum(ingest_lags) / len(ingest_lags))
+        else:
+            avg_latency = 0
 
         metric = IndexHealthMetrics(
             index_pattern_id=index_pattern.id,
