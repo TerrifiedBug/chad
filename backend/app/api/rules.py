@@ -145,7 +145,7 @@ def build_field_mapping_info(
 @router.get("", response_model=list[RuleResponse])
 async def list_rules(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
     status_filter: RuleStatus | None = None,
     source_filter: RuleSource | None = None,
     skip: int = 0,
@@ -165,6 +165,9 @@ async def list_rules(
         query = query.where(Rule.status == status_filter)
     if source_filter:
         query = query.where(Rule.source == source_filter)
+    # Resource-scoped RBAC: non-admins see only their team's + global rules.
+    from app.services.team_scope import apply_team_scope
+    query = apply_team_scope(query, Rule, current_user)
     result = await db.execute(query)
     rules = result.scalars().all()
 
@@ -344,6 +347,7 @@ async def create_rule(
         status=rule_data.status,
         index_pattern_id=rule_data.index_pattern_id,
         created_by=current_user.id,
+        team_id=current_user.team_id,  # owned by the creator's team (None = global)
         threshold_enabled=rule_data.threshold_enabled,
         threshold_count=rule_data.threshold_count,
         threshold_window_minutes=rule_data.threshold_window_minutes,

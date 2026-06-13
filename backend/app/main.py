@@ -40,6 +40,7 @@ from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
 from app.api.stats import router as stats_router
 from app.api.system_logs import router as system_logs_router
+from app.api.teams import router as teams_router
 from app.api.ti import router as ti_router
 from app.api.users import router as users_router
 from app.api.webhooks import router as webhooks_router
@@ -377,6 +378,7 @@ app.include_router(misp_feedback_router, prefix="/api")
 app.include_router(misp_sync_router, prefix="/api")
 app.include_router(correlation_rules_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
+app.include_router(teams_router, prefix="/api")
 
 # WebSocket router (no /api prefix - WebSocket has its own protocol)
 app.include_router(websocket_router)
