@@ -737,6 +737,31 @@ class AlertService:
         except Exception:
             return False
 
+    def merge_alert_enrichment(
+        self,
+        alerts_index: str,
+        alert_id: str,
+        enrichment: dict[str, Any],
+    ) -> None:
+        """Merge late (async) enrichment into a stored alert's log_document.
+
+        Partial update — OpenSearch deep-merges the nested object, so this adds
+        keys like ti_enrichment/enrichment/enrichment_status without disturbing
+        the geoip/threat_intel that were written inline at alert-create time.
+        Best-effort: a failure here must not surface to the ingest caller.
+        """
+        if not enrichment:
+            return
+        try:
+            self.client.update(
+                index=alerts_index,
+                id=alert_id,
+                body={"doc": {"log_document": enrichment}},
+                refresh=False,
+            )
+        except Exception as e:
+            logger.warning("Failed to merge async enrichment into alert %s: %s", alert_id, e)
+
     def get_alert_counts(
         self,
         index_pattern: str = "chad-alerts-*",

@@ -233,6 +233,59 @@ async def _dispatch_alert_notifications(alerts: list[dict]) -> None:
         logger.error("Alert notification dispatch task failed: %s", e)
 
 
+async def _dispatch_deferred_enrichment(index_pattern_id, items: list[dict]) -> None:
+    """Run external TI + custom-webhook enrichment after the ingest response and
+    merge the results into the already-stored alert documents.
+
+    Has its own DB + OpenSearch client (the request-scoped ones are gone by the
+    time a BackgroundTask runs). Best-effort: a failure must not affect ingest.
+    """
+    from sqlalchemy import select
+
+    from app.db.session import async_session_maker
+    from app.services.enrichment import compute_async_enrichment
+    from app.services.opensearch import get_client_from_settings
+
+    try:
+        async with async_session_maker() as db:
+            ip_result = await db.execute(
+                select(IndexPattern).where(IndexPattern.id == index_pattern_id)
+            )
+            index_pattern = ip_result.scalar_one_or_none()
+            if index_pattern is None:
+                return
+
+            os_client = await get_client_from_settings(db)
+            if os_client is None:
+                return
+            svc = AlertService(os_client)
+
+            for item in items:
+                try:
+                    extra = await compute_async_enrichment(
+                        db,
+                        item["log_document"],
+                        index_pattern,
+                        alert_id=item["alert_id"],
+                        rule_id=item["rule_id"],
+                        rule_title=item["rule_title"],
+                        severity=item["severity"],
+                    )
+                    if extra:
+                        await asyncio.to_thread(
+                            svc.merge_alert_enrichment,
+                            item["alerts_index"],
+                            item["alert_id"],
+                            extra,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Deferred enrichment failed for alert %s: %s", item["alert_id"], e
+                    )
+    except Exception as e:
+        logger.error("Deferred enrichment dispatch failed: %s", e)
+
+
 @router.post("/{index_suffix}", response_model=LogMatchResponse)
 async def receive_logs(
     index_suffix: str,
@@ -305,6 +358,8 @@ async def receive_logs(
     await asyncio.to_thread(alert_service.ensure_alerts_index, alerts_index)
     total_matches = 0
     alerts_created = []
+    # Sigma alerts whose slow TI/webhook enrichment is deferred to the background.
+    deferred_enrichment: list[dict] = []
 
     # Health metrics tracking
     logs_errored = 0
@@ -393,8 +448,12 @@ async def receive_logs(
                 if should_suppress_alert(log, rule_exceptions_cache[rule_id]):
                     continue
 
-                # Enrich log with GeoIP data if configured
-                enriched_log = await enrich_alert(db, log, index_pattern)
+                # Enrich log with GeoIP + IOC-cache data inline (fast, local).
+                # Slow external TI / custom-webhook enrichment is deferred to a
+                # background task so it never blocks the ingest response.
+                enriched_log = await enrich_alert(
+                    db, log, index_pattern, skip_ti_and_webhooks=True
+                )
 
                 # Add IOC enrichment to alert if matches found
                 if ioc_matches:
@@ -415,6 +474,14 @@ async def receive_logs(
                     ensure_index=False,
                 )
                 alerts_created.append(alert)
+                deferred_enrichment.append({
+                    "alert_id": alert["alert_id"],
+                    "alerts_index": alerts_index,
+                    "log_document": enriched_log,
+                    "rule_id": rule_id,
+                    "rule_title": match["rule_title"],
+                    "severity": match["severity"],
+                })
                 total_matches += 1
 
                 # Calculate end-to-end latency if we have valid timestamps
@@ -596,6 +663,13 @@ async def receive_logs(
             for alert in alerts_created
         ]
         background_tasks.add_task(_dispatch_alert_notifications, notif_payload)
+
+    # Defer slow external enrichment (TI lookups + custom webhooks) off the
+    # response path; it is merged into the stored alert docs afterwards.
+    if deferred_enrichment:
+        background_tasks.add_task(
+            _dispatch_deferred_enrichment, index_pattern.id, deferred_enrichment
+        )
 
     # Record health metrics for this batch of logs
     try:
