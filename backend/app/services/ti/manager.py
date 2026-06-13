@@ -1,6 +1,7 @@
 """Threat Intelligence enrichment manager."""
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -9,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.encryption import decrypt
+from app.core.redis import get_redis
 from app.models.ti_config import TISourceConfig, TISourceType
 from app.services.system_log import LogCategory, system_log_service
 from app.services.ti.abuse_ch import AbuseCHClient
@@ -30,6 +32,14 @@ logger = logging.getLogger(__name__)
 
 # Default timeout for individual source lookups
 DEFAULT_LOOKUP_TIMEOUT = 10  # seconds
+
+# Default TTL for cached TI lookup results. Without caching, the same indicator
+# appearing in N events triggers N identical external API calls — exhausting
+# provider quotas (VirusTotal public = 4/min) and stalling the ingest hot path.
+DEFAULT_CACHE_TTL_SECONDS = 3600  # 1 hour
+
+# Redis key prefix for cached aggregated TI results.
+_TI_CACHE_PREFIX = "chad:ti:cache"
 
 
 @dataclass
@@ -72,18 +82,77 @@ class TIEnrichmentResult:
             "source_results": [r.to_dict() for r in self.source_results],
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TIEnrichmentResult":
+        """Reconstruct an aggregated result from to_dict() output (cache value)."""
+        return cls(
+            indicator=data["indicator"],
+            indicator_type=TIIndicatorType(data["indicator_type"]),
+            overall_risk_level=TIRiskLevel(data.get("overall_risk_level", TIRiskLevel.UNKNOWN.value)),
+            overall_risk_score=data.get("overall_risk_score", 0.0) or 0.0,
+            highest_risk_source=data.get("highest_risk_source"),
+            source_results=[TILookupResult.from_dict(r) for r in data.get("source_results", [])],
+            sources_queried=data.get("sources_queried", 0) or 0,
+            sources_with_results=data.get("sources_with_results", 0) or 0,
+            sources_with_detections=data.get("sources_with_detections", 0) or 0,
+            all_categories=data.get("all_categories") or [],
+            all_tags=data.get("all_tags") or [],
+        )
+
 
 class TIEnrichmentManager:
     """Orchestrates TI lookups across multiple sources."""
 
-    def __init__(self, lookup_timeout: int = DEFAULT_LOOKUP_TIMEOUT):
+    def __init__(
+        self,
+        lookup_timeout: int = DEFAULT_LOOKUP_TIMEOUT,
+        cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+        cache_enabled: bool = True,
+    ):
         """Initialize the enrichment manager.
 
         Args:
             lookup_timeout: Timeout for individual source lookups.
+            cache_ttl_seconds: TTL for cached aggregated results (0 disables).
+            cache_enabled: Whether to use the Redis result cache.
         """
         self.lookup_timeout = lookup_timeout
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self.cache_enabled = cache_enabled and cache_ttl_seconds > 0
         self._clients: dict[str, TIClient] = {}
+
+    @staticmethod
+    def _cache_key(indicator: str, indicator_type: TIIndicatorType) -> str:
+        return f"{_TI_CACHE_PREFIX}:{indicator_type.value}:{indicator}"
+
+    async def _get_cached(
+        self, indicator: str, indicator_type: TIIndicatorType
+    ) -> "TIEnrichmentResult | None":
+        """Return a cached aggregated result, or None on miss/error (fail-open)."""
+        if not self.cache_enabled:
+            return None
+        try:
+            redis = await get_redis()
+            raw = await redis.get(self._cache_key(indicator, indicator_type))
+            if raw:
+                return TIEnrichmentResult.from_dict(json.loads(raw))
+        except Exception as e:
+            logger.debug("TI cache read failed: %s", e)
+        return None
+
+    async def _set_cached(self, result: "TIEnrichmentResult") -> None:
+        """Cache an aggregated result. Non-fatal on Redis error (fail-open)."""
+        if not self.cache_enabled:
+            return
+        try:
+            redis = await get_redis()
+            await redis.set(
+                self._cache_key(result.indicator, result.indicator_type),
+                json.dumps(result.to_dict()),
+                ex=self.cache_ttl_seconds,
+            )
+        except Exception as e:
+            logger.debug("TI cache write failed: %s", e)
 
     async def initialize(self, db: AsyncSession) -> None:
         """Initialize TI clients from database configuration.
@@ -323,6 +392,13 @@ class TIEnrichmentManager:
                 indicator_type=indicator_type,
             )
 
+        # Return a cached aggregated result if present — avoids re-querying
+        # external providers for the same indicator within the TTL (the same
+        # malicious IP can appear in thousands of events).
+        cached = await self._get_cached(indicator, indicator_type)
+        if cached is not None:
+            return cached
+
         # Run all lookups in parallel
         tasks = [
             self._lookup_with_timeout(client, indicator, indicator_type)
@@ -331,7 +407,15 @@ class TIEnrichmentManager:
 
         results = await asyncio.gather(*tasks)
 
-        return self._aggregate_results(indicator, indicator_type, list(results))
+        enrichment = self._aggregate_results(indicator, indicator_type, list(results))
+
+        # Only cache authoritative results (at least one source actually
+        # responded). Caching an all-failure response (e.g. quota exhaustion)
+        # would suppress real detections until the TTL expired.
+        if enrichment.sources_with_results > 0:
+            await self._set_cached(enrichment)
+
+        return enrichment
 
     async def enrich_ip(self, ip: str) -> TIEnrichmentResult:
         """Convenience method to enrich an IP address."""
