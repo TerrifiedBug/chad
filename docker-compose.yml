@@ -16,6 +16,33 @@ services:
       timeout: 5s
       retries: 5
 
+  # Connection pooler. Many uvicorn workers x replicas open far more Postgres
+  # connections than the server's max_connections; PgBouncer (transaction mode)
+  # multiplexes them. OPT-IN: to route the app through it, set on backend+worker
+  #   POSTGRES_HOST=pgbouncer  POSTGRES_PORT=6432  PGBOUNCER=true
+  # (the app disables server-side prepared-statement reuse in that mode).
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=chad
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=chad
+      - POOL_MODE=transaction
+      - MAX_CLIENT_CONN=${PGBOUNCER_MAX_CLIENT_CONN:-1000}
+      - DEFAULT_POOL_SIZE=${PGBOUNCER_DEFAULT_POOL_SIZE:-25}
+      - AUTH_TYPE=scram-sha-256
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U chad"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Cache / locks / rate-limit / pub-sub. LRU eviction is fine here — losing a
   # cache entry is harmless.
   redis:
@@ -59,11 +86,12 @@ services:
       "
     environment:
       # Database
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
       - POSTGRES_USER=chad
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=chad
+      - PGBOUNCER=${PGBOUNCER:-false}
       - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-20}
       - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
       # Redis (cache + separate durable queue)
@@ -95,11 +123,12 @@ services:
     command: python -m app.worker
     environment:
       # Database
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
       - POSTGRES_USER=chad
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=chad
+      - PGBOUNCER=${PGBOUNCER:-false}
       - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-20}
       - DATABASE_MAX_OVERFLOW=${DATABASE_MAX_OVERFLOW:-40}
       # Redis (cache + separate durable queue)
