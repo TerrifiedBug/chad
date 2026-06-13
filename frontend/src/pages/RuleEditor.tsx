@@ -51,6 +51,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useToast } from '@/components/ui/toast-provider'
 import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
@@ -84,6 +85,7 @@ export default function RuleEditorPage() {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const { hasPermission } = useAuth()
+  const { showToast } = useToast()
   const isNew = !id || id === 'new'
   const canManageRules = hasPermission('manage_rules')
 
@@ -740,7 +742,15 @@ export default function RuleEditorPage() {
     setIsDeploying(true)
     setDeployError('')
     try {
-      const result = await rulesApi.deploy(id, deployReason)
+      const deployResult = await rulesApi.deploy(id, deployReason)
+      if (deployResult.pendingApproval) {
+        // Dual-control gate is ON: a deployment request was filed for review.
+        // Do NOT mark the rule as deployed.
+        setDeployReason('')
+        showToast('Submitted for approval', 'info')
+        return
+      }
+      const result = deployResult.result
       setDeployedAt(result.deployed_at)
       setDeployedVersion(result.deployed_version)
       setNeedsRedeploy(false)
@@ -1095,11 +1105,16 @@ export default function RuleEditorPage() {
     setShowUnsnoozeReason(false)
     setIsSnoozing(true)
     try {
-      await rulesApi.unsnooze(id, snoozeReason)
+      const unsnoozeResult = await rulesApi.unsnooze(id, snoozeReason)
+      setSnoozeReason('')
+      if (unsnoozeResult.pendingApproval) {
+        // Dual-control gate is ON: unsnooze (a re-deploy) was filed for review.
+        showToast('Submitted for approval', 'info')
+        return
+      }
       setStatus('deployed')  // Unsnooze returns to deployed state
       setSnoozeUntil(null)
       setSnoozeIndefinite(false)
-      setSnoozeReason('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unsnooze rule')
     } finally {

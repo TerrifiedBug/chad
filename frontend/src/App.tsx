@@ -29,6 +29,7 @@ import AccountPage from '@/pages/Account'
 import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
 import LiveAlertFeedPage from '@/pages/LiveAlertFeed'
 import IOCMatchesPage from '@/pages/IOCMatches'
+import ApprovalsPage from '@/pages/Approvals'
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -182,6 +183,11 @@ function AppRoutes() {
       <Route path="/ioc-matches" element={
         <AuthRoute>
           <AppLayout><IOCMatchesPage /></AppLayout>
+        </AuthRoute>
+      } />
+      <Route path="/approvals" element={
+        <AuthRoute>
+          <AppLayout><ApprovalsPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/live" element={

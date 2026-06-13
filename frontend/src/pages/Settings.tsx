@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, healthApi } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, healthApi, notificationSettingsApi } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -67,6 +67,11 @@ export default function SettingsPage() {
 
   // API key rate limiting
   const [apiKeyRateLimit, setApiKeyRateLimit] = useState(100)
+
+  // Deployment governance (dual-control + mandatory comments)
+  const [mandatoryRuleComments, setMandatoryRuleComments] = useState(true)
+  const [mandatoryCommentsDeployedOnly, setMandatoryCommentsDeployedOnly] = useState(false)
+  const [requireDeployApproval, setRequireDeployApproval] = useState(false)
 
   // Active tab for programmatic navigation - read from URL param if present
   const activeTab = searchParams.get('tab') || 'general'
@@ -417,6 +422,16 @@ export default function SettingsPage() {
     } catch {
       // Settings may not exist yet, that's okay
       console.log('No settings found, using defaults')
+    }
+
+    // Deployment governance settings live under the notification settings endpoint.
+    try {
+      const governance = await notificationSettingsApi.get()
+      setMandatoryRuleComments(governance.mandatory_rule_comments)
+      setMandatoryCommentsDeployedOnly(governance.mandatory_comments_deployed_only)
+      setRequireDeployApproval(governance.require_deploy_approval)
+    } catch {
+      console.log('No governance settings found, using defaults')
     } finally {
       setIsLoading(false)
     }
@@ -473,7 +488,13 @@ export default function SettingsPage() {
         settingsApi.updateSecuritySettings({
           force_2fa_on_signup: force2FAOnSignup,
           api_key_rate_limit: apiKeyRateLimit
-        })
+        }),
+        // PUT requires all three governance fields.
+        notificationSettingsApi.update({
+          mandatory_rule_comments: mandatoryRuleComments,
+          mandatory_comments_deployed_only: mandatoryCommentsDeployedOnly,
+          require_deploy_approval: requireDeployApproval,
+        }),
       ])
       showToast('All security settings saved')
     } catch (err) {
@@ -859,6 +880,52 @@ export default function SettingsPage() {
                           onCheckedChange={setForce2FAOnSignup}
                         />
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-6">
+                    <h4 className="text-sm font-medium mb-4">Deployment Governance</h4>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label>Require dual-control for deployments</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Deploying a rule creates a request that a different user must approve before it applies (maker-checker).
+                          </p>
+                        </div>
+                        <Switch
+                          checked={requireDeployApproval}
+                          onCheckedChange={setRequireDeployApproval}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label>Require change comments</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Users must provide a change reason when editing rules.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={mandatoryRuleComments}
+                          onCheckedChange={setMandatoryRuleComments}
+                        />
+                      </div>
+
+                      {mandatoryRuleComments && (
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label>Only require comments on deployed rules</Label>
+                            <p className="text-sm text-muted-foreground">
+                              Limit the change-comment requirement to rules that are currently deployed.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={mandatoryCommentsDeployedOnly}
+                            onCheckedChange={setMandatoryCommentsDeployedOnly}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 

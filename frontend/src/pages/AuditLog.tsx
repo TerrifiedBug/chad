@@ -120,6 +120,20 @@ export default function AuditLogPage() {
   }
 
   const formatAction = (action: string, details?: Record<string, unknown>) => {
+    // Friendly labels for dual-control deployment approval events
+    if (action.startsWith('deployment_request.')) {
+      const deploymentActions: Record<string, string> = {
+        'deployment_request.created': 'Submitted deployment request',
+        'deployment_request.approved': 'Approved deployment request',
+        'deployment_request.rejected': 'Rejected deployment request',
+        'deployment_request.cancelled': 'Cancelled deployment request',
+        'deployment_request.applied': 'Applied deployment request',
+        'deployment_request.failed': 'Deployment request failed',
+        'deployment_request.stale': 'Deployment request went stale',
+      }
+      return deploymentActions[action] || action
+    }
+
     // Special formatting for correlation rule events
     if (action.startsWith('correlation_rule_')) {
       const actions: Record<string, string> = {

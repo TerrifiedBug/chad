@@ -1,5 +1,4 @@
-import { useMemo, useState } from 'react'
-import { diffLines, Change } from 'diff'
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -11,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { YamlDiff } from '@/components/YamlDiff'
 
 interface RestoreDiffModalProps {
   isOpen: boolean
@@ -37,10 +37,6 @@ export function RestoreDiffModal({
 }: RestoreDiffModalProps) {
   const [reason, setReason] = useState('')
 
-  const diff = useMemo(() => {
-    return diffLines(currentYaml, targetYaml)
-  }, [currentYaml, targetYaml])
-
   const handleConfirm = () => {
     if (!reason.trim()) {
       return
@@ -64,33 +60,7 @@ export function RestoreDiffModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-auto border rounded-md bg-muted/50 p-4 font-mono text-sm">
-          {diff.map((part: Change, index: number) => {
-            const lines = part.value.split('\n').filter((_: string, i: number, arr: string[]) =>
-              i < arr.length - 1 || arr[i] !== ''
-            )
-
-            return lines.map((line: string, lineIndex: number) => {
-              let className = ''
-              let prefix = ' '
-
-              if (part.added) {
-                className = 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                prefix = '+'
-              } else if (part.removed) {
-                className = 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
-                prefix = '-'
-              }
-
-              return (
-                <div key={`${index}-${lineIndex}`} className={className}>
-                  <span className="select-none text-muted-foreground mr-2">{prefix}</span>
-                  {line}
-                </div>
-              )
-            })
-          })}
-        </div>
+        <YamlDiff current={currentYaml} proposed={targetYaml} className="flex-1" />
 
         <div className="text-sm text-muted-foreground space-y-2">
           <div>
