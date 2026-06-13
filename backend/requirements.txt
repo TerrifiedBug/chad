@@ -35,6 +35,9 @@ geoip2>=4.8.0
 # Background scheduling
 apscheduler>=3.10.0
 
+# Metrics
+prometheus-client>=0.20.0  # Prometheus pipeline metrics (eps, alerts, latency)
+
 # OpenSearch client
 opensearch-py==2.5.0
 

@@ -10,6 +10,7 @@ import time
 
 from sqlalchemy import select
 
+from app.core.metrics import record_batch_failure
 from app.core.redis import close_redis, get_redis
 from app.db.session import async_session_maker
 from app.models.health_metrics import IndexHealthMetrics
@@ -120,6 +121,7 @@ class Worker:
                 logger.error("Failed to process batch for %s: %s", index_suffix, e)
                 logs_errored = len(logs)
                 batch_ok = False
+                record_batch_failure(index_suffix)
 
             # Only acknowledge a batch that processed successfully. A failed batch
             # (e.g. OpenSearch percolate error under cluster pressure) is left

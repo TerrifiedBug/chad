@@ -11,6 +11,7 @@ from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.metrics import record_batch
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule
 from app.models.rule_exception import RuleException
@@ -348,6 +349,7 @@ class LogProcessor:
             await self._send_notifications(db, alerts_created, app_url)
 
         elapsed = time.time() - start_time
+        record_batch(index_suffix, len(logs), len(alerts_created), elapsed)
         logger.info(
             "Processed batch: %d logs, %d matches, %d alerts, %d suppressed, %d disabled in %.2fs",
             len(logs),

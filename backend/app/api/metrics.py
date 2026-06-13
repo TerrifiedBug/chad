@@ -90,4 +90,15 @@ async def metrics(authorization: Annotated[str | None, Header()] = None):
         lines.append("chad_queue_depth_total 0")
         lines.append("chad_dead_letter_count 0")
 
-    return "\n".join(lines) + "\n"
+    # Queue/redis gauges (above) followed by the registered pipeline metrics
+    # (ingest throughput, alerts, batch failures, processing latency).
+    queue_section = "\n".join(lines) + "\n"
+    try:
+        from prometheus_client import generate_latest
+
+        pipeline_section = generate_latest().decode("utf-8")
+    except Exception as e:
+        logger.warning("Failed to render pipeline metrics: %s", e)
+        pipeline_section = ""
+
+    return queue_section + pipeline_section

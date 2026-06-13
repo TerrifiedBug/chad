@@ -55,3 +55,22 @@ class TestMetricsEndpoint:
         assert 'chad_queue_depth{index="windows"} 100' in result
         assert 'chad_queue_depth{index="linux"} 50' in result
         assert "chad_queue_depth_total 150" in result
+
+    @pytest.mark.asyncio
+    async def test_metrics_includes_pipeline_metrics(self):
+        """Metrics should expose the prometheus pipeline counters/histograms."""
+        from app.api.metrics import metrics
+        from app.core.metrics import record_batch
+
+        record_batch("test-index", events=10, alerts=2, seconds=0.5)
+
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock()
+        mock_redis.scan = AsyncMock(return_value=(0, []))
+        mock_redis.xlen = AsyncMock(return_value=0)
+
+        with patch("app.api.metrics.get_redis", return_value=mock_redis):
+            result = await metrics()
+
+        assert "chad_ingest_events_total" in result
+        assert "chad_batch_processing_seconds" in result
