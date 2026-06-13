@@ -20,6 +20,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
+from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
+from app.models.deployment_request import (
+    DeploymentRequest,
+    DeploymentRequestItem,
+    DeploymentRequestKind,
+    DeploymentRequestStatus,
+)
 from app.models.notification_settings import NotificationSettings
 from app.models.rule import Rule, RuleStatus
 from app.services.attack_sync import update_rule_attack_mappings
@@ -84,6 +91,122 @@ async def is_approval_required(db: AsyncSession) -> bool:
 def _current_version(rule: Rule) -> int:
     """Highest version number for a rule (versions ordered desc)."""
     return rule.versions[0].version_number if rule.versions else 1
+
+
+async def create_deployment_request(
+    db: AsyncSession,
+    *,
+    requested_by: uuid.UUID,
+    team_id: uuid.UUID | None,
+    change_reason: str,
+    sigma_rules: list[Rule] | None = None,
+    correlation_rules: list[CorrelationRule] | None = None,
+) -> DeploymentRequest:
+    """Build a PENDING request, pinning each rule's current version.
+
+    Single source of truth for request creation, used by the generic create
+    endpoint and by each gated deploy path (deploy / bulk / unsnooze /
+    correlation). Caller owns audit + commit. ``sigma_rules`` must have their
+    ``versions`` relationship loaded for correct pinning.
+    """
+    req = DeploymentRequest(
+        requested_by=requested_by,
+        team_id=team_id,
+        change_reason=change_reason,
+        status=DeploymentRequestStatus.PENDING.value,
+    )
+    for rule in sigma_rules or []:
+        req.items.append(
+            DeploymentRequestItem(
+                rule_id=rule.id,
+                rule_version_id=rule.versions[0].id if rule.versions else None,
+                version_number=_current_version(rule),
+                kind=DeploymentRequestKind.SIGMA.value,
+            )
+        )
+    for corr in correlation_rules or []:
+        req.items.append(
+            DeploymentRequestItem(
+                correlation_rule_id=corr.id,
+                version_number=corr.current_version,
+                kind=DeploymentRequestKind.CORRELATION.value,
+            )
+        )
+    db.add(req)
+    await db.flush()
+    return req
+
+
+async def apply_correlation_rule_deployment(
+    db: AsyncSession,
+    rule: CorrelationRule,
+    *,
+    actor_id: uuid.UUID,
+    change_reason: str,
+    request_ip: str | None = None,
+    deployment_request_id: uuid.UUID | None = None,
+) -> int:
+    """Activate a correlation rule (no percolator; in-app correlation engine).
+
+    Mirrors the direct correlation-deploy endpoint: validate linked rules are
+    deployed, snapshot the version, stamp deployment tracking, audit. Returns
+    the deployed version number. Raises :class:`DeploymentApplyError` if the
+    linked base rules are not deployed.
+    """
+    linked = (
+        await db.execute(select(Rule).where(Rule.id.in_([rule.rule_a_id, rule.rule_b_id])))
+    ).scalars().all()
+    undeployed = [r for r in linked if r.status != RuleStatus.DEPLOYED]
+    if undeployed:
+        raise DeploymentApplyError(
+            "Cannot deploy correlation rule: linked rules are not deployed: "
+            + ", ".join(r.title for r in undeployed),
+            kind="ineligible",
+        )
+
+    latest = (
+        await db.execute(
+            select(CorrelationRuleVersion)
+            .where(CorrelationRuleVersion.correlation_rule_id == rule.id)
+            .order_by(CorrelationRuleVersion.version_number.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if latest is None or latest.version_number != rule.current_version:
+        db.add(
+            CorrelationRuleVersion(
+                correlation_rule_id=rule.id,
+                version_number=rule.current_version,
+                name=rule.name,
+                rule_a_id=rule.rule_a_id,
+                rule_b_id=rule.rule_b_id,
+                entity_field=rule.entity_field,
+                entity_field_type=rule.entity_field_type,
+                time_window_minutes=rule.time_window_minutes,
+                severity=rule.severity,
+                changed_by=actor_id,
+                change_reason=change_reason or "Deployed",
+            )
+        )
+
+    rule.deployed_at = datetime.now(UTC)
+    rule.deployed_version = rule.current_version
+    await db.commit()
+    await db.refresh(rule)
+
+    details: dict = {
+        "name": rule.name,
+        "deployed_version": rule.deployed_version,
+        "change_reason": change_reason,
+    }
+    if deployment_request_id is not None:
+        details["deployment_request_id"] = str(deployment_request_id)
+    await audit_log(
+        db, actor_id, "correlation_rule_deployed", "correlation_rule", str(rule.id), details,
+        ip_address=request_ip,
+    )
+    await db.commit()
+    return rule.deployed_version
 
 
 async def apply_sigma_rule_deployment(

@@ -52,6 +52,8 @@ from app.services.audit import audit_log
 from app.services.deployment import (
     DeploymentApplyError,
     apply_sigma_rule_deployment,
+    create_deployment_request,
+    is_approval_required,
 )
 from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
@@ -65,6 +67,21 @@ from app.utils.request import get_client_ip
 def get_settings():
     """Get application settings (for easier mocking in tests)."""
     return app_settings
+
+
+def _deployment_pending_response(request_id, message: str | None = None):
+    """202 body returned when dual-control gating defers a deploy to approval."""
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "status": "pending_approval",
+            "deployment_request_id": str(request_id),
+            "message": message
+            or "Deployment requires approval; a request has been submitted for review.",
+        },
+    )
 
 
 router = APIRouter(prefix="/rules", tags=["rules"])
@@ -1115,6 +1132,31 @@ async def bulk_deploy_rules(
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
 ):
     """Deploy multiple rules to OpenSearch."""
+    # Dual-control gate: file a single batch request for all selected rules.
+    if await is_approval_required(db):
+        rows = await db.execute(
+            select(Rule).where(Rule.id.in_(data.rule_ids)).options(selectinload(Rule.versions))
+        )
+        rules_found = list(rows.scalars().all())
+        if not rules_found:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No matching rules found")
+        req = await create_deployment_request(
+            db,
+            requested_by=current_user.id,
+            team_id=current_user.team_id,
+            change_reason=data.change_reason,
+            sigma_rules=rules_found,
+        )
+        await audit_log(
+            db, current_user.id, "deployment_request.created", "deployment_request",
+            str(req.id),
+            {"rule_ids": [str(r.id) for r in rules_found], "rule_count": len(rules_found),
+             "change_reason": data.change_reason, "via": "bulk_deploy"},
+            ip_address=get_client_ip(request),
+        )
+        await db.commit()
+        return _deployment_pending_response(req.id)
+
     success = []
     failed = []
 
@@ -1249,6 +1291,26 @@ async def deploy_rule(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Rule not found",
         )
+
+    # Dual-control gate: when approval is required, file a request instead of
+    # writing to the percolator. A second person must approve before apply.
+    if await is_approval_required(db):
+        req = await create_deployment_request(
+            db,
+            requested_by=current_user.id,
+            team_id=current_user.team_id,
+            change_reason=change_reason,
+            sigma_rules=[rule],
+        )
+        await audit_log(
+            db, current_user.id, "deployment_request.created", "deployment_request",
+            str(req.id),
+            {"rule_ids": [str(rule.id)], "rule_count": 1, "change_reason": change_reason,
+             "via": "deploy"},
+            ip_address=get_client_ip(request),
+        )
+        await db.commit()
+        return _deployment_pending_response(req.id)
 
     # Apply the deployment via the shared service (single source of truth for the
     # validate -> resolve mappings -> translate -> percolator write -> tracking path).
@@ -1894,6 +1956,30 @@ async def unsnooze_rule(
 
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")
+
+    # Dual-control gate: unsnoozing re-writes the rule to the percolator, so it
+    # is gated too. File a request pinning the current version.
+    if await is_approval_required(db):
+        rows = await db.execute(
+            select(Rule).where(Rule.id == rule_id).options(selectinload(Rule.versions))
+        )
+        rule_full = rows.scalar_one()
+        req = await create_deployment_request(
+            db,
+            requested_by=current_user.id,
+            team_id=current_user.team_id,
+            change_reason=change_reason,
+            sigma_rules=[rule_full],
+        )
+        await audit_log(
+            db, current_user.id, "deployment_request.created", "deployment_request",
+            str(req.id),
+            {"rule_ids": [str(rule.id)], "rule_count": 1, "change_reason": change_reason,
+             "via": "unsnooze"},
+            ip_address=get_client_ip(request),
+        )
+        await db.commit()
+        return _deployment_pending_response(req.id)
 
     rule.status = RuleStatus.DEPLOYED
     rule.snooze_until = None

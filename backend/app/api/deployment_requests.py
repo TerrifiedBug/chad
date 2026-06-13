@@ -14,14 +14,16 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from opensearchpy import OpenSearch
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, require_permission_dep
+from app.api.deps import get_current_user, get_opensearch_client, require_permission_dep
 from app.db.session import get_db
 from app.models.correlation_rule import CorrelationRule
 from app.models.deployment_request import (
+    DeploymentItemApplyStatus,
     DeploymentRequest,
     DeploymentRequestItem,
     DeploymentRequestKind,
@@ -33,10 +35,17 @@ from app.schemas.deployment_request import (
     DeploymentRequestCreate,
     DeploymentRequestDetailResponse,
     DeploymentRequestItemDetail,
+    DeploymentRequestReject,
     DeploymentRequestResponse,
     DeploymentRequestStats,
 )
 from app.services.audit import audit_log
+from app.services.deployment import (
+    DeploymentApplyError,
+    apply_correlation_rule_deployment,
+    apply_sigma_rule_deployment,
+    create_deployment_request,
+)
 from app.services.team_scope import apply_team_scope, can_access_resource
 from app.utils.request import get_client_ip
 
@@ -165,7 +174,7 @@ async def _build_detail(
 # Endpoints
 # --------------------------------------------------------------------------- #
 @router.post("", response_model=DeploymentRequestResponse, status_code=status.HTTP_201_CREATED)
-async def create_deployment_request(
+async def file_deployment_request(
     data: DeploymentRequestCreate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -197,27 +206,13 @@ async def create_deployment_request(
                 detail="You do not have access to one or more of the selected rules",
             )
 
-    req = DeploymentRequest(
+    req = await create_deployment_request(
+        db,
         requested_by=current_user.id,
-        change_reason=data.change_reason,
         team_id=current_user.team_id,
-        status=DeploymentRequestStatus.PENDING.value,
+        change_reason=data.change_reason,
+        sigma_rules=[rules[rid] for rid in unique_ids],
     )
-    for rid in unique_ids:
-        rule = rules[rid]
-        current_version = rule.versions[0].version_number if rule.versions else 1
-        pinned_version_id = rule.versions[0].id if rule.versions else None
-        req.items.append(
-            DeploymentRequestItem(
-                rule_id=rule.id,
-                rule_version_id=pinned_version_id,
-                version_number=current_version,
-                kind=DeploymentRequestKind.SIGMA.value,
-            )
-        )
-
-    db.add(req)
-    await db.flush()
 
     await audit_log(
         db,
@@ -359,6 +354,267 @@ async def cancel_deployment_request(
     loaded = await _load_request(db, req.id)
     titles = await _rule_title_map(db, loaded.items)
     return _build_summary(loaded, titles, datetime.now(UTC))
+
+
+@router.post("/{request_id}/approve", response_model=DeploymentRequestDetailResponse)
+async def approve_deployment_request(
+    request_id: UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    current_user: Annotated[User, Depends(require_permission_dep("approve_deployments"))],
+):
+    """Approve and apply a PENDING request (checker action).
+
+    Enforces, in order: still-pending, team visibility, self-review guard
+    (requester != approver), all-or-nothing stale pre-check, then a race-safe
+    atomic claim. Only after the claim succeeds does it apply each item via the
+    shared deploy service in the approver's request context.
+    """
+    req = await _load_request(db, request_id)
+    if req is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    _enforce_team_visibility(req, current_user)
+    if req.status != DeploymentRequestStatus.PENDING.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Request is not pending (current state: '{req.status}')",
+        )
+    # Self-review guard: identity comparison, enforced server-side.
+    if req.requested_by == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot approve your own deployment request",
+        )
+
+    # All-or-nothing stale pre-check: if any pinned rule changed, apply nothing.
+    if await _detect_stale(db, req):
+        marked = await db.execute(
+            update(DeploymentRequest)
+            .where(
+                DeploymentRequest.id == request_id,
+                DeploymentRequest.status == DeploymentRequestStatus.PENDING.value,
+            )
+            .values(
+                status=DeploymentRequestStatus.STALE.value,
+                reviewed_by=current_user.id,
+                reviewed_at=datetime.now(UTC),
+            )
+        )
+        await db.commit()
+        if marked.rowcount:
+            await audit_log(
+                db, current_user.id, "deployment_request.stale", "deployment_request",
+                str(request_id), {"reason": "a pinned rule changed since the request was filed"},
+                ip_address=get_client_ip(request),
+            )
+            await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="One or more rules changed since this request was filed; it is now stale. "
+            "Ask the requester to re-submit.",
+        )
+
+    # Atomic claim: first writer wins; concurrent approvers get rowcount 0.
+    now = datetime.now(UTC)
+    claim = await db.execute(
+        update(DeploymentRequest)
+        .where(
+            DeploymentRequest.id == request_id,
+            DeploymentRequest.status == DeploymentRequestStatus.PENDING.value,
+        )
+        .values(
+            status=DeploymentRequestStatus.APPROVED.value,
+            reviewed_by=current_user.id,
+            reviewed_at=now,
+        )
+    )
+    await db.commit()
+    if claim.rowcount == 0:
+        fresh = await _load_request(db, request_id)
+        current = fresh.status if fresh else "gone"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Request was already handled by another reviewer (now '{current}')",
+        )
+    await audit_log(
+        db, current_user.id, "deployment_request.approved", "deployment_request",
+        str(request_id), {"rule_count": len(req.items)}, ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    # Apply each item independently; record per-item outcome (partial failures
+    # are reported, not rolled back — percolator writes are independent).
+    req = await _load_request(db, request_id)
+    ip = get_client_ip(request)
+    sigma_rules, corr_rules = await _load_apply_targets(db, req)
+
+    all_ok = True
+    for item in req.items:
+        try:
+            if item.kind == DeploymentRequestKind.CORRELATION.value:
+                corr = corr_rules.get(item.correlation_rule_id)
+                if corr is None:
+                    raise DeploymentApplyError("Correlation rule no longer exists", kind="missing")
+                await apply_correlation_rule_deployment(
+                    db, corr, actor_id=current_user.id, change_reason=req.change_reason,
+                    request_ip=ip, deployment_request_id=req.id,
+                )
+            else:
+                rule = sigma_rules.get(item.rule_id)
+                if rule is None:
+                    raise DeploymentApplyError("Rule no longer exists", kind="missing")
+                await apply_sigma_rule_deployment(
+                    db, os_client, rule, actor_id=current_user.id, change_reason=req.change_reason,
+                    request_ip=ip, deployment_request_id=req.id,
+                )
+            item.apply_status = DeploymentItemApplyStatus.OK.value
+            item.apply_error = None
+        except Exception as e:  # noqa: BLE001 - per-item isolation; recorded below
+            item.apply_status = DeploymentItemApplyStatus.FAILED.value
+            item.apply_error = str(e)
+            all_ok = False
+
+    req.status = (
+        DeploymentRequestStatus.APPLIED.value if all_ok else DeploymentRequestStatus.FAILED.value
+    )
+    if all_ok:
+        req.applied_at = datetime.now(UTC)
+    await db.commit()
+
+    await audit_log(
+        db, current_user.id,
+        "deployment_request.applied" if all_ok else "deployment_request.failed",
+        "deployment_request", str(req.id),
+        {
+            "all_ok": all_ok,
+            "items": [
+                {
+                    "rule_id": str(i.rule_id or i.correlation_rule_id),
+                    "kind": i.kind,
+                    "apply_status": i.apply_status,
+                    "apply_error": i.apply_error,
+                }
+                for i in req.items
+            ],
+        },
+        ip_address=ip,
+    )
+    await db.commit()
+
+    return await _build_detail(db, await _load_request(db, request_id), datetime.now(UTC))
+
+
+@router.post("/{request_id}/reject", response_model=DeploymentRequestDetailResponse)
+async def reject_deployment_request(
+    request_id: UUID,
+    body: DeploymentRequestReject,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("approve_deployments"))],
+):
+    """Reject a PENDING request with a required note (checker action)."""
+    req = await _load_request(db, request_id)
+    if req is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    _enforce_team_visibility(req, current_user)
+    if req.status != DeploymentRequestStatus.PENDING.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Request is not pending (current state: '{req.status}')",
+        )
+    if req.requested_by == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot reject your own deployment request",
+        )
+
+    now = datetime.now(UTC)
+    claim = await db.execute(
+        update(DeploymentRequest)
+        .where(
+            DeploymentRequest.id == request_id,
+            DeploymentRequest.status == DeploymentRequestStatus.PENDING.value,
+        )
+        .values(
+            status=DeploymentRequestStatus.REJECTED.value,
+            reviewed_by=current_user.id,
+            reviewed_at=now,
+            review_note=body.review_note,
+        )
+    )
+    await db.commit()
+    if claim.rowcount == 0:
+        fresh = await _load_request(db, request_id)
+        current = fresh.status if fresh else "gone"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Request was already handled by another reviewer (now '{current}')",
+        )
+    await audit_log(
+        db, current_user.id, "deployment_request.rejected", "deployment_request",
+        str(request_id), {"review_note": body.review_note}, ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    return await _build_detail(db, await _load_request(db, request_id), datetime.now(UTC))
+
+
+# --------------------------------------------------------------------------- #
+# Apply / stale helpers
+# --------------------------------------------------------------------------- #
+async def _detect_stale(db: AsyncSession, req: DeploymentRequest) -> bool:
+    """Whether any item's pinned version differs from the rule's current version."""
+    sigma_ids = [i.rule_id for i in req.items if i.rule_id is not None]
+    corr_ids = [i.correlation_rule_id for i in req.items if i.correlation_rule_id is not None]
+
+    sigma_current: dict[UUID, int] = {}
+    if sigma_ids:
+        rows = await db.execute(
+            select(Rule).where(Rule.id.in_(sigma_ids)).options(selectinload(Rule.versions))
+        )
+        for r in rows.scalars().all():
+            sigma_current[r.id] = r.versions[0].version_number if r.versions else 1
+
+    corr_current: dict[UUID, int] = {}
+    if corr_ids:
+        rows = await db.execute(
+            select(CorrelationRule.id, CorrelationRule.current_version).where(
+                CorrelationRule.id.in_(corr_ids)
+            )
+        )
+        corr_current = {cid: cv for cid, cv in rows.all()}
+
+    for i in req.items:
+        if i.rule_id is not None and sigma_current.get(i.rule_id) != i.version_number:
+            return True
+        if i.correlation_rule_id is not None and corr_current.get(i.correlation_rule_id) != i.version_number:
+            return True
+    return False
+
+
+async def _load_apply_targets(
+    db: AsyncSession, req: DeploymentRequest
+) -> tuple[dict[UUID, Rule], dict[UUID, CorrelationRule]]:
+    """Load the sigma rules (with index_pattern + versions) and correlation rules to apply."""
+    sigma_ids = [i.rule_id for i in req.items if i.rule_id is not None]
+    corr_ids = [i.correlation_rule_id for i in req.items if i.correlation_rule_id is not None]
+
+    sigma_rules: dict[UUID, Rule] = {}
+    if sigma_ids:
+        rows = await db.execute(
+            select(Rule)
+            .where(Rule.id.in_(sigma_ids))
+            .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
+        )
+        sigma_rules = {r.id: r for r in rows.scalars().all()}
+
+    corr_rules: dict[UUID, CorrelationRule] = {}
+    if corr_ids:
+        rows = await db.execute(select(CorrelationRule).where(CorrelationRule.id.in_(corr_ids)))
+        corr_rules = {c.id: c for c in rows.scalars().all()}
+
+    return sigma_rules, corr_rules
 
 
 # --------------------------------------------------------------------------- #

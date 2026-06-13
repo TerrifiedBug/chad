@@ -36,6 +36,7 @@ from app.schemas.correlation import (
     SigmaFieldMappingInfo,
 )
 from app.services.audit import audit_log
+from app.services.deployment import create_deployment_request, is_approval_required
 from app.services.opensearch import get_index_fields
 from app.utils.request import get_client_ip
 
@@ -583,6 +584,33 @@ async def deploy_correlation_rule(
         raise HTTPException(
             400,
             f"Cannot deploy correlation rule: linked rules are not deployed: {', '.join(undeployed_names)}"
+        )
+
+    # Dual-control gate: file a request instead of activating the correlation rule.
+    if await is_approval_required(db):
+        req = await create_deployment_request(
+            db,
+            requested_by=current_user.id,
+            team_id=None,
+            change_reason=data.change_reason or "Deploy correlation rule",
+            correlation_rules=[rule],
+        )
+        await audit_log(
+            db, current_user.id, "deployment_request.created", "deployment_request",
+            str(req.id),
+            {"correlation_rule_id": str(rule.id), "rule_count": 1,
+             "change_reason": data.change_reason, "via": "correlation_deploy"},
+            ip_address=get_client_ip(request),
+        )
+        await db.commit()
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={
+                "status": "pending_approval",
+                "deployment_request_id": str(req.id),
+                "message": "Deployment requires approval; a request has been submitted for review.",
+            },
         )
 
     # Ensure a version snapshot exists for current state
