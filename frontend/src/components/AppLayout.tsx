@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { AppHeader } from '@/components/AppHeader'
 import { OpenSearchBanner } from '@/components/OpenSearchBanner'
 import { AppRail } from '@/components/AppRail'
+import { CommandPalette } from '@/components/CommandPalette'
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useLocalStorage } from '@/hooks/use-local-storage'
@@ -113,6 +114,8 @@ export function AppLayout({ children }: AppLayoutProps) {
         open={showShortcutsHelp}
         onOpenChange={setShowShortcutsHelp}
       />
+
+      <CommandPalette />
     </div>
   )
 }

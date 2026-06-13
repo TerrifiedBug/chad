@@ -20,7 +20,7 @@ import {
   Settings,
 } from 'lucide-react'
 
-type NavItem = {
+export type NavItem = {
   href: string
   label: string
   icon: React.ElementType
@@ -35,7 +35,7 @@ type NavSection = {
   items: NavItem[]
 }
 
-const navSections: NavSection[] = [
+export const navSections: NavSection[] = [
   {
     label: 'Operations',
     items: [
@@ -60,7 +60,7 @@ const navSections: NavSection[] = [
   },
 ]
 
-const settingsItem: NavItem = {
+export const settingsItem: NavItem = {
   href: '/settings/hub',
   label: 'Settings',
   icon: Settings,
