@@ -238,11 +238,13 @@ async def get_mandatory_comments_settings(
         return MandatoryCommentsConfig(
             mandatory_rule_comments=True,
             mandatory_comments_deployed_only=False,
+            require_deploy_approval=False,
         )
 
     return MandatoryCommentsConfig(
         mandatory_rule_comments=settings.mandatory_rule_comments,
         mandatory_comments_deployed_only=settings.mandatory_comments_deployed_only,
+        require_deploy_approval=settings.require_deploy_approval,
     )
 
 
@@ -256,9 +258,12 @@ async def get_mandatory_comments_settings_public(
 
     if not settings:
         # Return defaults if no settings exist
-        return {"mandatory_rule_comments": True}
+        return {"mandatory_rule_comments": True, "require_deploy_approval": False}
 
-    return {"mandatory_rule_comments": settings.mandatory_rule_comments}
+    return {
+        "mandatory_rule_comments": settings.mandatory_rule_comments,
+        "require_deploy_approval": settings.require_deploy_approval,
+    }
 
 
 @router.put("/settings")
@@ -275,10 +280,12 @@ async def update_mandatory_comments_settings(
     if settings:
         settings.mandatory_rule_comments = data.mandatory_rule_comments
         settings.mandatory_comments_deployed_only = data.mandatory_comments_deployed_only
+        settings.require_deploy_approval = data.require_deploy_approval
     else:
         settings = NotificationSettings(
             mandatory_rule_comments=data.mandatory_rule_comments,
             mandatory_comments_deployed_only=data.mandatory_comments_deployed_only,
+            require_deploy_approval=data.require_deploy_approval,
         )
         db.add(settings)
 
@@ -291,6 +298,7 @@ async def update_mandatory_comments_settings(
         {
             "mandatory_rule_comments": data.mandatory_rule_comments,
             "mandatory_comments_deployed_only": data.mandatory_comments_deployed_only,
+            "require_deploy_approval": data.require_deploy_approval,
         },
         ip_address=get_client_ip(request),
     )

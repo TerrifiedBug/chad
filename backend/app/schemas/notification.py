@@ -46,7 +46,9 @@ class UpdateAlertNotificationRequest(BaseModel):
 
 
 class MandatoryCommentsConfig(BaseModel):
-    """Configuration for mandatory rule change comments."""
+    """Configuration for mandatory rule change comments + deployment governance."""
 
     mandatory_rule_comments: bool
     mandatory_comments_deployed_only: bool
+    # Dual-control (maker-checker) deployment approval gate.
+    require_deploy_approval: bool = False
