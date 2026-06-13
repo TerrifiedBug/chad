@@ -9,7 +9,6 @@ Alerts are stored in OpenSearch with the following structure:
 import hashlib
 import json
 import logging
-import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -19,6 +18,7 @@ from dateutil import parser as date_parser
 from opensearchpy import OpenSearch
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.regex_safe import safe_search
 from app.models.rule_exception import ExceptionOperator
 from app.services.system_log import LogCategory, system_log_service
 
@@ -91,10 +91,9 @@ def check_exception_match(
     elif operator == ExceptionOperator.ENDS_WITH:
         return log_value_str.endswith(value)
     elif operator == ExceptionOperator.REGEX:
-        try:
-            return bool(re.search(value, log_value_str))
-        except re.error:
-            return False
+        # Timeout-bounded to prevent ReDoS: `value` is a user-supplied pattern
+        # run against attacker-controlled log content on the ingest hot path.
+        return safe_search(value, log_value_str)
     elif operator == ExceptionOperator.IN_LIST:
         try:
             value_list = json.loads(value)
