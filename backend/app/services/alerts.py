@@ -443,6 +443,7 @@ class AlertService:
         self,
         alerts_index: str,
         alerts: list[dict[str, Any]],
+        ensure_index: bool = True,
     ) -> list[str]:
         """
         Create multiple alerts in a single bulk operation.
@@ -464,7 +465,9 @@ class AlertService:
         if not alerts:
             return []
 
-        self.ensure_alerts_index(alerts_index)
+        # Skip when the caller already ensured the index once for the batch (hot path).
+        if ensure_index:
+            self.ensure_alerts_index(alerts_index)
 
         bulk_body = []
         alert_ids = []
