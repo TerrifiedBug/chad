@@ -39,9 +39,11 @@ async def test_store_ioc_sets_redis_key(sample_ioc_record, mock_redis):
         cache = IOCCache()
         await cache.store_ioc(sample_ioc_record)
 
-        mock_redis.set.assert_called_once()
-        call_args = mock_redis.set.call_args
-        assert call_args[0][0] == "chad:ioc:ip-dst:192.168.1.100"
+        # Two sets: the IOC key and the attribute-UUID reverse index.
+        assert mock_redis.set.call_count == 2
+        keys_set = {c.args[0] for c in mock_redis.set.call_args_list}
+        assert "chad:ioc:ip-dst:192.168.1.100" in keys_set
+        assert "chad:iocattr:def-456" in keys_set
 
 
 @pytest.mark.asyncio
@@ -126,7 +128,8 @@ async def test_bulk_store_iocs():
         count = await cache.bulk_store_iocs(records)
 
         assert count == 2
-        assert mock_pipeline.set.call_count == 2
+        # Each record writes its IOC key + its attribute-UUID reverse index.
+        assert mock_pipeline.set.call_count == 4
 
 
 @pytest.mark.asyncio
@@ -156,16 +159,62 @@ async def test_bulk_lookup_iocs(mock_redis):
 
 @pytest.mark.asyncio
 async def test_clear_all_iocs(mock_redis):
-    """Test clearing all IOCs from cache."""
-    mock_redis.keys.return_value = [
-        "chad:ioc:ip-dst:1.2.3.4",
-        "chad:ioc:domain:evil.com",
-    ]
-    mock_redis.delete.return_value = 2
+    """Test clearing all IOCs from cache (via non-blocking SCAN, not KEYS)."""
+    async def fake_scan(cursor, match=None, count=None):
+        if match == "chad:ioc:*":
+            return (0, ["chad:ioc:ip-dst:1.2.3.4", "chad:ioc:domain:evil.com"])
+        return (0, [])  # reverse-index prefix
+
+    mock_redis.scan = AsyncMock(side_effect=fake_scan)
+    mock_redis.delete = AsyncMock(return_value=2)
 
     with patch("app.services.ti.ioc_cache.get_redis", new_callable=AsyncMock, return_value=mock_redis):
         cache = IOCCache()
         count = await cache.clear_all_iocs()
 
         assert count == 2
-        mock_redis.keys.assert_called_with("chad:ioc:*")
+        mock_redis.keys.assert_not_called()  # must not use blocking KEYS
+
+
+@pytest.mark.asyncio
+async def test_get_ioc_count_uses_scan(mock_redis):
+    """get_ioc_count must use SCAN, not KEYS."""
+    async def fake_scan(cursor, match=None, count=None):
+        return (0, ["chad:ioc:ip-dst:1.2.3.4", "chad:ioc:domain:evil.com", "chad:ioc:url:x"])
+
+    mock_redis.scan = AsyncMock(side_effect=fake_scan)
+
+    with patch("app.services.ti.ioc_cache.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+        cache = IOCCache()
+        count = await cache.get_ioc_count()
+
+        assert count == 3
+        mock_redis.keys.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_evict_by_attribute_uuid_uses_reverse_index(mock_redis):
+    """Eviction must resolve the IOC key via the reverse index (O(1)), not scan."""
+    mock_redis.get = AsyncMock(return_value="chad:ioc:ip-dst:1.2.3.4")
+    mock_redis.delete = AsyncMock(return_value=2)
+
+    with patch("app.services.ti.ioc_cache.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+        cache = IOCCache()
+        result = await cache.evict_by_attribute_uuid("def-456")
+
+        assert result is True
+        mock_redis.get.assert_called_once_with("chad:iocattr:def-456")
+        mock_redis.delete.assert_called_once_with("chad:ioc:ip-dst:1.2.3.4", "chad:iocattr:def-456")
+        mock_redis.keys.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_evict_by_attribute_uuid_missing(mock_redis):
+    """Eviction returns False when the reverse index has no entry."""
+    mock_redis.get = AsyncMock(return_value=None)
+
+    with patch("app.services.ti.ioc_cache.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+        cache = IOCCache()
+        result = await cache.evict_by_attribute_uuid("nope")
+
+        assert result is False
