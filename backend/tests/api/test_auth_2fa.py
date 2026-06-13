@@ -411,6 +411,47 @@ class TestLogin2FA:
         assert "Invalid" in response.json()["detail"]
 
     @pytest.mark.asyncio
+    async def test_2fa_login_locks_out_after_repeated_invalid_codes(
+        self, client: AsyncClient, test_session: AsyncSession
+    ):
+        """Repeated invalid 2FA codes trip the account lockout (anti-brute-force)."""
+        secret = pyotp.random_base32()
+        user = User(
+            id=uuid.uuid4(),
+            email="bruteforce2fa@example.com",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.ANALYST,
+            is_active=True,
+            totp_enabled=True,
+            totp_secret=secret,
+        )
+        test_session.add(user)
+        await test_session.commit()
+
+        login_response = await client.post(
+            "/api/auth/login",
+            json={"email": "bruteforce2fa@example.com", "password": "password123"},
+        )
+        two_fa_token = login_response.json()["2fa_token"]
+
+        # Default policy: lock after 5 failed attempts. The pending token stays
+        # valid across failures, so without throttling the code is brute-forceable.
+        for _ in range(5):
+            resp = await client.post(
+                "/api/auth/login/2fa",
+                json={"token": two_fa_token, "code": "000000"},
+            )
+            assert resp.status_code == 401
+
+        # The next attempt is rejected by the lockout before the code is checked.
+        locked = await client.post(
+            "/api/auth/login/2fa",
+            json={"token": two_fa_token, "code": "000000"},
+        )
+        assert locked.status_code == 429
+        assert "locked" in locked.json()["detail"].lower()
+
+    @pytest.mark.asyncio
     async def test_2fa_login_with_invalid_token_fails(
         self, client: AsyncClient
     ):
