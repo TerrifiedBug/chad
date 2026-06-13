@@ -23,6 +23,7 @@ from app.models.notification_settings import (
 )
 from app.services.jira import JiraAPIError, create_jira_ticket_for_alert
 from app.services.system_log import LogCategory, system_log_service
+from app.services.webhooks import sanitize_webhook_url
 
 logger = logging.getLogger(__name__)
 
@@ -519,6 +520,15 @@ def _format_payload_for_provider(provider: str, payload: dict) -> dict:
 
 async def _send_to_webhook(webhook: Webhook, payload: dict) -> tuple[bool, str | None]:
     """Send payload to a webhook. Returns (success, error)."""
+    # SSRF protection at egress: re-validate + rebuild the URL immediately before
+    # sending. URLs are checked at config time, but a hostname that resolved to a
+    # public IP then can be repointed at an internal/metadata address (e.g.
+    # 169.254.169.254) afterwards (DNS rebinding). Mirrors send_webhook().
+    sanitized_url, url_error = sanitize_webhook_url(webhook.url)
+    if sanitized_url is None:
+        logger.warning("Webhook %s URL blocked by SSRF protection: %s", webhook.id, url_error)
+        return False, f"URL blocked by SSRF protection: {url_error}"
+
     headers = {"Content-Type": "application/json"}
     if webhook.header_value:
         try:
@@ -535,7 +545,7 @@ async def _send_to_webhook(webhook: Webhook, payload: dict) -> tuple[bool, str |
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                webhook.url,
+                sanitized_url,
                 json=formatted_payload,
                 headers=headers,
                 timeout=10.0,
