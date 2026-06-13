@@ -45,6 +45,7 @@ from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule
 from app.models.rule_exception import RuleException
 from app.services.alerts import AlertService, should_suppress_alert
+from app.services.batch_percolate import batch_percolate_logs
 from app.services.correlation import check_correlation
 from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
@@ -313,7 +314,19 @@ async def receive_logs(
     # Cache exceptions per rule to avoid repeated DB queries
     rule_exceptions_cache: dict[str, list[dict]] = {}
 
-    for log in logs:
+    # Percolate ALL logs in a single OpenSearch call instead of one round trip
+    # per log (the dominant cost at high throughput). Offloaded — sync client.
+    # A batch failure is a cluster-level error, so fail the request rather than
+    # silently returning zero matches; the shipper will retry the batch.
+    try:
+        matches_by_log = await asyncio.to_thread(
+            batch_percolate_logs, os_client, percolator_index, logs
+        )
+    except Exception as e:
+        logger.error("Batch percolate failed for %s: %s", index_suffix, e)
+        raise HTTPException(503, "Percolation failed") from e
+
+    for log_idx, log in enumerate(logs):
         # Extract timestamp early for latency calculation
         log_timestamp_str = log.get("@timestamp")
         log_time = None
@@ -333,16 +346,8 @@ async def receive_logs(
             processing_errors.append("Log missing @timestamp field")
             logs_errored += 1
 
-        # Run percolate query (offloaded — sync OpenSearch client blocks the loop)
-        try:
-            matches = await asyncio.to_thread(
-                alert_service.match_log, percolator_index, log
-            )
-        except Exception as e:
-            processing_errors.append(f"Percolate failed for log: {str(e)}")
-            logs_errored += 1
-            # Continue to next log instead of failing entire batch
-            continue
+        # Matches for this log from the single batch percolate above.
+        matches = matches_by_log.get(log_idx, [])
 
         # IOC Detection for Push Mode
         ioc_matches: list[IOCMatch] = []
