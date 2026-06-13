@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, get_opensearch_client_optional
+from app.api.deps import get_current_user, get_db, get_opensearch_client_optional, require_admin
 from app.core.encryption import decrypt
 from app.models.setting import Setting
 from app.models.ti_config import TISourceConfig, TISourceType
@@ -202,10 +202,10 @@ async def get_sync_status(
 @router.post("/trigger", response_model=SyncTriggerResponse)
 async def trigger_sync(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     os_client=Depends(get_opensearch_client_optional),
 ):
-    """Trigger a manual MISP IOC sync."""
+    """Trigger a manual MISP IOC sync (admin only)."""
     result = await trigger_misp_sync(db, os_client)
     return SyncTriggerResponse(**result)
 
@@ -238,9 +238,9 @@ async def get_sync_config(
 async def update_sync_config(
     config: SyncConfigRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
-    """Update MISP sync configuration."""
+    """Update MISP sync configuration (admin only)."""
     result = await db.execute(
         select(Setting).where(Setting.key == "misp_sync")
     )

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_db, require_permission_dep
 from app.core.encryption import decrypt
 from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.user import User
@@ -95,7 +95,7 @@ async def create_feedback_service(db: AsyncSession) -> MISPFeedbackService:
 async def record_sighting(
     request: SightingRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission_dep("manage_alerts")),
 ):
     """Record a sighting in MISP."""
     service = await create_feedback_service(db)
@@ -136,7 +136,7 @@ async def record_sighting(
 async def create_event(
     request: EventRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission_dep("manage_alerts")),
 ):
     """Create a MISP event from an alert."""
     service = await create_feedback_service(db)
