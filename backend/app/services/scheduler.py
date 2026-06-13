@@ -10,7 +10,11 @@ With multiple uvicorn workers, distributed locking via Redis ensures
 only one worker executes each scheduled job.
 """
 
+import asyncio
 import logging
+import os
+import socket
+import uuid
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -45,11 +49,27 @@ FREQUENCY_CRON_MAP = {
 
 
 class SchedulerService:
-    """Service for managing scheduled background jobs."""
+    """Service for managing scheduled background jobs.
+
+    The scheduler runs in exactly ONE process across all uvicorn workers and
+    worker replicas, chosen by a Redis leader lock. Previously every uvicorn
+    worker started its own scheduler, so every interval job (e.g. the 1-minute
+    health check) woke and contended on a per-job lock N times per tick — pure
+    idle CPU churn. Now non-leaders sit idle and one leader runs the jobs.
+    """
+
+    # Redis leader-election lock shared across all processes/replicas.
+    LEADER_KEY = "chad:scheduler:leader"
+    LEADER_TTL = 30  # seconds; renewed each loop, expires if the leader dies
+    RESYNC_INTERVAL = 60  # leader re-reads job settings this often
 
     def __init__(self):
         self._engine = None
         self._session_factory = None
+        # Unique per process so a process can recognise its own leadership.
+        self._instance_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+        self._leader_task = None
+        self._leadership_stop: asyncio.Event | None = None
 
     def _get_engine(self):
         """Lazy initialization of database engine."""
@@ -64,16 +84,78 @@ class SchedulerService:
         return self._session_factory()
 
     def start(self):
-        """Start the scheduler."""
-        if not scheduler.running:
-            scheduler.start()
-            logger.info("Scheduler started")
+        """Begin leader election. The scheduler itself only starts in whichever
+        process wins the Redis leader lock; every process runs this lightweight
+        loop but only one runs the jobs."""
+        if self._leader_task is None or self._leader_task.done():
+            self._leadership_stop = asyncio.Event()
+            self._leader_task = asyncio.create_task(self._leadership_loop())
+            logger.info("Scheduler leadership loop started (%s)", self._instance_id)
 
     def stop(self):
-        """Stop the scheduler."""
+        """Stop leader election and the scheduler (if this process holds it)."""
+        if self._leadership_stop is not None:
+            self._leadership_stop.set()
         if scheduler.running:
             scheduler.shutdown(wait=False)
             logger.info("Scheduler stopped")
+
+    async def _leadership_loop(self):
+        """Acquire/renew the Redis leader lock; run the scheduler only while leader.
+
+        On a clean leader death the lock TTL lapses and another process takes
+        over within ~LEADER_TTL seconds. Re-syncs job settings periodically so a
+        settings change handled by any worker reaches the leader's scheduler.
+        """
+        from app.core.redis import get_redis
+
+        last_sync = 0.0
+        while self._leadership_stop is not None and not self._leadership_stop.is_set():
+            try:
+                redis = await get_redis()
+                acquired = await redis.set(
+                    self.LEADER_KEY, self._instance_id, nx=True, ex=self.LEADER_TTL
+                )
+                if acquired:
+                    is_leader = True
+                else:
+                    current = await redis.get(self.LEADER_KEY)
+                    is_leader = current == self._instance_id
+                    if is_leader:
+                        await redis.expire(self.LEADER_KEY, self.LEADER_TTL)
+
+                if is_leader:
+                    if not scheduler.running:
+                        scheduler.start()
+                        last_sync = 0.0  # force an immediate job sync
+                        logger.info("Elected scheduler leader (%s)", self._instance_id)
+                    now = asyncio.get_running_loop().time()
+                    if now - last_sync >= self.RESYNC_INTERVAL:
+                        try:
+                            await self.sync_jobs_from_settings()
+                        except Exception as e:
+                            logger.warning("Scheduler job sync failed: %s", e)
+                        last_sync = now
+                elif scheduler.running:
+                    scheduler.shutdown(wait=False)
+                    logger.info("Lost scheduler leadership (%s); scheduler stopped", self._instance_id)
+            except Exception as e:
+                logger.warning("Scheduler leadership check failed: %s", e)
+
+            try:
+                await asyncio.wait_for(
+                    self._leadership_stop.wait(), timeout=self.LEADER_TTL / 3
+                )
+            except TimeoutError:
+                pass
+
+        # Release leadership on shutdown so a survivor takes over immediately.
+        try:
+            redis = await get_redis()
+            if await redis.get(self.LEADER_KEY) == self._instance_id:
+                await redis.delete(self.LEADER_KEY)
+        except Exception:
+            pass
 
     async def _run_with_lock(self, lock_name: str, timeout: int, job_func):
         """
@@ -126,6 +208,11 @@ class SchedulerService:
 
         Called on startup and when settings change.
         """
+        # Only the leader (whose scheduler is running) registers jobs; on a
+        # non-leader process this is a no-op. The leader re-syncs on its own
+        # interval, so a settings change handled by any worker is still picked up.
+        if not scheduler.running:
+            return
         session = await self._get_session()
         try:
             # Load settings
