@@ -107,8 +107,16 @@ class MISPIOCFetcher:
         tags: list[str] | None = None,
         ttl_days: int = 30,
         filter_false_positives: bool = True,
+        page_size: int = 1000,
+        max_pages: int = 1000,
     ) -> list[IOCRecord]:
-        """Fetch IOCs from MISP.
+        """Fetch IOCs from MISP, paginated.
+
+        A single unpaginated /attributes/restSearch returns the entire feed as one
+        buffered JSON body, which OOMs the worker and exceeds the request timeout at
+        enterprise scale. This pages through the feed with page/limit so each
+        request is bounded; the loop stops when a short page is returned (or the
+        max_pages safety cap is hit).
 
         Args:
             threat_levels: Filter by threat level names (high, medium, low).
@@ -117,12 +125,14 @@ class MISPIOCFetcher:
             tags: Filter by MISP tags.
             ttl_days: TTL for IOCs (for expires_at calculation).
             filter_false_positives: Filter out IOCs with more FP sightings than true sightings.
+            page_size: Attributes requested per page.
+            max_pages: Safety cap on pages fetched (page_size * max_pages attrs max).
 
         Returns:
             List of IOCRecord objects.
         """
-        # Build request body
-        request_body: dict[str, Any] = {
+        # Build the shared request body (filters); page/limit are added per page.
+        base_body: dict[str, Any] = {
             "to_ids": True,
             "includeEventTags": True,
             "includeSightings": filter_false_positives,  # Include sightings for FP filtering
@@ -134,11 +144,11 @@ class MISPIOCFetcher:
             misp_types = []
             for ioc_type in ioc_types:
                 misp_types.append(ioc_type.value)
-            request_body["type"] = misp_types
+            base_body["type"] = misp_types
 
         # Add tag filter if specified
         if tags:
-            request_body["tags"] = tags
+            base_body["tags"] = tags
 
         # Add threat level filter
         if threat_levels:
@@ -148,53 +158,70 @@ class MISPIOCFetcher:
                     if lname == level:
                         level_ids.append(lid)
             if level_ids:
-                request_body["threat_level_id"] = level_ids
+                base_body["threat_level_id"] = level_ids
 
-        try:
-            response = await self._client.post(
-                "/attributes/restSearch",
-                json=request_body,
-            )
-            response.raise_for_status()
-            data = response.json()
-        except Exception as e:
-            logger.error("Failed to fetch IOCs from MISP: %s", e)
-            raise
-
-        attributes = data.get("response", {}).get("Attribute", [])
         records: list[IOCRecord] = []
         expires_at = datetime.now(UTC) + timedelta(days=ttl_days)
         filtered_fp_count = 0
+        truncated = False
 
-        for attr in attributes:
-            misp_type = attr.get("type")
-            ioc_type = self._map_misp_type_to_ioc_type(misp_type)
+        for page in range(1, max_pages + 1):
+            request_body = {**base_body, "page": page, "limit": page_size}
+            try:
+                response = await self._client.post(
+                    "/attributes/restSearch",
+                    json=request_body,
+                )
+                response.raise_for_status()
+                data = response.json()
+            except Exception as e:
+                logger.error("Failed to fetch IOCs from MISP (page %d): %s", page, e)
+                raise
 
-            if ioc_type is None:
-                continue
+            attributes = data.get("response", {}).get("Attribute", [])
+            if not attributes:
+                break
 
-            # Filter out IOCs with excessive false positive sightings
-            if filter_false_positives and self._has_excessive_false_positives(attr):
-                filtered_fp_count += 1
-                continue
+            for attr in attributes:
+                misp_type = attr.get("type")
+                ioc_type = self._map_misp_type_to_ioc_type(misp_type)
 
-            event = attr.get("Event", {})
-            event_tags = event.get("Tag", [])
-            tag_names = [t.get("name", "") for t in event_tags]
+                if ioc_type is None:
+                    continue
 
-            record = IOCRecord(
-                ioc_type=ioc_type,
-                value=attr.get("value", ""),
-                misp_event_id=str(attr.get("event_id", "")),
-                misp_event_uuid=event.get("uuid", ""),
-                misp_attribute_uuid=attr.get("uuid", ""),
-                misp_event_info=event.get("info"),
-                threat_level=self._map_threat_level(str(event.get("threat_level_id", ""))),
-                tags=tag_names,
-                expires_at=expires_at,
+                # Filter out IOCs with excessive false positive sightings
+                if filter_false_positives and self._has_excessive_false_positives(attr):
+                    filtered_fp_count += 1
+                    continue
+
+                event = attr.get("Event", {})
+                event_tags = event.get("Tag", [])
+                tag_names = [t.get("name", "") for t in event_tags]
+
+                record = IOCRecord(
+                    ioc_type=ioc_type,
+                    value=attr.get("value", ""),
+                    misp_event_id=str(attr.get("event_id", "")),
+                    misp_event_uuid=event.get("uuid", ""),
+                    misp_attribute_uuid=attr.get("uuid", ""),
+                    misp_event_info=event.get("info"),
+                    threat_level=self._map_threat_level(str(event.get("threat_level_id", ""))),
+                    tags=tag_names,
+                    expires_at=expires_at,
+                )
+                records.append(record)
+
+            # Short page => last page.
+            if len(attributes) < page_size:
+                break
+            if page == max_pages:
+                truncated = True
+
+        if truncated:
+            logger.warning(
+                "MISP fetch hit the max_pages cap (%d pages x %d); feed may be truncated",
+                max_pages, page_size,
             )
-            records.append(record)
-
         if filtered_fp_count > 0:
             logger.info(
                 "Filtered %d IOCs with excessive false positives",
