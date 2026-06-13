@@ -242,3 +242,25 @@ detection:
 
         assert sigma_service.test_against_log(result.query, log_match) is True
         assert sigma_service.test_against_log(result.query, log_nomatch) is False
+
+
+class TestStructuredDsl:
+    """The backend emits a structured bool DSL (not a bare query_string wrap)."""
+
+    def test_translation_is_structured_dsl_with_analyze_wildcard(self):
+        yaml_content = """
+title: Test Rule
+logsource:
+    product: windows
+detection:
+    selection:
+        fieldA: value1
+    condition: selection
+"""
+        result = sigma_service.translate_with_mappings(yaml_content)
+        assert result.success is True
+        # {"query": {"bool": {"must": [{"query_string": {"query": ..., "analyze_wildcard": True}}]}}}
+        bool_q = result.query["query"]["bool"]
+        clause = bool_q["must"][0]["query_string"]
+        assert clause["analyze_wildcard"] is True
+        assert "fieldA" in clause["query"]
