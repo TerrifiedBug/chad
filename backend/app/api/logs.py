@@ -197,6 +197,41 @@ async def validate_log_shipping_token(
     return pattern
 
 
+async def _dispatch_alert_notifications(alerts: list[dict]) -> None:
+    """
+    Send alert notifications after the ingest response has been returned.
+
+    Runs as a FastAPI BackgroundTask with its own DB session so slow external
+    destinations (webhooks, Jira) never back-pressure the high-throughput push
+    path. Each alert is dispatched independently; one failure must not stop the
+    rest.
+    """
+    from app.db.session import async_session_maker
+
+    try:
+        async with async_session_maker() as db:
+            app_url = await get_app_url(db)
+            for alert in alerts:
+                alert_id = alert["alert_id"]
+                alert_url = f"{app_url}/alerts/{alert_id}" if app_url else None
+                try:
+                    await send_alert_notification(
+                        db,
+                        alert_id=UUID(alert_id) if isinstance(alert_id, str) else alert_id,
+                        rule_title=alert.get("rule_title", "Unknown Rule"),
+                        severity=alert.get("severity", "medium"),
+                        matched_log=alert.get("log_document", {}),
+                        alert_url=alert_url,
+                        is_ioc=alert.get("rule_id") == "ioc-detection",
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to send notification for alert %s: %s", alert_id, e
+                    )
+    except Exception as e:
+        logger.error("Alert notification dispatch task failed: %s", e)
+
+
 @router.post("/{index_suffix}", response_model=LogMatchResponse)
 async def receive_logs(
     index_suffix: str,
@@ -541,26 +576,21 @@ async def receive_logs(
                 except Exception as e:
                     logger.error("Failed to create IOC alert: %s", e)
 
-        # Send notifications through the new notification system
+    # Dispatch notifications in the BACKGROUND so external webhook/Jira fan-out
+    # never blocks the ingest response (a slow destination must not back-pressure
+    # the high-throughput push path). Runs after the response with its own session.
     if alerts_created:
-        # Get app URL for alert links
-        app_url = await get_app_url(db)
-
-        # Send notifications for each alert
-        for alert in alerts_created:
-            alert_url = f"{app_url}/alerts/{alert['alert_id']}" if app_url else None
-            try:
-                await send_alert_notification(
-                    db,
-                    alert_id=UUID(alert["alert_id"]) if isinstance(alert["alert_id"], str) else alert["alert_id"],
-                    rule_title=alert.get("rule_title", "Unknown Rule"),
-                    severity=alert.get("severity", "medium"),
-                    matched_log=alert.get("log_document", {}),
-                    alert_url=alert_url,
-                )
-            except Exception as e:
-                # Log but don't fail the request if notification fails
-                logger.error("Failed to send notification: %s", e)
+        notif_payload = [
+            {
+                "alert_id": alert["alert_id"],
+                "rule_id": alert.get("rule_id"),
+                "rule_title": alert.get("rule_title", "Unknown Rule"),
+                "severity": alert.get("severity", "medium"),
+                "log_document": alert.get("log_document", {}),
+            }
+            for alert in alerts_created
+        ]
+        background_tasks.add_task(_dispatch_alert_notifications, notif_payload)
 
     # Record health metrics for this batch of logs
     try:
