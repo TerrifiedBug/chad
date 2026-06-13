@@ -88,6 +88,33 @@ class TILookupResult:
             "last_seen": self.last_seen,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TILookupResult":
+        """Reconstruct from to_dict() output (e.g. a cached value).
+
+        raw_response is intentionally not round-tripped (to_dict omits it); it is
+        not read after aggregation, so this is lossless for cache purposes.
+        """
+        return cls(
+            source=data["source"],
+            indicator=data["indicator"],
+            indicator_type=TIIndicatorType(data["indicator_type"]),
+            success=data.get("success", True),
+            error=data.get("error"),
+            risk_level=TIRiskLevel(data.get("risk_level", TIRiskLevel.UNKNOWN.value)),
+            risk_score=data.get("risk_score"),
+            categories=data.get("categories") or [],
+            tags=data.get("tags") or [],
+            malicious_count=data.get("malicious_count", 0) or 0,
+            total_count=data.get("total_count", 0) or 0,
+            country=data.get("country"),
+            country_code=data.get("country_code"),
+            asn=data.get("asn"),
+            as_owner=data.get("as_owner"),
+            first_seen=data.get("first_seen"),
+            last_seen=data.get("last_seen"),
+        )
+
 
 class TIClient(ABC):
     """Abstract base class for Threat Intelligence clients."""
