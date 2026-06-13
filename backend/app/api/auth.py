@@ -1027,9 +1027,11 @@ async def disable_2fa(
 @router.post("/login/2fa")
 async def login_2fa(
     request: TwoFactorLoginRequest,
+    http_request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Complete login with 2FA code."""
+    ip_address = get_client_ip(http_request)
     # Retrieve from database
     from app.models.two_factor_token import TwoFactorToken
     pending_token = await TwoFactorToken.get_valid_token(
@@ -1049,6 +1051,27 @@ async def login_2fa(
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User not found.")
 
+    email = user.email.lower()
+
+    # Throttle brute-force of the 2FA code. The password step clears failed
+    # attempts before issuing the pending token, so without this the 6-digit
+    # TOTP / backup codes can be guessed without limit. Reuse the same
+    # account-lockout policy as the password login step.
+    locked, lockout_minutes = await is_account_locked(db, email)
+    if locked:
+        await audit_log(
+            db, user.id, "auth.lockout_login_attempt", "user", str(user.id),
+            {"email": email}, ip_address=ip_address,
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"Account temporarily locked due to too many failed login attempts. "
+                f"Try again in {lockout_minutes} minutes."
+            ),
+        )
+
     code_valid = verify_totp_code(user.totp_secret, request.code)
 
     if not code_valid and user.totp_backup_codes:
@@ -1060,7 +1083,26 @@ async def login_2fa(
                 break
 
     if not code_valid:
+        await record_failed_attempt(db, email, ip_address)
+        await audit_log(
+            db, user.id, "auth.login_failed", "user", str(user.id),
+            {"email": email, "reason": "invalid_2fa_code"}, ip_address=ip_address,
+        )
+        # Notify + audit if this attempt tripped the lockout threshold
+        locked_now, _ = await is_account_locked(db, email)
+        if locked_now:
+            await audit_log(
+                db, user.id, "auth.lockout", "user", str(user.id),
+                {"email": email}, ip_address=ip_address,
+            )
+            await send_system_notification(
+                db, "user_locked", {"email": email, "ip_address": ip_address},
+            )
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid 2FA code.")
+
+    # Clear failed attempts on successful 2FA verification
+    await clear_failed_attempts(db, email)
 
     # Delete the pending token after successful verification
     await TwoFactorToken.delete_token(db, user_id=request.token, token_type=TOKEN_TYPE_LOGIN)
