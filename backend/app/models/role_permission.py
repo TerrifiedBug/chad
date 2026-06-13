@@ -31,6 +31,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_rules": True,
         "manage_alerts": True,
         "deploy_rules": True,
+        "approve_deployments": True,
         "manage_settings": True,
         "manage_index_config": True,
         "manage_api_keys": True,
@@ -44,6 +45,9 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_rules": True,
         "manage_alerts": True,
         "deploy_rules": True,
+        # Maker, not checker: analysts request deploys but cannot approve their
+        # own (or others') deployment requests under dual-control.
+        "approve_deployments": False,
         "manage_settings": False,
         "manage_index_config": True,  # Allows editing Index Patterns, Field Mappings
         "manage_api_keys": True,
@@ -57,6 +61,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_rules": False,
         "manage_alerts": False,
         "deploy_rules": False,
+        "approve_deployments": False,
         "manage_settings": False,
         "manage_index_config": False,
         "manage_api_keys": False,
@@ -72,6 +77,7 @@ PERMISSION_DESCRIPTIONS = {
     "manage_rules": "Create, edit, and delete detection rules",
     "manage_alerts": "Delete alerts and update alert status",
     "deploy_rules": "Deploy and undeploy rules to OpenSearch",
+    "approve_deployments": "Approve or reject dual-control deployment requests (reviewer)",
     "manage_settings": "Modify system settings and webhooks",
     "manage_index_config": "Manage index patterns and field mappings",
     "manage_api_keys": "Create and revoke API keys",
