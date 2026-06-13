@@ -768,6 +768,18 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
         error_params = urlencode({"sso_error": "Email not provided by SSO provider"})
         return RedirectResponse(url=f"{frontend_url}/login?{error_params}")
 
+    # Require the IdP to assert the email is verified before trusting it. Without
+    # this, an unverified email claim could be used to take over an existing
+    # account by email match (or silently convert a local account to SSO).
+    # Secure by default; operators whose IdP omits the claim can opt out.
+    if sso_config.get("require_email_verified", True):
+        email_verified = userinfo.get("email_verified")
+        if email_verified is not True and str(email_verified).lower() != "true":
+            error_params = urlencode(
+                {"sso_error": "Email is not verified by the SSO provider"}
+            )
+            return RedirectResponse(url=f"{frontend_url}/login?{error_params}")
+
     # Find or create user
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
