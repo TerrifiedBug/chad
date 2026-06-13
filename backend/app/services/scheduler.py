@@ -188,6 +188,9 @@ class SchedulerService:
             # Add threshold-match cleanup job (runs hourly)
             self._schedule_threshold_cleanup()
 
+            # Add health-metrics retention cleanup job (runs daily)
+            self._schedule_health_metrics_cleanup()
+
             # Add version cleanup job (runs daily at 3 AM)
             self._schedule_version_cleanup()
 
@@ -247,6 +250,23 @@ class SchedulerService:
             misfire_grace_time=600,  # 10 minute grace period
         )
         logger.info("Scheduled threshold_cleanup job (hourly)")
+
+    def _schedule_health_metrics_cleanup(self):
+        """Schedule retention cleanup of index_health_metrics (daily at 3:30 AM).
+
+        Both ingest paths insert one IndexHealthMetrics row per processed batch; at
+        2TB/day across 50 indexes the table grows by millions of rows/day with no
+        prior cleanup, degrading the dashboard's range scans and disk usage.
+        """
+        scheduler.add_job(
+            self._run_health_metrics_cleanup,
+            trigger=CronTrigger(hour=3, minute=30),
+            id="health_metrics_cleanup",
+            name="health metrics retention cleanup",
+            replace_existing=True,
+            misfire_grace_time=3600,  # 1 hour grace period
+        )
+        logger.info("Scheduled health_metrics_cleanup job (daily at 3:30 AM)")
 
     def _schedule_version_cleanup(self):
         """Schedule the version cleanup job (daily at 3 AM)."""
@@ -862,6 +882,45 @@ class SchedulerService:
                 category=LogCategory.BACKGROUND,
                 service="threshold_cleanup",
                 message=f"Scheduled threshold cleanup failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    async def _run_health_metrics_cleanup(self):
+        """Execute health-metrics retention cleanup with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:health_metrics_cleanup",
+            timeout=600,  # 10 minutes
+            job_func=self._execute_health_metrics_cleanup,
+        )
+
+    async def _execute_health_metrics_cleanup(self, retention_days: int = 30):
+        """Delete index_health_metrics rows older than the retention window."""
+        from datetime import timedelta
+
+        from sqlalchemy import delete
+
+        from app.models.health_metrics import IndexHealthMetrics
+
+        logger.debug("Running scheduled health-metrics cleanup")
+        session = await self._get_session()
+        try:
+            cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+            result = await session.execute(
+                delete(IndexHealthMetrics).where(IndexHealthMetrics.timestamp < cutoff)
+            )
+            await session.commit()
+            count = result.rowcount or 0
+            if count > 0:
+                logger.info("Health-metrics cleanup: removed %s old rows", count)
+        except Exception as e:
+            logger.error("Scheduled health-metrics cleanup failed: %s", e)
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="health_metrics_cleanup",
+                message=f"Scheduled health-metrics cleanup failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
         finally:
