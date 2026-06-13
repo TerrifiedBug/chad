@@ -198,6 +198,7 @@ async def enrich_alert(
     rule_title: str | None = None,
     severity: str | None = None,
     is_ioc_alert: bool = False,
+    skip_ti_and_webhooks: bool = False,
 ) -> dict:
     """
     Enrich a log document with additional context.
@@ -211,6 +212,10 @@ async def enrich_alert(
         rule_title: The rule title (for webhook enrichment)
         severity: The alert severity (for webhook enrichment)
         is_ioc_alert: Skip TI enrichment for IOC alerts (circular — already based on threat intel)
+        skip_ti_and_webhooks: Run only the fast, local enrichment (GeoIP + IOC
+            cache) that the persisted alert needs, skipping the slow external
+            TI/webhook lookups. Used on the sync ingest path, where those are
+            deferred to a background task (see compute_async_enrichment).
 
     Returns:
         Enriched log document (copy, original not modified)
@@ -224,18 +229,52 @@ async def enrich_alert(
     # Skip TI enrichment for IOC alerts — circular (already based on threat intel)
     if not is_ioc_alert:
         # Threat Intelligence enrichment (real-time API lookups)
-        await _enrich_ti(db, enriched, log_doc, index_pattern)
+        if not skip_ti_and_webhooks:
+            await _enrich_ti(db, enriched, log_doc, index_pattern)
 
         # MISP IOC cache enrichment (local cache lookups)
         await _enrich_ioc_cache(enriched, log_doc, index_pattern)
 
     # Custom webhook enrichment
+    if not skip_ti_and_webhooks:
+        await _enrich_webhooks(
+            db, enriched, log_doc, index_pattern, alert_id, rule_id, rule_title, severity,
+            is_ioc_alert=is_ioc_alert,
+        )
+
+    return enriched
+
+
+async def compute_async_enrichment(
+    db: AsyncSession,
+    log_doc: dict,
+    index_pattern: IndexPattern,
+    *,
+    alert_id: str | None = None,
+    rule_id: str | None = None,
+    rule_title: str | None = None,
+    severity: str | None = None,
+    is_ioc_alert: bool = False,
+) -> dict:
+    """Compute only the off-hot-path enrichment (external TI + custom webhooks).
+
+    Returns just the fields to merge into an already-stored alert's
+    ``log_document`` (``ti_enrichment`` / ``enrichment`` / ``enrichment_status``).
+    GeoIP and IOC-cache enrichment are intentionally NOT recomputed — they run
+    inline before the alert is written. These keys are disjoint from the inline
+    ``threat_intel``/``geoip`` keys, so merging is collision-free.
+    """
+    extra: dict = {}
+
+    if not is_ioc_alert:
+        await _enrich_ti(db, extra, log_doc, index_pattern)
+
     await _enrich_webhooks(
-        db, enriched, log_doc, index_pattern, alert_id, rule_id, rule_title, severity,
+        db, extra, log_doc, index_pattern, alert_id, rule_id, rule_title, severity,
         is_ioc_alert=is_ioc_alert,
     )
 
-    return enriched
+    return extra
 
 
 async def _enrich_geoip(
