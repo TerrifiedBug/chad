@@ -799,12 +799,14 @@ class AlertService:
     async def delete_alert(
         self,
         db: AsyncSession,
-        alert_id: UUID,
+        alert_id: str,
         current_user_id: UUID,
         ip_address: str,
         change_reason: str | None = None,
     ) -> bool:
         """Delete an alert from OpenSearch.
+
+        alert_id is CHAD's 32-char hex alert document id (not a UUID).
 
         Args:
             db: Database session (for audit logging)
