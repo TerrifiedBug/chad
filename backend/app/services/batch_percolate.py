@@ -27,6 +27,12 @@ def batch_percolate_logs(
 
     Returns:
         Dict mapping log index (0-based) to list of matching rule documents
+
+    Raises:
+        Exception: Propagates any OpenSearch error. Callers must NOT treat a
+            percolate failure as "no matches" — doing so silently drops
+            detections under cluster pressure. The worker relies on this raising
+            so it can leave the batch unacknowledged for retry/dead-lettering.
     """
     if not logs:
         return {}
@@ -66,5 +72,7 @@ def batch_percolate_logs(
         return matches_by_log
 
     except Exception as e:
+        # Do NOT swallow into {} — that would silently drop detections. Log and
+        # re-raise so the caller can avoid acknowledging the batch.
         logger.error("Batch percolate failed: %s", e)
-        return {}
+        raise

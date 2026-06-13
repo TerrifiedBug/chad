@@ -23,6 +23,7 @@ Flow (Async mode - queue enabled):
 5. Background worker processes logs asynchronously
 """
 
+import asyncio
 import ipaddress
 import logging
 import secrets
@@ -258,11 +259,14 @@ async def receive_logs(
     percolator_index = f"chad-percolator-{index_suffix}"
     alerts_index = f"chad-alerts-{index_suffix}"
 
-    # Check percolator index exists
-    if not os_client.indices.exists(index=percolator_index):
+    # Check percolator index exists (offloaded — sync OpenSearch client)
+    if not await asyncio.to_thread(os_client.indices.exists, index=percolator_index):
         raise HTTPException(404, f"No percolator index for {index_suffix}")
 
     alert_service = AlertService(os_client)
+    # Ensure the alerts index exists once for this batch so per-alert create_alert
+    # calls can skip the indices.exists() round trip on the hot path.
+    await asyncio.to_thread(alert_service.ensure_alerts_index, alerts_index)
     total_matches = 0
     alerts_created = []
 
@@ -294,9 +298,11 @@ async def receive_logs(
             processing_errors.append("Log missing @timestamp field")
             logs_errored += 1
 
-        # Run percolate query
+        # Run percolate query (offloaded — sync OpenSearch client blocks the loop)
         try:
-            matches = alert_service.match_log(percolator_index, log)
+            matches = await asyncio.to_thread(
+                alert_service.match_log, percolator_index, log
+            )
         except Exception as e:
             processing_errors.append(f"Percolate failed for log: {str(e)}")
             logs_errored += 1
@@ -357,14 +363,16 @@ async def receive_logs(
                         "has_ioc_match": True,
                     }
 
-                # Create alert
-                alert = alert_service.create_alert(
+                # Create alert (offloaded — sync OpenSearch index() call)
+                alert = await asyncio.to_thread(
+                    alert_service.create_alert,
                     alerts_index=alerts_index,
                     rule_id=rule_id,
                     rule_title=match["rule_title"],
                     severity=match["severity"],
                     tags=match.get("tags", []),
                     log_document=enriched_log,
+                    ensure_index=False,
                 )
                 alerts_created.append(alert)
                 total_matches += 1
@@ -438,7 +446,8 @@ async def receive_logs(
                                     seen.add(tag)
                                     unique_tags.append(tag)
 
-                            correlation_alert = alert_service.create_alert(
+                            correlation_alert = await asyncio.to_thread(
+                                alert_service.create_alert,
                                 alerts_index=alerts_index,
                                 rule_id=corr["correlation_rule_id"],
                                 rule_title=corr["correlation_name"],
@@ -462,6 +471,7 @@ async def receive_logs(
                                     },
                                     "@timestamp": enriched_log.get("@timestamp"),
                                 },
+                                ensure_index=False,
                             )
                             alerts_created.append(correlation_alert)
                             total_matches += 1
@@ -510,7 +520,8 @@ async def receive_logs(
         if ioc_matches and not matches:
             for ioc_match in ioc_matches:
                 try:
-                    ioc_alert = alert_service.create_alert(
+                    ioc_alert = await asyncio.to_thread(
+                        alert_service.create_alert,
                         alerts_index=alerts_index,
                         rule_id="ioc-detection",
                         rule_title=f"IOC Match: {ioc_match.ioc_type.value}",
@@ -523,6 +534,7 @@ async def receive_logs(
                                 "has_ioc_match": True,
                             },
                         },
+                        ensure_index=False,
                     )
                     alerts_created.append(ioc_alert)
                     total_matches += 1
@@ -618,11 +630,11 @@ async def test_log_matching(
 
     percolator_index = f"chad-percolator-{index_suffix}"
 
-    if not os_client.indices.exists(index=percolator_index):
+    if not await asyncio.to_thread(os_client.indices.exists, index=percolator_index):
         raise HTTPException(404, f"No percolator index for {index_suffix}")
 
     alert_service = AlertService(os_client)
-    matches = alert_service.match_log(percolator_index, log)
+    matches = await asyncio.to_thread(alert_service.match_log, percolator_index, log)
 
     results = []
     for m in matches:

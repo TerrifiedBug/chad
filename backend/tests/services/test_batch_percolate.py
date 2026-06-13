@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 
 class TestBatchPercolate:
     """Tests for batch percolation."""
@@ -42,14 +44,19 @@ class TestBatchPercolate:
         assert result == {}
         mock_client.search.assert_not_called()
 
-    def test_batch_percolate_handles_exception(self):
-        """Batch percolate should return empty dict on exception."""
+    def test_batch_percolate_raises_on_exception(self):
+        """Batch percolate must PROPAGATE OpenSearch errors, not swallow them.
+
+        Returning {} on failure would look identical to "no rules matched", so the
+        worker would acknowledge and drop the batch — silently losing detections
+        under cluster pressure. Raising lets the worker leave the batch
+        unacknowledged for retry/dead-lettering.
+        """
         from app.services.batch_percolate import batch_percolate_logs
 
         mock_client = MagicMock()
         mock_client.search.side_effect = Exception("OpenSearch error")
 
         logs = [{"message": "test"}]
-        result = batch_percolate_logs(mock_client, "index", logs)
-
-        assert result == {}
+        with pytest.raises(Exception, match="OpenSearch error"):
+            batch_percolate_logs(mock_client, "index", logs)

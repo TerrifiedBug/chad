@@ -375,14 +375,19 @@ class AlertService:
         severity: str,
         tags: list[str],
         log_document: dict[str, Any],
+        ensure_index: bool = True,
     ) -> dict[str, Any]:
         """
         Create and store an alert document.
 
         Uses deterministic alert IDs to prevent duplicates on retry.
         Same event + same rule + same minute = same alert ID.
+
+        Set ensure_index=False on hot paths that already ensured the alerts index
+        once for the batch, to avoid a per-alert indices.exists() round trip.
         """
-        self.ensure_alerts_index(alerts_index)
+        if ensure_index:
+            self.ensure_alerts_index(alerts_index)
 
         # Generate deterministic alert ID before modifying log_document
         # This ensures same event + same rule + same minute = same alert ID

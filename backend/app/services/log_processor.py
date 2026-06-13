@@ -1,5 +1,6 @@
 """Log processor for worker batch processing."""
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -142,12 +143,21 @@ class LogProcessor:
                 except Exception as e:
                     logger.debug("IOC detection failed for log %d: %s", log_idx, e)
 
-        # Batch percolate all logs at once
-        matches_by_log = batch_percolate_logs(
+        # Batch percolate all logs at once. Offloaded onto a thread because the
+        # OpenSearch client is synchronous and would otherwise block the worker
+        # event loop for the whole round trip. Propagates on failure so the
+        # caller leaves the batch unacknowledged instead of silently dropping it.
+        matches_by_log = await asyncio.to_thread(
+            batch_percolate_logs,
             self.os_client,
             percolator_index,
             logs,
         )
+
+        # Ensure the alerts index exists once per batch (instead of once per
+        # alert) so create_alert can skip the per-alert indices.exists() check.
+        if matches_by_log or ioc_matches_by_log:
+            await asyncio.to_thread(self.alert_service.ensure_alerts_index, alerts_index)
 
         # Collect all alerts to create
         alerts_created = []
@@ -198,15 +208,17 @@ class LogProcessor:
                         "has_ioc_match": True,
                     }
 
-                # Create alert
+                # Create alert (offloaded — sync OpenSearch index() call)
                 try:
-                    alert = self.alert_service.create_alert(
+                    alert = await asyncio.to_thread(
+                        self.alert_service.create_alert,
                         alerts_index=alerts_index,
                         rule_id=rule_id,
                         rule_title=rule.get("rule_title"),
                         severity=rule.get("severity", "medium"),
                         tags=rule.get("tags", []),
                         log_document=enriched_log,
+                        ensure_index=False,
                     )
                     alerts_created.append(alert)
                     total_matches += 1
@@ -278,13 +290,15 @@ class LogProcessor:
                 tags = list(dict.fromkeys(tags))
 
                 try:
-                    ioc_alert = self.alert_service.create_alert(
+                    ioc_alert = await asyncio.to_thread(
+                        self.alert_service.create_alert,
                         alerts_index=alerts_index,
                         rule_id="ioc-detection",
                         rule_title=ioc_title,
                         severity=severity,
                         tags=tags,
                         log_document=enriched_log,
+                        ensure_index=False,
                     )
                     alerts_created.append(ioc_alert)
                     ioc_only_alerts += 1
@@ -363,8 +377,9 @@ class LogProcessor:
                 # Deduplicate tags
                 unique_tags = list(dict.fromkeys(correlation_tags))
 
-                # Create correlation alert
-                correlation_alert = self.alert_service.create_alert(
+                # Create correlation alert (offloaded — sync OpenSearch index() call)
+                correlation_alert = await asyncio.to_thread(
+                    self.alert_service.create_alert,
                     alerts_index=alerts_index,
                     rule_id=corr["correlation_rule_id"],
                     rule_title=corr["correlation_name"],
@@ -388,6 +403,7 @@ class LogProcessor:
                         },
                         "@timestamp": enriched_log.get("@timestamp"),
                     },
+                    ensure_index=False,
                 )
                 alerts_created.append(correlation_alert)
 

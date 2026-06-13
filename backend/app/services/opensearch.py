@@ -32,6 +32,13 @@ class ValidationResult:
     steps: list[ValidationStep]
 
 
+# Default urllib3 connection-pool size per client. The ingest hot path offloads
+# blocking OpenSearch calls onto a thread pool, so the HTTP pool must be at least
+# as large as the number of concurrent percolate/index calls to avoid pool
+# starvation ("Connection pool is full") under load.
+DEFAULT_POOL_MAXSIZE = 32
+
+
 def create_client(
     host: str,
     port: int,
@@ -39,6 +46,7 @@ def create_client(
     password: str | None,
     use_ssl: bool,
     verify_certs: bool = True,
+    maxsize: int = DEFAULT_POOL_MAXSIZE,
 ) -> OpenSearch:
     """Create an OpenSearch client with the given configuration.
 
@@ -49,6 +57,7 @@ def create_client(
         password: Password for authentication (optional)
         use_ssl: Whether to use SSL/TLS
         verify_certs: Whether to verify SSL certificates (default: True for security)
+        maxsize: urllib3 connection-pool size (concurrent connections per client)
 
     Returns:
         Configured OpenSearch client
@@ -82,7 +91,43 @@ def create_client(
         verify_certs=verify_certs,
         ssl_show_warn=not verify_certs,  # Only show warnings if not verifying
         timeout=10,
+        maxsize=maxsize,
     )
+
+
+# Process-local cache of OpenSearch clients keyed by connection config.
+# opensearch-py clients are thread-safe and hold a connection pool, so reusing a
+# single client per config preserves HTTP keep-alive instead of paying a fresh
+# TCP+TLS handshake on every request. This is critical on the ingest hot path,
+# where a new client was previously built per /api/logs request.
+_client_cache: dict[tuple, OpenSearch] = {}
+
+
+def get_cached_client(
+    host: str,
+    port: int,
+    username: str | None,
+    password: str | None,
+    use_ssl: bool,
+    verify_certs: bool = True,
+    maxsize: int = DEFAULT_POOL_MAXSIZE,
+) -> OpenSearch:
+    """Return a shared OpenSearch client for the given config, creating it once.
+
+    The cache key includes every connection parameter, so a settings change
+    (host/credentials/TLS) transparently yields a fresh client. Stale clients for
+    superseded configs are dropped from the cache (and left for GC); the cache is
+    bounded by the number of distinct configs, which is effectively one.
+    """
+    key = (host, port, username, password, use_ssl, verify_certs, maxsize)
+    client = _client_cache.get(key)
+    if client is None:
+        client = create_client(host, port, username, password, use_ssl, verify_certs, maxsize=maxsize)
+        # Drop clients for any superseded config for this host:port to avoid leaks.
+        for stale_key in [k for k in _client_cache if k[0] == host and k[1] == port and k != key]:
+            _client_cache.pop(stale_key, None)
+        _client_cache[key] = client
+    return client
 
 
 async def get_client_from_settings(db_session) -> OpenSearch | None:
@@ -114,7 +159,7 @@ async def get_client_from_settings(db_session) -> OpenSearch | None:
             # Decryption failed - use raw password value (may be unencrypted)
             logger.debug("Password decryption failed, using raw value: %s", e)
 
-    return create_client(
+    return get_cached_client(
         host=config["host"],
         port=config["port"],
         username=config.get("username"),
