@@ -89,8 +89,17 @@ class SchedulerService:
         try:
             redis = await get_redis()
         except Exception as e:
-            logger.warning("Redis unavailable, running job without lock: %s", e)
-            await job_func()
+            # Fail CLOSED: if we cannot reach Redis we cannot guarantee single
+            # execution. Running the job anyway means every uvicorn worker and
+            # every worker replica runs it concurrently (duplicate MISP syncs,
+            # cleanups, etc.). Skipping is the safe choice — the job runs on the
+            # next tick once Redis recovers.
+            logger.warning(
+                "Redis unavailable; skipping locked job %s to avoid duplicate "
+                "execution across workers: %s",
+                lock_name,
+                e,
+            )
             return
 
         lock = redis.lock(lock_name, timeout=timeout, blocking=False)

@@ -44,6 +44,11 @@ router = APIRouter(prefix="/export", tags=["export"])
 # Current config schema version
 CONFIG_SCHEMA_VERSION = "3.0"
 
+# Versions accepted by import_config. MUST include CONFIG_SCHEMA_VERSION, otherwise
+# a backup taken with the current build cannot be restored (the import code has
+# v3.0 handling but the gate previously rejected it).
+SUPPORTED_CONFIG_VERSIONS = {"1.0", "2.0", "3.0"}
+
 # Settings to exclude from export (contain credentials)
 EXCLUDED_SETTINGS = {"opensearch"}
 EXCLUDED_SETTING_PREFIXES = ("secret_",)
@@ -474,7 +479,7 @@ async def import_config(
 
     # Validate schema version
     version = config.get("version", "1.0")
-    if version not in ["1.0", "2.0"]:
+    if version not in SUPPORTED_CONFIG_VERSIONS:
         raise HTTPException(400, f"Unsupported config version: {version}")
 
     summary: dict[str, Any] = {

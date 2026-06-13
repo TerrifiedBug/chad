@@ -1120,7 +1120,18 @@ async def run_poll_job(index_pattern_id: str) -> None:
 
             if index_pattern.poll_state:
                 ps = index_pattern.poll_state
-                ps.last_poll_at = now
+                # last_poll_at is the detection watermark: the next poll queries
+                # events in (last_poll_at, now]. Advance it ONLY on a fully
+                # successful poll. Advancing after an error would skip the failed
+                # window forever (a silent, permanent detection gap); leaving it
+                # makes the next poll re-scan the missed window and catch up.
+                # Trade-off: a partial failure re-scans all rules for that window,
+                # so successful rules may reprocess a few events — acceptable since
+                # a missed detection is far worse than a duplicate, and alert IDs
+                # are deterministic. (updated_at/last_poll_status below still record
+                # that an attempt happened, so health/staleness checks stay honest.)
+                if is_success:
+                    ps.last_poll_at = now
                 ps.last_poll_status = "error" if has_errors else "success"
                 ps.last_error = str(poll_result["errors"]) if has_errors else None
                 ps.updated_at = now

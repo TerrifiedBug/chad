@@ -87,8 +87,13 @@ class TestSchedulerLocking:
                 mock_lock.release.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_job_runs_without_lock_when_redis_unavailable(self):
-        """Job should run without lock when Redis is unavailable (graceful degradation)."""
+    async def test_job_skipped_when_redis_unavailable(self):
+        """Job must be SKIPPED (not run lock-free) when Redis is unavailable.
+
+        Running without a lock would let every uvicorn worker and worker replica
+        execute the job concurrently. Failing closed avoids duplicate execution;
+        the job runs on the next tick once Redis recovers.
+        """
         from app.services.scheduler import SchedulerService
 
         service = SchedulerService()
@@ -100,8 +105,8 @@ class TestSchedulerLocking:
             with patch.object(service, "_execute_health_check", new_callable=AsyncMock) as mock_execute:
                 await service._run_health_check_with_lock()
 
-                # Health check SHOULD still be executed (fallback to no-lock)
-                mock_execute.assert_called_once()
+                # Health check must NOT run when the lock cannot be guaranteed
+                mock_execute.assert_not_called()
 
 
 class TestRunWithLock:
