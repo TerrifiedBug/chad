@@ -28,20 +28,46 @@ from app.schemas.index_pattern import (
 )
 from app.services.audit import audit_log
 from app.services.opensearch import get_index_fields, get_time_fields, validate_index_pattern
+from app.services.permissions import has_permission
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/index-patterns", tags=["index-patterns"])
+
+# Placeholder returned in place of a real log-shipping auth token for users who
+# lack manage_index_config. The token is a bearer credential for the ingest
+# pipeline; exposing it to read-only users would let them forge/replay/DoS log
+# ingestion. Privileged users still receive the real token.
+MASKED_AUTH_TOKEN = "********"
+
+
+async def _mask_tokens_if_unprivileged(
+    db: AsyncSession,
+    user: User,
+    patterns: list[IndexPattern],
+) -> None:
+    """Replace auth_token with a placeholder unless the user can manage index config.
+
+    Detaches the ORM instances first so the in-memory masking can never be
+    flushed back to the database.
+    """
+    if await has_permission(db, user, "manage_index_config"):
+        return
+    db.expunge_all()
+    for pattern in patterns:
+        pattern.auth_token = MASKED_AUTH_TOKEN
 
 
 @router.get("", response_model=list[IndexPatternResponse])
 async def list_index_patterns(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     result = await db.execute(
         select(IndexPattern).options(selectinload(IndexPattern.updated_by))
     )
-    return result.scalars().all()
+    patterns = list(result.scalars().all())
+    await _mask_tokens_if_unprivileged(db, current_user, patterns)
+    return patterns
 
 
 @router.post("", response_model=IndexPatternResponse, status_code=status.HTTP_201_CREATED)
@@ -116,7 +142,7 @@ async def create_index_pattern(
 async def get_index_pattern(
     pattern_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     result = await db.execute(
         select(IndexPattern)
@@ -130,6 +156,7 @@ async def get_index_pattern(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Index pattern not found",
         )
+    await _mask_tokens_if_unprivileged(db, current_user, [pattern])
     return pattern
 
 

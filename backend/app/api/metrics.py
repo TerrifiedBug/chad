@@ -1,10 +1,13 @@
 """Prometheus metrics endpoint."""
 
 import logging
+import secrets
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException, status
 from fastapi.responses import PlainTextResponse
 
+from app.core.config import settings
 from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
@@ -13,7 +16,7 @@ router = APIRouter(tags=["metrics"])
 
 
 @router.get("/metrics", response_class=PlainTextResponse)
-async def metrics():
+async def metrics(authorization: Annotated[str | None, Header()] = None):
     """
     Return Prometheus-format metrics.
 
@@ -22,7 +25,25 @@ async def metrics():
     - chad_queue_depth_total: Total queue depth across all indexes
     - chad_dead_letter_count: Dead letter queue size
     - chad_redis_connected: Redis connection status (1=connected, 0=disconnected)
+
+    Protected by an optional bearer token: if settings.METRICS_TOKEN is set, the
+    request must send "Authorization: Bearer <token>". Otherwise the endpoint is
+    open (Prometheus default). Without a token the response would leak per-index
+    queue inventory to any unauthenticated caller.
     """
+    expected_token = settings.METRICS_TOKEN
+    if expected_token:
+        provided = (
+            authorization[7:]
+            if authorization and authorization.startswith("Bearer ")
+            else None
+        )
+        if not provided or not secrets.compare_digest(provided, expected_token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or missing metrics token",
+            )
+
     lines = []
 
     # Help and type declarations

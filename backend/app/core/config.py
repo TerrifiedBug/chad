@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SETUP_COMPLETED: bool = False
 
+    # Metrics endpoint protection. If set, GET /metrics requires
+    # "Authorization: Bearer <METRICS_TOKEN>" (configure your Prometheus scrape
+    # with the same token). If unset (default), /metrics stays open for scraping
+    # — set this in production to avoid exposing per-index queue inventory.
+    METRICS_TOKEN: str | None = None
+
     # Deployment mode: 'push' (full deployment) or 'pull' (pull-only, no Redis/workers)
     CHAD_MODE: str = "push"
 
