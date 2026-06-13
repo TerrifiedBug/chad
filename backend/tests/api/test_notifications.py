@@ -1,11 +1,62 @@
 """Tests for the notifications settings API endpoints."""
 
+import uuid
+from types import SimpleNamespace
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.notification_settings import NotificationSettings
 from app.models.user import UserRole
+
+
+class TestWebhookSendSSRF:
+    """The alert webhook sender must block SSRF targets at egress."""
+
+    @pytest.mark.asyncio
+    async def test_send_to_webhook_blocks_internal_ip(self, monkeypatch):
+        """A webhook URL resolving to an internal IP is blocked before any request."""
+        import app.core.config as config_module
+        from app.services.notification import _send_to_webhook
+
+        # The dev/test container enables ALLOW_INTERNAL_WEBHOOK_IPS; force the
+        # production posture so the SSRF guard actually engages.
+        monkeypatch.setattr(config_module.settings, "ALLOW_INTERNAL_WEBHOOK_IPS", False)
+
+        webhook = SimpleNamespace(
+            id=uuid.uuid4(),
+            url="http://169.254.169.254/latest/meta-data/",
+            header_value=None,
+            header_name=None,
+            provider="generic",
+        )
+
+        success, error = await _send_to_webhook(webhook, {"type": "alert"})
+
+        assert success is False
+        assert "SSRF" in (error or "")
+
+    @pytest.mark.asyncio
+    async def test_send_to_webhook_blocks_non_http_scheme(self, monkeypatch):
+        """Non-http(s) schemes are blocked regardless of the internal-IP setting."""
+        import app.core.config as config_module
+        from app.services.notification import _send_to_webhook
+
+        monkeypatch.setattr(config_module.settings, "ALLOW_INTERNAL_WEBHOOK_IPS", True)
+
+        webhook = SimpleNamespace(
+            id=uuid.uuid4(),
+            url="file:///etc/passwd",
+            header_value=None,
+            header_name=None,
+            provider="generic",
+        )
+
+        success, error = await _send_to_webhook(webhook, {"type": "alert"})
+
+        assert success is False
+        assert "SSRF" in (error or "")
 
 
 class TestMandatoryCommentsSettings:
