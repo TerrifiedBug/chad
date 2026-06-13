@@ -339,3 +339,111 @@ async def test_reject_requires_note(client, test_session, test_index_pattern, ad
         f"/api/deployment-requests/{rid}/reject", json={}, headers=_auth(admin_user)
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_invalid_status_filter_422(client, test_session, admin_user):
+    resp = await client.get(
+        "/api/deployment-requests?status_filter=bogus", headers=_auth(admin_user)
+    )
+    assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Integrity: approval deploys the PINNED (reviewed) version, not live content
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_apply_deploys_pinned_version(test_session, test_user, monkeypatch):
+    """apply_sigma_rule_deployment uses pinned_yaml/version, not live content."""
+    import uuid as _uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.models.index_pattern import IndexPattern
+    from app.services.deployment import apply_sigma_rule_deployment
+
+    # Pull-mode pattern -> no percolator write (no real OpenSearch needed).
+    ip = IndexPattern(id=_uuid.uuid4(), name="pull-p", pattern="pull-*",
+                      percolator_index=".perc-pull", mode="pull")
+    test_session.add(ip)
+    await test_session.flush()
+
+    pinned_yaml = (
+        "title: Pinned\nlogsource:\n  category: test\n"
+        "detection:\n  selection:\n    fieldA: value\n  condition: selection\n"
+    )
+    rule = Rule(id=_uuid.uuid4(), title="PinTest", yaml_content="title: LIVE v2 different",
+                severity="low", status=RuleStatus.UNDEPLOYED, source=RuleSource.USER,
+                index_pattern_id=ip.id, created_by=test_user.id)
+    test_session.add(rule)
+    await test_session.commit()
+    res = await test_session.execute(
+        select(Rule).where(Rule.id == rule.id)
+        .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
+    )
+    rule = res.scalar_one()
+
+    # No unmapped fields (pull pattern has no index fields to check against here).
+    monkeypatch.setattr("app.services.deployment.get_index_fields", lambda *a, **k: ["fieldA"])
+
+    result = await apply_sigma_rule_deployment(
+        test_session, object(), rule, actor_id=test_user.id, change_reason="x",
+        pinned_yaml=pinned_yaml, pinned_version=1,
+    )
+    assert result.deployed_version == 1
+    await test_session.refresh(rule)
+    assert rule.deployed_version == 1
+    assert rule.status == RuleStatus.DEPLOYED
+
+
+# --------------------------------------------------------------------------- #
+# No-bypass: field-mapping change must NOT silently redeploy when gate is ON
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_field_mapping_change_does_not_redeploy_when_gated(
+    client, test_session, test_index_pattern, admin_user, monkeypatch
+):
+    import uuid as _uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.models.field_mapping import FieldMapping, MappingOrigin
+
+    await _enable_gate(test_session)
+    await _seed_opensearch(test_session)
+
+    mapping = FieldMapping(
+        id=_uuid.uuid4(), index_pattern_id=test_index_pattern.id,
+        sigma_field="process.name", target_field="process.name",
+        origin=MappingOrigin.MANUAL, created_by=admin_user.id,
+    )
+    test_session.add(mapping)
+    rule = await _make_rule(test_session, test_index_pattern, admin_user, title="Live")
+    rule.status = RuleStatus.DEPLOYED
+    rule.deployed_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+    await test_session.commit()
+
+    loaded_rule = (await test_session.execute(
+        select(Rule).where(Rule.id == rule.id).options(selectinload(Rule.versions))
+    )).scalar_one()
+
+    redeploy_mock = AsyncMock(return_value={"status": "redeployed", "rule_id": str(rule.id)})
+    monkeypatch.setattr(
+        "app.services.rule_redeploy.redeploy_rule_to_percolator", redeploy_mock
+    )
+
+    async def _affected(_db, _mapping_id):
+        return [loaded_rule]
+
+    monkeypatch.setattr("app.services.field_mapping.get_rules_using_mapping", _affected)
+
+    resp = await client.put(
+        f"/api/field-mappings/{mapping.id}",
+        json={"target_field": "process.name.keyword"},
+        headers=_auth(admin_user),
+    )
+    assert resp.status_code == 200, resp.text
+    # The bypass is closed: no silent percolator redeploy under dual-control.
+    redeploy_mock.assert_not_called()

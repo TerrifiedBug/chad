@@ -371,7 +371,23 @@ async def update_field_mapping(
     # target field (silent missed detections). Runs after update_mapping commits
     # so resolve_mappings() inside the redeploy sees the new value. Per-rule
     # failures are logged but do not fail the mapping change.
-    if affected_rules and os_client and mapping.index_pattern_id:
+    #
+    # Dual-control: when deployment approval is required, do NOT silently
+    # recompile live percolators here — that would be an ungated content write
+    # around the maker-checker gate. The mapping is saved; affected rules must be
+    # re-deployed through the approval flow to pick up the new mapping.
+    from app.services.deployment import is_approval_required
+
+    gate_on = await is_approval_required(db)
+    if gate_on and affected_rules:
+        import logging
+        logging.getLogger(__name__).info(
+            "Field mapping %s changed but dual-control is on; skipping auto-redeploy of "
+            "%d affected rule(s). Re-deploy them via the approval flow to apply the mapping.",
+            mapping_id,
+            len(affected_rules),
+        )
+    if affected_rules and os_client and mapping.index_pattern_id and not gate_on:
         from app.services.rule_redeploy import redeploy_rule_to_percolator
 
         ip_result = await db.execute(

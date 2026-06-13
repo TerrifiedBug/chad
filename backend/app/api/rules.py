@@ -1298,7 +1298,7 @@ async def deploy_rule(
         req = await create_deployment_request(
             db,
             requested_by=current_user.id,
-            team_id=current_user.team_id,
+            team_id=rule.team_id,  # scope review to the rule's owning team
             change_reason=change_reason,
             sigma_rules=[rule],
         )
@@ -1967,7 +1967,7 @@ async def unsnooze_rule(
         req = await create_deployment_request(
             db,
             requested_by=current_user.id,
-            team_id=current_user.team_id,
+            team_id=rule_full.team_id,  # scope review to the rule's owning team
             change_reason=change_reason,
             sigma_rules=[rule_full],
         )

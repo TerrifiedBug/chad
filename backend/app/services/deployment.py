@@ -218,6 +218,8 @@ async def apply_sigma_rule_deployment(
     change_reason: str,
     request_ip: str | None = None,
     deployment_request_id: uuid.UUID | None = None,
+    pinned_yaml: str | None = None,
+    pinned_version: int | None = None,
 ) -> SigmaDeployResult:
     """Validate, translate, and write a Sigma rule to its percolator index.
 
@@ -228,9 +230,17 @@ async def apply_sigma_rule_deployment(
 
     When ``deployment_request_id`` is set it is recorded in the audit detail to
     correlate the resulting ``rule.deploy`` row with the approval request.
+
+    Under dual-control, the approval flow passes ``pinned_yaml`` /
+    ``pinned_version`` (the exact version that was reviewed) so the content that
+    deploys is the content the checker saw — never live content edited after
+    review. The direct (gate-off) path leaves these None and deploys live.
     """
+    # Deploy the reviewed (pinned) content when provided, else the live rule.
+    yaml_content = pinned_yaml if pinned_yaml is not None else rule.yaml_content
+
     # 1. Validate the rule translates at all.
-    validation = sigma_service.translate_and_validate(rule.yaml_content)
+    validation = sigma_service.translate_and_validate(yaml_content)
     if not validation.success:
         errors_str = ", ".join(e.message for e in (validation.errors or []))
         raise DeploymentApplyError(
@@ -291,7 +301,7 @@ async def apply_sigma_rule_deployment(
 
     # 3. Translate with mappings applied.
     translation = sigma_service.translate_with_mappings(
-        rule.yaml_content, field_mappings_dict if field_mappings_dict else None
+        yaml_content, field_mappings_dict if field_mappings_dict else None
     )
     if not translation.success:
         errors_str = ", ".join(e.message for e in (translation.errors or []))
@@ -300,7 +310,7 @@ async def apply_sigma_rule_deployment(
         )
 
     # 4. Update ATT&CK mappings from tags before deploy so MITRE coverage is accurate.
-    parsed_rule = yaml.safe_load(rule.yaml_content)
+    parsed_rule = yaml.safe_load(yaml_content)
     tags = parsed_rule.get("tags", []) if isinstance(parsed_rule, dict) else []
     try:
         await update_rule_attack_mappings(db, str(rule.id), tags)
@@ -328,11 +338,12 @@ async def apply_sigma_rule_deployment(
     else:
         logger.info("Skipping percolator deploy for rule %s (pull mode)", rule.id)
 
-    # 6. Update deployment tracking.
+    # 6. Update deployment tracking. The deployed version reflects what was
+    # actually pushed (the pinned/reviewed version under dual-control).
     now = datetime.now(UTC)
-    current_version = _current_version(rule)
+    deploy_version = pinned_version if pinned_version is not None else _current_version(rule)
     rule.deployed_at = now
-    rule.deployed_version = current_version
+    rule.deployed_version = deploy_version
     if rule.status != RuleStatus.SNOOZED:
         rule.status = RuleStatus.DEPLOYED
 
@@ -352,7 +363,7 @@ async def apply_sigma_rule_deployment(
 
     return SigmaDeployResult(
         rule_id=rule.id,
-        deployed_version=current_version,
+        deployed_version=deploy_version,
         deployed_at=now,
         percolator_index=percolator_index,
         tags=tags,

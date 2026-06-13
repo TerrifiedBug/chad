@@ -254,6 +254,11 @@ async def list_deployment_requests(
     )
     stmt = apply_team_scope(stmt, DeploymentRequest, current_user)
     if status_filter:
+        if status_filter not in {s.value for s in DeploymentRequestStatus}:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid status filter: {status_filter}",
+            )
         stmt = stmt.where(DeploymentRequest.status == status_filter)
     stmt = stmt.order_by(DeploymentRequest.created_at.desc())
 
@@ -464,9 +469,16 @@ async def approve_deployment_request(
                 rule = sigma_rules.get(item.rule_id)
                 if rule is None:
                     raise DeploymentApplyError("Rule no longer exists", kind="missing")
+                # Deploy the exact reviewed version (pinned), not live content,
+                # so what the checker approved is what reaches the percolator.
+                pinned = next(
+                    (v for v in rule.versions if v.id == item.rule_version_id), None
+                )
                 await apply_sigma_rule_deployment(
                     db, os_client, rule, actor_id=current_user.id, change_reason=req.change_reason,
                     request_ip=ip, deployment_request_id=req.id,
+                    pinned_yaml=pinned.yaml_content if pinned else None,
+                    pinned_version=item.version_number,
                 )
             item.apply_status = DeploymentItemApplyStatus.OK.value
             item.apply_error = None

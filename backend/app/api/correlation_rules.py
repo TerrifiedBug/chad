@@ -591,7 +591,9 @@ async def deploy_correlation_rule(
         req = await create_deployment_request(
             db,
             requested_by=current_user.id,
-            team_id=None,
+            # Correlation rules carry no team; scope review to the requester's
+            # team so it does not become globally visible/approvable.
+            team_id=current_user.team_id,
             change_reason=data.change_reason or "Deploy correlation rule",
             correlation_rules=[rule],
         )
