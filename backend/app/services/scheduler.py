@@ -176,6 +176,9 @@ class SchedulerService:
             # Add correlation state cleanup job (runs every 5 minutes)
             self._schedule_correlation_cleanup()
 
+            # Add threshold-match cleanup job (runs hourly)
+            self._schedule_threshold_cleanup()
+
             # Add version cleanup job (runs daily at 3 AM)
             self._schedule_version_cleanup()
 
@@ -219,6 +222,22 @@ class SchedulerService:
             misfire_grace_time=300,  # 5 minute grace period
         )
         logger.info("Scheduled correlation_cleanup job (every 5 minutes)")
+
+    def _schedule_threshold_cleanup(self):
+        """Schedule cleanup of old threshold-match rows (hourly).
+
+        Threshold matches that never reach their count would otherwise accumulate
+        forever, since check_threshold only clears a group's matches when it fires.
+        """
+        scheduler.add_job(
+            self._run_threshold_cleanup,
+            trigger=IntervalTrigger(hours=1),
+            id="threshold_cleanup",
+            name="threshold matches cleanup",
+            replace_existing=True,
+            misfire_grace_time=600,  # 10 minute grace period
+        )
+        logger.info("Scheduled threshold_cleanup job (hourly)")
 
     def _schedule_version_cleanup(self):
         """Schedule the version cleanup job (daily at 3 AM)."""
@@ -804,6 +823,37 @@ class SchedulerService:
                 service="correlation_cleanup",
                 message=f"Scheduled correlation cleanup failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__}
+            )
+        finally:
+            await session.close()
+
+    async def _run_threshold_cleanup(self):
+        """Execute threshold-match cleanup with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:threshold_cleanup",
+            timeout=300,  # 5 minutes
+            job_func=self._execute_threshold_cleanup,
+        )
+
+    async def _execute_threshold_cleanup(self):
+        """Delete threshold-match rows older than the retention window."""
+        from app.services.threshold import cleanup_old_matches
+
+        logger.debug("Running scheduled threshold matches cleanup")
+        session = await self._get_session()
+        try:
+            count = await cleanup_old_matches(session, hours=24)
+            await session.commit()
+            if count > 0:
+                logger.info("Threshold cleanup: removed %s old matches", count)
+        except Exception as e:
+            logger.error("Scheduled threshold cleanup failed: %s", e)
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="threshold_cleanup",
+                message=f"Scheduled threshold cleanup failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
             )
         finally:
             await session.close()

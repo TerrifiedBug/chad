@@ -120,6 +120,7 @@ class TestPollIndexPattern:
         detector = PullDetector(client=mock_client)
 
         mock_rule = MagicMock()
+        mock_rule.threshold_enabled = False  # ordinary (non-threshold) rule
         mock_rule.id = uuid4()
         mock_rule.title = "Test Rule"
         mock_rule.severity = "high"
@@ -158,6 +159,68 @@ class TestPollIndexPattern:
             assert results["alerts_created"] == 2
 
     @pytest.mark.asyncio
+    async def test_threshold_rule_does_not_alert_until_met(
+        self, mock_db, mock_sigma_service, mock_alert_service
+    ):
+        """A threshold-enabled rule must not create an alert while the threshold
+        is unmet (check_threshold returns False) - previously every hit alerted."""
+        mock_client = MagicMock()
+        mock_client.search = MagicMock(
+            return_value={
+                "hits": {
+                    "total": {"value": 1, "relation": "eq"},
+                    "hits": [
+                        {"_id": "doc1", "_source": {"message": "x"}, "sort": [1, "doc1"]},
+                    ],
+                }
+            }
+        )
+        mock_client.create_pit = MagicMock(return_value={"pit_id": "test-pit"})
+        mock_client.delete_pit = MagicMock()
+
+        detector = PullDetector(client=mock_client)
+
+        mock_rule = MagicMock()
+        mock_rule.threshold_enabled = True
+        mock_rule.id = uuid4()
+        mock_rule.title = "Threshold Rule"
+        mock_rule.severity = "high"
+        mock_rule.yaml_content = "title: T\nlogsource:\n  product: windows"
+
+        mock_index_pattern = MagicMock()
+        mock_index_pattern.id = uuid4()
+        mock_index_pattern.name = "test-index"
+        mock_index_pattern.pattern = "logs-*"
+        mock_index_pattern.timestamp_field = "@timestamp"
+
+        with patch('app.services.pull_detector.get_app_url', new_callable=AsyncMock) as mock_get_url, \
+             patch('app.services.pull_detector.enrich_alert', new_callable=AsyncMock) as mock_enrich, \
+             patch('app.services.pull_detector.should_suppress_alert') as mock_suppress, \
+             patch('app.services.pull_detector.publish_alert', new_callable=AsyncMock), \
+             patch('app.services.pull_detector.send_alert_notification', new_callable=AsyncMock), \
+             patch('app.services.pull_detector.check_correlation', new_callable=AsyncMock) as mock_corr, \
+             patch('app.services.pull_detector.check_threshold', new_callable=AsyncMock) as mock_threshold:
+
+            mock_get_url.return_value = "http://localhost:3000"
+            mock_enrich.side_effect = lambda db, doc, ip: doc
+            mock_suppress.return_value = False
+            mock_corr.return_value = []
+            mock_threshold.return_value = False  # threshold not yet met
+
+            results = await detector.poll_index_pattern(
+                index_pattern=mock_index_pattern,
+                rules=[mock_rule],
+                sigma_service=mock_sigma_service,
+                alert_service=mock_alert_service,
+                last_poll=datetime.now(UTC) - timedelta(minutes=5),
+                db=mock_db,
+            )
+
+            mock_threshold.assert_awaited()  # the gate was consulted
+            mock_alert_service.create_alert.assert_not_called()  # no alert below threshold
+            assert results["alerts_created"] == 0
+
+    @pytest.mark.asyncio
     async def test_poll_index_pattern_handles_no_matches(
         self, mock_db, mock_sigma_service, mock_alert_service
     ):
@@ -170,6 +233,7 @@ class TestPollIndexPattern:
         detector = PullDetector(client=mock_client)
 
         mock_rule = MagicMock()
+        mock_rule.threshold_enabled = False  # ordinary (non-threshold) rule
         mock_rule.id = uuid4()
         mock_rule.title = "Test Rule"
         mock_rule.severity = "medium"
@@ -270,6 +334,7 @@ class TestDuplicateAlertPrevention:
         detector = PullDetector(client=mock_client)
 
         mock_rule = MagicMock()
+        mock_rule.threshold_enabled = False  # ordinary (non-threshold) rule
         mock_rule.id = uuid4()
         mock_rule.title = "Test Sigma Rule"
         mock_rule.severity = "high"
@@ -356,6 +421,7 @@ class TestDuplicateAlertPrevention:
         detector = PullDetector(client=mock_client)
 
         mock_rule = MagicMock()
+        mock_rule.threshold_enabled = False  # ordinary (non-threshold) rule
         mock_rule.id = uuid4()
         mock_rule.title = "Test Sigma Rule"
         mock_rule.severity = "high"
