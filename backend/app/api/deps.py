@@ -11,7 +11,7 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.setting import Setting
 from app.models.user import User
-from app.services.opensearch import create_client
+from app.services.opensearch import get_cached_client
 
 security = HTTPBearer()
 
@@ -201,7 +201,7 @@ async def get_opensearch_client(
             # Password may be stored in plaintext (legacy) - use as-is
             pass
 
-    return create_client(
+    return get_cached_client(
         host=config["host"],
         port=config["port"],
         username=config.get("username"),
@@ -237,7 +237,7 @@ async def get_opensearch_client_optional(
             pass
 
     try:
-        return create_client(
+        return get_cached_client(
             host=config["host"],
             port=config["port"],
             username=config.get("username"),

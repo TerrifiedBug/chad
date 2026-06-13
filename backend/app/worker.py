@@ -112,18 +112,25 @@ class Worker:
             logs = [entry[2] for entry in log_entries]
             result = None
             logs_errored = 0
+            batch_ok = True
 
             try:
                 result = await processor.process_batch(db_session, index_suffix, logs)
             except Exception as e:
                 logger.error("Failed to process batch for %s: %s", index_suffix, e)
                 logs_errored = len(logs)
-                # Still acknowledge to prevent reprocessing
-                # In production, might want to move to dead letter instead
+                batch_ok = False
 
-            # Mark as processed
-            for stream, msg_id, _ in log_entries:
-                processed.append((stream, msg_id))
+            # Only acknowledge a batch that processed successfully. A failed batch
+            # (e.g. OpenSearch percolate error under cluster pressure) is left
+            # pending so XAUTOCLAIM retries it later; alert IDs are deterministic,
+            # so reprocessing is idempotent. If it keeps failing it ages out to the
+            # dead-letter stream via the TTL check above. ACK-and-drop here would
+            # silently lose unprocessed security logs — the worst failure mode for
+            # a detection platform.
+            if batch_ok:
+                for stream, msg_id, _ in log_entries:
+                    processed.append((stream, msg_id))
 
             # Record health metrics for this batch
             try:
