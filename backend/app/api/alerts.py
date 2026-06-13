@@ -1,6 +1,7 @@
 """Alerts API - view and manage alerts."""
 
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
@@ -43,6 +44,20 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 # Bulk operation schemas
 MAX_BULK_OPERATIONS = 100
 
+# CHAD alert IDs are NOT UUIDs — they are 32-char hex digests from
+# generate_deterministic_alert_id (sha256[:32]). The previous UUID() validation
+# rejected every real alert ID, breaking bulk status updates and bulk delete.
+# This pattern accepts the real format while staying injection-safe (alert_id is
+# used in OpenSearch term queries and as a document id).
+_ALERT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def _validate_alert_ids(alert_ids: list[str]) -> list[str]:
+    for alert_id in alert_ids:
+        if not isinstance(alert_id, str) or not _ALERT_ID_RE.match(alert_id):
+            raise ValueError(f"Invalid alert ID format: {alert_id}")
+    return alert_ids
+
 
 class BulkAlertStatusUpdate(BaseModel):
     alert_ids: list[str] = Field(..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to update")
@@ -52,13 +67,7 @@ class BulkAlertStatusUpdate(BaseModel):
     @field_validator('alert_ids')
     @classmethod
     def validate_alert_ids(cls, v):
-        """Validate all IDs are valid UUIDs."""
-        for alert_id in v:
-            try:
-                UUID(alert_id)
-            except (ValueError, AttributeError):
-                raise ValueError(f"Invalid UUID format: {alert_id}")
-        return v
+        return _validate_alert_ids(v)
 
 
 class BulkAlertDelete(BaseModel):
@@ -68,13 +77,7 @@ class BulkAlertDelete(BaseModel):
     @field_validator('alert_ids')
     @classmethod
     def validate_alert_ids(cls, v):
-        """Validate all IDs are valid UUIDs."""
-        for alert_id in v:
-            try:
-                UUID(alert_id)
-            except (ValueError, AttributeError):
-                raise ValueError(f"Invalid UUID format: {alert_id}")
-        return v
+        return _validate_alert_ids(v)
 
 
 @router.get("", response_model=AlertListResponse | ClusteredAlertListResponse)
@@ -388,7 +391,7 @@ async def update_alert_status(
 
 @router.delete("/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_alert(
-    alert_id: UUID,
+    alert_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
