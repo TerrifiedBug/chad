@@ -43,6 +43,33 @@ SEVERITY_EMOJI = {
     "informational": "⚪",
 }
 
+# Alert-storm protection: cap outbound notifications per (destination, rule) within
+# a window so a noisy rule firing thousands of times can't flood webhooks (429
+# bans) or create a flood of duplicate Jira tickets. Alerts are still recorded;
+# only the outbound notifications are throttled.
+NOTIFICATION_THROTTLE_MAX = 10
+NOTIFICATION_THROTTLE_WINDOW_SECONDS = 300  # 5 minutes
+
+
+async def _notification_allowed(throttle_key: str) -> tuple[bool, int]:
+    """Return (allowed, count_in_window) for a destination+rule throttle bucket.
+
+    Fail-open: any Redis error allows the notification (better to over-notify than
+    to silently drop alerts because the cache is down).
+    """
+    try:
+        from app.core.redis import get_redis
+
+        redis = await get_redis()
+        key = f"chad:notif:throttle:{throttle_key[:160]}"
+        count = await redis.incr(key)
+        if count == 1:
+            await redis.expire(key, NOTIFICATION_THROTTLE_WINDOW_SECONDS)
+        return count <= NOTIFICATION_THROTTLE_MAX, count
+    except Exception as e:
+        logger.debug("Notification throttle check failed (allowing): %s", e)
+        return True, 0
+
 
 async def send_system_notification(
     db: AsyncSession,
@@ -180,6 +207,23 @@ async def _send_alert_to_webhooks(
         if not webhook or not webhook.enabled:
             continue
 
+        # Alert-storm protection: throttle per webhook+rule.
+        allowed, count = await _notification_allowed(f"wh:{webhook.id}:{rule_title}")
+        if not allowed:
+            logger.warning(
+                "Webhook %s throttled for rule '%s' (%d notifications in window)",
+                webhook.id, rule_title, count,
+            )
+            results.append(
+                {
+                    "webhook_id": str(webhook.id),
+                    "webhook_name": webhook.name,
+                    "success": False,
+                    "error": "throttled (alert-storm protection)",
+                }
+            )
+            continue
+
         success, error = await _send_to_webhook(webhook, payload)
 
         results.append(
@@ -213,6 +257,21 @@ async def _send_alert_to_jira(
     # Check if this severity should create a Jira ticket
     if not config.alert_severities or severity not in config.alert_severities:
         return None
+
+    # Alert-storm protection: throttle Jira ticket creation per rule so a noisy
+    # rule can't create thousands of duplicate tickets (and trip Jira's own limits).
+    allowed, count = await _notification_allowed(f"jira:{rule_title}")
+    if not allowed:
+        logger.warning(
+            "Jira ticket creation throttled for rule '%s' (%d in window)",
+            rule_title, count,
+        )
+        return {
+            "destination": "jira",
+            "success": False,
+            "issue_key": None,
+            "error": "throttled (alert-storm protection)",
+        }
 
     try:
         issue = await create_jira_ticket_for_alert(
