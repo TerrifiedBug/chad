@@ -1,6 +1,5 @@
 import secrets
 import uuid
-
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
@@ -10,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 if TYPE_CHECKING:
     from app.models.enrichment_webhook import IndexPatternEnrichmentWebhook
 
+from app.core.encryption import decrypt_with_fallback, encrypt
 from app.db.base import Base, TimestampMixin, UUIDMixin
 
 
@@ -20,8 +20,13 @@ class DetectionMode:
 
 
 def generate_auth_token() -> str:
-    """Generate a secure auth token for log shipping."""
+    """Generate a secure plaintext auth token for log shipping."""
     return secrets.token_urlsafe(32)
+
+
+def _default_encrypted_auth_token() -> str:
+    """Column default: a freshly generated token, stored encrypted at rest."""
+    return encrypt(generate_auth_token())
 
 
 class IndexPattern(Base, UUIDMixin, TimestampMixin):
@@ -31,9 +36,21 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
     pattern: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     percolator_index: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    auth_token: Mapped[str] = mapped_column(
-        String(64), nullable=False, default=generate_auth_token
+    # Stored encrypted at rest (Fernet). The DB column stays named "auth_token";
+    # read/write plaintext via the ``auth_token`` property below so every caller
+    # (token validation, API responses) transparently sees the cleartext token.
+    auth_token_encrypted: Mapped[str] = mapped_column(
+        "auth_token", String(255), nullable=False, default=_default_encrypted_auth_token
     )
+
+    @property
+    def auth_token(self) -> str:
+        """Plaintext log-shipping token (decrypted from the encrypted column)."""
+        return decrypt_with_fallback(self.auth_token_encrypted)
+
+    @auth_token.setter
+    def auth_token(self, value: str) -> None:
+        self.auth_token_encrypted = encrypt(value)
 
     # Health alerting thresholds (nullable = use global defaults)
     health_no_data_minutes: Mapped[int | None] = mapped_column(

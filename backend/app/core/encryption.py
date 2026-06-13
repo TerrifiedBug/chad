@@ -69,3 +69,19 @@ def decrypt(ciphertext: str) -> str:
     """Decrypt base64 encoded ciphertext, return plaintext."""
     f = Fernet(get_encryption_key())
     return f.decrypt(ciphertext.encode()).decode()
+
+
+def decrypt_with_fallback(value: str | None) -> str | None:
+    """Decrypt ``value``; if it is not valid ciphertext, return it unchanged.
+
+    Lets encrypted-at-rest columns tolerate not-yet-migrated plaintext rows
+    during the migration window (and any value written before encryption was
+    introduced). Returns None for None/empty input.
+    """
+    if not value:
+        return value
+    try:
+        return decrypt(value)
+    except Exception:
+        # Not Fernet ciphertext (legacy plaintext row) — use as-is.
+        return value
