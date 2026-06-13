@@ -9,6 +9,7 @@ import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useLocalStorage } from '@/hooks/use-local-storage'
 import { useMediaQuery } from '@/hooks/use-media-query'
+import { useNavStatus } from '@/hooks/use-nav-status'
 import {
   Sheet,
   SheetContent,
@@ -25,6 +26,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [railExpanded, setRailExpanded] = useLocalStorage('rail-expanded', true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const isMobile = useMediaQuery('(max-width: 767px)')
+  const { alertCount, healthStatus } = useNavStatus()
 
   const focusSearch = useCallback(() => {
     const searchInput = document.querySelector<HTMLInputElement>(
@@ -85,6 +87,8 @@ export function AppLayout({ children }: AppLayoutProps) {
         <AppRail
           expanded={railExpanded}
           onExpandedChange={setRailExpanded}
+          alertCount={alertCount}
+          healthStatus={healthStatus}
         />
       )}
 
@@ -92,7 +96,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       {isMobile && (
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetContent side="left" className="w-[200px] p-0">
-            <AppRail expanded={true} onExpandedChange={() => {}} />
+            <AppRail expanded={true} onExpandedChange={() => {}} alertCount={alertCount} healthStatus={healthStatus} />
           </SheetContent>
         </Sheet>
       )}
