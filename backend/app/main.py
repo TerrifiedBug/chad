@@ -103,12 +103,12 @@ async def lifespan(app: FastAPI):
                 "CRITICAL SECURITY CONFIGURATION ERROR:\n" + "\n".join(f"  - {msg}" for msg in critical_failures)
             )
 
-    logger.info("Starting scheduler service")
+    # Begin scheduler leader election. The scheduler runs in exactly one process
+    # (whichever wins the Redis leader lock) and that leader syncs jobs from
+    # settings itself, so every uvicorn worker no longer runs a duplicate
+    # scheduler firing the interval jobs.
+    logger.info("Starting scheduler leader election")
     scheduler_service.start()
-    try:
-        await scheduler_service.sync_jobs_from_settings()
-    except Exception as e:
-        logger.warning("Failed to sync scheduler jobs on startup: %s", e)
 
     # Start WebSocket pub/sub subscriber for cross-worker broadcasts
     # Only start in full deployment mode (not pull-only)
