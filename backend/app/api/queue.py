@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
-from app.core.redis import get_redis
+from app.core.redis import get_redis_queue
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.queue import QueueSettings, QueueSettingsUpdate
@@ -92,7 +92,7 @@ async def get_queue_stats(
     Requires admin role.
     """
     try:
-        redis = await get_redis()
+        redis = await get_redis_queue()
 
         queues = {}
         total_depth = 0
@@ -134,7 +134,7 @@ async def get_dead_letter_messages(
     Requires admin role.
     """
     try:
-        redis = await get_redis()
+        redis = await get_redis_queue()
 
         # Read messages from dead letter stream
         messages = await redis.xrange("chad:logs:dead-letter", count=limit)
@@ -174,7 +174,7 @@ async def clear_dead_letter(
     Requires admin role. This action cannot be undone.
     """
     try:
-        redis = await get_redis()
+        redis = await get_redis_queue()
 
         # Delete the stream entirely
         await redis.delete("chad:logs:dead-letter")
@@ -200,7 +200,7 @@ async def delete_dead_letter_message(
     Requires admin role.
     """
     try:
-        redis = await get_redis()
+        redis = await get_redis_queue()
 
         deleted = await redis.xdel("chad:logs:dead-letter", message_id)
 

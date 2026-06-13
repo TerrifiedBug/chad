@@ -19,7 +19,7 @@ class TestMetricsEndpoint:
         mock_redis.scan = AsyncMock(return_value=(0, []))
         mock_redis.xlen = AsyncMock(return_value=0)
 
-        with patch("app.api.metrics.get_redis", return_value=mock_redis):
+        with patch("app.api.metrics.get_redis_queue", return_value=mock_redis):
             result = await metrics()
 
         assert "chad_queue_depth_total" in result
@@ -31,7 +31,7 @@ class TestMetricsEndpoint:
         """Metrics should return zeros when Redis unavailable."""
         from app.api.metrics import metrics
 
-        with patch("app.api.metrics.get_redis", side_effect=Exception("Connection failed")):
+        with patch("app.api.metrics.get_redis_queue", side_effect=Exception("Connection failed")):
             result = await metrics()
 
         assert "chad_redis_connected 0" in result
@@ -49,7 +49,7 @@ class TestMetricsEndpoint:
         ])
         mock_redis.xlen = AsyncMock(side_effect=[100, 50, 5])  # windows, linux, dead-letter
 
-        with patch("app.api.metrics.get_redis", return_value=mock_redis):
+        with patch("app.api.metrics.get_redis_queue", return_value=mock_redis):
             result = await metrics()
 
         assert 'chad_queue_depth{index="windows"} 100' in result
@@ -69,7 +69,7 @@ class TestMetricsEndpoint:
         mock_redis.scan = AsyncMock(return_value=(0, []))
         mock_redis.xlen = AsyncMock(return_value=0)
 
-        with patch("app.api.metrics.get_redis", return_value=mock_redis):
+        with patch("app.api.metrics.get_redis_queue", return_value=mock_redis):
             result = await metrics()
 
         assert "chad_ingest_events_total" in result
