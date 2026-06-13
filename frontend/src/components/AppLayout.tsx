@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { AppHeader } from '@/components/AppHeader'
 import { OpenSearchBanner } from '@/components/OpenSearchBanner'
 import { AppRail } from '@/components/AppRail'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useLocalStorage } from '@/hooks/use-local-storage'
@@ -105,7 +106,10 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
       >
         <div className="mx-auto max-w-screen-2xl">
-          {children}
+          {/* Keyed by route so navigating away from a crashed page resets the boundary. */}
+          <ErrorBoundary key={location.pathname}>
+            {children}
+          </ErrorBoundary>
         </div>
       </main>
 
