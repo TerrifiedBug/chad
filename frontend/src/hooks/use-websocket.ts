@@ -53,6 +53,12 @@ function showBrowserNotification(alert: AlertData) {
   }
 }
 
+// Cap the in-memory live-alert buffer. Under real-time load (potentially
+// thousands of alerts/minute) an unbounded array grows without limit and will
+// eventually freeze/OOM the browser tab. Keep only the most recent N here;
+// older alerts remain available on the paginated Alerts page.
+const MAX_LIVE_ALERTS = 500
+
 export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [isConnected, setIsConnected] = useState(false)
   const [alerts, setAlerts] = useState<AlertData[]>([])
@@ -115,7 +121,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
           if (message.type === 'alert') {
             const alertData = message.data as AlertData
-            setAlerts((prev) => [alertData, ...prev])
+            setAlerts((prev) => {
+              const next = [alertData, ...prev]
+              // Bound the buffer so a long-lived feed cannot grow unbounded.
+              return next.length > MAX_LIVE_ALERTS ? next.slice(0, MAX_LIVE_ALERTS) : next
+            })
 
             // Show browser notification if enabled and severity matches
             const prefs = optionsRef.current.notificationPreferences
