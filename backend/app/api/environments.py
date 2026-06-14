@@ -24,6 +24,7 @@ from app.api.deps import (
     require_admin,
     require_permission_dep,
 )
+from app.core.encryption import decrypt_with_fallback, encrypt
 from app.db.session import get_db
 from app.models.deployment_request import (
     DeploymentRequest,
@@ -35,6 +36,9 @@ from app.models.environment import Environment, RuleEnvironmentDeployment
 from app.models.rule import Rule, RuleStatus
 from app.models.user import User
 from app.schemas.environment import (
+    EnvGitConfigResponse,
+    EnvGitConfigUpdate,
+    EnvGitTestResponse,
     EnvironmentCreate,
     EnvironmentResponse,
     EnvironmentUpdate,
@@ -263,6 +267,134 @@ async def delete_environment(
         {"name": env.name}, ip_address=get_client_ip(request),
     )
     await db.commit()
+
+
+# --------------------------------------------------------------------------- #
+# Git config-as-code sync (Feature C). One-way push only.
+# --------------------------------------------------------------------------- #
+def _git_config_response(env: Environment) -> EnvGitConfigResponse:
+    return EnvGitConfigResponse(
+        git_repo_url=env.git_repo_url,
+        git_branch=env.git_branch or "main",
+        gitops_mode=env.gitops_mode or "off",
+        git_provider=env.git_provider,
+        has_token=bool(env.git_token_encrypted),
+    )
+
+
+@router.get("/{environment_id}/git", response_model=EnvGitConfigResponse)
+async def get_env_git_config(
+    environment_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[
+        User, Depends(require_permission_dep("manage_environments"))
+    ],
+):
+    env = await _get_environment_or_404(db, environment_id)
+    return _git_config_response(env)
+
+
+@router.put("/{environment_id}/git", response_model=EnvGitConfigResponse)
+async def set_env_git_config(
+    environment_id: UUID,
+    body: EnvGitConfigUpdate,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[
+        User, Depends(require_permission_dep("manage_environments"))
+    ],
+):
+    env = await _get_environment_or_404(db, environment_id)
+
+    # ``push`` mode requires a repo URL (and a token, stored or newly provided).
+    if body.gitops_mode == "push" and not body.git_repo_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="git_repo_url is required to enable push mode",
+        )
+
+    env.git_repo_url = body.git_repo_url
+    env.git_branch = body.git_branch or "main"
+    env.gitops_mode = body.gitops_mode
+    env.git_provider = body.git_provider
+    # Rotate the token only when a new one is supplied; encrypt at rest.
+    if body.git_token:
+        env.git_token_encrypted = encrypt(body.git_token)
+
+    if body.gitops_mode == "push" and not env.git_token_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A git token is required to enable push mode",
+        )
+
+    await audit_log(
+        db,
+        current_user.id,
+        "environment.git.update",
+        "environment",
+        str(environment_id),
+        {"gitops_mode": env.gitops_mode, "git_repo_url": env.git_repo_url},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    await db.refresh(env)
+    return _git_config_response(env)
+
+
+@router.post("/{environment_id}/git/test", response_model=EnvGitTestResponse)
+async def test_env_git_config(
+    environment_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[
+        User, Depends(require_permission_dep("manage_environments"))
+    ],
+):
+    import asyncio
+
+    from app.services.git.git_sync import GitSyncError, GitSyncService
+
+    env = await _get_environment_or_404(db, environment_id)
+    if not env.git_repo_url:
+        return EnvGitTestResponse(success=False, error="No repository configured")
+
+    service = GitSyncService(
+        repo_url=env.git_repo_url,
+        branch=env.git_branch or "main",
+        token=decrypt_with_fallback(env.git_token_encrypted),
+    )
+    try:
+        await asyncio.to_thread(service.test_connection)
+        return EnvGitTestResponse(success=True)
+    except GitSyncError as e:
+        return EnvGitTestResponse(success=False, error=str(e))
+
+
+@router.delete("/{environment_id}/git", response_model=EnvGitConfigResponse)
+async def disconnect_env_git(
+    environment_id: UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[
+        User, Depends(require_permission_dep("manage_environments"))
+    ],
+):
+    env = await _get_environment_or_404(db, environment_id)
+    env.git_repo_url = None
+    env.git_token_encrypted = None
+    env.gitops_mode = "off"
+    env.git_provider = None
+    await audit_log(
+        db,
+        current_user.id,
+        "environment.git.disconnect",
+        "environment",
+        str(environment_id),
+        {},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    await db.refresh(env)
+    return _git_config_response(env)
 
 
 # --------------------------------------------------------------------------- #

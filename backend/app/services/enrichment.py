@@ -15,8 +15,8 @@ from app.services.settings import get_setting
 from app.services.system_log import LogCategory, system_log_service
 from app.services.ti import TIEnrichmentManager, TIIndicatorType
 from app.services.ti.ioc_cache import IOCCache
-from app.services.ti.manager import DEFAULT_CACHE_TTL_SECONDS
 from app.services.ti.ioc_types import IOCType
+from app.services.ti.manager import DEFAULT_CACHE_TTL_SECONDS
 
 logger = logging.getLogger(__name__)
 

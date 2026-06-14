@@ -398,6 +398,18 @@ async def apply_sigma_rule_deployment(
     if deployment_request_id is not None:
         details["deployment_request_id"] = str(deployment_request_id)
     await audit_log(db, actor_id, "rule.deploy", "rule", str(rule.id), details, ip_address=request_ip)
+
+    # One-way git config-as-code sync: queue a commit of the deployed YAML for
+    # push-mode envs. Non-blocking and best-effort — never fails the deploy.
+    try:
+        from app.services.git.git_sync_worker import enqueue_git_sync_for_deploy
+
+        await enqueue_git_sync_for_deploy(
+            db, rule, environment, yaml_content, actor_id
+        )
+    except Exception as e:
+        logger.warning("Git sync enqueue failed for rule %s: %s", rule.id, e)
+
     await db.commit()
 
     return SigmaDeployResult(

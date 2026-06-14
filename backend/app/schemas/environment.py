@@ -45,6 +45,41 @@ class EnvironmentResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# Git config-as-code sync (Feature C). One-way push only: ``off`` | ``push``.
+# --------------------------------------------------------------------------- #
+GitOpsMode = Literal["off", "push"]
+
+
+class EnvGitConfigUpdate(BaseModel):
+    """Set/clear an env's git sync config. ``git_token`` is write-only."""
+
+    git_repo_url: str | None = Field(default=None, max_length=1024)
+    git_branch: str = Field(default="main", min_length=1, max_length=255)
+    # Send a new token to rotate it; omit (None) to leave the stored one intact.
+    git_token: str | None = Field(default=None, max_length=4096)
+    gitops_mode: GitOpsMode = "off"
+    git_provider: str | None = Field(default=None, max_length=50)
+
+
+class EnvGitConfigResponse(BaseModel):
+    """Git config as exposed to the UI — the token is masked, never returned."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    git_repo_url: str | None = None
+    git_branch: str = "main"
+    gitops_mode: str = "off"
+    git_provider: str | None = None
+    # True when a token is stored (so the UI can show "configured" without it).
+    has_token: bool = False
+
+
+class EnvGitTestResponse(BaseModel):
+    success: bool
+    error: str | None = None
+
+
+# --------------------------------------------------------------------------- #
 # Promotion (advance a target env's pinned version to the source env's, Model B)
 # --------------------------------------------------------------------------- #
 class PromoteRequest(BaseModel):

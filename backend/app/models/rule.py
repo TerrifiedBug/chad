@@ -60,6 +60,10 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     sigmahq_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     sigmahq_type: Mapped[SigmaHQType | None] = mapped_column(String(50), nullable=True)
 
+    # Stable per-rule filename for git config-as-code sync (Feature C). Set on
+    # first sync and kept across renames so history stays on one path.
+    git_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
     # Threshold alerting configuration
     threshold_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     threshold_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -27,8 +27,8 @@ from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
 from app.services.threshold import check_threshold
-from app.services.ti.misp_auto_sighting import record_sightings_for_alerts
 from app.services.ti.ioc_detector import IOCDetector
+from app.services.ti.misp_auto_sighting import record_sightings_for_alerts
 
 logger = logging.getLogger(__name__)
 
