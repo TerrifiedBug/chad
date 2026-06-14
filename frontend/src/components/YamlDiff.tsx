@@ -2,6 +2,21 @@ import { useMemo } from 'react'
 import { diffLines, Change } from 'diff'
 import { cn } from '@/lib/utils'
 
+/**
+ * Coerce a diff side to text. Strings pass through; objects (e.g. the deploy
+ * preview's OpenSearch DSL ``query`` — typed as string but sent as an object)
+ * render as pretty JSON instead of "[object Object]"; null/undefined → "".
+ */
+function toDiffText(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 interface YamlDiffProps {
   /** The current/deployed content (the "before" side, rendered as removals). */
   current: string
@@ -17,11 +32,11 @@ interface YamlDiffProps {
  * approval detail panel (deployed_yaml = current, proposed_yaml = proposed).
  */
 export function YamlDiff({ current, proposed, className }: YamlDiffProps) {
-  // Coerce to strings: the `diff` library calls `.split` internally and throws
-  // "e.split is not a function" if either side is null/undefined (e.g. a rule
-  // with no prior deployed version, or a preview with no proposed_query).
+  // toDiffText guards the `diff` library (which calls `.split` internally and
+  // throws on null/undefined) AND renders DSL objects as pretty JSON rather
+  // than "[object Object]".
   const diff = useMemo(
-    () => diffLines(String(current ?? ''), String(proposed ?? '')),
+    () => diffLines(toDiffText(current), toDiffText(proposed)),
     [current, proposed]
   )
 

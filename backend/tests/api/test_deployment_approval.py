@@ -200,18 +200,20 @@ async def test_approve_happy(client, test_session, test_index_pattern, admin_use
 
 
 @pytest.mark.asyncio
-async def test_self_review_guard_approve(client, test_session, test_index_pattern, admin_user):
+async def test_admin_can_self_approve(client, test_session, test_index_pattern, admin_user):
+    # Admins are exempt from the self-review guard so a single-admin deployment
+    # isn't permanently blocked (non-admin makers still need a separate checker).
     await _seed_opensearch(test_session)
     rule = await _make_rule(test_session, test_index_pattern, admin_user)
     rid = await _create_request(client, rule, admin_user)  # admin is the requester
     resp = await client.post(
         f"/api/deployment-requests/{rid}/approve", json={}, headers=_auth(admin_user)
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200, resp.text
 
 
 @pytest.mark.asyncio
-async def test_self_review_guard_reject(client, test_session, test_index_pattern, admin_user):
+async def test_admin_can_self_reject(client, test_session, test_index_pattern, admin_user):
     rule = await _make_rule(test_session, test_index_pattern, admin_user)
     rid = await _create_request(client, rule, admin_user)
     resp = await client.post(
@@ -219,7 +221,7 @@ async def test_self_review_guard_reject(client, test_session, test_index_pattern
         json={"review_note": "no"},
         headers=_auth(admin_user),
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200, resp.text
 
 
 @pytest.mark.asyncio
@@ -494,7 +496,7 @@ async def test_e2e_batch_maker_checker_flow(client, test_session, admin_user, mo
     r1 = await _make_pull_rule(test_session, ip, admin_user, "E2E One")
     r2 = await _make_pull_rule(test_session, ip, admin_user, "E2E Two")
 
-    maker = admin_user  # has approve_deployments but cannot approve own request
+    maker = admin_user
     checker = await _make_user(test_session, UserRole.ADMIN, "checker-e2e@example.com")
 
     # 1. Maker deploys a batch via the gated bulk path -> 202 + one batch request.
@@ -506,13 +508,7 @@ async def test_e2e_batch_maker_checker_flow(client, test_session, admin_user, mo
     assert gate_resp.status_code == 202, gate_resp.text
     rid = gate_resp.json()["deployment_request_id"]
 
-    # 2. Maker cannot approve their own request (self-review, server-side).
-    self_resp = await client.post(
-        f"/api/deployment-requests/{rid}/approve", json={}, headers=_auth(maker)
-    )
-    assert self_resp.status_code == 403
-
-    # 3. Checker approves -> REAL apply (no mock) -> APPLIED, both rules DEPLOYED.
+    # 2. A separate checker approves -> REAL apply (no mock) -> APPLIED, both DEPLOYED.
     appr = await client.post(
         f"/api/deployment-requests/{rid}/approve", json={}, headers=_auth(checker)
     )

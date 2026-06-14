@@ -386,8 +386,10 @@ async def approve_deployment_request(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Request is not pending (current state: '{req.status}')",
         )
-    # Self-review guard: identity comparison, enforced server-side.
-    if req.requested_by == current_user.id:
+    # Self-review guard: a maker cannot also be the checker. Admins are exempt
+    # so a single-admin deployment isn't permanently blocked — dual-control still
+    # applies to non-admin makers (analysts still need a separate approver).
+    if req.requested_by == current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot approve your own deployment request",
@@ -584,7 +586,7 @@ async def reject_deployment_request(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Request is not pending (current state: '{req.status}')",
         )
-    if req.requested_by == current_user.id:
+    if req.requested_by == current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot reject your own deployment request",
