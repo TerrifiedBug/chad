@@ -17,7 +17,13 @@ interface YamlDiffProps {
  * approval detail panel (deployed_yaml = current, proposed_yaml = proposed).
  */
 export function YamlDiff({ current, proposed, className }: YamlDiffProps) {
-  const diff = useMemo(() => diffLines(current, proposed), [current, proposed])
+  // Coerce to strings: the `diff` library calls `.split` internally and throws
+  // "e.split is not a function" if either side is null/undefined (e.g. a rule
+  // with no prior deployed version, or a preview with no proposed_query).
+  const diff = useMemo(
+    () => diffLines(String(current ?? ''), String(proposed ?? '')),
+    [current, proposed]
+  )
 
   return (
     <div
@@ -27,7 +33,7 @@ export function YamlDiff({ current, proposed, className }: YamlDiffProps) {
       )}
     >
       {diff.map((part: Change, index: number) => {
-        const lines = part.value.split('\n').filter((_: string, i: number, arr: string[]) =>
+        const lines = String(part.value ?? '').split('\n').filter((_: string, i: number, arr: string[]) =>
           i < arr.length - 1 || arr[i] !== ''
         )
 

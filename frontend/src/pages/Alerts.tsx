@@ -342,6 +342,41 @@ export default function AlertsPage() {
     return selectedCount > 0 && selectedCount < cluster.alert_ids.length
   }
 
+  // "Apply to all matching" (server-side update_by_query) is only safe when the
+  // active filters map cleanly to what the server query selects — i.e. no
+  // client-side-only filters (free-text search, alert-type, multi-severity,
+  // owner) are narrowing the view below the server `total`. Otherwise it could
+  // touch more alerts than the user sees, so we gate it off.
+  const byQuerySafe =
+    !search.trim() &&
+    alertTypeFilter.length === 0 &&
+    severityFilter.length <= 1 &&
+    !ownerFilter
+  const [byQueryStatus, setByQueryStatus] = useState<AlertStatus | null>(null)
+
+  const handleBulkStatusByQuery = async (newStatus: AlertStatus) => {
+    setIsBulkUpdating(true)
+    setError('')
+    try {
+      await alertsApi.bulkUpdateStatusByQuery({
+        new_status: newStatus,
+        filters: {
+          status: statusFilter === 'all' ? undefined : statusFilter,
+          severity: severityFilter.length === 1 ? severityFilter[0] : undefined,
+          exclude_ioc: true,
+        },
+      })
+      setByQueryStatus(null)
+      setSelectedAlerts(new Set())
+      setSelectAll(false)
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update alerts')
+    } finally {
+      setIsBulkUpdating(false)
+    }
+  }
+
   const handleBulkStatusUpdate = async (newStatus: AlertStatus) => {
     if (selectedAlerts.size === 0) return
     setIsBulkUpdating(true)
@@ -1100,6 +1135,65 @@ export default function AlertsPage() {
       )}
 
       {/* Floating Bulk Action Bar */}
+      {/* Apply-to-all-matching (server-side update_by_query). Only when no
+          selection is active and the filters are by-query-safe — clears large
+          backlogs in one call instead of paging through ids. */}
+      {selectedAlerts.size === 0 &&
+        byQuerySafe &&
+        total > 0 &&
+        (statusFilter !== 'all' || severityFilter.length === 1) &&
+        hasPermission('manage_alerts') && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg p-3 flex items-center gap-3 z-40">
+            <span className="text-sm text-muted-foreground">
+              {total.toLocaleString()} alert{total !== 1 ? 's' : ''} match this filter
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isBulkUpdating || !osAvailable}
+              onClick={() => setByQueryStatus('false_positive')}
+              title={!osAvailable ? 'Unavailable while OpenSearch is offline' : undefined}
+            >
+              Mark all as False Positive
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isBulkUpdating || !osAvailable}
+              onClick={() => setByQueryStatus('resolved')}
+            >
+              Resolve all
+            </Button>
+          </div>
+        )}
+
+      <Dialog open={byQueryStatus !== null} onOpenChange={(o) => !o && setByQueryStatus(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apply to all matching alerts</DialogTitle>
+            <DialogDescription>
+              Set{' '}
+              <span className="font-medium">
+                {byQueryStatus === 'false_positive' ? 'False Positive' : byQueryStatus}
+              </span>{' '}
+              on all <span className="font-medium">{total.toLocaleString()}</span> alerts
+              matching the current filter. This runs server-side and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setByQueryStatus(null)} disabled={isBulkUpdating}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => byQueryStatus && handleBulkStatusByQuery(byQueryStatus)}
+              disabled={isBulkUpdating}
+            >
+              {isBulkUpdating ? 'Applying…' : `Apply to ${total.toLocaleString()}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {selectedAlerts.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg p-4 flex items-center gap-4 z-50">
           <span className="text-sm font-medium">

@@ -236,9 +236,12 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
 
   const SectionLabel = ({ label }: { label: string }) => {
     if (!expanded) return null
-    // Matches VF's SidebarGroupLabel: h-6, 11px mono, uppercase, normal weight.
+    // VF SidebarGroupLabel idiom (11px mono, uppercase). Auto-height with tight
+    // line-height + top/bottom padding so longer two-line settings labels
+    // (e.g. "ENRICHMENT & INTELLIGENCE") wrap cleanly instead of clipping a
+    // fixed h-6 box and crowding the item below.
     return (
-      <div className="flex h-6 items-center px-2 pt-3 font-mono text-[11px] font-normal uppercase tracking-[0.08em] text-fg-2">
+      <div className="px-2 pb-1 pt-4 font-mono text-[11px] font-normal uppercase leading-tight tracking-[0.08em] text-fg-2">
         {label}
       </div>
     )

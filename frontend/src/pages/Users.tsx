@@ -204,6 +204,9 @@ export default function UsersPage() {
   // Delete confirmation state
   const [userToDelete, setUserToDelete] = useState<UserInfo | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  // Promote-to-SSO confirmation (explicit admin-initiated local->SSO linking).
+  const [userToPromote, setUserToPromote] = useState<UserInfo | null>(null)
+  const [isPromoting, setIsPromoting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
   // Password reset confirmation state
@@ -329,6 +332,21 @@ export default function UsersPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete user')
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  const confirmPromoteToSso = async () => {
+    if (!userToPromote) return
+    setIsPromoting(true)
+    try {
+      await usersApi.promoteToSso(userToPromote.id)
+      setError('')
+      setUserToPromote(null)
+      loadUsers()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to promote user to SSO')
+    } finally {
+      setIsPromoting(false)
     }
   }
 
@@ -627,6 +645,16 @@ export default function UsersPage() {
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
+                      {user.auth_method === 'local' && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setUserToPromote(user)}
+                          title="Promote to SSO"
+                        >
+                          <KeyRound className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -831,6 +859,29 @@ export default function UsersPage() {
         onConfirm={confirmDeleteUser}
         isDeleting={isDeleting}
       />
+
+      {/* Promote to SSO Confirmation Dialog */}
+      <Dialog open={!!userToPromote} onOpenChange={(open) => !open && setUserToPromote(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Promote to SSO</DialogTitle>
+            <DialogDescription>
+              Convert <span className="font-medium">{userToPromote?.email}</span> to an
+              SSO account. This removes their local password — they will sign in only
+              through your identity provider. Ensure SSO works and keep a separate local
+              admin as a fallback.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUserToPromote(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmPromoteToSso} disabled={isPromoting}>
+              {isPromoting ? 'Promoting…' : 'Promote to SSO'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Password Reset Confirmation Dialog */}
       <Dialog open={isPasswordResetDialogOpen} onOpenChange={setIsPasswordResetDialogOpen}>
