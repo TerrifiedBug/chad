@@ -1,4 +1,5 @@
 import { getErrorMessage, logError, isApiError, isLegacyError } from './errors'
+import { getActiveEnvironmentId } from '@/stores/environment-store'
 import { QueryClient } from '@tanstack/react-query'
 
 // Create React Query client for cache management
@@ -41,6 +42,14 @@ export class ApiClient {
     // Add CSRF token for state-changing methods (POST, PATCH, PUT, DELETE)
     if (method !== 'GET' && method !== 'HEAD' && this.csrfToken) {
       headers['X-CSRF-Token'] = this.csrfToken
+    }
+
+    // Scope the request to the active environment. When no env is selected the
+    // header is omitted and the backend falls back to the default env (today's
+    // behaviour — header is optional and back-compat).
+    const envId = getActiveEnvironmentId()
+    if (envId) {
+      headers['X-CHAD-Environment'] = envId
     }
 
     return headers
@@ -169,11 +178,13 @@ async function postRaw(
   context: string
 ): Promise<{ status: number; body: any }> {
   const token = localStorage.getItem('chad-token')
+  const envId = getActiveEnvironmentId()
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(envId ? { 'X-CHAD-Environment': envId } : {}),
     },
     body: JSON.stringify(data),
   })
@@ -602,6 +613,7 @@ export const rulesApi = {
   test: (yaml_content: string, sample_logs: Record<string, unknown>[], index_pattern_id?: string) =>
     api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs, index_pattern_id: index_pattern_id || null }),
   deploy: async (id: string, changeReason: string): Promise<DeployResult> => {
+    const envId = getActiveEnvironmentId()
     const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
       method: 'POST',
       headers: {
@@ -609,6 +621,7 @@ export const rulesApi = {
         ...(localStorage.getItem('chad-token')
           ? { Authorization: `Bearer ${localStorage.getItem('chad-token')}` }
           : {}),
+        ...(envId ? { 'X-CHAD-Environment': envId } : {}),
       },
       body: JSON.stringify({ change_reason: changeReason }),
     })
@@ -1390,6 +1403,56 @@ export type Team = {
 export const teamsApi = {
   list: () =>
     api.get<Team[]>('/teams'),
+}
+
+// --- Environment types (Model B: one rule identity, per-env deployment state) ---
+// An Environment is a team-owned scope for rule *deployments* (separate
+// percolator namespace + pinned version/status per env). The active env is sent
+// as X-CHAD-Environment on every request; absent → backend uses the default env.
+export type Environment = {
+  id: string
+  name: string
+  team_id: string | null
+  is_default: boolean
+  require_deploy_approval: boolean
+  description: string | null
+  opensearch_index_prefix: string | null
+  color: string | null
+  // Per-env aggregate counts (rules visible to the team / deployed into this env).
+  rule_count: number
+  deployed_count: number
+  // Optional metadata some backends include; tolerated when absent.
+  last_deploy_at?: string | null
+}
+
+export type EnvironmentCreate = {
+  name: string
+  description?: string | null
+  require_deploy_approval?: boolean
+  opensearch_index_prefix?: string | null
+  color?: string | null
+}
+
+export type EnvironmentUpdate = Partial<EnvironmentCreate> & {
+  is_default?: boolean
+}
+
+// Environments API. List is team-scoped server-side (returns the envs the
+// current user's team(s) can see). Mutations require manage_environments/admin.
+export const environmentsApi = {
+  list: () =>
+    api.get<Environment[]>('/environments'),
+  get: (id: string) =>
+    api.get<Environment>(`/environments/${id}`),
+  create: (data: EnvironmentCreate) =>
+    api.post<Environment>('/environments', data),
+  update: (id: string, data: EnvironmentUpdate) =>
+    api.patch<Environment>(`/environments/${id}`, data),
+  delete: (id: string) =>
+    api.delete(`/environments/${id}`),
+  // Mark this env as the team default (unsets the prior default server-side).
+  setDefault: (id: string) =>
+    api.patch<Environment>(`/environments/${id}`, { is_default: true }),
 }
 
 // --- SSO / OIDC provider types ---

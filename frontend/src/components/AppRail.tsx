@@ -22,6 +22,7 @@ import {
   Activity,
   Settings,
   GitPullRequest,
+  Layers,
 } from 'lucide-react'
 
 export type NavItem = {
@@ -62,6 +63,7 @@ export const navSections: NavSection[] = [
   {
     label: 'System',
     items: [
+      { href: '/environments', label: 'Environments', icon: Layers, permission: 'manage_environments' },
       { href: '/health', label: 'Health', icon: Activity, showStatus: true },
     ],
   },

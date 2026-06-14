@@ -48,6 +48,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/component
 import { RulesExportDialog } from '@/components/RulesExportDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { SourceIcon } from '@/components/SourceIcon'
+import { EnvironmentBadge } from '@/components/EnvironmentBadge'
 import { DeployStatusBadge } from '@/components/rules/DeployStatusBadge'
 import { startBatch, clearProgress } from '@/components/rules/deploy-progress-store'
 
@@ -758,6 +759,8 @@ export default function RulesPage() {
         <TabsContent value="sigma" className="mt-4 space-y-4">
           {/* Filter Bar */}
           <div className="flex flex-wrap gap-3 items-center">
+        {/* Active environment — which env's deployment state these rows show. */}
+        <EnvironmentBadge />
         {/* Search input */}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

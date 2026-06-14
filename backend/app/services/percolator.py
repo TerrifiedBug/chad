@@ -15,9 +15,12 @@ The percolator index stores:
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opensearchpy import OpenSearch
+
+if TYPE_CHECKING:
+    from app.models.environment import Environment
 
 PERCOLATOR_MAPPING = {
     "settings": {
@@ -43,11 +46,27 @@ class PercolatorService:
     def __init__(self, client: OpenSearch):
         self.client = client
 
-    def get_percolator_index_name(self, index_pattern_name: str) -> str:
-        """Convert index pattern name to percolator index name."""
+    def get_percolator_index_name(
+        self,
+        index_pattern_name: str,
+        environment: "Environment | None" = None,
+    ) -> str:
+        """Convert index pattern name to percolator index name.
+
+        ``environment`` selects the percolator namespace (Model B per-env
+        deployments). CRITICAL back-compat: for the DEFAULT environment (or a
+        null/legacy ``environment``) the name is the existing
+        ``chad-percolator-{pattern}`` with NO prefix, so live detection keeps
+        working and existing percolator docs are never re-indexed. A NON-default
+        environment is namespaced as ``chad-percolator-{env_slug}-{pattern}``
+        (env_slug = explicit ``opensearch_index_prefix`` or a slug of the name).
+        """
         # Sanitize: remove wildcards, replace special chars
         sanitized = index_pattern_name.replace("*", "").replace("-*", "").rstrip("-")
-        return f"chad-percolator-{sanitized}"
+        # Default / legacy env -> unprefixed legacy name (no re-index).
+        if environment is None or getattr(environment, "is_default", False):
+            return f"chad-percolator-{sanitized}"
+        return f"chad-percolator-{environment.slug}-{sanitized}"
 
     def ensure_percolator_index(
         self, index_name: str, source_index_pattern: str | None = None

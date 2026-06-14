@@ -27,6 +27,7 @@ from app.models.deployment_request import (
     DeploymentRequestKind,
     DeploymentRequestStatus,
 )
+from app.models.environment import Environment
 from app.models.notification_settings import NotificationSettings
 from app.models.rule import Rule, RuleStatus
 from app.services.attack_sync import update_rule_attack_mappings
@@ -220,6 +221,7 @@ async def apply_sigma_rule_deployment(
     deployment_request_id: uuid.UUID | None = None,
     pinned_yaml: str | None = None,
     pinned_version: int | None = None,
+    environment: Environment | None = None,
 ) -> SigmaDeployResult:
     """Validate, translate, and write a Sigma rule to its percolator index.
 
@@ -235,7 +237,16 @@ async def apply_sigma_rule_deployment(
     ``pinned_version`` (the exact version that was reviewed) so the content that
     deploys is the content the checker saw — never live content edited after
     review. The direct (gate-off) path leaves these None and deploys live.
+
+    ``environment`` selects the target deployment env (Model B). The write goes
+    to that env's percolator namespace and upserts a ``RuleEnvironmentDeployment``
+    binding. For the DEFAULT env (or ``environment`` None/legacy) the namespace
+    is the legacy ``chad-percolator-{pattern}`` (no re-index) AND the scalar
+    ``Rule.deployed_*``/``status`` columns are kept in sync (back-compat).
     """
+    # The default env (or None/legacy) is the back-compat path: legacy namespace
+    # + scalar Rule.deployed_* sync. Non-default envs only touch the binding.
+    is_default_env = environment is None or environment.is_default
     # Deploy the reviewed (pinned) content when provided, else the live rule.
     yaml_content = pinned_yaml if pinned_yaml is not None else rule.yaml_content
 
@@ -323,7 +334,9 @@ async def apply_sigma_rule_deployment(
     percolator_index: str | None = None
     if use_percolator:
         percolator = PercolatorService(os_client)
-        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+        percolator_index = percolator.get_percolator_index_name(
+            rule.index_pattern.pattern, environment=environment
+        )
         percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)
         # Sigma returns {"query": {...}}, percolator needs the inner query.
         percolator_query = translation.query.get("query", translation.query)
@@ -342,10 +355,33 @@ async def apply_sigma_rule_deployment(
     # actually pushed (the pinned/reviewed version under dual-control).
     now = datetime.now(UTC)
     deploy_version = pinned_version if pinned_version is not None else _current_version(rule)
-    rule.deployed_at = now
-    rule.deployed_version = deploy_version
-    if rule.status != RuleStatus.SNOOZED:
-        rule.status = RuleStatus.DEPLOYED
+
+    # 6a. The default env (or legacy None) keeps the scalar Rule.deployed_*/
+    # status columns in sync so existing reads/UX/live detection are unchanged.
+    if is_default_env:
+        rule.deployed_at = now
+        rule.deployed_version = deploy_version
+        if rule.status != RuleStatus.SNOOZED:
+            rule.status = RuleStatus.DEPLOYED
+
+    # 6b. Upsert the per-env deployment binding (Model B). Snoozed rules keep
+    # their per-env snooze status; otherwise the binding is marked deployed.
+    if environment is not None:
+        from app.services.environments import upsert_environment_deployment
+
+        binding_status = (
+            RuleStatus.SNOOZED.value
+            if rule.status == RuleStatus.SNOOZED and is_default_env
+            else RuleStatus.DEPLOYED.value
+        )
+        await upsert_environment_deployment(
+            db,
+            rule_id=rule.id,
+            environment_id=environment.id,
+            status=binding_status,
+            deployed_version=deploy_version,
+            deployed_at=now,
+        )
 
     await db.commit()
     await db.refresh(rule)
@@ -356,6 +392,9 @@ async def apply_sigma_rule_deployment(
         "percolator_index": percolator_index,
         "change_reason": change_reason,
     }
+    if environment is not None:
+        details["environment_id"] = str(environment.id)
+        details["environment"] = environment.name
     if deployment_request_id is not None:
         details["deployment_request_id"] = str(deployment_request_id)
     await audit_log(db, actor_id, "rule.deploy", "rule", str(rule.id), details, ip_address=request_ip)

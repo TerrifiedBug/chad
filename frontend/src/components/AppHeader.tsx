@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useVersion } from '@/hooks/use-version'
 import { useTheme } from '@/hooks/use-theme'
 import { NotificationBell } from '@/components/NotificationBell'
+import { EnvironmentSelector } from '@/components/EnvironmentSelector'
 import { AboutDialog } from '@/components/AboutDialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -130,6 +131,9 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
           )}
 
           <div className="flex items-center gap-1">
+            {/* Active-environment selector — scopes which env's deployment state
+                you view and which env deploys target (X-CHAD-Environment). */}
+            {isAuthenticated && <EnvironmentSelector />}
             {isAuthenticated && (
               <Button
                 variant="ghost"

@@ -12,7 +12,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_opensearch_client, get_opensearch_client_optional, require_permission_dep
+from app.api.deps import (
+    get_active_environment,
+    get_current_user,
+    get_opensearch_client,
+    get_opensearch_client_optional,
+    require_permission_dep,
+)
 from app.core.config import settings as app_settings
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
@@ -22,6 +28,7 @@ from app.models.deployment_request import (
     DeploymentRequestItem,
     DeploymentRequestStatus,
 )
+from app.models.environment import Environment
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
@@ -63,6 +70,10 @@ from app.services.deployment import (
     apply_sigma_rule_deployment,
     create_deployment_request,
     is_approval_required,
+)
+from app.services.environments import (
+    get_environment_deployment,
+    upsert_environment_deployment,
 )
 from app.services.field_mapping import resolve_mappings
 from app.services.opensearch import get_index_fields
@@ -1465,6 +1476,7 @@ async def deploy_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    active_env: Annotated[Environment | None, Depends(get_active_environment)],
     change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
     """
@@ -1479,6 +1491,10 @@ async def deploy_rule(
     6. Ensure percolator index exists
     7. Index the percolator document
     8. Update rule.deployed_at timestamp
+
+    Deploys into the active environment (``X-CHAD-Environment`` header; absent ->
+    the default env == today's behavior). The default env keeps the scalar
+    Rule.deployed_*/status in sync and uses the legacy percolator namespace.
 
     Returns 400 with unmapped_fields if Sigma fields don't exist in index
     and don't have mappings configured.
@@ -1497,9 +1513,11 @@ async def deploy_rule(
             detail="Rule not found",
         )
 
-    # Dual-control gate: when approval is required, file a request instead of
-    # writing to the percolator. A second person must approve before apply.
-    if await is_approval_required(db):
+    # Dual-control gate: when global approval is required OR the active env
+    # requires deploy approval, file a request instead of writing to the
+    # percolator. A second person must approve before apply.
+    env_requires_approval = active_env is not None and active_env.require_deploy_approval
+    if await is_approval_required(db) or env_requires_approval:
         req = await create_deployment_request(
             db,
             requested_by=current_user.id,
@@ -1527,6 +1545,7 @@ async def deploy_rule(
             actor_id=current_user.id,
             change_reason=change_reason,
             request_ip=get_client_ip(request),
+            environment=active_env,
         )
     except DeploymentApplyError as e:
         if e.kind == "unmapped":
@@ -1783,9 +1802,16 @@ async def undeploy_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    active_env: Annotated[Environment | None, Depends(get_active_environment)],
     change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
-    """Remove a rule from its percolator index."""
+    """Remove a rule from the active environment's percolator namespace.
+
+    Undeploys from the active environment (``X-CHAD-Environment``; absent ->
+    default env == today's behavior). For the default env the scalar
+    Rule.deployed_*/status are cleared (back-compat); the per-env binding is
+    marked undeployed for whichever env was targeted.
+    """
     # Fetch rule with index pattern
     result = await db.execute(
         select(Rule)
@@ -1800,7 +1826,19 @@ async def undeploy_rule(
             detail="Rule not found",
         )
 
-    if rule.deployed_at is None:
+    is_default_env = active_env is None or active_env.is_default
+
+    # Per-env binding state (when not targeting the default env, scalar columns
+    # do not describe this env's deployment).
+    env_binding = None
+    if active_env is not None and not is_default_env:
+        env_binding = await get_environment_deployment(db, rule.id, active_env.id)
+        if env_binding is None or env_binding.deployed_at is None:
+            return RuleUndeployResponse(
+                success=True,
+                message="Rule was not deployed",
+            )
+    elif rule.deployed_at is None:
         return RuleUndeployResponse(
             success=True,
             message="Rule was not deployed",
@@ -1814,18 +1852,32 @@ async def undeploy_rule(
     percolator_index = None
     if use_percolator:
         percolator = PercolatorService(os_client)
-        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+        percolator_index = percolator.get_percolator_index_name(
+            rule.index_pattern.pattern, environment=active_env
+        )
         was_deleted = percolator.undeploy_rule(percolator_index, str(rule.id))
     else:
         import logging
         logging.getLogger(__name__).info(f"Skipping percolator undeploy for rule {rule.id} (pull mode)")
 
-    # Clear deployment tracking and set status to UNDEPLOYED
-    rule.deployed_at = None
-    rule.deployed_version = None
-    rule.status = RuleStatus.UNDEPLOYED
-    rule.snooze_until = None
-    rule.snooze_indefinite = False
+    # Clear per-env binding (and the scalar columns for the default env).
+    if active_env is not None:
+        await upsert_environment_deployment(
+            db,
+            rule_id=rule.id,
+            environment_id=active_env.id,
+            status=RuleStatus.UNDEPLOYED.value,
+            deployed_version=None,
+            deployed_at=None,
+        )
+
+    if is_default_env:
+        # Clear deployment tracking and set status to UNDEPLOYED (back-compat).
+        rule.deployed_at = None
+        rule.deployed_version = None
+        rule.status = RuleStatus.UNDEPLOYED
+        rule.snooze_until = None
+        rule.snooze_indefinite = False
 
     # Auto-undeploy any linked correlation rules
     undeployed_correlations = await undeploy_linked_correlations(
@@ -2193,8 +2245,14 @@ async def snooze_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+    active_env: Annotated[Environment | None, Depends(get_active_environment)] = None,
 ):
-    """Snooze a rule for the specified number of hours or indefinitely."""
+    """Snooze a rule for the specified number of hours or indefinitely.
+
+    Snoozes in the active environment (``X-CHAD-Environment``; absent -> default
+    env == today's behavior). The default env keeps the scalar Rule.snooze_*/
+    status in sync; the per-env binding tracks snooze for whichever env.
+    """
     # Validate request
     if not snooze_request.indefinite and snooze_request.hours is None:
         raise HTTPException(status_code=400, detail="Must specify hours or indefinite=true")
@@ -2209,28 +2267,69 @@ async def snooze_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")
 
-    # Cannot snooze undeployed rules
-    if rule.status == RuleStatus.UNDEPLOYED:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot snooze an undeployed rule. Deploy the rule first."
-        )
+    is_default_env = active_env is None or active_env.is_default
+
+    # Per-env binding (loaded for any concrete env so the upsert below can carry
+    # the existing pinned version/deploy time forward). None when active_env is
+    # None (pre-migration) or the rule has no binding for that env yet.
+    env_binding = None
+    if active_env is not None:
+        env_binding = await get_environment_deployment(db, rule.id, active_env.id)
+
+    # Cannot snooze undeployed rules. For the default env the scalar status is
+    # authoritative; for a non-default env consult that env's binding.
+    if is_default_env:
+        if rule.status == RuleStatus.UNDEPLOYED:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot snooze an undeployed rule. Deploy the rule first."
+            )
+    else:
+        if env_binding is None or env_binding.deployed_at is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot snooze an undeployed rule. Deploy the rule first."
+            )
 
     if snooze_request.indefinite:
-        rule.snooze_until = None
-        rule.snooze_indefinite = True
-        rule.status = RuleStatus.SNOOZED
         snooze_until = None
     else:
         snooze_until = datetime.now(UTC) + timedelta(hours=snooze_request.hours)
+
+    if is_default_env:
         rule.snooze_until = snooze_until
-        rule.snooze_indefinite = False
+        rule.snooze_indefinite = snooze_request.indefinite
         rule.status = RuleStatus.SNOOZED
 
+    # Update the per-env binding snooze state.
+    if active_env is not None:
+        await upsert_environment_deployment(
+            db,
+            rule_id=rule.id,
+            environment_id=active_env.id,
+            status=RuleStatus.SNOOZED.value,
+            deployed_version=(
+                rule.deployed_version if is_default_env
+                else (env_binding.deployed_version if env_binding else None)
+            ),
+            deployed_at=(
+                rule.deployed_at if is_default_env
+                else (env_binding.deployed_at if env_binding else None)
+            ),
+            snooze_until=snooze_until,
+            snooze_indefinite=snooze_request.indefinite,
+        )
+
     # Remove from percolator when snoozing (prevents alert generation)
-    if rule.deployed_at is not None and os_client is not None:
+    deployed = (
+        rule.deployed_at is not None if is_default_env
+        else (env_binding is not None and env_binding.deployed_at is not None)
+    )
+    if deployed and os_client is not None:
         percolator = PercolatorService(os_client)
-        percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+        percolator_index = percolator.get_percolator_index_name(
+            rule.index_pattern.pattern, environment=active_env
+        )
         percolator.undeploy_rule(percolator_index, str(rule.id))
 
     # Auto-snooze any linked correlation rules
@@ -2274,9 +2373,15 @@ async def unsnooze_rule(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
     os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+    active_env: Annotated[Environment | None, Depends(get_active_environment)] = None,
     change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
 ):
-    """Remove snooze from a rule."""
+    """Remove snooze from a rule in the active environment.
+
+    Unsnoozes in the active environment (``X-CHAD-Environment``; absent ->
+    default env == today's behavior), re-writing to that env's percolator
+    namespace and clearing the per-env binding snooze.
+    """
     result = await db.execute(
         select(Rule)
         .where(Rule.id == rule_id)
@@ -2287,9 +2392,12 @@ async def unsnooze_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")
 
+    is_default_env = active_env is None or active_env.is_default
+    env_requires_approval = active_env is not None and active_env.require_deploy_approval
+
     # Dual-control gate: unsnoozing re-writes the rule to the percolator, so it
     # is gated too. File a request pinning the current version.
-    if await is_approval_required(db):
+    if await is_approval_required(db) or env_requires_approval:
         rows = await db.execute(
             select(Rule).where(Rule.id == rule_id).options(selectinload(Rule.versions))
         )
@@ -2311,12 +2419,41 @@ async def unsnooze_rule(
         await db.commit()
         return _deployment_pending_response(req.id)
 
-    rule.status = RuleStatus.DEPLOYED
-    rule.snooze_until = None
-    rule.snooze_indefinite = False
+    # Per-env binding (when not the default env, scalar columns do not describe
+    # this env). Determine deployed state for the targeted env.
+    env_binding = None
+    if active_env is not None and not is_default_env:
+        env_binding = await get_environment_deployment(db, rule.id, active_env.id)
+
+    if is_default_env:
+        rule.status = RuleStatus.DEPLOYED
+        rule.snooze_until = None
+        rule.snooze_indefinite = False
+
+    if active_env is not None:
+        await upsert_environment_deployment(
+            db,
+            rule_id=rule.id,
+            environment_id=active_env.id,
+            status=RuleStatus.DEPLOYED.value,
+            deployed_version=(
+                rule.deployed_version if is_default_env
+                else (env_binding.deployed_version if env_binding else None)
+            ),
+            deployed_at=(
+                rule.deployed_at if is_default_env
+                else (env_binding.deployed_at if env_binding else None)
+            ),
+            snooze_until=None,
+            snooze_indefinite=False,
+        )
 
     # Re-deploy to percolator when unsnoozing
-    if rule.deployed_at is not None and os_client is not None:
+    env_deployed = (
+        rule.deployed_at is not None if is_default_env
+        else (env_binding is not None and env_binding.deployed_at is not None)
+    )
+    if env_deployed and os_client is not None:
         # Get field mappings for the rule
         from app.services.field_mapping import resolve_mappings
 
@@ -2338,7 +2475,9 @@ async def unsnooze_rule(
             # Pull mode doesn't use percolator - rules are evaluated during scheduled polls
             if rule.index_pattern.mode == "push":
                 percolator = PercolatorService(os_client)
-                percolator_index = percolator.get_percolator_index_name(rule.index_pattern.pattern)
+                percolator_index = percolator.get_percolator_index_name(
+                    rule.index_pattern.pattern, environment=active_env
+                )
 
                 # Ensure the percolator index exists
                 percolator.ensure_percolator_index(percolator_index, rule.index_pattern.pattern)

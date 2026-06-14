@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, WebSocket, status
+from fastapi import Depends, Header, HTTPException, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from opensearchpy import OpenSearch
 from sqlalchemy import select
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.encryption import decrypt
 from app.core.security import decode_access_token
 from app.db.session import get_db
+from app.models.environment import Environment
 from app.models.setting import Setting
 from app.models.user import User
 from app.services.opensearch import get_cached_client
@@ -175,6 +176,24 @@ def require_permission_dep(permission: str):
         return current_user
 
     return check_permission
+
+
+async def get_active_environment(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    x_chad_environment: Annotated[str | None, Header()] = None,
+) -> Environment | None:
+    """Resolve the active environment for the request (Model B).
+
+    Header (``X-CHAD-Environment`` = env id) -> the user's team default ->
+    the global default env. Header-optional: with no header the default env is
+    used, which is exactly today's behavior. Returns None only when no
+    environment exists (pre-migration / fresh install); callers then treat the
+    active env as the legacy default (legacy percolator namespace + scalar sync).
+    """
+    from app.services.environments import resolve_active_environment
+
+    return await resolve_active_environment(db, current_user, x_chad_environment)
 
 
 async def get_opensearch_client(
