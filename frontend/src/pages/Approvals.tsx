@@ -119,7 +119,7 @@ function TargetEnvBadge({ targetEnvironmentId }: { targetEnvironmentId?: string 
 }
 
 export default function ApprovalsPage() {
-  const { user, hasPermission } = useAuth()
+  const { user, hasPermission, isAdmin } = useAuth()
   const { showToast } = useToast()
   const queryClient = useQueryClient()
 
@@ -192,10 +192,11 @@ export default function ApprovalsPage() {
   const detail = detailQuery.data
   const isOwnRequest = !!detail && !!user && detail.requested_by === user.id
   const isPending = detail?.status === 'pending'
-  // Approve/reject are blocked for the requester (self-review) and for users
-  // lacking the approve_deployments permission.
-  const reviewDisabled = !canApprove || isOwnRequest
-  const reviewDisabledReason = isOwnRequest
+  // Self-review is blocked for non-admins (and users lacking the permission).
+  // Admins are exempt so a single-admin deployment isn't permanently blocked.
+  const blockedAsOwn = isOwnRequest && !isAdmin
+  const reviewDisabled = !canApprove || blockedAsOwn
+  const reviewDisabledReason = blockedAsOwn
     ? 'You cannot approve your own request'
     : !canApprove
       ? 'You lack the approve_deployments permission'

@@ -21,4 +21,16 @@ describe('YamlDiff', () => {
     const { container } = render(<YamlDiff current={'a\nb\n'} proposed={'a\nc\n'} />)
     expect(container.textContent).toContain('c')
   })
+
+  it('pretty-prints object inputs instead of [object Object]', () => {
+    // The deploy preview's DSL `query` is typed string but sent as an object.
+    const { container } = render(
+      <YamlDiff
+        current={null as unknown as string}
+        proposed={{ bool: { must: [{ term: { evt: 1 } }] } } as unknown as string}
+      />
+    )
+    expect(container.textContent).not.toContain('[object Object]')
+    expect(container.textContent).toContain('bool')
+  })
 })
