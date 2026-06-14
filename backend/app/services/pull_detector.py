@@ -20,6 +20,7 @@ from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
 from app.services.system_log import LogCategory, system_log_service
 from app.services.threshold import check_threshold
+from app.services.ti.misp_auto_sighting import record_sightings_for_alerts
 from app.services.ti.ioc_index import INDICATOR_INDEX_NAME
 from app.services.ti.ioc_query_builder import IOCQueryBuilder
 
@@ -936,6 +937,11 @@ class PullDetector:
         # Send notifications for created alerts
         if alerts_created:
             await self._send_notifications(db, alerts_created, app_url)
+
+        # Auto-record MISP sightings for MISP-sourced IOC alerts (opt-in;
+        # safe no-op when disabled — runs after alerts are persisted).
+        if alerts_created:
+            await record_sightings_for_alerts(db, alerts_created)
 
         duration_ms = int((time_module.monotonic() - start_time) * 1000)
 

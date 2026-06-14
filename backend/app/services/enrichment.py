@@ -15,6 +15,7 @@ from app.services.settings import get_setting
 from app.services.system_log import LogCategory, system_log_service
 from app.services.ti import TIEnrichmentManager, TIIndicatorType
 from app.services.ti.ioc_cache import IOCCache
+from app.services.ti.manager import DEFAULT_CACHE_TTL_SECONDS
 from app.services.ti.ioc_types import IOCType
 
 logger = logging.getLogger(__name__)
@@ -158,23 +159,51 @@ def extract_field_indicators(
 # Global TI manager instance (initialized on first use)
 _ti_manager: TIEnrichmentManager | None = None
 
+# Setting key holding the runtime-tunable enrichment-cache config, e.g.
+# ``{"cache_ttl_seconds": 3600}``. Absent/invalid → DEFAULT_CACHE_TTL_SECONDS.
+TI_CACHE_SETTING_KEY = "ti_cache"
+
+
+async def _resolve_cache_ttl(db: AsyncSession) -> int:
+    """Read the operator-configured TI cache TTL, falling back to the default."""
+    try:
+        cfg = await get_setting(db, TI_CACHE_SETTING_KEY)
+        if cfg is not None:
+            ttl = cfg.get("cache_ttl_seconds")
+            if isinstance(ttl, int) and ttl >= 0:
+                return ttl
+    except Exception as e:  # pragma: no cover - defensive, fail to default
+        logger.debug("Failed to read TI cache TTL setting: %s", e)
+    return DEFAULT_CACHE_TTL_SECONDS
+
+
+async def _build_ti_manager(db: AsyncSession) -> TIEnrichmentManager:
+    """Construct + initialize a manager with the configured cache TTL."""
+    ttl = await _resolve_cache_ttl(db)
+    manager = TIEnrichmentManager(cache_ttl_seconds=ttl)
+    await manager.initialize(db)
+    return manager
+
 
 async def get_ti_manager(db: AsyncSession) -> TIEnrichmentManager:
     """Get or create the TI enrichment manager."""
     global _ti_manager
     if _ti_manager is None:
-        _ti_manager = TIEnrichmentManager()
-        await _ti_manager.initialize(db)
+        _ti_manager = await _build_ti_manager(db)
     return _ti_manager
 
 
 async def reinitialize_ti_manager(db: AsyncSession) -> None:
-    """Reinitialize the TI manager (call after config changes)."""
+    """Reinitialize the TI manager (call after config changes).
+
+    Flushes the Redis result cache so verdicts produced under the previous
+    provider set / API keys are never served after a config change.
+    """
     global _ti_manager
     if _ti_manager:
+        await _ti_manager.flush_cache()
         await _ti_manager.close()
-    _ti_manager = TIEnrichmentManager()
-    await _ti_manager.initialize(db)
+    _ti_manager = await _build_ti_manager(db)
 
 
 # Mapping from TIIndicatorType to IOCType for MISP cache lookups

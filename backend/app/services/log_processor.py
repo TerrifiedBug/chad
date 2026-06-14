@@ -27,6 +27,7 @@ from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.settings import get_app_url
 from app.services.threshold import check_threshold
+from app.services.ti.misp_auto_sighting import record_sightings_for_alerts
 from app.services.ti.ioc_detector import IOCDetector
 
 logger = logging.getLogger(__name__)
@@ -347,6 +348,11 @@ class LogProcessor:
         # Send notifications for created alerts
         if alerts_created:
             await self._send_notifications(db, alerts_created, app_url)
+
+        # Auto-record MISP sightings for MISP-sourced IOC alerts (opt-in;
+        # safe no-op when disabled — runs after alerts are persisted).
+        if alerts_created:
+            await record_sightings_for_alerts(db, alerts_created)
 
         elapsed = time.time() - start_time
         record_batch(index_suffix, len(logs), len(alerts_created), elapsed)

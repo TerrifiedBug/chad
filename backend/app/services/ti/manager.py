@@ -1,6 +1,7 @@
 """Threat Intelligence enrichment manager."""
 
 import asyncio
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -120,10 +121,41 @@ class TIEnrichmentManager:
         self.cache_ttl_seconds = cache_ttl_seconds
         self.cache_enabled = cache_enabled and cache_ttl_seconds > 0
         self._clients: dict[str, TIClient] = {}
+        # Fingerprint of the enabled provider set. Embedded in the cache key so
+        # that enabling/disabling a provider (or rotating a key) silently
+        # invalidates prior verdicts instead of serving a stale aggregate that
+        # no longer reflects the active sources. Recomputed in ``initialize()``.
+        self._cache_version = "0"
 
-    @staticmethod
-    def _cache_key(indicator: str, indicator_type: TIIndicatorType) -> str:
-        return f"{_TI_CACHE_PREFIX}:{indicator_type.value}:{indicator}"
+    def _compute_cache_version(self) -> str:
+        """Short fingerprint derived from the sorted set of enabled sources."""
+        sources = ",".join(sorted(self._clients.keys()))
+        return hashlib.sha256(sources.encode()).hexdigest()[:8]
+
+    def _cache_key(self, indicator: str, indicator_type: TIIndicatorType) -> str:
+        return (
+            f"{_TI_CACHE_PREFIX}:{self._cache_version}"
+            f":{indicator_type.value}:{indicator}"
+        )
+
+    async def flush_cache(self) -> int:
+        """Delete every cached TI result (``chad:ti:cache:*``).
+
+        Non-blocking ``SCAN`` so a large keyspace never stalls the event loop.
+        Called on TI-config change to drop verdicts produced under the old
+        provider set. Fail-open: Redis errors return 0 rather than raising.
+        """
+        deleted = 0
+        try:
+            redis = await get_redis()
+            async for key in redis.scan_iter(
+                match=f"{_TI_CACHE_PREFIX}:*", count=500
+            ):
+                await redis.delete(key)
+                deleted += 1
+        except Exception as e:
+            logger.debug("TI cache flush failed: %s", e)
+        return deleted
 
     async def _get_cached(
         self, indicator: str, indicator_type: TIIndicatorType
@@ -180,6 +212,9 @@ class TIEnrichmentManager:
                     message=f"TI feed sync failed: {str(e)}",
                     details={"error": str(e), "error_type": type(e).__name__, "source_type": config.source_type}
                 )
+
+        # Recompute the cache fingerprint once the active provider set is known.
+        self._cache_version = self._compute_cache_version()
 
     def _create_client(self, config: TISourceConfig) -> TIClient | None:
         """Create a TI client from configuration.
