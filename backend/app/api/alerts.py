@@ -80,6 +80,32 @@ class BulkAlertDelete(BaseModel):
         return _validate_alert_ids(v)
 
 
+_ALERT_STATUSES = {"new", "acknowledged", "resolved", "false_positive"}
+
+
+class AlertQueryFilters(BaseModel):
+    """Filter selecting which alerts a by-query bulk op targets (mirrors the
+    list view's filters)."""
+
+    status: str | None = None
+    severity: str | None = None
+    rule_id: str | None = None
+    exclude_ioc: bool = False
+
+
+class BulkAlertStatusByQuery(BaseModel):
+    new_status: str
+    change_reason: str | None = Field(None, min_length=1, max_length=10000)
+    filters: AlertQueryFilters = Field(default_factory=AlertQueryFilters)
+
+    @field_validator("new_status")
+    @classmethod
+    def _valid_status(cls, v):
+        if v not in _ALERT_STATUSES:
+            raise ValueError(f"Invalid status: {v}")
+        return v
+
+
 @router.get("", response_model=AlertListResponse | ClusteredAlertListResponse)
 async def list_alerts(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -484,6 +510,55 @@ async def bulk_update_alert_status(
         pass  # Cache invalidation failure is non-critical
 
     return {"success": success, "failed": failed}
+
+
+@router.post("/bulk/status-by-query", response_model=dict)
+async def bulk_update_alert_status_by_query(
+    data: BulkAlertStatusByQuery,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+):
+    """Set status on ALL alerts matching a filter in one OpenSearch
+    ``update_by_query`` — for clearing large backlogs (e.g. mark 60k alerts
+    false-positive) without enumerating ids client-side. Targets exactly the
+    alerts the list view's filter selects.
+    """
+    alert_service = AlertService(os_client)
+    try:
+        updated = alert_service.update_status_by_query(
+            status=data.new_status,
+            user_id=current_user.email,
+            filter_status=data.filters.status,
+            filter_severity=data.filters.severity,
+            rule_id=data.filters.rule_id,
+            exclude_ioc=data.filters.exclude_ioc,
+        )
+    except Exception as e:
+        logger.error("Bulk status-by-query failed: %s", type(e).__name__)
+        raise HTTPException(500, "Bulk update failed") from e
+
+    await audit_log(
+        db, current_user.id, "alert.bulk_status_update_by_query", "alert", None,
+        {
+            "new_status": data.new_status,
+            "filters": data.filters.model_dump(),
+            "updated": updated,
+            "change_reason": data.change_reason,
+        },
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    try:
+        redis = await get_redis()
+        cache = AlertCache(redis)
+        await cache.invalidate()
+    except Exception:
+        pass  # Cache invalidation failure is non-critical
+
+    return {"updated": updated}
 
 
 @router.post("/bulk/delete", response_model=dict)

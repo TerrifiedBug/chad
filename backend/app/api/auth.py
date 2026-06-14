@@ -811,9 +811,13 @@ async def sso_login(
         callback = f"{base_url}/api/auth/sso/callback"
     else:
         callback = str(request.url_for("sso_callback"))
-    redirect_uri = f"{callback}?provider={provider.id}"
+    # Remember which provider this flow is for in the signed (non-tamperable)
+    # session so the callback URL the IdP must allow-list stays clean — no
+    # ``?provider=<uuid>`` to register. The callback still honours an explicit
+    # ?provider= for backward compatibility with already-registered URIs.
+    request.session["sso_provider_id"] = str(provider.id)
 
-    return await client.authorize_redirect(request, redirect_uri)
+    return await client.authorize_redirect(request, callback)
 
 
 async def _resolve_validated_userinfo(client, request, token) -> dict | None:
@@ -850,9 +854,13 @@ async def sso_callback(request: Request, db: Annotated[AsyncSession, Depends(get
             url=f"{frontend_url}/login?{urlencode({'sso_error': message})}"
         )
 
-    # Provider hint from the query param. A malformed/unknown value resolves to
-    # None and yields a clean error redirect (never a 500).
-    provider = await _load_enabled_provider(db, request.query_params.get("provider"))
+    # Provider resolved from the signed session set at login (clean callback URL),
+    # falling back to an explicit ?provider= for backward compat. A malformed/
+    # unknown value resolves to None and yields a clean error redirect (never 500).
+    provider_hint = request.query_params.get("provider") or request.session.get(
+        "sso_provider_id"
+    )
+    provider = await _load_enabled_provider(db, provider_hint)
     if provider is None:
         return _err("SSO provider not found or not enabled")
 

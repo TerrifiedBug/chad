@@ -6,13 +6,13 @@ here instead of mutating one global ``oidc`` registry.
 """
 
 import logging
+from urllib.parse import urlparse
 
 import httpx
 from authlib.integrations.starlette_client import OAuth
 
 from app.core.encryption import decrypt
 from app.models.sso_provider import SSOProvider
-from app.services.webhooks import is_safe_url
 
 logger = logging.getLogger(__name__)
 
@@ -27,23 +27,23 @@ _REQUIRED_DISCOVERY_KEYS = ("authorization_endpoint", "token_endpoint", "jwks_ur
 
 
 def validate_issuer_url(issuer_url: str | None) -> str:
-    """Validate an OIDC issuer URL (https + SSRF-safe). Returns the cleaned URL.
+    """Validate an OIDC issuer URL (https + well-formed host). Returns cleaned URL.
 
-    Raises ``ValueError`` with a human message if the issuer is missing, not
-    https, or resolves to a private/internal address. Used both at provider
-    create/update time and on the login path (build_provider_client) so a
-    malicious issuer can never drive a server-side request to an internal host
-    (e.g. 169.254.169.254).
+    Raises ``ValueError`` if the issuer is missing, not https, or has no host.
+
+    The issuer is configured by an admin, not supplied by an attacker, and
+    self-hosted IdPs (PocketID, Authentik, Keycloak, …) routinely live on
+    private/internal networks. So we deliberately do NOT SSRF-block
+    private/internal IPs here — that guard exists for untrusted *webhook* targets,
+    not the admin-set SSO issuer, and blocking it broke self-hosted SSO.
     """
     issuer = (issuer_url or "").strip().rstrip("/")
     if not issuer:
         raise ValueError("Issuer URL is required")
     if not issuer.lower().startswith("https://"):
         raise ValueError("Issuer URL must use https")
-    # is_safe_url resolves the host and rejects private/internal/link-local IPs.
-    safe, reason = is_safe_url(f"{issuer}/.well-known/openid-configuration")
-    if not safe:
-        raise ValueError(reason or "Issuer URL is not allowed")
+    if not urlparse(issuer).hostname:
+        raise ValueError("Issuer URL must have a valid hostname")
     return issuer
 
 

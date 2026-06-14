@@ -57,7 +57,7 @@ export function TeamSwitcher() {
         <Button
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5 px-2.5"
+          className="h-7 gap-1.5 px-2.5"
           aria-label={`Active team: ${active.name}`}
         >
           <Users className="h-3.5 w-3.5 text-fg-3" />

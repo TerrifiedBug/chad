@@ -14,7 +14,7 @@ from app.api.auth import validate_password_complexity
 from app.api.deps import get_db, require_admin, require_permission_dep
 from app.models.audit_log import AuditLog
 from app.models.setting import Setting
-from app.models.user import User, UserRole
+from app.models.user import AuthMethod, ProvisionedVia, User, UserRole
 from app.services.audit import audit_log
 from app.utils.request import get_client_ip
 
@@ -291,6 +291,52 @@ async def update_user(
     await audit_log(db, current_user.id, "user.update", "user", str(user_id), {"email": user.email, "role": data.role, "is_active": data.is_active}, ip_address=get_client_ip(request))
     await db.commit()
     await db.refresh(user)
+
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        role=user.role.value,
+        is_active=user.is_active,
+        created_at=user.created_at.isoformat(),
+        auth_method="local" if user.password_hash else "sso",
+    )
+
+
+@router.post("/{user_id}/promote-to-sso", response_model=UserResponse)
+async def promote_user_to_sso(
+    user_id: UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_users"))],
+):
+    """Promote a local (password) user to SSO (admin only).
+
+    Explicit, admin-initiated account linking — the sanctioned counterpart to the
+    login-time block on *automatic* local->SSO fusion. An admin deliberately
+    converts the account here: SSO auth + SSO provenance, and the local password
+    is removed. SSO never auto-claims a local account; only this action links it.
+    """
+    user = (
+        await db.execute(select(User).where(User.id == user_id))
+    ).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    already_sso = (
+        user.auth_method == AuthMethod.SSO
+        and user.provisioned_via == ProvisionedVia.SSO.value
+        and user.password_hash is None
+    )
+    if not already_sso:
+        user.auth_method = AuthMethod.SSO
+        user.provisioned_via = ProvisionedVia.SSO.value
+        user.password_hash = None  # SSO accounts have no local password
+        await audit_log(
+            db, current_user.id, "user.promote_to_sso", "user", str(user_id),
+            {"email": user.email}, ip_address=get_client_ip(request),
+        )
+        await db.commit()
+        await db.refresh(user)
 
     return UserResponse(
         id=user.id,

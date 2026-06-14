@@ -315,7 +315,7 @@ export function DeployDialog({
               </div>
               <YamlDiff
                 current={preview.current_deployed_query ?? ''}
-                proposed={preview.proposed_query}
+                proposed={preview.proposed_query ?? ''}
                 className="max-h-[45vh]"
               />
             </div>

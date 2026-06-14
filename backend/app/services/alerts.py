@@ -622,9 +622,8 @@ class AlertService:
 
     def get_ioc_stats(self, index_pattern: str = "chad-alerts-*") -> dict[str, Any]:
         """Get IOC match statistics from OpenSearch."""
-        from datetime import timezone
 
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
         try:
             result = self.client.search(
@@ -742,6 +741,55 @@ class AlertService:
             return True
         except Exception:
             return False
+
+    def update_status_by_query(
+        self,
+        status: str,
+        user_id: str | None = None,
+        filter_status: str | None = None,
+        filter_severity: str | None = None,
+        rule_id: str | None = None,
+        exclude_ioc: bool = False,
+        index_pattern: str = "chad-alerts-*",
+    ) -> int:
+        """Set ``status`` on every alert matching the filter, in one OpenSearch
+        ``update_by_query`` — O(1) round trips instead of O(N) per-id updates.
+
+        Mirrors the ``get_alerts`` filter semantics so "apply to all matching the
+        current view" updates exactly the alerts the user is looking at. Returns
+        the number of documents updated.
+        """
+        must: list[dict[str, Any]] = []
+        if filter_status:
+            must.append({"term": {"status": filter_status}})
+        if filter_severity:
+            must.append({"term": {"severity": filter_severity}})
+        if rule_id:
+            must.append({"term": {"rule_id": rule_id}})
+        if exclude_ioc:
+            must.append({"bool": {"must_not": [{"term": {"rule_id": "ioc-detection"}}]}})
+        query = {"bool": {"must": must}} if must else {"match_all": {}}
+
+        now = datetime.now(UTC).isoformat()
+        source = "ctx._source.status = params.s; ctx._source.updated_at = params.u;"
+        if status == "acknowledged" and user_id:
+            source += " ctx._source.acknowledged_by = params.by; ctx._source.acknowledged_at = params.u;"
+
+        result = self.client.update_by_query(
+            index=index_pattern,
+            body={
+                "query": query,
+                "script": {
+                    "source": source,
+                    "lang": "painless",
+                    "params": {"s": status, "u": now, "by": user_id},
+                },
+            },
+            conflicts="proceed",  # don't abort the whole sweep on a version conflict
+            refresh=True,
+            wait_for_completion=True,
+        )
+        return int(result.get("updated", 0))
 
     def merge_alert_enrichment(
         self,

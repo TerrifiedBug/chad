@@ -1160,6 +1160,17 @@ export const alertsApi = {
     api.post<{ success: boolean; deleted_count: number }>('/alerts/bulk/delete', data).then(() => {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
     }),
+  // Set status on ALL alerts matching a filter in one server-side
+  // update_by_query — for clearing large backlogs without enumerating ids.
+  bulkUpdateStatusByQuery: (data: {
+    new_status: AlertStatus
+    change_reason?: string
+    filters: { status?: string; severity?: string; rule_id?: string; exclude_ioc?: boolean }
+  }) =>
+    api.post<{ updated: number }>('/alerts/bulk/status-by-query', data).then((r) => {
+      queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
+      return r
+    }),
   assign: async (alertId: string): Promise<{ message: string; owner: string }> => {
     return api.post(`/alerts/${alertId}/assign`)
   },
@@ -1283,6 +1294,10 @@ export const usersApi = {
     api.post<{ temporary_password: string; message: string }>(
       `/users/${userId}/reset-password`
     ),
+  // Explicit admin-initiated promotion of a local account to SSO (sets SSO
+  // auth + provenance, removes the local password). Enables SSO login for it.
+  promoteToSso: (userId: string) =>
+    api.post<UserInfo>(`/users/${userId}/promote-to-sso`),
   delete: (userId: string) =>
     api.delete(`/users/${userId}`),
   getLockStatus: (email: string) =>
