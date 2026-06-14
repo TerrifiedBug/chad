@@ -11,7 +11,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { AlertTriangle, Clock, ShieldAlert } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { cn } from '@/lib/utils'
@@ -21,7 +20,6 @@ import { Skeleton, SkeletonTable } from '@/components/ui/skeleton'
 import { ErrorAlert } from '@/components/ui/error-alert'
 import { ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 import { PageHeader } from '@/components/PageHeader'
-import { StatCard } from '@/components/dashboard/StatCard'
 import { KpiStrip, KpiTile } from '@/components/ui/kpi-tile'
 import { SeverityPills } from '@/components/filters/SeverityPills'
 
@@ -137,15 +135,12 @@ export default function Dashboard() {
           <Skeleton className="h-10 w-24" />
         </div>
 
-        {/* Skeleton stat cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* Skeleton KPI strip — mirrors the border-divided KpiStrip layout. */}
+        <div className="flex flex-col divide-y divide-line overflow-hidden rounded-[3px] border border-line bg-bg-2 sm:flex-row sm:divide-x sm:divide-y-0">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="rounded-lg border bg-card p-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-8 w-8 rounded-md" />
-              </div>
-              <Skeleton className="h-8 w-12" />
+            <div key={i} className="flex flex-1 flex-col gap-2 px-5 py-4">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-7 w-12" />
               <Skeleton className="h-3 w-24" />
             </div>
           ))}
@@ -211,7 +206,10 @@ export default function Dashboard() {
         }
       />
 
-      {/* VF console KPI strip: dense mono accent metrics. */}
+      {/* VF console KPI strip: dense mono accent metrics. Tone carries the
+          urgency signal (accent/degraded/error) the old StatCard grid did via
+          its pulse/urgency-ring — so this single strip replaces it without
+          losing the at-a-glance severity read. */}
       <KpiStrip>
         <KpiTile
           label="Alerts Today"
@@ -235,42 +233,6 @@ export default function Dashboard() {
           onClick={() => navigate('/ioc-matches')}
         />
       </KpiStrip>
-
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <StatCard
-          title="Alerts Today"
-          value={stats?.alerts.today || 0}
-          subtext={`${stats?.alerts.total || 0} total`}
-          icon={AlertTriangle}
-          onClick={() => navigate('/alerts')}
-          variant={(stats?.alerts.today || 0) > 10 ? 'warning' : 'default'}
-          showUrgencyRing={(stats?.alerts.today || 0) > 10}
-          pulseOnCritical
-          criticalThreshold={10}
-        />
-
-        <StatCard
-          title="New Alerts"
-          value={stats?.alerts.by_status?.new || 0}
-          subtext={`${stats?.alerts.by_status?.acknowledged || 0} acknowledged`}
-          icon={Clock}
-          onClick={() => navigate('/alerts?status=new')}
-          variant={(stats?.alerts.by_status?.new || 0) > 5 ? 'danger' : 'default'}
-          showUrgencyRing={(stats?.alerts.by_status?.new || 0) > 5}
-          pulseOnCritical
-          criticalThreshold={5}
-        />
-
-        <StatCard
-          title="IOC Matches Today"
-          value={stats?.ioc_matches?.today || 0}
-          subtext={`${stats?.ioc_matches?.total || 0} total`}
-          icon={ShieldAlert}
-          onClick={() => navigate('/ioc-matches')}
-          variant={(stats?.ioc_matches?.today || 0) > 5 ? 'danger' : (stats?.ioc_matches?.today || 0) > 0 ? 'warning' : 'default'}
-        />
-      </div>
 
       {/* Recent Alerts */}
       <Card>

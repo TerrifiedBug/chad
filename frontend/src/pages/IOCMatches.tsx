@@ -20,8 +20,7 @@ import {
   Layers,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Badge, Badge as StatusBadge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -47,7 +46,8 @@ import {
 } from '@/components/ui/tooltip'
 import { Checkbox } from '@/components/ui/checkbox'
 import { PageHeader } from '@/components/PageHeader'
-import { StatCard } from '@/components/dashboard/StatCard'
+import { KpiStrip, KpiTile } from '@/components/ui/kpi-tile'
+import { SeverityBadge } from '@/components/ui/severity-badge'
 import { SeverityPills } from '@/components/filters/SeverityPills'
 import { RelativeTime } from '@/components/RelativeTime'
 import { Skeleton, SkeletonTable } from '@/components/ui/skeleton'
@@ -55,7 +55,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { alertsApi, iocStatsApi, type Alert, type AlertStatus, type IOCMatchStats, type AlertCluster, type AlertListResponse, type ClusteredAlertListResponse } from '@/lib/api'
 import { useOpenSearchStatus } from '@/contexts/OpenSearchStatus'
 import { useAuth } from '@/hooks/use-auth'
-import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize, SEVERITY_CONFIG } from '@/lib/constants'
+import { ALERT_STATUS_LABELS, capitalize, SEVERITY_CONFIG, alertStatusBadgeVariant } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -393,54 +393,55 @@ export default function IOCMatchesPage() {
         }
       />
 
-      {/* Stats Cards - single row of 4 */}
+      {/* VF console KPI strip + Top IOCs panel — matches the Dashboard's metric
+          presentation. Tone carries the urgency signal the old StatCard grid
+          expressed via pulse/urgency-ring (today>10 = error, >0 = degraded;
+          any high-threat = error). */}
       {stats && (
-        <div className="grid gap-4 md:grid-cols-4">
-          <StatCard
-            title="Total IOC Alerts"
-            value={stats.total}
-            subtext={`${Object.values(stats.by_type).reduce((a, b) => a + b, 0) > 0 ? Object.entries(stats.by_type).map(([t, c]) => `${c} ${t}`).join(', ') : 'No types recorded'}`}
-            icon={Layers}
-          />
-          <StatCard
-            title="IOC Matches Today"
-            value={stats.today}
-            subtext={`${stats.total} total`}
-            icon={ShieldAlert}
-            variant={stats.today > 10 ? 'danger' : stats.today > 0 ? 'warning' : 'default'}
-          />
-          <StatCard
-            title="High Threat"
-            value={stats.by_threat_level['high'] || 0}
-            subtext="Elevated threat level"
-            icon={XCircle}
-            onClick={() => setSeverityFilter(['high'])}
-            variant={(stats.by_threat_level['high'] || 0) > 0 ? 'danger' : 'default'}
-            showUrgencyRing={(stats.by_threat_level['high'] || 0) > 0}
-            pulseOnCritical
-            criticalThreshold={0}
-          />
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Top Hitting IOCs</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {stats.top_iocs.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No matches yet</p>
-              ) : (
-                <div className="space-y-1">
-                  {stats.top_iocs.slice(0, 3).map((ioc, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <span className="font-mono text-xs truncate max-w-[140px]" title={ioc.value}>
-                        {ioc.value}
-                      </span>
-                      <Badge variant="secondary" className="text-xs">{ioc.count}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <KpiStrip className="lg:col-span-2">
+            <KpiTile
+              label="Total IOC Alerts"
+              value={stats.total}
+              sublabel={Object.values(stats.by_type).reduce((a, b) => a + b, 0) > 0
+                ? Object.entries(stats.by_type).map(([t, c]) => `${c} ${t}`).join(', ')
+                : 'No types recorded'}
+              tone="accent"
+            />
+            <KpiTile
+              label="IOC Matches Today"
+              value={stats.today}
+              sublabel={`${stats.total} total`}
+              tone={stats.today > 10 ? 'error' : stats.today > 0 ? 'degraded' : 'default'}
+            />
+            <KpiTile
+              label="High Threat"
+              value={stats.by_threat_level['high'] || 0}
+              sublabel="Elevated threat level"
+              tone={(stats.by_threat_level['high'] || 0) > 0 ? 'error' : 'default'}
+              onClick={() => setSeverityFilter(['high'])}
+            />
+          </KpiStrip>
+
+          {/* Top Hitting IOCs — unique signal preserved, restyled to the VF
+              console surface (hairline border, mono values, status Badge). */}
+          <div className="flex flex-col gap-2 rounded-[3px] border border-line bg-bg-2 px-5 py-4">
+            <span className="vf-thead text-fg-2">Top Hitting IOCs</span>
+            {stats.top_iocs.length === 0 ? (
+              <p className="vf-mono-xs text-fg-3">No matches yet</p>
+            ) : (
+              <div className="space-y-1.5">
+                {stats.top_iocs.slice(0, 3).map((ioc, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-[12px] text-fg-1 truncate max-w-[160px]" title={ioc.value}>
+                      {ioc.value}
+                    </span>
+                    <Badge variant="secondary">{ioc.count}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -654,13 +655,7 @@ export default function IOCMatchesPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${
-                                SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
-                              }`}
-                            >
-                              {capitalize(alert.severity)}
-                            </span>
+                            <SeverityBadge severity={alert.severity} />
                           </TableCell>
                           <TableCell>
                             <Tooltip>
@@ -679,11 +674,9 @@ export default function IOCMatchesPage() {
                             {ioc.mispEvent || '\u2014'}
                           </TableCell>
                           <TableCell>
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
-                            >
-                              {ALERT_STATUS_LABELS[alert.status]}
-                            </span>
+                            <StatusBadge variant={alertStatusBadgeVariant(alert.status)}>
+                              {ALERT_STATUS_LABELS[alert.status] || capitalize(alert.status)}
+                            </StatusBadge>
                           </TableCell>
                           <TableCell>
                             {alert.owner_username ? (
@@ -732,13 +725,7 @@ export default function IOCMatchesPage() {
                               </TableCell>
                               <TableCell></TableCell>
                               <TableCell>
-                                <span
-                                  className={`px-2 py-1 rounded text-xs font-medium ${
-                                    SEVERITY_COLORS[clusterAlert.severity] || 'bg-gray-500 text-white'
-                                  }`}
-                                >
-                                  {capitalize(clusterAlert.severity)}
-                                </span>
+                                <SeverityBadge severity={clusterAlert.severity} />
                               </TableCell>
                               <TableCell className="pl-8">
                                 <div className="flex items-center gap-2">
@@ -760,11 +747,9 @@ export default function IOCMatchesPage() {
                                 {clusterIoc.mispEvent || '\u2014'}
                               </TableCell>
                               <TableCell>
-                                <span
-                                  className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[clusterAlert.status]}`}
-                                >
-                                  {ALERT_STATUS_LABELS[clusterAlert.status]}
-                                </span>
+                                <StatusBadge variant={alertStatusBadgeVariant(clusterAlert.status)}>
+                                  {ALERT_STATUS_LABELS[clusterAlert.status] || capitalize(clusterAlert.status)}
+                                </StatusBadge>
                               </TableCell>
                               <TableCell>
                                 {clusterAlert.owner_username ? (
@@ -806,13 +791,7 @@ export default function IOCMatchesPage() {
                           />
                         </TableCell>
                         <TableCell>
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
-                            }`}
-                          >
-                            {capitalize(alert.severity)}
-                          </span>
+                          <SeverityBadge severity={alert.severity} />
                         </TableCell>
                         <TableCell>
                           <Tooltip>
@@ -831,11 +810,9 @@ export default function IOCMatchesPage() {
                           {ioc.mispEvent || '\u2014'}
                         </TableCell>
                         <TableCell>
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
-                          >
-                            {ALERT_STATUS_LABELS[alert.status]}
-                          </span>
+                          <StatusBadge variant={alertStatusBadgeVariant(alert.status)}>
+                            {ALERT_STATUS_LABELS[alert.status] || capitalize(alert.status)}
+                          </StatusBadge>
                         </TableCell>
                         <TableCell>
                           {alert.owner_username ? (
