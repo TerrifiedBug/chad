@@ -15,3 +15,5 @@ class BulkOperationResult(BaseModel):
 
     success: list[str]
     failed: list[dict]  # {"id": str, "error": str}
+    # Set by bulk deploy to correlate the run's deploy_progress WS events.
+    batch_id: str | None = None

@@ -6,7 +6,7 @@ import {
   rulesApi,
   correlationRulesApi,
   indexPatternsApi,
-  settingsApi,
+  notificationSettingsApi,
   IndexPattern,
   ValidationError,
   LogMatchResult,
@@ -57,7 +57,8 @@ import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { MISPOriginPanel } from '@/components/MISPOriginPanel'
-import { PreDeploymentModal } from '@/components/rules/PreDeploymentModal'
+import { DeployDialog } from '@/components/rules/DeployDialog'
+import { DeployStatusBadge } from '@/components/rules/DeployStatusBadge'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -231,13 +232,17 @@ export default function RuleEditorPage() {
   const [changeReason, setChangeReason] = useState('')
 
   // Deploy/Undeploy change reason dialog state
-  const [showDeployReason, setShowDeployReason] = useState(false)
   const [showUndeployReason, setShowUndeployReason] = useState(false)
   const [deployReason, setDeployReason] = useState('')
 
-  // Pre-deployment validation state
-  const [showPreDeployment, setShowPreDeployment] = useState(false)
-  const [deploymentThreshold, setDeploymentThreshold] = useState(100)
+  // New multi-step deploy dialog (replaces inline reason + pre-deployment modal)
+  const [showDeployDialog, setShowDeployDialog] = useState(false)
+  // Public dual-control gate flag (advisory; the 202 result is authoritative)
+  const [requireDeployApproval, setRequireDeployApproval] = useState(false)
+
+  // Rollback-and-redeploy state
+  const [showRollbackRedeploy, setShowRollbackRedeploy] = useState(false)
+  const [isRollbackRedeploying, setIsRollbackRedeploying] = useState(false)
 
   // Linked correlations state (shown in undeploy dialog)
   const [linkedCorrelations, setLinkedCorrelations] = useState<{ id: string; name: string; deployed: boolean }[]>([])
@@ -391,13 +396,6 @@ export default function RuleEditorPage() {
         }
       }
 
-      // Load deployment alert threshold
-      try {
-        const ruleSettings = await settingsApi.getRuleSettings()
-        setDeploymentThreshold(ruleSettings.deployment_alert_threshold)
-      } catch {
-        // Use default of 100
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule')
     } finally {
@@ -492,14 +490,15 @@ export default function RuleEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indexPatternId])
 
-  // Load mandatory comments settings on mount
+  // Load mandatory comments + dual-control gate settings on mount
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const settings = await settingsApi.getMandatoryCommentsSettings()
+        const settings = await notificationSettingsApi.getPublic()
         setMandatoryComments(settings.mandatory_rule_comments)
+        setRequireDeployApproval(settings.require_deploy_approval)
       } catch (err) {
-        console.error('Failed to load mandatory comments settings:', err)
+        console.error('Failed to load deployment governance settings:', err)
         // Default to true on error to be safe
         setMandatoryComments(true)
       }
@@ -728,50 +727,53 @@ export default function RuleEditorPage() {
 
   const handleDeploy = () => {
     if (!id) return
-    setShowPreDeployment(true)
+    setDeployError('')
+    setShowDeployDialog(true)
   }
 
-  const handlePreDeploymentProceed = () => {
-    setShowPreDeployment(false)
-    setDeployReason('')
-    setShowDeployReason(true)
+  // Called by DeployDialog after a successful direct deploy (gate off).
+  const handleDeployed = (result: { deployed_at: string; deployed_version: number }) => {
+    setDeployedAt(result.deployed_at)
+    setDeployedVersion(result.deployed_version)
+    setNeedsRedeploy(false)
+    // Update status to deployed (unless already snoozed)
+    if (status !== 'snoozed') {
+      setStatus('deployed')
+    }
   }
-  const handleDeployConfirm = async () => {
-    if (!id || !deployReason.trim()) return
-    setShowDeployReason(false)
-    setIsDeploying(true)
+
+  // Rollback-and-redeploy: roll the rule back to its last deployed version AND
+  // redeploy in one confirmed step. Handles the 202 (gated) like deploy().
+  const handleRollbackRedeploy = async () => {
+    if (!id || deployedVersion == null) return
+    setShowRollbackRedeploy(false)
+    setIsRollbackRedeploying(true)
     setDeployError('')
     try {
-      const deployResult = await rulesApi.deploy(id, deployReason)
-      if (deployResult.pendingApproval) {
-        // Dual-control gate is ON: a deployment request was filed for review.
-        // Do NOT mark the rule as deployed.
-        setDeployReason('')
+      const result = await rulesApi.rollbackRedeploy(
+        id,
+        deployedVersion,
+        `Rollback and redeploy to v${deployedVersion}`
+      )
+      if (result.pendingApproval) {
         showToast('Submitted for approval', 'info')
         return
       }
-      const result = deployResult.result
-      setDeployedAt(result.deployed_at)
-      setDeployedVersion(result.deployed_version)
-      setNeedsRedeploy(false)
-      // Update status to deployed (unless already snoozed)
-      if (status !== 'snoozed') {
-        setStatus('deployed')
-      }
-      setDeployReason('')
+      showToast('Rolled back and redeployed', 'success')
+      // Reload to pick up the new version + deployment state.
+      await loadRule()
     } catch (err) {
       if (err instanceof DeploymentUnmappedFieldsError) {
-        // Show unmapped fields dialog
         setUnmappedFieldsDialog({
           open: true,
           fields: err.unmapped_fields,
           indexPatternId: err.index_pattern_id,
         })
       } else {
-        setDeployError(err instanceof Error ? err.message : 'Deploy failed')
+        setDeployError(err instanceof Error ? err.message : 'Rollback-and-redeploy failed')
       }
     } finally {
-      setIsDeploying(false)
+      setIsRollbackRedeploying(false)
     }
   }
 
@@ -1240,16 +1242,22 @@ export default function RuleEditorPage() {
                 </div>
               )}
             </div>
-            {!isNew && deployedAt && (
-              <p className={`text-xs ${deployedVersion === currentVersionNumber ? 'text-green-600' : 'text-yellow-600'}`}>
-                {deployedVersion === currentVersionNumber
-                  ? `Deployed v${deployedVersion}`
-                  : `Deployed v${deployedVersion} (current is v${currentVersionNumber} - redeploy needed)`
-                }
-              </p>
-            )}
-            {!isNew && !deployedAt && (
-              <p className="text-xs text-muted-foreground">Not deployed</p>
+            {!isNew && (
+              <div className="mt-1 flex items-center gap-2">
+                <DeployStatusBadge
+                  rule={{
+                    status,
+                    deployed_version: deployedVersion,
+                    needs_redeploy: needsRedeploy,
+                    snooze_indefinite: snoozeIndefinite,
+                  }}
+                />
+                {deployedAt && deployedVersion !== currentVersionNumber && (
+                  <span className="text-xs text-muted-foreground">
+                    current is v{currentVersionNumber}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1331,6 +1339,14 @@ export default function RuleEditorPage() {
                 <DropdownMenuItem onClick={handleExportYaml}>
                   <Download className="mr-2 h-4 w-4" /> Export YAML
                 </DropdownMenuItem>
+                {deployedVersion != null && (
+                  <DropdownMenuItem
+                    onClick={() => setShowRollbackRedeploy(true)}
+                    disabled={!canManageRules || isRollbackRedeploying}
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" /> Roll back &amp; redeploy v{deployedVersion}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={handleDeleteRule}
@@ -2580,56 +2596,39 @@ export default function RuleEditorPage() {
       </Dialog>
 
 
-      {/* Pre-Deployment Validation Modal */}
+      {/* Multi-step Deploy Dialog (Preflight → Diff → Reason → Confirm/Result) */}
       {id && (
-        <PreDeploymentModal
-          open={showPreDeployment}
-          onOpenChange={setShowPreDeployment}
+        <DeployDialog
+          open={showDeployDialog}
+          onOpenChange={setShowDeployDialog}
           ruleId={id}
-          ruleName={title || 'Untitled Rule'}
-          threshold={deploymentThreshold}
-          onProceed={handlePreDeploymentProceed}
+          ruleTitle={title || 'Untitled Rule'}
+          requiresApproval={requireDeployApproval}
+          onDeployed={handleDeployed}
         />
       )}
-      {/* Deploy Reason Modal */}
-      <Dialog open={showDeployReason} onOpenChange={setShowDeployReason}>
+
+      {/* Rollback-and-redeploy confirmation */}
+      <Dialog open={showRollbackRedeploy} onOpenChange={setShowRollbackRedeploy}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Deploy Rule</DialogTitle>
+            <DialogTitle>Roll back &amp; redeploy</DialogTitle>
             <DialogDescription>
-              Please explain why you're deploying this rule. This helps maintain an audit trail.
+              This rolls the rule back to its last deployed version (v{deployedVersion}) and
+              redeploys it in one step.
+              {requireDeployApproval && ' Because approval is required, this will file a deployment request instead of deploying immediately.'}
             </DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="deploy-reason">Reason for Deploy *</Label>
-              <Textarea
-                id="deploy-reason"
-                placeholder="e.g., Ready for production, completed testing..."
-                value={deployReason}
-                onChange={(e) => setDeployReason(e.target.value)}
-                rows={3}
-                className="resize-none"
-              />
-            </div>
-          </div>
-
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setShowDeployReason(false)
-                setDeployReason('')
-              }}
+              onClick={() => setShowRollbackRedeploy(false)}
+              disabled={isRollbackRedeploying}
             >
               Cancel
             </Button>
-            <Button
-              onClick={handleDeployConfirm}
-              disabled={!deployReason.trim() || isDeploying}
-            >
-              {isDeploying ? 'Deploying...' : 'Deploy'}
+            <Button onClick={handleRollbackRedeploy} disabled={isRollbackRedeploying}>
+              {isRollbackRedeploying ? 'Working…' : `Roll back & redeploy v${deployedVersion}`}
             </Button>
           </DialogFooter>
         </DialogContent>

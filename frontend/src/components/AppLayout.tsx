@@ -7,6 +7,8 @@ import { OpenSearchBanner } from '@/components/OpenSearchBanner'
 import { AppRail } from '@/components/AppRail'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { DeployProgress } from '@/components/rules/DeployProgress'
+import { useDeployProgressWs } from '@/components/rules/use-deploy-progress-ws'
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useLocalStorage } from '@/hooks/use-local-storage'
@@ -29,6 +31,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const isMobile = useMediaQuery('(max-width: 767px)')
   const { alertCount, healthStatus } = useNavStatus()
+
+  // Subscribe to bulk-deploy progress over /ws so the persistent panel works
+  // even if the user navigates away from the Rules page mid-deploy.
+  useDeployProgressWs()
 
   const focusSearch = useCallback(() => {
     const searchInput = document.querySelector<HTMLInputElement>(
@@ -124,6 +130,9 @@ export function AppLayout({ children }: AppLayoutProps) {
       />
 
       <CommandPalette />
+
+      {/* Persistent bulk-deploy progress panel (renders only during a deploy). */}
+      <DeployProgress />
     </div>
   )
 }
