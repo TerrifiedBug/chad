@@ -163,8 +163,10 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
         to={item.href}
         className={cn(
           // VF console: active = left 2px accent-brand rule + accent-soft fill
-          // + semibold. Inactive items stay muted with a subtle hover.
-          'flex items-center gap-3 rounded-[3px] border-l-2 border-transparent px-3 py-2 text-sm font-medium transition-colors',
+          // + semibold. Inactive items stay muted with a subtle hover. Density
+          // matches VF's SidebarMenuButton (h-[30px], gap-[9px], px-[9px],
+          // 13px) so the rail reads as the same product.
+          'flex h-[30px] items-center gap-[9px] rounded-[3px] border-l-2 border-transparent px-[9px] text-[13px] font-medium transition-colors',
           'hover:bg-bg-3/60',
           active
             ? 'border-l-accent-brand bg-accent-brand-soft text-foreground font-semibold'
@@ -173,7 +175,7 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
         )}
       >
         <div className="relative">
-          <Icon className="h-5 w-5 flex-shrink-0" />
+          <Icon className="h-[15px] w-[15px] flex-shrink-0" />
           {!expanded && showHealthDot && (
             <span className={cn(
               'absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full',
@@ -226,8 +228,9 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
 
   const SectionLabel = ({ label }: { label: string }) => {
     if (!expanded) return null
+    // Matches VF's SidebarGroupLabel: h-6, 11px mono, uppercase, normal weight.
     return (
-      <div className="vf-thead px-3 pt-4 pb-1 text-fg-3">
+      <div className="flex h-6 items-center px-2 pt-3 font-mono text-[11px] font-normal uppercase tracking-[0.08em] text-fg-2">
         {label}
       </div>
     )
@@ -241,11 +244,13 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
           expanded ? 'w-[200px]' : 'w-14'
         )}
       >
-        {/* Rail header: VF puts the product mark in the sidebar header. */}
+        {/* Rail header: VF puts the product mark in the sidebar header. Height
+            matches the AppHeader (52px) so the rail's bottom hairline lines up
+            flush with the header's — VF's shell keeps these two rules aligned. */}
         <Link
           to="/"
           className={cn(
-            'flex h-12 flex-shrink-0 items-center gap-2 border-b border-line px-3',
+            'flex h-[52px] flex-shrink-0 items-center gap-2 border-b border-line px-3',
             !expanded && 'justify-center px-0'
           )}
           aria-label="CHAD home"
@@ -262,7 +267,7 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
         <nav className="flex-1 p-2 pt-1 overflow-y-auto">
           {visibleSections.map((section, idx) => (
             <div key={section.label}>
-              {idx > 0 && !expanded && <div className="my-2 mx-2 border-t border-border" />}
+              {idx > 0 && !expanded && <div className="my-2 mx-2 border-t border-line" />}
               <SectionLabel label={section.label} />
               <div className="space-y-1">
                 {section.items.map((item) => (
@@ -290,20 +295,26 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
           </div>
         )}
 
-        {/* Footer: version + green "all systems normal" status dot (VF rail). */}
+        {/* Footer: VF rail shows version (left) + a status dot with "All systems
+            normal" (right) on one mono row. When collapsed, only the dot shows. */}
         <div className={cn(
-          'flex flex-shrink-0 items-center gap-2 border-t border-line px-3 py-2',
-          !expanded && 'justify-center px-0'
+          'flex flex-shrink-0 items-center border-t border-line px-3 py-2',
+          expanded ? 'justify-between gap-2' : 'justify-center px-0'
         )}>
-          <span className="relative flex h-2 w-2 flex-shrink-0">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-accent-brand opacity-60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-brand" />
-          </span>
           {expanded && (
             <span className="vf-mono-xs truncate text-fg-3">
-              {version ? `v${version}` : 'All systems normal'}
+              {version ? `v${version}` : 'CHAD'}
             </span>
           )}
+          <span className="inline-flex items-center gap-1.5">
+            <span className="relative flex h-2 w-2 flex-shrink-0">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-accent-brand opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-brand" />
+            </span>
+            {expanded && (
+              <span className="vf-mono-xs truncate text-fg-3">All systems normal</span>
+            )}
+          </span>
         </div>
 
         {/* Clickable border for expand/collapse */}

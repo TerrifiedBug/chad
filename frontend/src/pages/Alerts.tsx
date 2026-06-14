@@ -39,20 +39,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Bell, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ExternalLink, X, RotateCcw, LayoutList, List } from 'lucide-react'
+import { Search, Bell, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Link2, Trash2, Download, Loader2, FileText, FileSpreadsheet, Layers, UserPlus, ExternalLink, X, RotateCcw, LayoutList, List } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/components/RelativeTime'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { DateRange } from 'react-day-picker'
 import { cn } from '@/lib/utils'
-import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize, SEVERITY_CONFIG } from '@/lib/constants'
+import { ALERT_STATUS_LABELS, capitalize, SEVERITY_CONFIG, alertStatusBadgeVariant } from '@/lib/constants'
 import { useAuth } from '@/hooks/use-auth'
 import { useOpenSearchStatus } from '@/contexts/OpenSearchStatus'
 import { useToast } from '@/components/ui/toast-provider'
 import { Skeleton, SkeletonTable } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/PageHeader'
-import { StatCard } from '@/components/dashboard/StatCard'
+import { KpiStrip, KpiTile } from '@/components/ui/kpi-tile'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import { Badge as StatusBadge } from '@/components/ui/badge'
 import { SeverityPills } from '@/components/filters/SeverityPills'
 import { chunkedBulkOperation, type BulkProgress } from '@/lib/bulk-utils'
 
@@ -519,50 +521,43 @@ export default function AlertsPage() {
         }
       />
 
-      {/* Stats Cards */}
+      {/* VF console KPI strip — matches the Dashboard's metric presentation.
+          Tone carries the urgency signal the old StatCard grid expressed via
+          its pulse/urgency-ring (new>10 = degraded, any critical = error). */}
       {counts && (
-        <div className="grid gap-4 md:grid-cols-4">
-          <StatCard
-            title="Total Alerts"
+        <KpiStrip>
+          <KpiTile
+            label="Total Alerts"
             value={counts.total}
-            subtext={`${counts.last_24h} in last 24h`}
-            icon={Bell}
+            sublabel={`${counts.last_24h} in last 24h`}
+            tone="accent"
             onClick={() => setStatusFilter('all')}
           />
-          <StatCard
-            title="New"
+          <KpiTile
+            label="New"
             value={counts.by_status['new'] || 0}
-            subtext="Requires attention"
-            icon={AlertTriangle}
+            sublabel="Requires attention"
+            tone={(counts.by_status['new'] || 0) > 10 ? 'degraded' : 'default'}
             onClick={() => setStatusFilter('new')}
-            variant={(counts.by_status['new'] || 0) > 10 ? 'warning' : 'default'}
-            showUrgencyRing={(counts.by_status['new'] || 0) > 10}
-            pulseOnCritical
-            criticalThreshold={10}
           />
-          <StatCard
-            title="Critical"
+          <KpiTile
+            label="Critical"
             value={counts.by_severity['critical'] || 0}
-            subtext="High priority"
-            icon={XCircle}
+            sublabel="High priority"
+            tone={(counts.by_severity['critical'] || 0) > 0 ? 'error' : 'default'}
             onClick={() => {
               setSeverityFilter(['critical'])
               setStatusFilter('all')
             }}
-            variant={(counts.by_severity['critical'] || 0) > 0 ? 'danger' : 'default'}
-            showUrgencyRing={(counts.by_severity['critical'] || 0) > 0}
-            pulseOnCritical
-            criticalThreshold={0}
           />
-          <StatCard
-            title="Resolved"
+          <KpiTile
+            label="Resolved"
             value={counts.by_status['resolved'] || 0}
-            subtext="Investigated"
-            icon={CheckCircle2}
+            sublabel="Investigated"
+            tone="healthy"
             onClick={() => setStatusFilter('resolved')}
-            variant="success"
           />
-        </div>
+        </KpiStrip>
       )}
 
       {/* Filters - Primary Row */}
@@ -828,20 +823,12 @@ export default function AlertsPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${
-                                SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
-                              }`}
-                            >
-                              {capitalize(alert.severity)}
-                            </span>
+                            <SeverityBadge severity={alert.severity} />
                           </TableCell>
                           <TableCell>
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
-                            >
-                              {ALERT_STATUS_LABELS[alert.status]}
-                            </span>
+                            <StatusBadge variant={alertStatusBadgeVariant(alert.status)}>
+                              {ALERT_STATUS_LABELS[alert.status] || capitalize(alert.status)}
+                            </StatusBadge>
                           </TableCell>
                           <TableCell>
                             {alert.owner_username ? (
@@ -927,20 +914,12 @@ export default function AlertsPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <span
-                                className={`px-2 py-1 rounded text-xs font-medium ${
-                                  SEVERITY_COLORS[clusterAlert.severity] || 'bg-gray-500 text-white'
-                                }`}
-                              >
-                                {capitalize(clusterAlert.severity)}
-                              </span>
+                              <SeverityBadge severity={clusterAlert.severity} />
                             </TableCell>
                             <TableCell>
-                              <span
-                                className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[clusterAlert.status]}`}
-                              >
-                                {ALERT_STATUS_LABELS[clusterAlert.status]}
-                              </span>
+                              <StatusBadge variant={alertStatusBadgeVariant(clusterAlert.status)}>
+                                {ALERT_STATUS_LABELS[clusterAlert.status] || capitalize(clusterAlert.status)}
+                              </StatusBadge>
                             </TableCell>
                             <TableCell>
                               {clusterAlert.owner_username ? (
@@ -1019,20 +998,12 @@ export default function AlertsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            SEVERITY_COLORS[alert.severity] || 'bg-gray-500 text-white'
-                          }`}
-                        >
-                          {capitalize(alert.severity)}
-                        </span>
+                        <SeverityBadge severity={alert.severity} />
                       </TableCell>
                       <TableCell>
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${ALERT_STATUS_COLORS[alert.status]}`}
-                        >
-                          {ALERT_STATUS_LABELS[alert.status]}
-                        </span>
+                        <StatusBadge variant={alertStatusBadgeVariant(alert.status)}>
+                          {ALERT_STATUS_LABELS[alert.status] || capitalize(alert.status)}
+                        </StatusBadge>
                       </TableCell>
                       <TableCell>
                         {alert.owner_username ? (

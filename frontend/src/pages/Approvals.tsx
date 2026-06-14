@@ -12,7 +12,7 @@ import { ENVIRONMENTS_QUERY_KEY } from '@/components/EnvironmentSelector'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
 import { PageHeader } from '@/components/PageHeader'
-import { StatCard } from '@/components/dashboard/StatCard'
+import { KpiStrip, KpiTile } from '@/components/ui/kpi-tile'
 import { YamlDiff } from '@/components/YamlDiff'
 import { RelativeTime } from '@/components/RelativeTime'
 import { Badge } from '@/components/ui/badge'
@@ -211,33 +211,33 @@ export default function ApprovalsPage() {
           description="Review and approve rule deployments under dual-control."
         />
 
-        {/* KPI strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="Open"
+        {/* VF console KPI strip — matches the Dashboard's metric presentation.
+            Open carries a degraded tone while there's a pending-review backlog. */}
+        <KpiStrip>
+          <KpiTile
+            label="Open"
             value={stats?.pending ?? 0}
-            icon={CheckCheck}
-            variant={stats && stats.pending > 0 ? 'warning' : 'default'}
-            subtext="Pending review"
+            sublabel="Pending review"
+            tone={stats && stats.pending > 0 ? 'degraded' : 'accent'}
           />
-          <StatCard
-            title="Approved"
+          <KpiTile
+            label="Approved"
             value={stats?.approved ?? 0}
-            icon={Check}
-            subtext="Awaiting apply"
+            sublabel="Awaiting apply"
+            tone="healthy"
           />
-          <StatCard
-            title="Rejected"
+          <KpiTile
+            label="Rejected"
             value={stats?.rejected ?? 0}
-            icon={X}
-            subtext="Declined requests"
+            sublabel="Declined requests"
+            tone={(stats?.rejected ?? 0) > 0 ? 'error' : 'default'}
           />
-          <StatCard
-            title="Avg review time"
+          <KpiTile
+            label="Avg review time"
             value={formatAvgReview(stats?.avg_review_seconds ?? null)}
-            subtext="Time to decision"
+            sublabel="Time to decision"
           />
-        </div>
+        </KpiStrip>
 
         {/* Status tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DeploymentRequestStatus)}>

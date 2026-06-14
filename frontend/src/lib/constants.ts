@@ -77,6 +77,25 @@ export const ALERT_STATUS_LABELS: Record<string, string> = {
   false_positive: 'False Positive',
 }
 
+// Maps an alert status onto a VF "v2 console" Badge variant (status-color fill
+// with the -bg grammar). Keeps alert/IOC status pills consistent with the rest
+// of the console badge system. `info` = new, `warning` = acknowledged (awaiting
+// action), `success` = resolved, `secondary` = false positive (dismissed).
+export type AlertStatusBadgeVariant = 'info' | 'warning' | 'success' | 'secondary'
+export function alertStatusBadgeVariant(status: string): AlertStatusBadgeVariant {
+  switch (status) {
+    case 'new':
+      return 'info'
+    case 'acknowledged':
+      return 'warning'
+    case 'resolved':
+      return 'success'
+    case 'false_positive':
+    default:
+      return 'secondary'
+  }
+}
+
 export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
