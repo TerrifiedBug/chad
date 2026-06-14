@@ -1424,6 +1424,48 @@ export const teamsApi = {
     api.get<Team[]>('/teams'),
 }
 
+// --- Saved views (named, reusable list filter presets) ---
+export type SavedViewResource = 'alerts' | 'ioc_matches' | 'rules' | 'correlation'
+
+export type SavedView = {
+  id: string
+  name: string
+  resource: SavedViewResource
+  owner_id: string
+  team_id: string | null
+  is_shared: boolean
+  is_default: boolean
+  filters: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type SavedViewCreate = {
+  name: string
+  resource: SavedViewResource
+  filters: Record<string, unknown>
+  is_shared?: boolean
+  is_default?: boolean
+}
+
+export type SavedViewUpdate = {
+  name?: string
+  filters?: Record<string, unknown>
+  is_shared?: boolean
+  is_default?: boolean
+}
+
+export const savedViewsApi = {
+  list: (resource: SavedViewResource) =>
+    api.get<SavedView[]>(`/saved-views?resource=${encodeURIComponent(resource)}`),
+  create: (data: SavedViewCreate) =>
+    api.post<SavedView>('/saved-views', data),
+  update: (id: string, data: SavedViewUpdate) =>
+    api.put<SavedView>(`/saved-views/${id}`, data),
+  remove: (id: string) =>
+    api.delete(`/saved-views/${id}`),
+}
+
 // --- Environment types (Model B: one rule identity, per-env deployment state) ---
 // An Environment is a team-owned scope for rule *deployments* (separate
 // percolator namespace + pinned version/status per env). The active env is sent

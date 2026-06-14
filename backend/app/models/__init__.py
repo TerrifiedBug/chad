@@ -34,6 +34,7 @@ from app.models.role_permission import DEFAULT_ROLE_PERMISSIONS, RolePermission
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
 from app.models.rule_exception import ExceptionOperator, RuleException
+from app.models.saved_view import SavedView
 from app.models.setting import Setting
 from app.models.sso_provider import SSOGroupMapping, SSOProvider
 from app.models.system_log import SystemLog
@@ -84,6 +85,7 @@ __all__ = [
     "RuleSource",
     "RuleStatus",
     "RuleVersion",
+    "SavedView",
     "Setting",
     "SSOGroupMapping",
     "SSOProvider",

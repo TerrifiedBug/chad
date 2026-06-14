@@ -38,6 +38,7 @@ from app.api.permissions import router as permissions_router
 from app.api.queue import router as queue_router
 from app.api.reports import router as reports_router
 from app.api.rules import router as rules_router
+from app.api.saved_views import router as saved_views_router
 from app.api.scim import router as scim_router
 from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
@@ -393,6 +394,7 @@ app.include_router(misp_sync_router, prefix="/api")
 app.include_router(correlation_rules_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
+app.include_router(saved_views_router, prefix="/api")
 app.include_router(environments_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
 app.include_router(sso_router, prefix="/api")
