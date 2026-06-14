@@ -5,19 +5,26 @@ Usage:
     from app.services.audit import audit_log
     await audit_log(db, user_id, "rule.create", "rule", rule.id, {"title": rule.title})
 """
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_chain import GENESIS, build_payload, canonicalize, compute_hash
+from app.models.audit_chain_tail import AuditChainTail
 from app.models.audit_log import AuditLog
 from app.models.setting import Setting
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+# Single-tenant -> one global chain.
+_CHAIN_SCOPE = "global"
 
 
 async def _get_opensearch_client_for_audit(db: AsyncSession):
@@ -97,6 +104,14 @@ async def audit_log(
     if user_email:
         log_details["user_email"] = user_email
 
+    # Normalize details through a JSON round-trip (default=str) so non-JSON-native
+    # values (Decimal/float/set/datetime) collapse to exactly what JSONB stores.
+    # This makes the value written to the DB identical to the value re-read from
+    # JSONB, so the write-time chain hash matches the read-back hash (no
+    # false-positive tamper) - and the engine never sees a non-serializable type.
+    if log_details:
+        log_details = json.loads(json.dumps(log_details, default=str))
+
     # Create PostgreSQL record
     log = AuditLog(
         user_id=user_id,
@@ -107,6 +122,48 @@ async def audit_log(
         ip_address=ip_address,
     )
     db.add(log)
+
+    # --- Tamper-evidence hash chain (inside the caller's transaction) ---------
+    # Serialize concurrent audit writes on the global chain. The advisory lock is
+    # transaction-scoped, so it releases when the caller commits/rolls back - the
+    # lock, the tail update, and the audited mutation are atomic together.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext('audit-chain:global'))")
+    )
+
+    # Flush so created_at (server_default now()) is populated before we hash it.
+    await db.flush()
+
+    tail = await db.get(AuditChainTail, _CHAIN_SCOPE)
+    prev_hash = tail.last_hash if tail and tail.last_hash else GENESIS
+
+    # Canonical payload is the fixed CANONICAL_FIELDS set (see core/audit_chain).
+    canonical = canonicalize(
+        build_payload(
+            {
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": log.resource_id,
+                "user_id": log.user_id,
+                "details": log.details,
+                "ip_address": log.ip_address,
+                "created_at": log.created_at,
+            }
+        )
+    )
+    new_hash = compute_hash(prev_hash, canonical)
+    log.prev_hash = prev_hash
+    log.hash = new_hash
+
+    # Upsert the tail pointer to the new head (race-safe under the advisory lock).
+    await db.execute(
+        pg_insert(AuditChainTail)
+        .values(scope_key=_CHAIN_SCOPE, last_hash=new_hash, last_write_at=log.created_at)
+        .on_conflict_do_update(
+            index_elements=[AuditChainTail.scope_key],
+            set_={"last_hash": new_hash, "last_write_at": log.created_at},
+        )
+    )
     # Don't commit here - let the caller manage the transaction
 
     # Optionally write to OpenSearch (non-blocking)

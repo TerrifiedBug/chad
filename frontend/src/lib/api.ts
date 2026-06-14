@@ -1398,6 +1398,10 @@ export type AuditLogEntry = {
   details: Record<string, unknown> | null
   ip_address: string | null
   created_at: string
+  // Tamper-evidence hash-chain fields. Nullable: legacy rows written before the
+  // chain existed keep NULL hashes (forward-only chain).
+  prev_hash: string | null
+  hash: string | null
 }
 
 export type AuditLogListResponse = {
@@ -1405,6 +1409,20 @@ export type AuditLogListResponse = {
   total: number
   limit: number
   offset: number
+}
+
+// Result of an audit export: the file blob plus whether the backend capped the
+// result set at 10k rows (signalled via the X-Audit-Export-Truncated header).
+export type AuditExportResult = {
+  blob: Blob
+  truncated: boolean
+}
+
+// Envelope returned by GET /audit/export/chain — the verifiable hash chain.
+export type AuditChainExport = {
+  verifier_version: string
+  exported_at: string
+  rows: AuditLogEntry[]
 }
 
 // System Log types
@@ -1465,7 +1483,7 @@ export const auditApi = {
       start_date?: string
       end_date?: string
     }
-  ): Promise<Blob> => {
+  ): Promise<AuditExportResult> => {
     const params = new URLSearchParams({ format })
     if (filters.action) params.set('action', filters.action)
     if (filters.resource_type) params.set('resource_type', filters.resource_type)
@@ -1476,7 +1494,19 @@ export const auditApi = {
       headers: { Authorization: `Bearer ${localStorage.getItem('chad-token')}` },
     })
     if (!response.ok) throw new Error('Export failed')
-    return response.blob()
+    // Backend sets X-Audit-Export-Truncated: true when the 10k cap is hit.
+    const truncated = response.headers.get('X-Audit-Export-Truncated') === 'true'
+    return { blob: await response.blob(), truncated }
+  },
+  // Verifiable hash-chain export — returns the chain envelope as a downloadable
+  // JSON blob plus the truncation flag, mirroring export() above.
+  exportChain: async (): Promise<AuditExportResult> => {
+    const response = await fetch(`${API_BASE}/audit/export/chain`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('chad-token')}` },
+    })
+    if (!response.ok) throw new Error('Export failed')
+    const truncated = response.headers.get('X-Audit-Export-Truncated') === 'true'
+    return { blob: await response.blob(), truncated }
   },
 }
 
