@@ -158,6 +158,36 @@ export class ApiClient {
 
 export const api = new ApiClient()
 
+/**
+ * Low-level POST that preserves the HTTP status alongside the parsed body.
+ * Used by deploy paths that must distinguish a normal 200 result from the
+ * 202 "pending_approval" response returned when dual-control gating is on.
+ */
+async function postRaw(
+  path: string,
+  data: unknown,
+  context: string
+): Promise<{ status: number; body: any }> {
+  const token = localStorage.getItem('chad-token')
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) {
+    let error = await response.json().catch(() => ({ detail: 'Request failed' }))
+    if (!isApiError(error) && !isLegacyError(error)) {
+      error = { detail: 'Request failed' }
+    }
+    logError(error, context)
+    throw new Error(getErrorMessage(error))
+  }
+  return { status: response.status, body: await response.json() }
+}
+
 // Settings types
 export type OpenSearchConfig = {
   host: string
@@ -434,6 +464,27 @@ export type RuleDeployResponse = {
   deployed_at: string
 }
 
+// 202 body returned by deploy endpoints when dual-control approval is required
+export type PendingApprovalResponse = {
+  status: 'pending_approval'
+  deployment_request_id: string
+  message: string
+}
+
+// Discriminated result for deploy/bulk-deploy/unsnooze: either the rule applied
+// immediately (gate OFF) or a deployment request was filed for review (gate ON).
+export type DeployResult =
+  | { pendingApproval: false; result: RuleDeployResponse }
+  | { pendingApproval: true; requestId: string; message: string }
+
+export type BulkDeployResult =
+  | { pendingApproval: false; result: BulkOperationResult }
+  | { pendingApproval: true; requestId: string; message: string }
+
+export type UnsnoozeResult =
+  | { pendingApproval: false; result: { success: boolean; status: string } }
+  | { pendingApproval: true; requestId: string; message: string }
+
 // Error response when deployment fails due to unmapped fields
 export type UnmappedFieldsError = {
   error: 'unmapped_fields'
@@ -498,7 +549,7 @@ export const rulesApi = {
     api.post<RuleValidateResponse>('/rules/validate', { yaml_content, index_pattern_id }),
   test: (yaml_content: string, sample_logs: Record<string, unknown>[], index_pattern_id?: string) =>
     api.post<RuleTestResponse>('/rules/test', { yaml_content, sample_logs, index_pattern_id: index_pattern_id || null }),
-  deploy: async (id: string, changeReason: string): Promise<RuleDeployResponse> => {
+  deploy: async (id: string, changeReason: string): Promise<DeployResult> => {
     const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
       method: 'POST',
       headers: {
@@ -522,7 +573,12 @@ export const rulesApi = {
       }
       throw new Error(getErrorMessage(error))
     }
-    return response.json()
+    const body = await response.json()
+    // 202 = dual-control gate is ON; a deployment request was filed for review.
+    if (response.status === 202 && body?.status === 'pending_approval') {
+      return { pendingApproval: true, requestId: body.deployment_request_id, message: body.message }
+    }
+    return { pendingApproval: false, result: body as RuleDeployResponse }
   },
   undeploy: (id: string, changeReason: string) =>
     api.post<{ success: boolean }>(`/rules/${id}/undeploy`, { change_reason: changeReason }),
@@ -547,8 +603,14 @@ export const rulesApi = {
       `/rules/${id}/snooze`,
       { hours, indefinite: indefinite ?? false, change_reason: changeReason }
     ),
-  unsnooze: (id: string, changeReason: string) =>
-    api.post<{ success: boolean; status: string }>(`/rules/${id}/unsnooze`, { change_reason: changeReason }),
+  unsnooze: async (id: string, changeReason: string): Promise<UnsnoozeResult> => {
+    const { status, body } = await postRaw(`/rules/${id}/unsnooze`, { change_reason: changeReason }, 'unsnooze')
+    // 202 = dual-control gate is ON; unsnooze (a re-deploy) was filed for review.
+    if (status === 202 && body?.status === 'pending_approval') {
+      return { pendingApproval: true, requestId: body.deployment_request_id, message: body.message }
+    }
+    return { pendingApproval: false, result: body as { success: boolean; status: string } }
+  },
   // Threshold settings
   updateThreshold: (
     id: string,
@@ -578,8 +640,14 @@ export const rulesApi = {
     api.post<BulkOperationResult>('/rules/bulk/unsnooze', { rule_ids: ruleIds, change_reason: changeReason }),
   bulkDelete: (ruleIds: string[], changeReason: string) =>
     api.post<BulkOperationResult>('/rules/bulk/delete', { rule_ids: ruleIds, change_reason: changeReason }),
-  bulkDeploy: (ruleIds: string[], changeReason: string) =>
-    api.post<BulkOperationResult>('/rules/bulk/deploy', { rule_ids: ruleIds, change_reason: changeReason }),
+  bulkDeploy: async (ruleIds: string[], changeReason: string): Promise<BulkDeployResult> => {
+    const { status, body } = await postRaw('/rules/bulk/deploy', { rule_ids: ruleIds, change_reason: changeReason }, 'bulkDeploy')
+    // 202 = dual-control gate is ON; a single batch request was filed for all rules.
+    if (status === 202 && body?.status === 'pending_approval') {
+      return { pendingApproval: true, requestId: body.deployment_request_id, message: body.message }
+    }
+    return { pendingApproval: false, result: body as BulkOperationResult }
+  },
   bulkUndeploy: (ruleIds: string[], changeReason: string) =>
     api.post<BulkOperationResult>('/rules/bulk/undeploy', { rule_ids: ruleIds, change_reason: changeReason }),
   checkDeploymentEligibility: (ruleIds: string[]) =>
@@ -612,6 +680,109 @@ export const rulesApi = {
   // Get available fields for correlation
   getFields: (ruleId: string) =>
     api.get<{ fields: string[] }>(`/rules/${ruleId}/fields`),
+}
+
+// Dual-control deployment approval types
+export type DeploymentRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'applied'
+  | 'rejected'
+  | 'cancelled'
+  | 'stale'
+  | 'failed'
+
+export type DeploymentRequestResponse = {
+  id: string
+  status: string
+  requested_by: string
+  requester_email: string | null
+  reviewed_by: string | null
+  reviewer_email: string | null
+  change_reason: string
+  review_note: string | null
+  team_id: string | null
+  created_at: string
+  reviewed_at: string | null
+  applied_at: string | null
+  item_count: number
+  rule_titles: string[]
+  age_seconds: number
+}
+
+export type DeploymentRequestItemDetail = {
+  id: string
+  kind: 'sigma' | 'correlation'
+  rule_id: string | null
+  correlation_rule_id: string | null
+  rule_title: string | null
+  version_number: number
+  apply_status: 'ok' | 'failed' | 'skipped' | null
+  apply_error: string | null
+  proposed_yaml: string | null
+  deployed_yaml: string | null
+  is_stale: boolean
+}
+
+export type DeploymentRequestDetailResponse = DeploymentRequestResponse & {
+  items: DeploymentRequestItemDetail[]
+}
+
+export type DeploymentRequestStats = {
+  pending: number
+  approved: number
+  applied: number
+  rejected: number
+  cancelled: number
+  stale: number
+  failed: number
+  avg_review_seconds: number | null
+}
+
+// Deployment Requests API (dual-control / maker-checker)
+export const deploymentRequestsApi = {
+  list: (statusFilter?: DeploymentRequestStatus) =>
+    api.get<DeploymentRequestResponse[]>(
+      `/deployment-requests${statusFilter ? `?status_filter=${statusFilter}` : ''}`
+    ),
+  get: (id: string) =>
+    api.get<DeploymentRequestDetailResponse>(`/deployment-requests/${id}`),
+  getStats: () =>
+    api.get<DeploymentRequestStats>('/deployment-requests/stats'),
+  create: (ruleIds: string[], changeReason: string) =>
+    api.post<DeploymentRequestResponse>('/deployment-requests', {
+      rule_ids: ruleIds,
+      change_reason: changeReason,
+    }),
+  approve: (id: string) =>
+    api.post<DeploymentRequestDetailResponse>(`/deployment-requests/${id}/approve`, {}),
+  reject: (id: string, reviewNote: string) =>
+    api.post<DeploymentRequestDetailResponse>(`/deployment-requests/${id}/reject`, {
+      review_note: reviewNote,
+    }),
+  cancel: (id: string) =>
+    api.post<DeploymentRequestResponse>(`/deployment-requests/${id}/cancel`, {}),
+}
+
+// Governance / deployment settings (admin) — lives under notification settings
+export type DeploymentGovernanceSettings = {
+  mandatory_rule_comments: boolean
+  mandatory_comments_deployed_only: boolean
+  require_deploy_approval: boolean
+}
+
+export const notificationSettingsApi = {
+  // Admin read of all governance toggles
+  get: () =>
+    api.get<DeploymentGovernanceSettings>('/notifications/settings'),
+  // Any authenticated user — exposes require_deploy_approval for gating UI
+  getPublic: () =>
+    api.get<{ mandatory_rule_comments: boolean; require_deploy_approval: boolean }>(
+      '/notifications/settings/public'
+    ),
+  // PUT requires all three fields
+  update: (data: DeploymentGovernanceSettings) =>
+    api.put<{ success: boolean }>('/notifications/settings', data),
 }
 
 // TI Indicator types for enrichment

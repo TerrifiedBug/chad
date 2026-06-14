@@ -99,6 +99,12 @@ class NotificationSettings(Base, TimestampMixin):
     mandatory_rule_comments: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     mandatory_comments_deployed_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Dual-control (maker-checker) deployment approval. When true, rule deploys
+    # are gated behind a second-person approval instead of executing directly.
+    require_deploy_approval: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+
     # Health check intervals (in minutes)
     jira_health_interval: Mapped[int] = mapped_column(Integer, default=15)
     sigmahq_health_interval: Mapped[int] = mapped_column(Integer, default=60)

@@ -1,7 +1,9 @@
 // frontend/src/components/AppRail.tsx
 import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
+import { deploymentRequestsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -18,6 +20,7 @@ import {
   Database,
   Activity,
   Settings,
+  GitPullRequest,
 } from 'lucide-react'
 
 export type NavItem = {
@@ -26,6 +29,8 @@ export type NavItem = {
   icon: React.ElementType
   exact?: boolean
   permission?: string
+  /** Item is visible if the user holds ANY of these permissions (OR-gated). */
+  permissionsAny?: string[]
   badge?: number
   showStatus?: boolean
 }
@@ -43,6 +48,7 @@ export const navSections: NavSection[] = [
       { href: '/alerts', label: 'Alerts', icon: Bell },
       { href: '/ioc-matches', label: 'IOC Matches', icon: ShieldAlert },
       { href: '/rules', label: 'Rules', icon: ScrollText },
+      { href: '/approvals', label: 'Approvals', icon: GitPullRequest, permissionsAny: ['deploy_rules', 'approve_deployments'] },
     ],
   },
   {
@@ -78,6 +84,18 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
   const location = useLocation()
   const { hasPermission } = useAuth()
 
+  // Pending deployment-approval count for the Approvals nav badge. Only fetched
+  // for users who can see the item; degrades to no badge if the call fails.
+  const canSeeApprovals =
+    hasPermission('deploy_rules') || hasPermission('approve_deployments')
+  const { data: deploymentStats } = useQuery({
+    queryKey: ['deployment-requests', 'stats'],
+    queryFn: () => deploymentRequestsApi.getStats(),
+    enabled: canSeeApprovals,
+    refetchInterval: 60000,
+  })
+  const approvalsCount = deploymentStats?.pending
+
   // Track previous alert count for animation
   const [prevAlertCount, setPrevAlertCount] = useState(alertCount)
   const [badgeAnimating, setBadgeAnimating] = useState(false)
@@ -105,9 +123,12 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
   // Filter sections to only include items the user has permission for
   const visibleSections = navSections.map(section => ({
     ...section,
-    items: section.items.filter(item =>
-      !item.permission || hasPermission(item.permission)
-    ),
+    items: section.items.filter(item => {
+      if (item.permissionsAny) {
+        return item.permissionsAny.some(p => hasPermission(p))
+      }
+      return !item.permission || hasPermission(item.permission)
+    }),
   })).filter(section => section.items.length > 0)
 
   const showSettings = !settingsItem.permission || hasPermission(settingsItem.permission)
@@ -223,7 +244,13 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
                   <NavLink
                     key={item.href}
                     item={item}
-                    badge={item.href === '/alerts' ? alertCount : undefined}
+                    badge={
+                      item.href === '/alerts'
+                        ? alertCount
+                        : item.href === '/approvals'
+                          ? approvalsCount
+                          : undefined
+                    }
                   />
                 ))}
               </div>

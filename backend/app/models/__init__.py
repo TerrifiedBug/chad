@@ -4,6 +4,13 @@ from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.audit_log import AuditLog
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_rule_comment import CorrelationRuleComment
+from app.models.deployment_request import (
+    DeploymentItemApplyStatus,
+    DeploymentRequest,
+    DeploymentRequestItem,
+    DeploymentRequestKind,
+    DeploymentRequestStatus,
+)
 from app.models.enrichment_webhook import EnrichmentWebhook, IndexPatternEnrichmentWebhook
 from app.models.field_mapping import FieldMapping, MappingOrigin
 from app.models.health_alert_suppression import HealthAlertSuppression
@@ -42,6 +49,11 @@ __all__ = [
     "CorrelationRule",
     "CorrelationRuleComment",
     "CorrelationRuleVersion",
+    "DeploymentItemApplyStatus",
+    "DeploymentRequest",
+    "DeploymentRequestItem",
+    "DeploymentRequestKind",
+    "DeploymentRequestStatus",
     "FieldMapping",
     "HealthAlertSuppression",
     "HealthCheckLog",

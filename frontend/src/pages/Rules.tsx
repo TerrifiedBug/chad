@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast-provider'
 import { cn } from '@/lib/utils'
 import { SEVERITY_COLORS, SEVERITY_CONFIG, capitalize } from '@/lib/constants'
 import { SeverityPills } from '@/components/filters/SeverityPills'
@@ -67,6 +68,7 @@ export default function RulesPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { canManageRules, canDeployRules, hasPermission } = useAuth()
+  const { showToast } = useToast()
 
   // Tab state from URL
   const activeTab = searchParams.get('tab') || 'sigma'
@@ -481,9 +483,13 @@ export default function RulesPage() {
     setIsBulkOperating(true)
     try {
       const ruleIds = Array.from(selectedRules)
-      const result = await rulesApi.bulkDeploy(ruleIds, bulkOperationReason)
-      if (result.failed.length > 0) {
-        setError(`${result.success.length} deployed, ${result.failed.length} failed`)
+      const deployResult = await rulesApi.bulkDeploy(ruleIds, bulkOperationReason)
+      if (deployResult.pendingApproval) {
+        // Dual-control gate is ON: a single batch request was filed for review.
+        // Do NOT assume the rules deployed.
+        showToast('Submitted for approval', 'info')
+      } else if (deployResult.result.failed.length > 0) {
+        setError(`${deployResult.result.success.length} deployed, ${deployResult.result.failed.length} failed`)
       }
       clearSelection()
       setBulkOperationReason('')

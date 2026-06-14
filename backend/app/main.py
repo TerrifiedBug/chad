@@ -17,6 +17,7 @@ from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
 from app.api.circuit_breakers import router as circuit_breakers_router
 from app.api.correlation_rules import router as correlation_rules_router
+from app.api.deployment_requests import router as deployment_requests_router
 from app.api.deps import get_db
 from app.api.enrichment_webhooks import router as enrichment_webhooks_router
 from app.api.export import router as export_router
@@ -379,6 +380,7 @@ app.include_router(misp_sync_router, prefix="/api")
 app.include_router(correlation_rules_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
+app.include_router(deployment_requests_router, prefix="/api")
 
 # WebSocket router (no /api prefix - WebSocket has its own protocol)
 app.include_router(websocket_router)
