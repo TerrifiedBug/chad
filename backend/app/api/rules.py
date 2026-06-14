@@ -1,6 +1,7 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import yaml
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
@@ -16,6 +17,11 @@ from app.core.config import settings as app_settings
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.correlation_rule import CorrelationRule
+from app.models.deployment_request import (
+    DeploymentRequest,
+    DeploymentRequestItem,
+    DeploymentRequestStatus,
+)
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
@@ -23,6 +29,9 @@ from app.models.rule_exception import ExceptionOperator, RuleException
 from app.models.user import User
 from app.schemas.bulk import BulkOperationRequest, BulkOperationResult
 from app.schemas.rule import (
+    DeployPreviewEligibility,
+    DeployPreviewResponse,
+    DeployPreviewValidation,
     FieldMappingInfo,
     HistoricalTestRequest,
     HistoricalTestResponse,
@@ -85,6 +94,39 @@ def _deployment_pending_response(request_id, message: str | None = None):
 
 
 router = APIRouter(prefix="/rules", tags=["rules"])
+
+logger = logging.getLogger(__name__)
+
+
+async def _broadcast_deploy_progress(
+    *,
+    batch_id: str,
+    rule_id: str,
+    rule_title: str,
+    status: str,
+    error: str | None = None,
+) -> None:
+    """Best-effort push of a deploy_progress event over the existing /ws.
+
+    Reuses the WebSocket manager's ``broadcast_to_all_local`` (the same helper
+    that fans out system_log / alert messages). Never raises: a broadcast
+    failure must not affect the deployment hot path.
+    """
+    try:
+        from app.services.websocket import manager
+
+        await manager.broadcast_to_all_local(
+            {
+                "type": "deploy_progress",
+                "batch_id": batch_id,
+                "rule_id": rule_id,
+                "rule_title": rule_title,
+                "status": status,
+                "error": error,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 - progress UI is non-critical
+        logger.debug("deploy_progress broadcast failed: %s", exc)
 
 
 class SnoozeRequest(BaseModel):
@@ -163,6 +205,60 @@ def build_field_mapping_info(
     return result
 
 
+async def _evaluate_rule_eligibility(
+    db: AsyncSession,
+    rule: Rule,
+    index_pattern: IndexPattern | None,
+    os_client: OpenSearch | None,
+) -> tuple[bool, str | None, list[str]]:
+    """Single-rule deployment eligibility (shared by check-deployment-eligibility
+    and deploy-preview).
+
+    Returns ``(eligible, reason, unmapped_fields)``. Mirrors the per-rule body of
+    :func:`check_deployment_eligibility`: translate the YAML, resolve mappings,
+    and flag fields that neither exist in the index nor map to one that does.
+    """
+    if index_pattern is None:
+        return False, "Index pattern not found", []
+
+    try:
+        result = sigma_service.translate_and_validate(rule.yaml_content)
+        if not result.success:
+            errors_str = ", ".join(e.message for e in (result.errors or []))
+            return False, f"Invalid rule: {errors_str}", []
+
+        detected_fields = list(result.fields or set())
+        if not detected_fields:
+            return True, None, []
+
+        try:
+            if os_client:
+                index_fields = set(
+                    get_index_fields(os_client, index_pattern.pattern, include_multi_fields=True)
+                )
+            else:
+                index_fields = set()
+        except Exception:
+            index_fields = set()
+
+        mappings = await resolve_mappings(db, detected_fields, rule.index_pattern_id)
+
+        unmapped: list[str] = []
+        for field in detected_fields:
+            if field in mappings and mappings[field] is not None:
+                if mappings[field] in index_fields:
+                    continue
+            elif field in index_fields:
+                continue
+            unmapped.append(field)
+
+        if unmapped:
+            return False, f"Unmapped fields: {', '.join(unmapped)}", unmapped
+        return True, None, []
+    except Exception as e:  # noqa: BLE001 - surface any unexpected error as ineligible
+        return False, str(e), []
+
+
 @router.get("", response_model=list[RuleResponse])
 async def list_rules(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -192,6 +288,22 @@ async def list_rules(
     result = await db.execute(query)
     rules = result.scalars().all()
 
+    # One query for the whole page: which of these rules have an OPEN (pending)
+    # DeploymentRequest? Avoids an N+1 lookup per row for the "Pending approval"
+    # badge.
+    rule_ids = [rule.id for rule in rules]
+    open_request_rule_ids: set[UUID] = set()
+    if rule_ids:
+        open_rows = await db.execute(
+            select(DeploymentRequestItem.rule_id)
+            .join(DeploymentRequest, DeploymentRequestItem.request_id == DeploymentRequest.id)
+            .where(
+                DeploymentRequestItem.rule_id.in_(rule_ids),
+                DeploymentRequest.status == DeploymentRequestStatus.PENDING.value,
+            )
+        )
+        open_request_rule_ids = {rid for (rid,) in open_rows.all() if rid is not None}
+
     # Build response with last_edited_by and needs_redeploy
     responses = []
     for rule in rules:
@@ -219,6 +331,7 @@ async def list_rules(
             "deployed_version": rule.deployed_version,
             "current_version": current_version,
             "needs_redeploy": needs_redeploy,
+            "has_open_request": rule.id in open_request_rule_ids,
             "index_pattern_id": rule.index_pattern_id,
             "last_edited_by": None,
             "source": rule.source,
@@ -470,6 +583,18 @@ async def get_rule(
         if last_version.author:
             last_edited_by = last_version.author.email
 
+    # Does this rule have an OPEN (pending) DeploymentRequest? (Pending badge.)
+    open_request = await db.execute(
+        select(DeploymentRequestItem.id)
+        .join(DeploymentRequest, DeploymentRequestItem.request_id == DeploymentRequest.id)
+        .where(
+            DeploymentRequestItem.rule_id == rule_id,
+            DeploymentRequest.status == DeploymentRequestStatus.PENDING.value,
+        )
+        .limit(1)
+    )
+    has_open_request = open_request.scalar_one_or_none() is not None
+
     return RuleDetailResponse(
         id=rule.id,
         title=rule.title,
@@ -487,6 +612,7 @@ async def get_rule(
         deployed_version=rule.deployed_version,
         current_version=current_version,
         needs_redeploy=needs_redeploy,
+        has_open_request=has_open_request,
         last_edited_by=last_edited_by,
         source=rule.source,
         sigmahq_path=rule.sigmahq_path,
@@ -817,63 +943,116 @@ async def check_deployment_eligibility(
             ineligible.append(IneligibleRule(id=rule_id, reason="Rule not found"))
             continue
 
-        # Check field mappings
         index_pattern = await db.get(IndexPattern, rule.index_pattern_id)
-        if not index_pattern:
-            ineligible.append(IneligibleRule(id=rule_id, reason="Index pattern not found"))
-            continue
-
-        try:
-            # Get detected fields from rule
-            result = sigma_service.translate_and_validate(rule.yaml_content)
-            if not result.success:
-                errors_str = ", ".join(e.message for e in (result.errors or []))
-                ineligible.append(IneligibleRule(id=rule_id, reason=f"Invalid rule: {errors_str}"))
-                continue
-
-            detected_fields = list(result.fields or set())
-
-            if not detected_fields:
-                # No fields to check, rule is eligible
-                eligible.append(rule_id)
-                continue
-
-            # Get fields from the OpenSearch index (include .keyword for field mapping validation)
-            try:
-                if opensearch:
-                    index_fields = set(get_index_fields(opensearch, index_pattern.pattern, include_multi_fields=True))
-                else:
-                    index_fields = set()
-            except Exception:
-                index_fields = set()
-
-            # Check mappings - resolve field mappings for this rule
-            mappings = await resolve_mappings(db, detected_fields, rule.index_pattern_id)
-
-            # Find unmapped fields (fields that don't exist in index AND have no valid mapping)
-            unmapped = []
-            for field in detected_fields:
-                # Field is OK if it has a mapping AND the target exists, OR it exists directly
-                if field in mappings and mappings[field] is not None:
-                    target_field = mappings[field]
-                    if target_field in index_fields:
-                        continue  # Has a valid mapping to an existing field
-                    # Mapping target doesn't exist - still unmapped
-                elif field in index_fields:
-                    continue  # Exists directly in index
-                unmapped.append(field)
-
-            if unmapped:
-                ineligible.append(IneligibleRule(
-                    id=rule_id,
-                    reason=f"Unmapped fields: {', '.join(unmapped)}"
-                ))
-            else:
-                eligible.append(rule_id)
-        except Exception as e:
-            ineligible.append(IneligibleRule(id=rule_id, reason=str(e)))
+        is_eligible, reason, _ = await _evaluate_rule_eligibility(
+            db, rule, index_pattern, opensearch
+        )
+        if is_eligible:
+            eligible.append(rule_id)
+        else:
+            ineligible.append(IneligibleRule(id=rule_id, reason=reason or "Ineligible"))
 
     return DeploymentEligibilityResponse(eligible=eligible, ineligible=ineligible)
+
+
+@router.get("/{rule_id}/deploy-preview", response_model=DeployPreviewResponse)
+async def deploy_preview(
+    rule_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+    _: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+):
+    """Read-only deploy preview consolidating eligibility + validate + the
+    current-vs-proposed DSL diff for a single rule.
+
+    Mutates nothing. ``current_deployed_query`` is the live percolator query
+    (inner query) for push-mode deployed rules, or null when the rule is
+    undeployed, pull-mode, or absent from the percolator. ``proposed_query`` is
+    the freshly translated current YAML with field mappings applied.
+    """
+    result = await db.execute(
+        select(Rule)
+        .where(Rule.id == rule_id)
+        .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
+    )
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    index_pattern = rule.index_pattern
+
+    # --- Validation (translate current YAML) ---
+    validation_result = sigma_service.translate_and_validate(rule.yaml_content)
+    validation = DeployPreviewValidation(
+        success=validation_result.success,
+        errors=[
+            ValidationErrorItem(type=e.type, message=e.message, line=e.line, field=e.field)
+            for e in (validation_result.errors or [])
+        ],
+    )
+
+    # --- Eligibility (reuse the shared single-rule field-mapping check) ---
+    is_eligible, reason, unmapped = await _evaluate_rule_eligibility(
+        db, rule, index_pattern, os_client
+    )
+    eligibility = DeployPreviewEligibility(
+        eligible=is_eligible, reason=reason, unmapped_fields=unmapped
+    )
+
+    # --- Proposed query (translate with resolved mappings -> inner query) ---
+    proposed_query: dict | None = None
+    if validation_result.success:
+        sigma_fields = list(validation_result.fields or set())
+        field_mappings_dict: dict[str, str] = {}
+        if sigma_fields and rule.index_pattern_id:
+            resolved = await resolve_mappings(db, sigma_fields, rule.index_pattern_id)
+            field_mappings_dict = {k: v for k, v in resolved.items() if v is not None}
+        translation = sigma_service.translate_with_mappings(
+            rule.yaml_content, field_mappings_dict or None
+        )
+        if translation.success and translation.query:
+            # Sigma returns {"query": {...}}; expose the inner query for the diff.
+            proposed_query = translation.query.get("query", translation.query)
+
+    # --- Current deployed query (push mode only; never raise on OS errors) ---
+    current_deployed_query: dict | None = None
+    use_percolator = (
+        os_client is not None
+        and not app_settings.is_pull_only
+        and index_pattern is not None
+        and index_pattern.mode == "push"
+        and rule.deployed_at is not None
+    )
+    if use_percolator:
+        try:
+            percolator = PercolatorService(os_client)
+            percolator_index = percolator.get_percolator_index_name(index_pattern.pattern)
+            deployed_doc = percolator.get_deployed_rule(percolator_index, str(rule.id))
+            if deployed_doc:
+                # The stored doc holds the inner query directly under "query".
+                current_deployed_query = deployed_doc.get("query")
+        except Exception:
+            # Read-only preview must never leak an OpenSearch error path.
+            current_deployed_query = None
+
+    current_version = rule.versions[0].version_number if rule.versions else 1
+    needs_redeploy = (
+        rule.deployed_at is not None
+        and rule.deployed_version is not None
+        and rule.deployed_version != current_version
+    )
+
+    return DeployPreviewResponse(
+        rule_id=rule.id,
+        current_deployed_query=current_deployed_query,
+        proposed_query=proposed_query,
+        validation=validation,
+        eligibility=eligibility,
+        needs_redeploy=needs_redeploy,
+        deployed_version=rule.deployed_version,
+        current_version=current_version,
+        dry_run=None,
+    )
 
 
 @router.post("/test", response_model=RuleTestResponse)
@@ -1159,8 +1338,12 @@ async def bulk_deploy_rules(
 
     success = []
     failed = []
+    # Correlates every deploy_progress event from this one bulk run so the UI can
+    # group them into a single progress panel.
+    batch_id = str(uuid4())
 
     for rule_id in data.rule_ids:
+        rule = None
         try:
             result = await db.execute(
                 select(Rule)
@@ -1169,11 +1352,21 @@ async def bulk_deploy_rules(
             )
             rule = result.scalar_one_or_none()
             if rule:
+                # Announce start (best-effort; never blocks the deploy).
+                await _broadcast_deploy_progress(
+                    batch_id=batch_id, rule_id=str(rule_id), rule_title=rule.title,
+                    status="deploying",
+                )
+
                 # First validate the rule
                 validation = sigma_service.translate_and_validate(rule.yaml_content)
                 if not validation.success:
                     errors_str = ", ".join(e.message for e in (validation.errors or []))
                     failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
+                    await _broadcast_deploy_progress(
+                        batch_id=batch_id, rule_id=str(rule_id), rule_title=rule.title,
+                        status="failed", error=f"Translation failed: {errors_str}",
+                    )
                     continue
 
                 # Extract fields and resolve mappings
@@ -1191,6 +1384,10 @@ async def bulk_deploy_rules(
                 if not translation.success:
                     errors_str = ", ".join(e.message for e in (translation.errors or []))
                     failed.append({"id": rule_id, "error": f"Translation failed: {errors_str}"})
+                    await _broadcast_deploy_progress(
+                        batch_id=batch_id, rule_id=str(rule_id), rule_title=rule.title,
+                        status="failed", error=f"Translation failed: {errors_str}",
+                    )
                     continue
 
                 # Extract rule metadata from YAML
@@ -1204,8 +1401,7 @@ async def bulk_deploy_rules(
                     await db.commit()
                 except Exception as e:
                     # Log but don't fail deployment if attack mapping fails
-                    import logging
-                    logging.getLogger(__name__).warning(f"Failed to update attack mappings for rule {rule.id}: {e}")
+                    logger.warning("Failed to update attack mappings for rule %s: %s", rule.id, e)
 
                 # Deploy to percolator (push mode only)
                 # Pull mode doesn't use percolator - rules are evaluated during scheduled polls
@@ -1237,10 +1433,19 @@ async def bulk_deploy_rules(
                 if rule.status != RuleStatus.SNOOZED:
                     rule.status = RuleStatus.DEPLOYED
                 success.append(rule_id)
+                await _broadcast_deploy_progress(
+                    batch_id=batch_id, rule_id=str(rule_id), rule_title=rule.title,
+                    status="success",
+                )
             else:
                 failed.append({"id": rule_id, "error": "Rule not found"})
         except Exception as e:
             failed.append({"id": rule_id, "error": str(e)})
+            await _broadcast_deploy_progress(
+                batch_id=batch_id, rule_id=str(rule_id),
+                rule_title=rule.title if rule is not None else str(rule_id),
+                status="failed", error=str(e),
+            )
 
     await db.commit()
     await audit_log(
@@ -1250,7 +1455,7 @@ async def bulk_deploy_rules(
     )
     await db.commit()
 
-    return BulkOperationResult(success=success, failed=failed)
+    return BulkOperationResult(success=success, failed=failed, batch_id=batch_id)
 
 
 @router.post("/{rule_id}/deploy", response_model=RuleDeployResponse, responses={400: {"model": UnmappedFieldsError}})
@@ -1714,6 +1919,131 @@ async def rollback_rule(
         new_version_number=new_version_number,
         rolled_back_from=version_number,
         yaml_content=target_version.yaml_content,
+    )
+
+
+@router.post(
+    "/{rule_id}/rollback-redeploy/{version_number}",
+    response_model=RuleDeployResponse,
+    responses={400: {"model": UnmappedFieldsError}},
+)
+async def rollback_redeploy_rule(
+    rule_id: UUID,
+    version_number: int,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+    change_reason: str = Body(..., min_length=1, max_length=10000, embed=True),
+):
+    """Roll a rule back to ``version_number`` AND (re)deploy it in one step.
+
+    Reuses the existing rollback logic (a new version carrying the old content
+    is created and ``rule.yaml_content`` is updated), then deploys: when the
+    dual-control gate is ON a DeploymentRequest is filed (202, like /deploy);
+    when OFF the deployment is applied via the shared service. Audited as
+    ``rule.rollback`` plus the deploy audit emitted by the shared apply path.
+    """
+    result = await db.execute(
+        select(Rule)
+        .where(Rule.id == rule_id)
+        .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
+    )
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    # Find the target version to roll back to.
+    target_version = next(
+        (v for v in rule.versions if v.version_number == version_number), None
+    )
+    if target_version is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Version {version_number} not found",
+        )
+
+    # --- Rollback (mirrors rollback_rule): create a new version with old content. ---
+    current_version = rule.versions[0].version_number if rule.versions else 0
+    new_version_number = current_version + 1
+    db.add(
+        RuleVersion(
+            rule_id=rule_id,
+            version_number=new_version_number,
+            yaml_content=target_version.yaml_content,
+            changed_by=current_user.id,
+            change_reason=change_reason,
+            created_at=datetime.now(UTC),
+        )
+    )
+    rule.yaml_content = target_version.yaml_content
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "rule.rollback", "rule", str(rule.id),
+        {"title": rule.title, "from_version": version_number,
+         "to_version": new_version_number, "via": "rollback_redeploy"},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    # Reload with the freshly-created version so deploy/pinning sees current content.
+    result = await db.execute(
+        select(Rule)
+        .where(Rule.id == rule_id)
+        .options(selectinload(Rule.index_pattern), selectinload(Rule.versions))
+    )
+    rule = result.scalar_one()
+
+    # --- Deploy. Gate ON -> file a request (202); gate OFF -> apply directly. ---
+    if await is_approval_required(db):
+        req = await create_deployment_request(
+            db,
+            requested_by=current_user.id,
+            team_id=rule.team_id,
+            change_reason=change_reason,
+            sigma_rules=[rule],
+        )
+        await audit_log(
+            db, current_user.id, "deployment_request.created", "deployment_request",
+            str(req.id),
+            {"rule_ids": [str(rule.id)], "rule_count": 1, "change_reason": change_reason,
+             "via": "rollback_redeploy"},
+            ip_address=get_client_ip(request),
+        )
+        await db.commit()
+        return _deployment_pending_response(req.id)
+
+    try:
+        deploy_result = await apply_sigma_rule_deployment(
+            db,
+            os_client,
+            rule,
+            actor_id=current_user.id,
+            change_reason=change_reason,
+            request_ip=get_client_ip(request),
+        )
+    except DeploymentApplyError as e:
+        if e.kind == "unmapped":
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=UnmappedFieldsError(
+                    message=e.message,
+                    unmapped_fields=e.unmapped_fields,
+                    index_pattern_id=e.index_pattern_id,
+                ).model_dump(mode="json"),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        ) from e
+
+    return RuleDeployResponse(
+        success=True,
+        rule_id=deploy_result.rule_id,
+        percolator_index=deploy_result.percolator_index,
+        deployed_version=deploy_result.deployed_version,
+        deployed_at=deploy_result.deployed_at,
     )
 
 

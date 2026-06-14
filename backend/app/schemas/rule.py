@@ -73,6 +73,7 @@ class RuleResponse(RuleBase):
     deployed_version: int | None = None
     current_version: int = 1  # Latest version number
     needs_redeploy: bool = False  # True if deployed but out of date
+    has_open_request: bool = False  # True if an OPEN (pending) DeploymentRequest exists
     last_edited_by: str | None = None  # Email of user who last edited
     source: RuleSource = RuleSource.USER
     sigmahq_path: str | None = None
@@ -163,6 +164,41 @@ class UnmappedFieldsError(BaseModel):
     message: str
     unmapped_fields: list[str]
     index_pattern_id: UUID
+
+
+# Deploy preview schemas (consolidates eligibility + validate + current/proposed
+# diff into a single read-only call for the DeployDialog).
+class DeployPreviewValidation(BaseModel):
+    """Translation/validation outcome for the rule's current YAML."""
+
+    success: bool
+    errors: list[ValidationErrorItem] = []
+
+
+class DeployPreviewEligibility(BaseModel):
+    """Field-mapping eligibility for this one rule (reuses the bulk logic)."""
+
+    eligible: bool
+    reason: str | None = None
+    unmapped_fields: list[str] = []
+
+
+class DeployPreviewResponse(BaseModel):
+    """Read-only deploy preview for a single rule. Never mutates anything."""
+
+    rule_id: UUID
+    # The DSL currently live in the percolator (inner query), or null when the
+    # rule is undeployed / pull-mode / not found in the percolator.
+    current_deployed_query: dict | None = None
+    # Freshly translated current YAML with mappings applied (inner query).
+    proposed_query: dict | None = None
+    validation: DeployPreviewValidation
+    eligibility: DeployPreviewEligibility
+    needs_redeploy: bool = False
+    deployed_version: int | None = None
+    current_version: int = 1
+    # Optional historical dry-run summary; kept null (lazy) to keep this cheap.
+    dry_run: dict | None = None
 
 
 # Historical testing schemas

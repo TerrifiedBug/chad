@@ -48,6 +48,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { RulesExportDialog } from '@/components/RulesExportDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { SourceIcon } from '@/components/SourceIcon'
+import { DeployStatusBadge } from '@/components/rules/DeployStatusBadge'
+import { startBatch, clearProgress } from '@/components/rules/deploy-progress-store'
 
 // Severity options
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -481,20 +483,32 @@ export default function RulesPage() {
     if (selectedRules.size === 0 || !bulkOperationReason.trim()) return
     setShowBulkDeployReason(false)
     setIsBulkOperating(true)
+    const ruleIds = Array.from(selectedRules)
+    // Seed the live progress panel so per-rule status appears immediately; the
+    // backend then streams deploy_progress transitions over /ws.
+    const selectedRuleData = rules.filter((r) => selectedRules.has(r.id))
+    startBatch(selectedRuleData.map((r) => ({ id: r.id, title: r.title })))
     try {
-      const ruleIds = Array.from(selectedRules)
       const deployResult = await rulesApi.bulkDeploy(ruleIds, bulkOperationReason)
       if (deployResult.pendingApproval) {
         // Dual-control gate is ON: a single batch request was filed for review.
-        // Do NOT assume the rules deployed.
+        // Do NOT assume the rules deployed — clear the optimistic progress panel.
+        clearProgress()
         showToast('Submitted for approval', 'info')
-      } else if (deployResult.result.failed.length > 0) {
-        setError(`${deployResult.result.success.length} deployed, ${deployResult.result.failed.length} failed`)
+      } else {
+        const { success, failed } = deployResult.result
+        // Final summary toast (the live panel already shows per-rule status).
+        if (failed.length > 0) {
+          showToast(`${success.length} deployed, ${failed.length} failed`, 'error')
+        } else {
+          showToast(`${success.length} deployed`, 'success')
+        }
       }
       clearSelection()
       setBulkOperationReason('')
       loadData()
     } catch (err) {
+      clearProgress()
       setError(err instanceof Error ? err.message : 'Bulk deploy failed')
     } finally {
       setIsBulkOperating(false)
@@ -1083,28 +1097,7 @@ export default function RulesPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
-                            rule.status === 'deployed'
-                              ? 'bg-green-600 text-white'
-                              : rule.status === 'snoozed'
-                              ? 'bg-yellow-500 text-white'
-                              : 'bg-gray-500 text-white'
-                          }`}
-                        >
-                          {rule.status === 'deployed'
-                            ? 'Deployed'
-                            : rule.status === 'snoozed'
-                            ? (rule.snooze_indefinite ? 'Snoozed (Indefinite)' : 'Snoozed')
-                            : 'Undeployed'}
-                        </span>
-                        {rule.needs_redeploy && (
-                          <span className="px-2 py-0.5 rounded text-xs font-medium border border-orange-500 text-orange-600">
-                            Needs Redeploy
-                          </span>
-                        )}
-                      </div>
+                      <DeployStatusBadge rule={rule} />
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -1438,21 +1431,7 @@ export default function RulesPage() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          <span
-                            className={`px-2 py-0.5 rounded text-xs font-medium inline-block w-fit ${
-                              rule.status === 'deployed'
-                                ? 'bg-green-600 text-white'
-                                : rule.status === 'snoozed'
-                                ? 'bg-yellow-500 text-white'
-                                : 'bg-gray-500 text-white'
-                            }`}
-                          >
-                            {rule.status === 'deployed'
-                              ? 'Deployed'
-                              : rule.status === 'snoozed'
-                              ? 'Snoozed'
-                              : 'Undeployed'}
-                          </span>
+                          <DeployStatusBadge rule={rule} />
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {rule.last_edited_by || '-'}

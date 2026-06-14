@@ -390,6 +390,10 @@ export type Rule = {
   threshold_count: number | null
   threshold_window_minutes: number | null
   threshold_group_by: string | null
+  // True when an open (pending) dual-control deployment request exists for this
+  // rule. Optional: only present when the backend includes it on the list/detail
+  // response; absent on older responses (treat undefined as "no open request").
+  has_open_request?: boolean
 }
 
 export type RuleVersion = {
@@ -523,6 +527,54 @@ export type DeploymentEligibilityResult = {
   ineligible: IneligibleRule[]
 }
 
+// Deploy preview (consolidated preflight) types — see GET /rules/{id}/deploy-preview.
+// Consolidates check-deployment-eligibility + validate + (optional) test-historical.
+export type DeployPreviewEligibility = {
+  // True when the rule's fields are all mapped / it is otherwise deployable.
+  eligible: boolean
+  // Human-readable reason when not eligible (e.g. unmapped fields).
+  reason?: string | null
+  // Fields that have no mapping for the target index pattern, if any.
+  unmapped_fields?: string[]
+}
+
+// Optional 24h historical dry-run summary folded into the preview.
+export type DeployPreviewDryRun = {
+  total_scanned: number
+  total_matches: number
+  truncated: boolean
+  error?: string | null
+}
+
+export type DeployPreviewResponse = {
+  // DSL currently live in the percolator for this rule, or null if undeployed / pull-mode.
+  current_deployed_query: string | null
+  // Freshly translated current YAML (with mappings applied).
+  proposed_query: string
+  validation: {
+    success: boolean
+    errors: ValidationError[]
+  }
+  eligibility: DeployPreviewEligibility
+  needs_redeploy: boolean
+  deployed_version: number | null
+  current_version: number
+  // Optional — may be omitted/lazy by the backend.
+  dry_run?: DeployPreviewDryRun | null
+}
+
+// Live bulk-deploy progress message broadcast over /ws during a bulk deploy.
+export type DeployProgressStatus = 'queued' | 'deploying' | 'success' | 'failed'
+
+export type DeployProgressMessage = {
+  type: 'deploy_progress'
+  rule_id: string
+  rule_title: string
+  status: DeployProgressStatus
+  error?: string | null
+  batch_id?: string | null
+}
+
 // Rules API
 export const rulesApi = {
   list: (params?: { status?: RuleStatus; source?: RuleSource }) => {
@@ -586,6 +638,24 @@ export const rulesApi = {
     api.get<{ correlations: { id: string; name: string; deployed: boolean }[] }>(`/rules/${id}/linked-correlations?deployed_only=${deployedOnly}`),
   rollback: (id: string, version: number, reason: string) =>
     api.post<{ success: boolean; new_version_number: number }>(`/rules/${id}/rollback/${version}`, { change_reason: reason }),
+  // Consolidated deploy preview: validation + eligibility + current/proposed DSL
+  // (+ optional dry-run) in one read-only call. Backed by GET deploy-preview.
+  deployPreview: (id: string) =>
+    api.get<DeployPreviewResponse>(`/rules/${id}/deploy-preview`),
+  // Roll the rule back to a prior (last deployed) version AND redeploy in one step.
+  // Returns 200 (applied) or 202 (pending approval) — same gate as deploy().
+  rollbackRedeploy: async (id: string, version: number, changeReason: string): Promise<DeployResult> => {
+    const { status, body } = await postRaw(
+      `/rules/${id}/rollback-redeploy/${version}`,
+      { change_reason: changeReason },
+      'rollbackRedeploy'
+    )
+    // 202 = dual-control gate is ON; a deployment request was filed for review.
+    if (status === 202 && body?.status === 'pending_approval') {
+      return { pendingApproval: true, requestId: body.deployment_request_id, message: body.message }
+    }
+    return { pendingApproval: false, result: body as RuleDeployResponse }
+  },
   // Exceptions
   listExceptions: (ruleId: string) =>
     api.get<RuleException[]>(`/rules/${ruleId}/exceptions`),
