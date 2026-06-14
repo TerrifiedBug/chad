@@ -1283,7 +1283,21 @@ export const settingsApiExtended = {
 }
 
 // SSO types
+// One enabled provider, as surfaced by GET /auth/sso/status for the login page.
+export type SsoStatusProvider = {
+  id: string
+  name: string
+}
+
 export type SsoStatus = {
+  // Extended multi-provider status: the list of enabled providers the login
+  // page renders one button per. Optional for back-compat with older backends
+  // that only emitted the single-provider scalar fields below.
+  providers?: SsoStatusProvider[]
+  // True when SSO-only enforcement is on (login page hides the password form).
+  // Newer field name; `sso_only` kept as a legacy alias.
+  sso_enforced?: boolean
+  // --- Legacy single-provider fields (still emitted for back-compat) ---
   enabled: boolean
   configured: boolean
   provider_name: string
@@ -1334,8 +1348,13 @@ export const authApi = {
     api.get<SsoStatus>('/auth/sso/status'),
   getMe: () =>
     api.get<CurrentUser>('/auth/me'),
-  // SSO login is handled by redirect, not API call
-  getSsoLoginUrl: () => `${API_BASE}/auth/sso/login`,
+  // SSO login is handled by redirect, not API call. With multi-provider OIDC the
+  // login flow is scoped to a provider id; the legacy zero-arg form is kept for
+  // back-compat with single-provider deployments.
+  getSsoLoginUrl: (providerId?: string) =>
+    providerId
+      ? `${API_BASE}/auth/sso/login?provider=${encodeURIComponent(providerId)}`
+      : `${API_BASE}/auth/sso/login`,
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post<{ message: string }>('/auth/change-password', {
       current_password: currentPassword,
@@ -1355,6 +1374,140 @@ export const authApi = {
     api.post<void>('/auth/2fa/disable', { code }),
   updateNotificationPreferences: (prefs: Partial<NotificationPreferences>) =>
     api.patch<{ notification_preferences: NotificationPreferences }>('/auth/me/notifications', prefs),
+}
+
+// Team types (resource-scoped RBAC). Teams own rules/index-patterns and are the
+// target of group->team->role mappings.
+export type Team = {
+  id: string
+  name: string
+  description: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Teams API (admin)
+export const teamsApi = {
+  list: () =>
+    api.get<Team[]>('/teams'),
+}
+
+// --- SSO / OIDC provider types ---
+export type SsoTokenAuthMethod = 'client_secret_post' | 'client_secret_basic'
+
+// One group->team->role mapping row, embedded in the provider payload (there is
+// no separate group-mappings endpoint — they live on the provider).
+export type SsoGroupMapping = {
+  group_value: string
+  team_id: string | null
+  role: string
+}
+
+// A provider row. The client secret is write-only: never returned by the API,
+// so reads expose only `client_secret_set` and the secret is sent on writes.
+export type SsoProvider = {
+  id: string
+  name: string
+  enabled: boolean
+  issuer_url: string
+  client_id: string
+  // True when a secret is already stored (lets the editor show "leave blank to
+  // keep existing"). The plaintext secret is never returned.
+  client_secret_set?: boolean
+  token_auth_method: SsoTokenAuthMethod
+  scopes: string
+  default_role: string
+  default_team_id: string | null
+  require_email_verified: boolean
+  // Group sync
+  group_sync_enabled: boolean
+  groups_claim: string
+  groups_scope: string
+  role_claim: string
+  // Group->team->role mappings are embedded directly on the provider.
+  group_mappings: SsoGroupMapping[]
+  // Test-connection provenance
+  last_tested_at: string | null
+  last_test_success: boolean | null
+}
+
+// Create/update payload. client_secret is only included when the admin enters a
+// new one; omit it to keep the stored secret unchanged. group_mappings, when
+// present, replaces the stored mappings.
+export type SsoProviderInput = {
+  name: string
+  enabled: boolean
+  issuer_url: string
+  client_id: string
+  client_secret?: string
+  token_auth_method: SsoTokenAuthMethod
+  scopes: string
+  default_role: string
+  default_team_id?: string | null
+  require_email_verified: boolean
+  group_sync_enabled: boolean
+  groups_claim: string
+  groups_scope: string
+  role_claim: string
+  group_mappings: SsoGroupMapping[]
+}
+
+export type SsoTestConnectionResponse = {
+  success: boolean
+  error?: string | null
+}
+
+// SSO enforcement (SSO-only login) is a global GUI flag.
+export type SsoEnforcement = {
+  sso_enforced: boolean
+}
+
+// SSO / OIDC provider admin API. Group mappings are embedded in the provider
+// payload (read from provider.group_mappings, written inside create/update).
+export const ssoApi = {
+  listProviders: () =>
+    api.get<SsoProvider[]>('/auth/sso/providers'),
+  createProvider: (data: SsoProviderInput) =>
+    api.post<SsoProvider>('/auth/sso/providers', data),
+  updateProvider: (id: string, data: SsoProviderInput) =>
+    api.put<SsoProvider>(`/auth/sso/providers/${id}`, data),
+  deleteProvider: (id: string) =>
+    api.delete(`/auth/sso/providers/${id}`),
+  // Discovery-probe test for a saved provider. Mirrors the OpenSearch/AI
+  // "Test Connection" pattern.
+  testConnection: (id: string) =>
+    api.post<SsoTestConnectionResponse>(`/auth/sso/providers/${id}/test`, {}),
+  // Global SSO-only enforcement flag.
+  getEnforcement: () =>
+    api.get<SsoEnforcement>('/auth/sso/enforcement'),
+  updateEnforcement: (sso_enforced: boolean) =>
+    api.put<SsoEnforcement>('/auth/sso/enforcement', { sso_enforced }),
+}
+
+// --- SCIM 2.0 types ---
+// Config read: enabled flag + whether a bearer token has been generated. The
+// SCIM base URL is derived on the client (origin + '/api/scim/v2'), not fetched.
+export type ScimConfig = {
+  enabled: boolean
+  token_configured: boolean
+}
+
+// One-time token reveal. Returned only by generateToken, never persisted in a
+// readable form server-side.
+export type ScimTokenResponse = {
+  token: string
+}
+
+// SCIM 2.0 admin API
+export const scimApi = {
+  getConfig: () =>
+    api.get<ScimConfig>('/scim/config'),
+  // Toggle SCIM via a query param (no JSON body).
+  setEnabled: (enabled: boolean) =>
+    api.post<ScimConfig>(`/scim/enable?enabled=${enabled}`, {}),
+  // Generate/regenerate the bearer token; returns the 64-hex token once.
+  generateToken: () =>
+    api.post<ScimTokenResponse>('/scim/token', {}),
 }
 
 // SigmaHQ types

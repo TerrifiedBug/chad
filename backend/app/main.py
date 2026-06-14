@@ -37,8 +37,10 @@ from app.api.permissions import router as permissions_router
 from app.api.queue import router as queue_router
 from app.api.reports import router as reports_router
 from app.api.rules import router as rules_router
+from app.api.scim import router as scim_router
 from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
+from app.api.sso import router as sso_router
 from app.api.stats import router as stats_router
 from app.api.system_logs import router as system_logs_router
 from app.api.teams import router as teams_router
@@ -150,6 +152,16 @@ app = FastAPI(
 
 # Register custom exception handler for standardized error responses
 app.add_exception_handler(HTTPError, http_error_handler)
+
+
+# SCIM auth failures carry a pre-built SCIM-shaped JSONResponse out of the
+# dependency; surface it verbatim (preserves application/scim+json + status).
+from app.api.scim import _ScimAuthError  # noqa: E402
+
+
+@app.exception_handler(_ScimAuthError)
+async def _scim_auth_error_handler(request: Request, exc: _ScimAuthError):
+    return exc.response
 
 # Request ID middleware (add first for request tracking)
 @app.middleware("http")
@@ -381,6 +393,8 @@ app.include_router(correlation_rules_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
+app.include_router(sso_router, prefix="/api")
+app.include_router(scim_router, prefix="/api")
 
 # WebSocket router (no /api prefix - WebSocket has its own protocol)
 app.include_router(websocket_router)

@@ -29,6 +29,7 @@ import SettingsContent from '@/pages/Settings'
 import UsersPage from '@/pages/Users'
 import AuditLogPage from '@/pages/AuditLog'
 import SystemLogsPage from '@/pages/SystemLogs'
+import SsoSettings from '@/pages/settings/SsoSettings'
 
 interface SettingsCategory {
   title: string
@@ -80,8 +81,8 @@ const settingsCategories: { section: string; items: SettingsCategory[] }[] = [
         permission: 'manage_settings',
       },
       {
-        title: 'SSO',
-        description: 'OIDC provider configuration',
+        title: 'SSO & Provisioning',
+        description: 'OIDC providers, group sync, SCIM',
         icon: KeyRound,
         href: '/settings/hub?tab=sso',
         tab: 'sso',
@@ -269,6 +270,8 @@ export default function SettingsHub() {
         return <AuditLogPage />
       case 'system-logs':
         return <SystemLogsPage />
+      case 'sso':
+        return <SsoSettings />
       default:
         return <SettingsContent />
     }
