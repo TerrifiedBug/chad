@@ -19,7 +19,10 @@ type ThemeProviderState = {
 }
 
 const initialState: ThemeProviderState = {
-  theme: "system",
+  // VF parity: dark "console" is the default when no preference is stored.
+  // The toggle + Classic picker remain fully functional and a stored
+  // light/system preference still wins.
+  theme: "dark",
   setTheme: () => null,
   palette: "sentinel",
   setPalette: () => null,
@@ -29,7 +32,7 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
+  defaultTheme = "dark",
   defaultPalette = "sentinel",
   storageKey = "chad-ui-theme",
   paletteStorageKey = "chad-ui-palette",

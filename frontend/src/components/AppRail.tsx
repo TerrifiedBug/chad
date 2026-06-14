@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
+import { useVersion } from '@/hooks/use-version'
 import { deploymentRequestsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
@@ -83,6 +84,7 @@ interface AppRailProps {
 export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }: AppRailProps) {
   const location = useLocation()
   const { hasPermission } = useAuth()
+  const { version } = useVersion()
 
   // Pending deployment-approval count for the Approvals nav badge. Only fetched
   // for users who can see the item; degrades to no badge if the call fails.
@@ -158,10 +160,14 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
       <Link
         to={item.href}
         className={cn(
-          'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-          'hover:bg-muted',
-          active ? 'bg-muted text-foreground' : 'text-muted-foreground',
-          !expanded && 'justify-center px-2'
+          // VF console: active = left 2px accent-brand rule + accent-soft fill
+          // + semibold. Inactive items stay muted with a subtle hover.
+          'flex items-center gap-3 rounded-[3px] border-l-2 border-transparent px-3 py-2 text-sm font-medium transition-colors',
+          'hover:bg-bg-3/60',
+          active
+            ? 'border-l-accent-brand bg-accent-brand-soft text-foreground font-semibold'
+            : 'text-fg-2',
+          !expanded && 'justify-center border-l-0 px-2'
         )}
       >
         <div className="relative">
@@ -219,7 +225,7 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
   const SectionLabel = ({ label }: { label: string }) => {
     if (!expanded) return null
     return (
-      <div className="px-3 pt-4 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+      <div className="vf-thead px-3 pt-4 pb-1 text-fg-3">
         {label}
       </div>
     )
@@ -229,10 +235,27 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
     <TooltipProvider>
       <aside
         className={cn(
-          'fixed top-0 left-0 flex h-screen flex-col bg-background transition-all duration-200 z-50',
+          'fixed top-0 left-0 flex h-screen flex-col border-r border-line bg-bg-1 transition-all duration-200 z-50',
           expanded ? 'w-[200px]' : 'w-14'
         )}
       >
+        {/* Rail header: VF puts the product mark in the sidebar header. */}
+        <Link
+          to="/"
+          className={cn(
+            'flex h-12 flex-shrink-0 items-center gap-2 border-b border-line px-3',
+            !expanded && 'justify-center px-0'
+          )}
+          aria-label="CHAD home"
+        >
+          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[3px] bg-accent-brand-soft font-mono text-[12px] font-bold text-accent-brand">
+            C
+          </span>
+          {expanded && (
+            <span className="font-mono text-sm font-semibold tracking-tight">CHAD</span>
+          )}
+        </Link>
+
         {/* Main navigation - starts at top */}
         <nav className="flex-1 p-2 pt-1 overflow-y-auto">
           {visibleSections.map((section, idx) => (
@@ -264,6 +287,22 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
             <NavLink item={settingsItem} />
           </div>
         )}
+
+        {/* Footer: version + green "all systems normal" status dot (VF rail). */}
+        <div className={cn(
+          'flex flex-shrink-0 items-center gap-2 border-t border-line px-3 py-2',
+          !expanded && 'justify-center px-0'
+        )}>
+          <span className="relative flex h-2 w-2 flex-shrink-0">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-accent-brand opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-brand" />
+          </span>
+          {expanded && (
+            <span className="vf-mono-xs truncate text-fg-3">
+              {version ? `v${version}` : 'All systems normal'}
+            </span>
+          )}
+        </div>
 
         {/* Clickable border for expand/collapse */}
         <Tooltip delayDuration={0}>

@@ -482,7 +482,7 @@ export default function AuditLogPage() {
         {/* Tabbed results. The table renders once, driven by activeTab, so the
             inactive panel never keeps a stale (unfiltered) copy mounted. */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AuditTab)}>
-          <TabsList>
+          <TabsList variant="line">
             <TabsTrigger value="activity">Activity Log</TabsTrigger>
             <TabsTrigger value="deployments">Deployments</TabsTrigger>
           </TabsList>

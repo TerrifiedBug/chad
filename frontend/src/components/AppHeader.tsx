@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useVersion } from '@/hooks/use-version'
 import { useTheme } from '@/hooks/use-theme'
@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { LogOut, Key, Lock, User, Info, Menu, Sun, Moon, Monitor } from 'lucide-react'
+import { LogOut, Key, Lock, User, Info, Menu, Sun, Moon, Monitor, Search } from 'lucide-react'
 
 interface AppHeaderProps {
   onMobileMenuToggle?: () => void
@@ -30,12 +30,37 @@ function getUserInitial(email: string): string {
   return name.charAt(0).toUpperCase()
 }
 
+// Humanise a route segment into a breadcrumb label (kebab/uuid-aware).
+function humaniseSegment(segment: string): string {
+  // Leave obvious ids (uuids / long hex / numeric) untouched-ish.
+  if (/^[0-9a-f]{8}-/.test(segment) || /^\d+$/.test(segment)) {
+    return segment.length > 10 ? segment.slice(0, 8) + '…' : segment
+  }
+  return segment
+    .split('-')
+    .map((w) => (w.length <= 3 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ')
+}
+
+// Open the existing CommandPalette by dispatching the ⌘K event it listens for.
+// Keeps CommandPalette self-contained (no prop API change).
+function openCommandPalette() {
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })
+  )
+}
+
 export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = true }: AppHeaderProps) {
   const { isAuthenticated, user, logout, hasPermission } = useAuth()
-  const { version, updateAvailable } = useVersion()
+  const { updateAvailable } = useVersion()
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
+  const location = useLocation()
   const [showAboutDialog, setShowAboutDialog] = useState(false)
+
+  // Route-derived breadcrumb segments ('/'-separated, last one bold).
+  const segments = location.pathname.split('/').filter(Boolean)
+  const crumbs = segments.length === 0 ? ['Dashboard'] : segments.map(humaniseSegment)
 
   const cycleTheme = () => {
     if (theme === 'light') setTheme('dark')
@@ -47,7 +72,7 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
 
   return (
     <>
-      <header className="sticky top-0 z-50 h-14 bg-background flex">
+      <header className="sticky top-0 z-50 h-[52px] border-b border-line bg-bg-1 flex">
         {/* Spacer to align with sidebar - hidden on mobile */}
         <div
           className={cn(
@@ -57,8 +82,8 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
         />
 
         {/* Main header area */}
-        <div className="flex-1 flex h-full items-center justify-between px-4">
-          <div className="flex items-center gap-3">
+        <div className="flex-1 flex h-full items-center justify-between gap-4 px-4">
+          <div className="flex min-w-0 items-center gap-3">
             {/* Mobile menu button */}
             {isAuthenticated && showMobileMenu !== undefined && (
               <Button
@@ -72,25 +97,47 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
               </Button>
             )}
 
-            {/* Logo - always visible in main header area */}
-            <Link to="/" className="flex items-baseline gap-2">
-              <span className="text-xl font-bold">CHAD</span>
-              {version && (
-                <span className="text-xs text-muted-foreground">v{version}</span>
-              )}
-            </Link>
+            {/* Route-derived breadcrumbs (mono, '/'-separated, last bold). */}
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 truncate">
+              {crumbs.map((crumb, i) => (
+                <span key={i} className="flex items-center gap-1.5">
+                  {i > 0 && <span className="text-fg-3" aria-hidden>/</span>}
+                  <span
+                    className={cn(
+                      'vf-mono-sm truncate',
+                      i === crumbs.length - 1 ? 'font-semibold text-fg' : 'text-fg-2'
+                    )}
+                  >
+                    {crumb}
+                  </span>
+                </span>
+              ))}
+            </nav>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Center ⌘K search affordance, wired to the existing CommandPalette. */}
+          {isAuthenticated && (
+            <button
+              type="button"
+              onClick={openCommandPalette}
+              aria-label="Search (Command+K)"
+              className="hidden md:flex h-7 min-w-[280px] items-center gap-2 rounded-[3px] border border-line bg-bg-2 px-2.5 text-fg-3 transition-colors hover:border-line-2 hover:text-fg-2"
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span className="vf-mono-xs flex-1 text-left">Search…</span>
+              <kbd className="vf-mono-xs rounded-[2px] border border-line px-1 text-fg-3">⌘K</kbd>
+            </button>
+          )}
+
+          <div className="flex items-center gap-1">
             {isAuthenticated && (
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={cycleTheme}
-                className="h-9 w-9"
                 aria-label={`Current theme: ${theme}. Click to change.`}
               >
-                <ThemeIcon className="h-5 w-5" />
+                <ThemeIcon className="h-4 w-4" />
               </Button>
             )}
             {isAuthenticated && <NotificationBell />}
@@ -98,8 +145,8 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
             {isAuthenticated && user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 focus-visible:ring-0 focus-visible:ring-offset-0">
-                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium">
+                  <Button variant="ghost" size="icon" className="rounded-full focus-visible:ring-0 focus-visible:ring-offset-0">
+                    <div className="h-7 w-7 rounded-full bg-accent-brand-soft flex items-center justify-center text-accent-brand font-mono text-[12px] font-semibold">
                       {getUserInitial(user.email)}
                     </div>
                   </Button>

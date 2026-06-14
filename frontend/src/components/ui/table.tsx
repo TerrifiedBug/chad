@@ -15,7 +15,8 @@ const Table = React.forwardRef<HTMLTableElement, TableProps>(
         ref={ref}
         role={navigable ? "grid" : undefined}
         aria-label={label}
-        className={cn("w-full caption-bottom text-sm", className)}
+        // VF console: dense mono data grid (12px mono cells via TableCell).
+        className={cn("w-full caption-bottom text-[12px]", className)}
         {...props}
       />
     </div>
@@ -33,8 +34,8 @@ const TableHeader = React.forwardRef<HTMLTableSectionElement, TableHeaderProps>(
     <thead
       ref={ref}
       className={cn(
-        "[&_tr]:border-b bg-muted/50",
-        sticky && "sticky top-0 z-10 backdrop-blur-sm bg-background/95",
+        "[&_tr]:border-b bg-bg-1",
+        sticky && "sticky top-0 z-10 backdrop-blur-sm bg-bg-1/95",
         className
       )}
       {...props}
@@ -137,9 +138,9 @@ const TableRow = React.forwardRef<HTMLTableRowElement, TableRowProps>(
         aria-rowindex={rowIndex}
         onKeyDown={handleKeyDown}
         className={cn(
-          "border-b transition-colors duration-150",
-          "hover:bg-muted/50",
-          "data-[state=selected]:bg-primary/5 data-[state=selected]:border-l-2 data-[state=selected]:border-l-primary",
+          "border-b border-line transition-colors duration-150",
+          "hover:bg-bg-3/50",
+          "data-[state=selected]:bg-accent-brand-soft data-[state=selected]:border-l-2 data-[state=selected]:border-l-accent-brand",
           interactive && "cursor-pointer",
           focusable && "table-row-focusable",
           className
@@ -157,8 +158,9 @@ const TableHead = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <th
     ref={ref}
+    // VF console: uppercase 10px mono header eyebrows.
     className={cn(
-      "h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0",
+      "h-9 px-4 text-left align-middle font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-fg-2 [&:has([role=checkbox])]:pr-0",
       className
     )}
     {...props}
@@ -172,7 +174,8 @@ const TableCell = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <td
     ref={ref}
-    className={cn("p-4 align-middle [&:has([role=checkbox])]:pr-0", className)}
+    // VF console: mono data cells, slightly denser vertical rhythm.
+    className={cn("px-4 py-2.5 align-middle font-mono [&:has([role=checkbox])]:pr-0", className)}
     {...props}
   />
 ))

@@ -9,8 +9,10 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, interactive, ...props }, ref) => (
     <div
       ref={ref}
+      // VF console: 3px radius, hairline border, flat surface (no shadow by
+      // default). Hover-lift only when interactive.
       className={cn(
-        "rounded-xl border bg-card text-card-foreground shadow-sm",
+        "rounded-[3px] border border-line bg-card text-card-foreground",
         "transition-shadow duration-200",
         interactive && "card-interactive cursor-pointer hover:shadow-md",
         className

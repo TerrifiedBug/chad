@@ -44,7 +44,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { RelativeTime } from '@/components/RelativeTime'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
 import { RulesExportDialog } from '@/components/RulesExportDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { SourceIcon } from '@/components/SourceIcon'
@@ -742,20 +742,16 @@ export default function RulesPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList>
+        <TabsList variant="line">
           <TabsTrigger value="sigma" className="gap-2">
             <FileCode className="h-4 w-4" />
             Sigma Rules
-            <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
-              {rules.length}
-            </Badge>
+            <TabsCount>{rules.length}</TabsCount>
           </TabsTrigger>
           <TabsTrigger value="correlation" className="gap-2">
             <Link2 className="h-4 w-4" />
             Correlation Rules
-            <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
-              {correlationRules.length}
-            </Badge>
+            <TabsCount>{correlationRules.length}</TabsCount>
           </TabsTrigger>
         </TabsList>
 
