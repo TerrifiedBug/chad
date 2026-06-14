@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   deploymentRequestsApi,
+  environmentsApi,
   DeploymentRequestResponse,
   DeploymentRequestDetailResponse,
   DeploymentRequestItemDetail,
   DeploymentRequestStatus,
 } from '@/lib/api'
+import { ENVIRONMENTS_QUERY_KEY } from '@/components/EnvironmentSelector'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
 import { PageHeader } from '@/components/PageHeader'
@@ -46,7 +48,7 @@ import {
 } from '@/components/ui/tooltip'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
-import { CheckCheck, Check, X, Loader2, Ban } from 'lucide-react'
+import { CheckCheck, Check, X, Loader2, Ban, Layers, ArrowRight } from 'lucide-react'
 import { capitalize } from '@/lib/constants'
 
 const DEPLOYMENT_REQUESTS_KEY = 'deployment-requests'
@@ -87,6 +89,33 @@ function formatAvgReview(seconds: number | null): string {
   if (seconds < 60) return `${Math.round(seconds)}s`
   if (seconds < 3600) return `${Math.round(seconds / 60)}m`
   return `${(seconds / 3600).toFixed(1)}h`
+}
+
+/**
+ * Badge shown on requests that carry a target_environment_id — i.e. promotions.
+ * Resolves the env name from the cached environment list and renders
+ * "promote → {env}" so a reviewer sees the promotion target at a glance.
+ * Renders nothing for plain (non-promotion) deploy requests.
+ */
+function TargetEnvBadge({ targetEnvironmentId }: { targetEnvironmentId?: string | null }) {
+  const { data: environments } = useQuery({
+    queryKey: [ENVIRONMENTS_QUERY_KEY],
+    queryFn: () => environmentsApi.list(),
+    retry: false,
+    enabled: !!targetEnvironmentId,
+  })
+
+  if (!targetEnvironmentId) return null
+  const env = environments?.find((e) => e.id === targetEnvironmentId)
+  const name = env?.name ?? 'environment'
+
+  return (
+    <Badge variant="info-subtle" className="gap-1" aria-label={`Promote to ${name}`}>
+      <ArrowRight className="h-3 w-3" />
+      <Layers className="h-3 w-3" />
+      {name}
+    </Badge>
+  )
 }
 
 export default function ApprovalsPage() {
@@ -257,7 +286,7 @@ export default function ApprovalsPage() {
                     onClick={() => setSelectedId(req.id)}
                   >
                     <TableCell className="font-medium">
-                      <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
                         <span>
                           {req.rule_titles[0] || 'Untitled rule'}
                           {req.item_count > 1 && (
@@ -266,6 +295,7 @@ export default function ApprovalsPage() {
                             </span>
                           )}
                         </span>
+                        <TargetEnvBadge targetEnvironmentId={req.target_environment_id} />
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -435,8 +465,9 @@ function DeploymentRequestDetail({ detail }: { detail: DeploymentRequestDetailRe
         </div>
         <div>
           <span className="text-muted-foreground">Status</span>
-          <div>
+          <div className="flex items-center gap-2">
             <Badge variant={statusBadgeVariant(detail.status)}>{capitalize(detail.status)}</Badge>
+            <TargetEnvBadge targetEnvironmentId={detail.target_environment_id} />
           </div>
         </div>
         {detail.reviewer_email && (

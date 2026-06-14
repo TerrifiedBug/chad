@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, Clock, Download, ExternalLink, FileCode, LayoutList, Link2, List, Plus, RotateCcw, Rocket, Search, Trash2, X } from 'lucide-react'
+import { ArrowUpToLine, ChevronDown, Clock, Download, ExternalLink, FileCode, LayoutList, Link2, List, Plus, RotateCcw, Rocket, Search, Trash2, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -49,6 +49,8 @@ import { RulesExportDialog } from '@/components/RulesExportDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { SourceIcon } from '@/components/SourceIcon'
 import { EnvironmentBadge } from '@/components/EnvironmentBadge'
+import { PromoteDialog } from '@/components/rules/PromoteDialog'
+import { useActiveEnvironmentId } from '@/stores/environment-store'
 import { DeployStatusBadge } from '@/components/rules/DeployStatusBadge'
 import { startBatch, clearProgress } from '@/components/rules/deploy-progress-store'
 
@@ -158,6 +160,10 @@ export default function RulesPage() {
   const [pendingBulkSnoozeHours, setPendingBulkSnoozeHours] = useState<number | undefined>(undefined)
   const [pendingBulkSnoozeIndefinite, setPendingBulkSnoozeIndefinite] = useState(false)
   const [bulkLinkedCorrelations, setBulkLinkedCorrelations] = useState<{ id: string; name: string; deployed: boolean }[]>([])
+
+  // Promote-selected dialog (advance a target env to the active env's version)
+  const [showPromoteDialog, setShowPromoteDialog] = useState(false)
+  const activeEnvironmentId = useActiveEnvironmentId()
 
   // Export report state
   const [showExportDialog, setShowExportDialog] = useState(false)
@@ -1178,6 +1184,25 @@ export default function RulesPage() {
                   </TooltipContent>
                 )}
               </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowPromoteDialog(true)}
+                      disabled={isBulkOperating || !allDeployed || !canDeployRules()}
+                    >
+                      <ArrowUpToLine className="mr-2 h-4 w-4" /> Promote
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!allDeployed && selectedRulesData.length > 0 && (
+                  <TooltipContent>
+                    Cannot promote: All selected rules must be deployed in the source environment
+                  </TooltipContent>
+                )}
+              </Tooltip>
               <Tooltip open={!hasSnoozeableRules ? undefined : false}>
                 <TooltipTrigger asChild>
                   <DropdownMenu open={showBulkSnooze} onOpenChange={setShowBulkSnooze}>
@@ -1224,6 +1249,19 @@ export default function RulesPage() {
           </div>
         </TooltipProvider>
       )}
+
+      {/* Promote-selected dialog (Target → Preflight → Diff → Reason → Confirm) */}
+      <PromoteDialog
+        open={showPromoteDialog}
+        onOpenChange={setShowPromoteDialog}
+        rules={selectedRulesData.map((r) => ({ id: r.id, title: r.title }))}
+        sourceEnvironmentId={activeEnvironmentId}
+        onPromoted={() => {
+          clearSelection()
+          loadData()
+        }}
+        onSubmittedForApproval={() => clearSelection()}
+      />
         </TabsContent>
 
         <TabsContent value="correlation" className="mt-4 space-y-4">

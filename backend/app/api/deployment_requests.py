@@ -29,6 +29,7 @@ from app.models.deployment_request import (
     DeploymentRequestKind,
     DeploymentRequestStatus,
 )
+from app.models.environment import Environment
 from app.models.rule import Rule
 from app.models.user import User, UserRole
 from app.schemas.deployment_request import (
@@ -454,6 +455,36 @@ async def approve_deployment_request(
     ip = get_client_ip(request)
     sigma_rules, corr_rules = await _load_apply_targets(db, req)
 
+    # Per-env dual-control: a promotion request carries the target env. Resolve it
+    # once and apply each item INTO that env (target percolator namespace +
+    # binding). When null (existing deploy requests) the env is None == the
+    # legacy default env, so behavior is unchanged.
+    target_env: Environment | None = None
+    if req.target_environment_id is not None:
+        target_env = (
+            await db.execute(
+                select(Environment).where(Environment.id == req.target_environment_id)
+            )
+        ).scalar_one_or_none()
+        # The request targeted a specific env that has since been deleted. Do NOT
+        # silently fall back to the default env (that would promote to prod's
+        # default instead of the intended target). Mark FAILED and abort.
+        if target_env is None:
+            req.status = DeploymentRequestStatus.FAILED.value
+            await db.commit()
+            await audit_log(
+                db, current_user.id, "deployment_request.failed", "deployment_request",
+                str(request_id),
+                {"reason": "target environment for this request no longer exists",
+                 "target_environment_id": str(req.target_environment_id)},
+                ip_address=ip,
+            )
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Target environment for this request no longer exists",
+            )
+
     all_ok = True
     for item in req.items:
         try:
@@ -479,6 +510,7 @@ async def approve_deployment_request(
                     request_ip=ip, deployment_request_id=req.id,
                     pinned_yaml=pinned.yaml_content if pinned else None,
                     pinned_version=item.version_number,
+                    environment=target_env,
                 )
             item.apply_status = DeploymentItemApplyStatus.OK.value
             item.apply_error = None
@@ -500,6 +532,9 @@ async def approve_deployment_request(
         "deployment_request", str(req.id),
         {
             "all_ok": all_ok,
+            "target_environment_id": (
+                str(req.target_environment_id) if req.target_environment_id else None
+            ),
             "items": [
                 {
                     "rule_id": str(i.rule_id or i.correlation_rule_id),
@@ -512,6 +547,20 @@ async def approve_deployment_request(
         },
         ip_address=ip,
     )
+    # A promotion request (target env set) that applied also emits promotion.applied
+    # so the promotion audit trail is symmetric with promotion.requested.
+    if all_ok and req.target_environment_id is not None:
+        await audit_log(
+            db, current_user.id, "promotion.applied", "environment",
+            str(req.target_environment_id),
+            {
+                "target_environment_id": str(req.target_environment_id),
+                "deployment_request_id": str(req.id),
+                "promoted_rule_ids": [str(i.rule_id) for i in req.items if i.rule_id],
+                "promoted_count": len(req.items),
+            },
+            ip_address=ip,
+        )
     await db.commit()
 
     return await _build_detail(db, await _load_request(db, request_id), datetime.now(UTC))
