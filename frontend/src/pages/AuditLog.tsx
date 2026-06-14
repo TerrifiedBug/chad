@@ -1,8 +1,15 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { DateRange } from 'react-day-picker'
-import { auditApi, AuditLogEntry, AuditLogListResponse } from '@/lib/api'
+import {
+  auditApi,
+  AuditLogEntry,
+  AuditLogListResponse,
+  AuditExportResult,
+} from '@/lib/api'
+import { verifyChainLinks } from '@/lib/audit-chain'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import {
   Select,
@@ -19,15 +26,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, FileText } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  RefreshCw,
+  FileText,
+  ShieldCheck,
+  Shield,
+} from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,10 +47,31 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { LoadingState } from '@/components/ui/loading-state'
 import { EmptyState } from '@/components/ui/empty-state'
+import { PageHeader } from '@/components/PageHeader'
+import { useToast } from '@/components/ui/toast-provider'
+import { AuditDetailDrawer } from '@/components/AuditDetailDrawer'
 
 const PAGE_SIZE = 50
 
+// Actions surfaced under the "Deployments" tab. Covers the legacy rule deploy
+// verbs plus the dual-control deployment_request.* family (matched by prefix).
+const DEPLOYMENT_ACTIONS = new Set([
+  'rule.deploy',
+  'rule.undeploy',
+  'rule.rollback',
+  'rule.bulk_deploy',
+])
+
+function isDeploymentAction(action: string): boolean {
+  return DEPLOYMENT_ACTIONS.has(action) || action.startsWith('deployment_request.')
+}
+
+type AuditTab = 'activity' | 'deployments'
+
 export default function AuditLogPage() {
+  const { showToast } = useToast()
+
+  const [activeTab, setActiveTab] = useState<AuditTab>('activity')
   const [auditData, setAuditData] = useState<AuditLogListResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -56,7 +86,7 @@ export default function AuditLogPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>()
   const [currentPage, setCurrentPage] = useState(0)
 
-  // Detail dialog
+  // Detail drawer
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
 
@@ -166,6 +196,22 @@ export default function AuditLogPage() {
       .join(' ')
   }
 
+  // Server returns a single page; the Deployments tab narrows it to the
+  // deployment action set client-side (the list API takes one action only).
+  const visibleItems = useMemo(() => {
+    const items = auditData?.items ?? []
+    if (activeTab === 'deployments') {
+      return items.filter((entry) => isDeploymentAction(entry.action))
+    }
+    return items
+  }, [auditData, activeTab])
+
+  // Integrity pill: green only when the visible rows' chain links verify.
+  const chainVerified = useMemo(
+    () => verifyChainLinks(visibleItems),
+    [visibleItems]
+  )
+
   const totalPages = auditData ? Math.ceil(auditData.total / PAGE_SIZE) : 0
 
   const handlePrevPage = () => {
@@ -187,6 +233,24 @@ export default function AuditLogPage() {
     setCurrentPage(0)
   }
 
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Toast summarising the export, with the cap warning when truncated.
+  const reportExport = (result: AuditExportResult, kind: string) => {
+    if (result.truncated) {
+      showToast(`${kind} exported — capped at 10,000 rows`, 'info')
+    } else {
+      showToast(`${kind} exported`, 'success')
+    }
+  }
+
   const handleExport = async (format: 'csv' | 'json') => {
     try {
       const filters: {
@@ -205,280 +269,272 @@ export default function AuditLogPage() {
         filters.end_date = end.toISOString()
       }
 
-      const blob = await auditApi.export(format, filters)
-
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `audit_logs.${format}`
-      a.click()
-      URL.revokeObjectURL(url)
+      const result = await auditApi.export(format, filters)
+      triggerDownload(result.blob, `audit_logs.${format}`)
+      reportExport(result, format.toUpperCase())
     } catch {
       setError('Export failed')
+      showToast('Export failed', 'error')
     }
   }
+
+  const handleExportChain = async () => {
+    try {
+      const result = await auditApi.exportChain()
+      triggerDownload(result.blob, 'audit_chain.json')
+      reportExport(result, 'Verifiable chain')
+    } catch {
+      setError('Export failed')
+      showToast('Export failed', 'error')
+    }
+  }
+
+  const integrityPill = chainVerified ? (
+    <Badge variant="success-subtle" className="gap-1">
+      <ShieldCheck className="h-3 w-3" />
+      Tamper-evident
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="gap-1 text-muted-foreground">
+      <Shield className="h-3 w-3" />
+      Tamper-evident
+    </Badge>
+  )
+
+  const exportControl = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline">
+          <Download className="mr-2 h-4 w-4" /> Export
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuItem onClick={() => handleExport('csv')}>
+          Export as CSV
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleExport('json')}>
+          Export as JSON
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleExportChain}>
+          Export verifiable chain (.json)
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
+  // Table body shared by both tabs (rows differ only by the active filter).
+  const renderTableBody = () => {
+    if (isLoading) {
+      return (
+        <TableRow>
+          <TableCell colSpan={6}>
+            <LoadingState message="Loading audit logs..." />
+          </TableCell>
+        </TableRow>
+      )
+    }
+    if (visibleItems.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={6}>
+            <EmptyState
+              icon={<FileText className="h-12 w-12" />}
+              title="No audit log entries"
+              description={
+                activeTab === 'deployments'
+                  ? 'Deployment events will appear here as rules are deployed and reviewed.'
+                  : 'Audit events will appear here as users interact with the system.'
+              }
+              action={
+                (actionFilter !== 'all' || resourceTypeFilter !== 'all' || dateRange) ? (
+                  <Button variant="outline" onClick={resetFilters}>
+                    Clear Filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          </TableCell>
+        </TableRow>
+      )
+    }
+    return visibleItems.map((entry) => (
+      <TableRow
+        key={entry.id}
+        className="cursor-pointer"
+        onClick={() => handleViewDetails(entry)}
+      >
+        <TableCell className="text-muted-foreground whitespace-nowrap">
+          <TimestampTooltip timestamp={entry.created_at}>
+            <span>{formatTimestamp(entry.created_at)}</span>
+          </TimestampTooltip>
+        </TableCell>
+        <TableCell className="font-medium">
+          {entry.user_email || (entry.user_id ? 'Unknown User' : 'System')}
+        </TableCell>
+        <TableCell>{formatAction(entry.action, entry.details ?? undefined)}</TableCell>
+        <TableCell>{formatResourceType(entry.resource_type)}</TableCell>
+        <TableCell className="font-mono text-sm text-muted-foreground">
+          {entry.resource_id ? entry.resource_id.slice(0, 8) + '...' : '-'}
+        </TableCell>
+        <TableCell className="font-mono text-sm text-muted-foreground">
+          {entry.ip_address || '-'}
+        </TableCell>
+      </TableRow>
+    ))
+  }
+
+  const auditTable = (
+    <div className="border rounded-lg">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Timestamp</TableHead>
+            <TableHead>User</TableHead>
+            <TableHead>Action</TableHead>
+            <TableHead>Resource Type</TableHead>
+            <TableHead>Resource ID</TableHead>
+            <TableHead>IP Address</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>{renderTableBody()}</TableBody>
+      </Table>
+    </div>
+  )
 
   return (
     <TooltipProvider>
       <div className="space-y-6">
-      {/* Export button */}
-      <div className="flex justify-end">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" /> Export
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => handleExport('csv')}>
-              Export as CSV
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleExport('json')}>
-              Export as JSON
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <Label>Action</Label>
-              <Select value={actionFilter} onValueChange={(v) => { setActionFilter(v); setCurrentPage(0); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Actions" />
-                </SelectTrigger>
-                <SelectContent className="z-50 bg-popover">
-                  <SelectItem value="all">All Actions</SelectItem>
-                  {actions.map((action) => (
-                    <SelectItem key={action} value={action}>
-                      {formatAction(action)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <PageHeader
+          title={
+            <div className="flex items-center gap-3">
+              <span>Audit Log</span>
+              {integrityPill}
             </div>
-            <div className="space-y-2">
-              <Label>Resource Type</Label>
-              <Select value={resourceTypeFilter} onValueChange={(v) => { setResourceTypeFilter(v); setCurrentPage(0); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Types" />
-                </SelectTrigger>
-                <SelectContent className="z-50 bg-popover">
-                  <SelectItem value="all">All Types</SelectItem>
-                  {resourceTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {formatResourceType(type)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Date Range</Label>
-              <DateRangePicker
-                value={dateRange}
-                onChange={(range) => { setDateRange(range); setCurrentPage(0); }}
-              />
-            </div>
-            <div className="flex items-end gap-2">
-              <Button variant="outline" onClick={resetFilters}>
-                Reset
-              </Button>
-              <Button variant="outline" onClick={loadAuditLogs}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          }
+          description="Immutable, tamper-evident record of activity across CHAD."
+          actions={exportControl}
+        />
 
-      {error && (
-        <div className="bg-destructive/10 text-destructive p-3 rounded-md">
-          {error}
-        </div>
-      )}
-
-      {/* Results Table */}
-      <div className="border rounded-lg">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Timestamp</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Resource Type</TableHead>
-              <TableHead>Resource ID</TableHead>
-              <TableHead>IP Address</TableHead>
-              <TableHead className="w-[100px]">Details</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7}>
-                  <LoadingState message="Loading audit logs..." />
-                </TableCell>
-              </TableRow>
-            ) : !auditData || auditData.items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7}>
-                  <EmptyState
-                    icon={<FileText className="h-12 w-12" />}
-                    title="No audit log entries"
-                    description="Audit events will appear here as users interact with the system."
-                    action={
-                      (actionFilter !== 'all' || resourceTypeFilter !== 'all' || dateRange) && (
-                        <Button variant="outline" onClick={resetFilters}>
-                          Clear Filters
-                        </Button>
-                      )
-                    }
-                  />
-                </TableCell>
-              </TableRow>
-            ) : (
-              auditData.items.map((entry) => (
-                <TableRow key={entry.id}>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">
-                    <TimestampTooltip timestamp={entry.created_at}>
-                      <span>{formatTimestamp(entry.created_at)}</span>
-                    </TimestampTooltip>
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {entry.user_email || (entry.user_id ? 'Unknown User' : 'System')}
-                  </TableCell>
-                  <TableCell>{formatAction(entry.action, entry.details ?? undefined)}</TableCell>
-                  <TableCell>{formatResourceType(entry.resource_type)}</TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">
-                    {entry.resource_id ? entry.resource_id.slice(0, 8) + '...' : '-'}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">
-                    {entry.ip_address || '-'}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleViewDetails(entry)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pagination */}
-      {auditData && auditData.total > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Showing {auditData.offset + 1} to{' '}
-            {Math.min(auditData.offset + auditData.items.length, auditData.total)} of{' '}
-            {auditData.total} entries
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePrevPage}
-              disabled={currentPage === 0}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Previous
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {currentPage + 1} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleNextPage}
-              disabled={currentPage >= totalPages - 1}
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Detail Dialog */}
-      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
-          <DialogHeader>
-            <DialogTitle>Audit Log Details</DialogTitle>
-            <DialogDescription>
-              Full details for this audit event
-            </DialogDescription>
-          </DialogHeader>
-          {selectedEntry && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Timestamp:</span>
-                  <div className="font-medium">
-                    <TimestampTooltip timestamp={selectedEntry.created_at}>
-                      <span>{formatTimestamp(selectedEntry.created_at)}</span>
-                    </TimestampTooltip>
-                  </div>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">User:</span>
-                  <p className="font-medium">
-                    {selectedEntry.user_email || (selectedEntry.user_id ? 'Unknown User' : 'System')}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Action:</span>
-                  <p className="font-medium">{formatAction(selectedEntry.action, selectedEntry.details ?? undefined)}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Resource Type:</span>
-                  <p className="font-medium">{formatResourceType(selectedEntry.resource_type)}</p>
-                </div>
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">Resource ID:</span>
-                  <p className="font-mono text-sm">{selectedEntry.resource_id || '-'}</p>
-                </div>
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">Entry ID:</span>
-                  <p className="font-mono text-sm">{selectedEntry.id}</p>
-                </div>
-                {selectedEntry.user_id && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">User ID:</span>
-                    <p className="font-mono text-sm">{selectedEntry.user_id}</p>
-                  </div>
-                )}
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">IP Address:</span>
-                  <p className="font-mono text-sm">
-                    {selectedEntry.ip_address || (selectedEntry.details?.ip_address ? String(selectedEntry.details.ip_address) : '-')}
-                  </p>
-                </div>
+        {/* Filters */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label>Action</Label>
+                <Select value={actionFilter} onValueChange={(v) => { setActionFilter(v); setCurrentPage(0); }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Actions" />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover">
+                    <SelectItem value="all">All Actions</SelectItem>
+                    {actions.map((action) => (
+                      <SelectItem key={action} value={action}>
+                        {formatAction(action)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              {selectedEntry.details && Object.keys(selectedEntry.details).length > 0 && (
-                <div>
-                  <span className="text-muted-foreground text-sm">Details:</span>
-                  <pre className="mt-2 p-4 bg-muted rounded-md text-sm overflow-auto max-h-64">
-                    {JSON.stringify(selectedEntry.details, null, 2)}
-                  </pre>
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label>Resource Type</Label>
+                <Select value={resourceTypeFilter} onValueChange={(v) => { setResourceTypeFilter(v); setCurrentPage(0); }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 bg-popover">
+                    <SelectItem value="all">All Types</SelectItem>
+                    {resourceTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {formatResourceType(type)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Date Range</Label>
+                <DateRangePicker
+                  value={dateRange}
+                  onChange={(range) => { setDateRange(range); setCurrentPage(0); }}
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <Button variant="outline" onClick={resetFilters}>
+                  Reset
+                </Button>
+                <Button variant="outline" onClick={loadAuditLogs}>
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+          </CardContent>
+        </Card>
+
+        {error && (
+          <div className="bg-destructive/10 text-destructive p-3 rounded-md">
+            {error}
+          </div>
+        )}
+
+        {/* Tabbed results. The table renders once, driven by activeTab, so the
+            inactive panel never keeps a stale (unfiltered) copy mounted. */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AuditTab)}>
+          <TabsList>
+            <TabsTrigger value="activity">Activity Log</TabsTrigger>
+            <TabsTrigger value="deployments">Deployments</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value={activeTab} forceMount className="space-y-6">
+            {auditTable}
+          </TabsContent>
+        </Tabs>
+
+        {/* Pagination (shared) */}
+        {auditData && auditData.total > 0 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Showing {auditData.offset + 1} to{' '}
+              {Math.min(auditData.offset + auditData.items.length, auditData.total)} of{' '}
+              {auditData.total} entries
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePrevPage}
+                disabled={currentPage === 0}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {currentPage + 1} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleNextPage}
+                disabled={currentPage >= totalPages - 1}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Detail drawer */}
+        <AuditDetailDrawer
+          entry={selectedEntry}
+          open={isDetailOpen}
+          onOpenChange={setIsDetailOpen}
+          formatAction={formatAction}
+          formatResourceType={formatResourceType}
+        />
+      </div>
     </TooltipProvider>
   )
 }

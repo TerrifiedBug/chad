@@ -1,6 +1,7 @@
 from app.models.alert_comment import AlertComment
 from app.models.api_key import APIKey
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
+from app.models.audit_chain_tail import AuditChainTail
 from app.models.audit_log import AuditLog
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_rule_comment import CorrelationRuleComment
@@ -45,6 +46,7 @@ __all__ = [
     "APIKey",
     "EnrichmentWebhook",
     "AttackTechnique",
+    "AuditChainTail",
     "AuditLog",
     "CorrelationRule",
     "CorrelationRuleComment",
