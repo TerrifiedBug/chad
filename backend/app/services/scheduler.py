@@ -275,6 +275,9 @@ class SchedulerService:
             # Add threshold-match cleanup job (runs hourly)
             self._schedule_threshold_cleanup()
 
+            # Add git config-as-code sync drain job (runs every 30 seconds)
+            self._schedule_git_sync()
+
             # Add health-metrics retention cleanup job (runs daily)
             self._schedule_health_metrics_cleanup()
 
@@ -321,6 +324,52 @@ class SchedulerService:
             misfire_grace_time=300,  # 5 minute grace period
         )
         logger.info("Scheduled correlation_cleanup job (every 5 minutes)")
+
+    def _schedule_git_sync(self):
+        """Schedule the git config-as-code sync drain (every 30 seconds).
+
+        Drains the ``git_sync_jobs`` queue produced on rule deploys, pushing
+        each deployed rule's YAML to its environment's repo with bounded retry.
+        """
+        scheduler.add_job(
+            self._run_git_sync,
+            trigger=IntervalTrigger(seconds=30),
+            id="git_sync",
+            name="git config-as-code sync",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=30,
+        )
+        logger.info("Scheduled git_sync job (every 30 seconds)")
+
+    async def _run_git_sync(self):
+        """Execute the git sync drain with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:git_sync",
+            timeout=300,  # 5 minutes
+            job_func=self._execute_git_sync,
+        )
+
+    async def _execute_git_sync(self):
+        """Drain due git sync jobs."""
+        from app.services.git.git_sync_worker import process_git_sync_jobs
+
+        session = await self._get_session()
+        try:
+            processed = await process_git_sync_jobs(session)
+            if processed:
+                logger.info("Git sync: processed %s job(s)", processed)
+        except Exception as e:
+            logger.error("Scheduled git sync failed: %s", e)
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="git_sync",
+                message=f"Scheduled git sync failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
 
     def _schedule_threshold_cleanup(self):
         """Schedule cleanup of old threshold-match rows (hourly).

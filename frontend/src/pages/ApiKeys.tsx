@@ -140,7 +140,7 @@ export default function ApiKeysPage() {
         title="API Keys"
         description="Manage API keys for external integrations"
         breadcrumb={[
-          { label: 'Settings', href: '/settings/hub' },
+          { label: 'Settings', href: '/settings' },
           { label: 'API Keys' },
         ]}
         actions={

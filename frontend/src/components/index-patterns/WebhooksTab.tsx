@@ -137,7 +137,7 @@ export function WebhooksTab({ pattern, onDirtyChange, onPendingChange }: Webhook
           <p>No active enrichment webhooks configured.</p>
           <p className="text-sm mt-2">
             Configure webhooks in{' '}
-            <Link to="/settings?tab=enrichment" className="text-primary hover:underline">
+            <Link to="/settings/webhooks" className="text-primary hover:underline">
               Settings → Enrichment
             </Link>
           </p>

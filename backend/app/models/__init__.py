@@ -15,6 +15,7 @@ from app.models.deployment_request import (
 from app.models.enrichment_webhook import EnrichmentWebhook, IndexPatternEnrichmentWebhook
 from app.models.environment import Environment, RuleEnvironmentDeployment
 from app.models.field_mapping import FieldMapping, MappingOrigin
+from app.models.git_sync_job import GitSyncJob
 from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.health_check import HealthCheckLog
 from app.models.health_metrics import IndexHealthMetrics
@@ -69,6 +70,7 @@ __all__ = [
     "MISPImportedRule",
     "DEFAULT_ROLE_PERMISSIONS",
     "ExceptionOperator",
+    "GitSyncJob",
     "IndexPattern",
     "IndexPatternEnrichmentWebhook",
     "IndexPatternPollState",

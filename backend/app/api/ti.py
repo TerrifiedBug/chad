@@ -13,6 +13,8 @@ from app.db.session import get_db
 from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.user import User
 from app.services.audit import audit_log
+from app.services.enrichment import TI_CACHE_SETTING_KEY
+from app.services.settings import get_setting, set_setting
 from app.services.ti import (
     AbuseCHClient,
     AbuseIPDBClient,
@@ -23,6 +25,8 @@ from app.services.ti import (
     ThreatFoxClient,
     VirusTotalClient,
 )
+from app.services.ti.manager import DEFAULT_CACHE_TTL_SECONDS
+from app.services.ti.misp_auto_sighting import MISP_AUTO_PUSH_SETTING_KEY
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/ti", tags=["threat-intelligence"])
@@ -392,3 +396,76 @@ async def test_saved_ti_source(
     finally:
         if client:
             await client.close()
+
+
+# --------------------------------------------------------------------------- #
+# TI automation: MISP auto-sighting toggle (D) + enrichment cache TTL (E).
+# --------------------------------------------------------------------------- #
+class TIAutomationSettings(BaseModel):
+    """Operator controls for TI feedback + caching."""
+
+    misp_auto_push: bool = False
+    cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS
+
+
+class TIAutomationUpdate(BaseModel):
+    misp_auto_push: bool | None = None
+    cache_ttl_seconds: int | None = None
+
+
+@router.get("/automation/config", response_model=TIAutomationSettings)
+async def get_ti_automation(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    auto = await get_setting(db, MISP_AUTO_PUSH_SETTING_KEY)
+    cache = await get_setting(db, TI_CACHE_SETTING_KEY)
+    ttl = cache.get("cache_ttl_seconds") if cache else None
+    return TIAutomationSettings(
+        misp_auto_push=bool(auto and auto.get("enabled") is True),
+        cache_ttl_seconds=ttl if isinstance(ttl, int) else DEFAULT_CACHE_TTL_SECONDS,
+    )
+
+
+@router.put("/automation/config", response_model=TIAutomationSettings)
+async def update_ti_automation(
+    body: TIAutomationUpdate,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    if body.misp_auto_push is not None:
+        await set_setting(
+            db, MISP_AUTO_PUSH_SETTING_KEY, {"enabled": bool(body.misp_auto_push)}
+        )
+
+    ttl_changed = False
+    if body.cache_ttl_seconds is not None:
+        ttl = max(0, int(body.cache_ttl_seconds))
+        await set_setting(db, TI_CACHE_SETTING_KEY, {"cache_ttl_seconds": ttl})
+        ttl_changed = True
+
+    await audit_log(
+        db,
+        current_user.id,
+        "ti.automation.update",
+        "ti",
+        None,
+        {
+            "misp_auto_push": body.misp_auto_push,
+            "cache_ttl_seconds": body.cache_ttl_seconds,
+        },
+        ip_address=get_client_ip(request),
+    )
+
+    # Rebuild the TI manager so the new TTL applies and the stale cache is
+    # flushed (also re-fingerprints the cache key).
+    if ttl_changed:
+        from app.services.enrichment import reinitialize_ti_manager
+
+        try:
+            await reinitialize_ti_manager(db)
+        except Exception:  # pragma: no cover - best-effort; settings already saved
+            pass
+
+    return await get_ti_automation(db, current_user)

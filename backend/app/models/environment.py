@@ -64,6 +64,23 @@ class Environment(Base, UUIDMixin, TimestampMixin):
     )
     color: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
+    # --- Git config-as-code sync (Feature C). One-way push of this env's
+    # deployed rules to a repo. ``gitops_mode`` reserves the full VF enum but
+    # only ``off`` and ``push`` are implemented/selectable today. Secrets are
+    # Fernet-encrypted at rest; server_defaults keep existing rows valid. ---
+    git_repo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    git_branch: Mapped[str] = mapped_column(
+        String(255), default="main", server_default="main", nullable=False
+    )
+    git_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gitops_mode: Mapped[str] = mapped_column(
+        String(20), default="off", server_default="off", nullable=False
+    )
+    git_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    git_webhook_secret_encrypted: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+
     # Owning team (nullable = global / un-owned). SET NULL so deleting a team
     # un-teams its environments rather than cascading.
     team_id: Mapped[uuid.UUID | None] = mapped_column(

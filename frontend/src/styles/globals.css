@@ -96,37 +96,40 @@
        electric-green brand accent, and a full semantic status palette with
        12%-opacity -bg fills. The shadcn semantic vars below are re-mapped
        onto these so every existing component picks up the console look. */
+    /* Snapped 1:1 to VectorFlow's dark console palette (Tailwind-400 status
+       hues, tighter foreground scale). Light + Classic palettes below are left
+       untouched. */
     --bg: #0a0b0d;
-    --bg-1: #101216;
+    --bg-1: #0e1013;
     --bg-2: #14171c;
-    --bg-3: #1b1f26;
-    --bg-4: #232830;
-    --line: #20242b;
+    --bg-3: #1a1e25;
+    --bg-4: #252a32;
+    --line: #1f2329;
     --line-2: #2a2f38;
     --line-3: #363c47;
-    --fg: #e8eaed;
-    --fg-1: #c2c7cf;
-    --fg-2: #8b919c;
-    --fg-3: #5f6670;
+    --fg: #e6e8ec;
+    --fg-1: #a8adb6;
+    --fg-2: #6b727d;
+    --fg-3: #454b54;
     --accent-brand: #7dd957;
-    --accent-brand-2: #6bc845;
+    --accent-brand-2: #5fb83a;
     --accent-brand-soft: rgba(125, 217, 87, 0.12);
     --accent-brand-line: rgba(125, 217, 87, 0.35);
-    --status-healthy: #7dd957;
-    --status-healthy-bg: rgba(125, 217, 87, 0.12);
-    --status-healthy-foreground: #a6e889;
-    --status-degraded: #e0a829;
-    --status-degraded-bg: rgba(224, 168, 41, 0.12);
-    --status-degraded-foreground: #ecc25f;
-    --status-error: #f0594c;
-    --status-error-bg: rgba(240, 89, 76, 0.12);
-    --status-error-foreground: #f58178;
+    --status-healthy: #4ade80;
+    --status-healthy-bg: rgba(74, 222, 128, 0.12);
+    --status-healthy-foreground: #86efac;
+    --status-degraded: #fbbf24;
+    --status-degraded-bg: rgba(251, 191, 36, 0.12);
+    --status-degraded-foreground: #fcd34d;
+    --status-error: #f87171;
+    --status-error-bg: rgba(248, 113, 113, 0.12);
+    --status-error-foreground: #fca5a5;
     --status-neutral: #8b919c;
     --status-neutral-bg: rgba(139, 145, 156, 0.12);
     --status-neutral-foreground: #aab0ba;
-    --status-info: #58a6ff;
-    --status-info-bg: rgba(88, 166, 255, 0.12);
-    --status-info-foreground: #84bdff;
+    --status-info: #60a5fa;
+    --status-info-bg: rgba(96, 165, 250, 0.12);
+    --status-info-foreground: #93c5fd;
 
     /* shadcn semantic vars re-mapped onto the console tokens. These stay in
        HSL channel form because Tailwind wraps them in hsl(); the raw-hex
@@ -281,6 +284,14 @@
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  /* VF "type floor": square every pill/avatar to the 3px radius for the dark
+     console look (badges, avatars, chips). Scoped to the dark Sentinel theme so
+     the Light and Classic palettes keep their rounded shapes intact. Opt out
+     with .rounded-dot on genuine circular indicators (status / pulse dots). */
+  .dark:not(.palette-classic) .rounded-full:not(.rounded-dot) {
+    border-radius: var(--radius);
   }
 }
 

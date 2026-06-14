@@ -5,6 +5,7 @@ import { useVersion } from '@/hooks/use-version'
 import { useTheme } from '@/hooks/use-theme'
 import { NotificationBell } from '@/components/NotificationBell'
 import { EnvironmentSelector } from '@/components/EnvironmentSelector'
+import { TeamSwitcher } from '@/components/TeamSwitcher'
 import { AboutDialog } from '@/components/AboutDialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -131,8 +132,10 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
           )}
 
           <div className="flex items-center gap-1">
-            {/* Active-environment selector — scopes which env's deployment state
-                you view and which env deploys target (X-CHAD-Environment). */}
+            {/* Team picker (VF parity) then the active-environment selector —
+                env scopes which deployment state you view and which env deploys
+                target (X-CHAD-Environment). */}
+            {isAuthenticated && <TeamSwitcher />}
             {isAuthenticated && <EnvironmentSelector />}
             {isAuthenticated && (
               <Button
@@ -149,8 +152,9 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
             {isAuthenticated && user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full focus-visible:ring-0 focus-visible:ring-offset-0">
-                    <div className="h-7 w-7 rounded-full bg-accent-brand-soft flex items-center justify-center text-accent-brand font-mono text-[12px] font-semibold">
+                  <Button variant="ghost" size="icon" className="rounded-[3px] focus-visible:ring-0 focus-visible:ring-offset-0">
+                    {/* VF: 24px squared avatar with mono initials. */}
+                    <div className="h-6 w-6 rounded-[3px] bg-accent-brand-soft flex items-center justify-center text-accent-brand font-mono text-[12px] font-semibold">
                       {getUserInitial(user.email)}
                     </div>
                   </Button>
@@ -186,7 +190,7 @@ export function AppHeader({ onMobileMenuToggle, showMobileMenu, railExpanded = t
                     <Info className="mr-2 h-4 w-4" />
                     About CHAD
                     {updateAvailable && (
-                      <span className="ml-auto h-2 w-2 rounded-full bg-red-500" />
+                      <span className="ml-auto h-2 w-2 rounded-full rounded-dot bg-red-500" />
                     )}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />

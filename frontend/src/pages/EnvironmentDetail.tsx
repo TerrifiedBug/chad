@@ -1,11 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { environmentsApi, type Environment, type EnvironmentUpdate } from '@/lib/api'
+import {
+  environmentsApi,
+  type Environment,
+  type EnvironmentUpdate,
+  type GitOpsMode,
+  type EnvGitTestResult,
+} from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
 import { ENVIRONMENTS_QUERY_KEY } from '@/components/EnvironmentSelector'
 import { setActiveEnvironmentId } from '@/stores/environment-store'
+import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { KpiStrip, KpiTile } from '@/components/ui/kpi-tile'
@@ -14,6 +21,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { LoadingState } from '@/components/ui/loading-state'
 import {
@@ -224,6 +238,204 @@ function SettingsTab({ env }: { env: Environment }) {
   )
 }
 
+function GitTab({ env }: { env: Environment }) {
+  const queryClient = useQueryClient()
+  const { showToast } = useToast()
+  const { isAdmin, hasPermission } = useAuth()
+  const canManage = isAdmin || hasPermission('manage_environments')
+
+  const { data: cfg, isLoading } = useQuery({
+    queryKey: ['env-git', env.id],
+    queryFn: () => environmentsApi.git.get(env.id),
+  })
+
+  const [repoUrl, setRepoUrl] = useState('')
+  const [branch, setBranch] = useState('main')
+  const [mode, setMode] = useState<GitOpsMode>('off')
+  const [provider, setProvider] = useState('')
+  const [token, setToken] = useState('')
+  const [testResult, setTestResult] = useState<EnvGitTestResult | null>(null)
+
+  useEffect(() => {
+    if (cfg) {
+      setRepoUrl(cfg.git_repo_url ?? '')
+      setBranch(cfg.git_branch || 'main')
+      setMode(cfg.gitops_mode === 'push' ? 'push' : 'off')
+      setProvider(cfg.git_provider ?? '')
+    }
+  }, [cfg])
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['env-git', env.id] })
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      environmentsApi.git.update(env.id, {
+        git_repo_url: repoUrl.trim() || null,
+        git_branch: branch.trim() || 'main',
+        git_token: token || undefined,
+        gitops_mode: mode,
+        git_provider: provider.trim() || null,
+      }),
+    onSuccess: () => {
+      invalidate()
+      setToken('')
+      showToast('Git settings saved', 'success')
+    },
+    onError: (e) => showToast(e instanceof Error ? e.message : 'Save failed', 'error'),
+  })
+
+  const testMutation = useMutation({
+    mutationFn: () => environmentsApi.git.test(env.id),
+    onSuccess: (r) => {
+      setTestResult(r)
+      showToast(r.success ? 'Connection OK' : 'Connection failed', r.success ? 'success' : 'error')
+    },
+    onError: (e) =>
+      setTestResult({ success: false, error: e instanceof Error ? e.message : 'Test failed' }),
+  })
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => environmentsApi.git.disconnect(env.id),
+    onSuccess: () => {
+      invalidate()
+      setToken('')
+      setTestResult(null)
+      showToast('Git disconnected', 'success')
+    },
+    onError: (e) => showToast(e instanceof Error ? e.message : 'Disconnect failed', 'error'),
+  })
+
+  if (isLoading) return <LoadingState message="Loading git settings..." />
+
+  const hasToken = cfg?.has_token ?? false
+  const hasStoredRepo = !!cfg?.git_repo_url
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <Card>
+        <CardContent className="space-y-4 p-6">
+          <div>
+            <h3 className="text-sm font-semibold">Git integration</h3>
+            <p className="text-xs text-muted-foreground">
+              One-way push of this environment's deployed rules to a git repo
+              (config-as-code). On each successful deploy the rule's YAML is
+              committed at <code className="font-mono">&lt;env&gt;/&lt;rule&gt;.yml</code>.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="git-mode">Mode</Label>
+            <Select
+              value={mode}
+              onValueChange={(v) => setMode(v as GitOpsMode)}
+              disabled={!canManage}
+            >
+              <SelectTrigger id="git-mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">Off</SelectItem>
+                <SelectItem value="push">Push (one-way)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="git-repo">Repository URL</Label>
+            <Input
+              id="git-repo"
+              placeholder="https://github.com/org/repo.git"
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+              disabled={!canManage}
+              className="font-mono"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="git-branch">Branch</Label>
+            <Input
+              id="git-branch"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              disabled={!canManage}
+              className="font-mono"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="git-token">Access token</Label>
+            <Input
+              id="git-token"
+              type="password"
+              autoComplete="off"
+              placeholder={hasToken ? '•••••••• (stored — leave blank to keep)' : 'Personal access token'}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              disabled={!canManage}
+              className="font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              Stored encrypted; used only to push over HTTPS.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="git-provider">Provider (optional)</Label>
+            <Input
+              id="git-provider"
+              placeholder="github / gitlab"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              disabled={!canManage}
+            />
+          </div>
+
+          {testResult && (
+            <div
+              className={cn(
+                'rounded-[3px] p-3 text-sm',
+                testResult.success
+                  ? 'bg-status-healthy-bg text-status-healthy-foreground'
+                  : 'bg-destructive/10 text-destructive'
+              )}
+            >
+              {testResult.success
+                ? 'Connection successful.'
+                : testResult.error || 'Connection failed.'}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button onClick={() => saveMutation.mutate()} disabled={!canManage || saveMutation.isPending}>
+              Save
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => testMutation.mutate()}
+              disabled={!canManage || testMutation.isPending || !hasStoredRepo}
+              title={hasStoredRepo ? 'Tests the saved configuration' : 'Save a repository first'}
+            >
+              Test connection
+            </Button>
+            {(hasStoredRepo || hasToken) && (
+              <Button
+                variant="ghost"
+                className="text-destructive"
+                onClick={() => disconnectMutation.mutate()}
+                disabled={!canManage || disconnectMutation.isPending}
+              >
+                Disconnect
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export default function EnvironmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -283,12 +495,16 @@ export default function EnvironmentDetailPage() {
         <TabsList variant="line">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="git">Git</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="mt-6">
           <OverviewTab env={env} />
         </TabsContent>
         <TabsContent value="settings" className="mt-6">
           <SettingsTab env={env} />
+        </TabsContent>
+        <TabsContent value="git" className="mt-6">
+          <GitTab env={env} />
         </TabsContent>
       </Tabs>
     </div>

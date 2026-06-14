@@ -1,11 +1,12 @@
 // frontend/src/components/AppRail.tsx
 import { useState, useEffect, useRef } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
 import { useVersion } from '@/hooks/use-version'
 import { deploymentRequestsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { settingsNavGroups } from '@/config/settingsNav'
 import {
   Tooltip,
   TooltipContent,
@@ -23,6 +24,7 @@ import {
   Settings,
   GitPullRequest,
   Layers,
+  ArrowLeft,
 } from 'lucide-react'
 
 export type NavItem = {
@@ -70,7 +72,7 @@ export const navSections: NavSection[] = [
 ]
 
 export const settingsItem: NavItem = {
-  href: '/settings/hub',
+  href: '/settings',
   label: 'Settings',
   icon: Settings,
   permission: 'manage_settings',
@@ -85,8 +87,13 @@ interface AppRailProps {
 
 export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }: AppRailProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { hasPermission } = useAuth()
   const { version } = useVersion()
+
+  // In settings mode the rail slides from the main nav to a settings nav panel
+  // (VF "sidebar becomes the settings list"). Driven purely by the route.
+  const isSettingsMode = location.pathname.startsWith('/settings')
 
   // Pending deployment-approval count for the Approvals nav badge. Only fetched
   // for users who can see the item; degrades to no badge if the call fails.
@@ -178,7 +185,7 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
           <Icon className="h-[15px] w-[15px] flex-shrink-0" />
           {!expanded && showHealthDot && (
             <span className={cn(
-              'absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full',
+              'absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full rounded-dot',
               getStatusColor(healthStatus)
             )} />
           )}
@@ -188,13 +195,14 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
             <span className="flex-1">{item.label}</span>
             {showHealthDot && (
               <span className={cn(
-                'h-2 w-2 rounded-full',
+                'h-2 w-2 rounded-full rounded-dot',
                 getStatusColor(healthStatus)
               )} />
             )}
             {badge !== undefined && badge > 0 && (
               <span className={cn(
-                "rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground",
+                // VF: square red badge, mono 11px, capped 99+.
+                "inline-flex h-5 min-w-5 items-center justify-center rounded-[3px] bg-destructive px-1.5 font-mono text-[11px] text-destructive-foreground",
                 badgeAnimating && "animate-bounce-once"
               )}>
                 {badge > 99 ? '99+' : badge}
@@ -203,7 +211,7 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
           </>
         )}
         {!expanded && badge !== undefined && badge > 0 && (
-          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary" />
+          <span className="absolute right-1 top-1 h-2 w-2 rounded-full rounded-dot bg-destructive" />
         )}
       </Link>
     )
@@ -236,6 +244,53 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
     )
   }
 
+  // Settings nav panel rows (shown when isSettingsMode). Same density/active
+  // treatment as the main NavLink, but route-link based with no badges.
+  const SettingsNavLink = ({
+    item,
+  }: {
+    item: { href: string; label: string; icon: React.ElementType }
+  }) => {
+    const active = location.pathname === item.href
+    const Icon = item.icon
+    const content = (
+      <Link
+        to={item.href}
+        className={cn(
+          'flex h-[30px] items-center gap-[9px] rounded-[3px] border-l-2 border-transparent px-[9px] text-[13px] font-medium transition-colors',
+          'hover:bg-bg-3/60',
+          active
+            ? 'border-l-accent-brand bg-accent-brand-soft text-foreground font-semibold'
+            : 'text-fg-2',
+          !expanded && 'justify-center border-l-0 px-2'
+        )}
+      >
+        <Icon className="h-[15px] w-[15px] flex-shrink-0" />
+        {expanded && <span className="flex-1 truncate">{item.label}</span>}
+      </Link>
+    )
+    if (!expanded) {
+      return (
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <div className="relative">{content}</div>
+          </TooltipTrigger>
+          <TooltipContent side="right">{item.label}</TooltipContent>
+        </Tooltip>
+      )
+    }
+    return content
+  }
+
+  const visibleSettingsGroups = settingsNavGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) => !item.permission || hasPermission(item.permission)
+      ),
+    }))
+    .filter((group) => group.items.length > 0)
+
   return (
     <TooltipProvider>
       <aside
@@ -244,52 +299,102 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
           expanded ? 'w-[200px]' : 'w-14'
         )}
       >
-        {/* Rail header: VF puts the product mark in the sidebar header. Height
-            matches the AppHeader (52px) so the rail's bottom hairline lines up
-            flush with the header's — VF's shell keeps these two rules aligned. */}
-        <Link
-          to="/"
-          className={cn(
-            'flex h-[52px] flex-shrink-0 items-center gap-2 border-b border-line px-3',
-            !expanded && 'justify-center px-0'
-          )}
-          aria-label="CHAD home"
-        >
-          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[3px] bg-accent-brand-soft font-mono text-[12px] font-bold text-accent-brand">
-            C
-          </span>
-          {expanded && (
-            <span className="font-mono text-sm font-semibold tracking-tight">CHAD</span>
-          )}
-        </Link>
+        {/* Rail header: the product mark (main mode) flips to a back-to-app
+            affordance in settings mode — VF's "sidebar becomes settings".
+            Height matches the AppHeader (52px) so the hairlines stay flush. */}
+        {isSettingsMode ? (
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className={cn(
+              'flex h-[52px] flex-shrink-0 items-center gap-2 border-b border-line px-3 text-fg-2 transition-colors hover:text-fg',
+              !expanded && 'justify-center px-0'
+            )}
+            aria-label="Back to app"
+          >
+            <ArrowLeft className="h-[15px] w-[15px] flex-shrink-0" />
+            {expanded && (
+              <span className="font-mono text-sm font-semibold tracking-tight">Settings</span>
+            )}
+          </button>
+        ) : (
+          <Link
+            to="/"
+            className={cn(
+              'flex h-[52px] flex-shrink-0 items-center gap-2 border-b border-line px-3',
+              !expanded && 'justify-center px-0'
+            )}
+            aria-label="CHAD home"
+          >
+            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[3px] bg-accent-brand-soft font-mono text-[12px] font-bold text-accent-brand">
+              C
+            </span>
+            {expanded && (
+              <span className="font-mono text-sm font-semibold tracking-tight">CHAD</span>
+            )}
+          </Link>
+        )}
 
-        {/* Main navigation - starts at top */}
-        <nav className="flex-1 p-2 pt-1 overflow-y-auto">
-          {visibleSections.map((section, idx) => (
-            <div key={section.label}>
-              {idx > 0 && !expanded && <div className="my-2 mx-2 border-t border-line" />}
-              <SectionLabel label={section.label} />
-              <div className="space-y-1">
-                {section.items.map((item) => (
-                  <NavLink
-                    key={item.href}
-                    item={item}
-                    badge={
-                      item.href === '/alerts'
-                        ? alertCount
-                        : item.href === '/approvals'
-                          ? approvalsCount
-                          : undefined
-                    }
-                  />
-                ))}
+        {/* Sliding nav panels: the main nav and the settings nav are stacked
+            siblings; the route slides one in and the other out. */}
+        <div className="relative flex-1 overflow-hidden">
+          <nav
+            className={cn(
+              'absolute inset-0 overflow-y-auto p-2 pt-1 transition-transform duration-200 ease-out',
+              isSettingsMode
+                ? '-translate-x-full opacity-0 pointer-events-none'
+                : 'translate-x-0'
+            )}
+            aria-hidden={isSettingsMode}
+          >
+            {visibleSections.map((section, idx) => (
+              <div key={section.label}>
+                {idx > 0 && !expanded && <div className="my-2 mx-2 border-t border-line" />}
+                <SectionLabel label={section.label} />
+                <div className="space-y-1">
+                  {section.items.map((item) => (
+                    <NavLink
+                      key={item.href}
+                      item={item}
+                      badge={
+                        item.href === '/alerts'
+                          ? alertCount
+                          : item.href === '/approvals'
+                            ? approvalsCount
+                            : undefined
+                      }
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </nav>
+            ))}
+          </nav>
 
-        {/* Settings at bottom */}
-        {showSettings && (
+          <nav
+            className={cn(
+              'absolute inset-0 overflow-y-auto p-2 pt-1 transition-transform duration-200 ease-out',
+              isSettingsMode
+                ? 'translate-x-0'
+                : 'translate-x-full opacity-0 pointer-events-none'
+            )}
+            aria-hidden={!isSettingsMode}
+          >
+            {visibleSettingsGroups.map((group, idx) => (
+              <div key={group.label}>
+                {idx > 0 && !expanded && <div className="my-2 mx-2 border-t border-line" />}
+                <SectionLabel label={group.label} />
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <SettingsNavLink key={item.id} item={item} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </nav>
+        </div>
+
+        {/* Settings entry (main mode only — in settings mode the rail IS settings) */}
+        {showSettings && !isSettingsMode && (
           <div className="p-2">
             <NavLink item={settingsItem} />
           </div>
@@ -308,8 +413,8 @@ export function AppRail({ expanded, onExpandedChange, alertCount, healthStatus }
           )}
           <span className="inline-flex items-center gap-1.5">
             <span className="relative flex h-2 w-2 flex-shrink-0">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-accent-brand opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-brand" />
+              <span className="absolute inline-flex h-full w-full rounded-full rounded-dot bg-accent-brand opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full rounded-dot bg-accent-brand" />
             </span>
             {expanded && (
               <span className="vf-mono-xs truncate text-fg-3">All systems normal</span>

@@ -1441,6 +1441,28 @@ export type EnvironmentUpdate = Partial<EnvironmentCreate> & {
   is_default?: boolean
 }
 
+// --- Git config-as-code sync (one-way push). Only off/push are wired. ---
+export type GitOpsMode = 'off' | 'push'
+
+export type EnvGitConfig = {
+  git_repo_url: string | null
+  git_branch: string
+  gitops_mode: string
+  git_provider: string | null
+  has_token: boolean
+}
+
+export type EnvGitConfigUpdate = {
+  git_repo_url?: string | null
+  git_branch?: string
+  // Write-only: send to rotate the token, omit to keep the stored one.
+  git_token?: string | null
+  gitops_mode: GitOpsMode
+  git_provider?: string | null
+}
+
+export type EnvGitTestResult = { success: boolean; error?: string | null }
+
 // --- Promotion types (advance a target env's pinned version to the source's) ---
 // Request body for POST /environments/{targetId}/promote.
 export type PromoteRequest = {
@@ -1498,6 +1520,16 @@ export const environmentsApi = {
       }
     }
     return { pendingApproval: false, results: (data?.results ?? []) as PromoteRuleResult[] }
+  },
+  // Git config-as-code sync (one-way push). The token is write-only; the
+  // response masks it as has_token.
+  git: {
+    get: (id: string) => api.get<EnvGitConfig>(`/environments/${id}/git`),
+    update: (id: string, data: EnvGitConfigUpdate) =>
+      api.put<EnvGitConfig>(`/environments/${id}/git`, data),
+    test: (id: string) =>
+      api.post<EnvGitTestResult>(`/environments/${id}/git/test`, {}),
+    disconnect: (id: string) => api.delete(`/environments/${id}/git`),
   },
 }
 
@@ -2545,6 +2577,15 @@ export const tiApi = {
     api.post<TITestResponse>(`/ti/${sourceType}/test`, data),
   testSavedConnection: (sourceType: TISourceType) =>
     api.post<TITestResponse>(`/ti/${sourceType}/test-saved`),
+  // TI automation: MISP auto-sighting toggle + enrichment cache TTL.
+  getAutomation: () => api.get<TIAutomationSettings>('/ti/automation/config'),
+  updateAutomation: (data: Partial<TIAutomationSettings>) =>
+    api.put<TIAutomationSettings>('/ti/automation/config', data),
+}
+
+export type TIAutomationSettings = {
+  misp_auto_push: boolean
+  cache_ttl_seconds: number
 }
 
 // MISP Integration Types
