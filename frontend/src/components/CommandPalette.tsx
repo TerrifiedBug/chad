@@ -5,6 +5,7 @@ import { GitBranch, ScrollText, Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useAuth } from '@/hooks/use-auth'
 import { navSections, settingsItem } from '@/components/AppRail'
+import { allSettingsNavItems } from '@/config/settingsNav'
 import { cn } from '@/lib/utils'
 
 interface Command {
@@ -67,6 +68,18 @@ export function CommandPalette() {
       href: settingsItem.href,
       permission: settingsItem.permission,
     })
+
+    // Surface each settings sub-section so ⌘K can jump straight into it.
+    for (const item of allSettingsNavItems) {
+      navCommands.push({
+        id: `nav:${item.href}`,
+        label: `Settings: ${item.label}`,
+        group: 'Settings',
+        icon: item.icon,
+        href: item.href,
+        permission: item.permission ?? settingsItem.permission,
+      })
+    }
 
     const actions: Command[] = [
       { id: 'action:new-rule', label: 'New rule', group: 'Actions', icon: ScrollText, href: '/rules/new', permission: 'manage_rules' },

@@ -220,7 +220,7 @@ export function TIEnrichmentTab({ pattern, onDirtyChange, onPendingChange }: TIE
           <p>No enabled threat intelligence sources found.</p>
           <p className="text-sm mt-2">
             Configure and enable TI sources in{' '}
-            <Link to="/settings?tab=ti" className="text-primary hover:underline">
+            <Link to="/settings/ti" className="text-primary hover:underline">
               Settings → Threat Intel
             </Link>
           </p>

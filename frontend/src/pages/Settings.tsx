@@ -48,7 +48,7 @@ async function downloadWithAuth(url: string, filename: string) {
   window.URL.revokeObjectURL(downloadUrl)
 }
 
-export default function SettingsPage() {
+export default function SettingsPage({ activeTab: activeTabProp }: { activeTab?: string } = {}) {
   const { showToast } = useToast()
   const [searchParams] = useSearchParams()
   const [isLoading, setIsLoading] = useState(true)
@@ -73,8 +73,9 @@ export default function SettingsPage() {
   const [mandatoryCommentsDeployedOnly, setMandatoryCommentsDeployedOnly] = useState(false)
   const [requireDeployApproval, setRequireDeployApproval] = useState(false)
 
-  // Active tab for programmatic navigation - read from URL param if present
-  const activeTab = searchParams.get('tab') || 'general'
+  // Active tab. Prefer the explicit prop (route-driven /settings/<section>),
+  // falling back to the legacy ?tab= query param.
+  const activeTab = activeTabProp ?? (searchParams.get('tab') || 'general')
 
   // SigmaHQ sync settings
   const [sigmahqSyncEnabled, setSigmahqSyncEnabled] = useState(false)

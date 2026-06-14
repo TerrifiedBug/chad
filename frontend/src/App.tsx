@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import { ModeProvider } from '@/hooks/useMode'
@@ -18,6 +18,7 @@ import IndexPatternDetailPage from '@/pages/IndexPatternDetail'
 import AlertsPage from '@/pages/Alerts'
 import AlertDetailPage from '@/pages/AlertDetail'
 import SettingsHub from '@/pages/SettingsHub'
+import SettingsSection from '@/pages/settings/SettingsSection'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
 import SigmaHQPage from '@/pages/SigmaHQ'
@@ -51,6 +52,17 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>
+}
+
+// Legacy redirect: /settings/hub?tab=X (+ optional subtab) → /settings/X.
+function SettingsHubRedirect() {
+  const [params] = useSearchParams()
+  const tab = params.get('tab')
+  if (tab) {
+    const subtab = params.get('subtab')
+    return <Navigate to={`/settings/${tab}${subtab ? `?subtab=${subtab}` : ''}`} replace />
+  }
+  return <Navigate to="/settings" replace />
 }
 
 function AppRoutes() {
@@ -207,17 +219,23 @@ function AppRoutes() {
           <AppLayout><LiveAlertFeedPage /></AppLayout>
         </AuthRoute>
       } />
-      <Route path="/settings/hub" element={
+      {/* Settings overview grid. */}
+      <Route path="/settings" element={
         <ProtectedRoute permission="manage_settings">
           <AppLayout><SettingsHub /></AppLayout>
         </ProtectedRoute>
       } />
-      <Route path="/settings" element={<Navigate to="/settings/hub" replace />} />
-      {/* Redirect old standalone routes to hub tabs */}
-      <Route path="/settings/users" element={<Navigate to="/settings/hub?tab=users" replace />} />
-      <Route path="/settings/permissions" element={<Navigate to="/settings/hub?tab=users&subtab=roles" replace />} />
-      <Route path="/settings/audit" element={<Navigate to="/settings/hub?tab=audit" replace />} />
-      <Route path="/settings/system-logs" element={<Navigate to="/settings/hub?tab=system-logs" replace />} />
+      {/* Legacy /settings/hub?tab=X → /settings/X (keeps old links + bookmarks). */}
+      <Route path="/settings/hub" element={<SettingsHubRedirect />} />
+      {/* Permissions opens the Users page's roles subtab. */}
+      <Route path="/settings/permissions" element={<Navigate to="/settings/users?subtab=roles" replace />} />
+      {/* Per-section route (general, security, ti, users, audit, …). The static
+          /settings/api-keys route below still wins over this dynamic segment. */}
+      <Route path="/settings/:section" element={
+        <ProtectedRoute permission="manage_settings">
+          <AppLayout><SettingsSection /></AppLayout>
+        </ProtectedRoute>
+      } />
       <Route path="/change-password" element={
         <AuthRoute>
           <AppLayout><ChangePasswordPage /></AppLayout>
