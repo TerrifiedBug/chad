@@ -5,6 +5,32 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CHAD - Cyber Hunting And Detection</title>
+    <script>
+      // Apply the resolved theme class before first paint to avoid a flash.
+      // VF parity: dark "console" is the default when no preference is stored.
+      // Mirrors the resolution in src/hooks/use-theme.tsx (the React provider
+      // re-applies the same class on mount; the Classic palette class is also
+      // restored here so dark-Classic users don't flash the Sentinel palette).
+      (function () {
+        try {
+          var stored = localStorage.getItem("chad-ui-theme") || "dark";
+          var resolved = stored;
+          if (stored === "system") {
+            resolved = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          var root = document.documentElement;
+          root.classList.remove("light", "dark");
+          root.classList.add(resolved);
+          if (localStorage.getItem("chad-ui-palette") === "classic") {
+            root.classList.add("palette-classic");
+          }
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

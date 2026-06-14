@@ -22,6 +22,7 @@ import { ErrorAlert } from '@/components/ui/error-alert'
 import { ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/dashboard/StatCard'
+import { KpiStrip, KpiTile } from '@/components/ui/kpi-tile'
 import { SeverityPills } from '@/components/filters/SeverityPills'
 
 type RecentAlert = DashboardStats['recent_alerts'][number]
@@ -209,6 +210,31 @@ export default function Dashboard() {
           </Button>
         }
       />
+
+      {/* VF console KPI strip: dense mono accent metrics. */}
+      <KpiStrip>
+        <KpiTile
+          label="Alerts Today"
+          value={stats?.alerts.today ?? 0}
+          sublabel={`${stats?.alerts.total ?? 0} total`}
+          tone={(stats?.alerts.today || 0) > 10 ? 'degraded' : 'accent'}
+          onClick={() => navigate('/alerts')}
+        />
+        <KpiTile
+          label="New Alerts"
+          value={stats?.alerts.by_status?.new ?? 0}
+          sublabel={`${stats?.alerts.by_status?.acknowledged ?? 0} acknowledged`}
+          tone={(stats?.alerts.by_status?.new || 0) > 5 ? 'error' : 'default'}
+          onClick={() => navigate('/alerts?status=new')}
+        />
+        <KpiTile
+          label="IOC Matches Today"
+          value={stats?.ioc_matches?.today ?? 0}
+          sublabel={`${stats?.ioc_matches?.total ?? 0} total`}
+          tone={(stats?.ioc_matches?.today || 0) > 5 ? 'error' : (stats?.ioc_matches?.today || 0) > 0 ? 'degraded' : 'default'}
+          onClick={() => navigate('/ioc-matches')}
+        />
+      </KpiStrip>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

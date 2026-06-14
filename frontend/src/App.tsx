@@ -258,7 +258,7 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <ThemeProvider defaultTheme="system" storageKey="chad-ui-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="chad-ui-theme">
       <ToastProvider>
         <AuthProvider>
           <OpenSearchStatusProvider>

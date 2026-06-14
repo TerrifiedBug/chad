@@ -30,6 +30,12 @@ interface PageHeaderProps {
   badge?: PageHeaderBadge
   actions?: PageHeaderAction[] | React.ReactNode
   breadcrumb?: BreadcrumbItem[]
+  /**
+   * Optional VF-style meta row: mono 11px stats separated by a centered dot.
+   * Strings/numbers are joined with the dot separator; pass nodes to render
+   * custom content. Additive — existing callers don't set it.
+   */
+  meta?: React.ReactNode[]
   children?: React.ReactNode
   className?: string
 }
@@ -40,36 +46,54 @@ export function PageHeader({
   badge,
   actions,
   breadcrumb,
+  meta,
   children,
   className,
 }: PageHeaderProps) {
+  const metaItems = meta?.filter((m) => m !== null && m !== undefined && m !== '')
+
   return (
     <div className={cn('space-y-1', className)}>
       {breadcrumb && breadcrumb.length > 0 && (
         <Breadcrumb items={breadcrumb} className="mb-2" />
       )}
 
-      <div className="flex items-start justify-between gap-4">
+      {/* VF console: items-end with a hairline bottom border. */}
+      <div className="flex items-end justify-between gap-4 border-b border-line pb-4">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+            {/* 22px mono, tight tracking. title stays ReactNode for callers
+                that pass composed content. */}
+            <h1 className="font-mono text-[22px] font-semibold leading-tight tracking-tight">
+              {title}
+            </h1>
             {badge && (
               <Badge variant={badge.variant || 'secondary'}>{badge.label}</Badge>
             )}
           </div>
           {description && (
-            <p className="text-muted-foreground">{description}</p>
+            <p className="text-[13px] text-fg-2">{description}</p>
+          )}
+          {metaItems && metaItems.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5">
+              {metaItems.map((item, index) => (
+                <span key={index} className="flex items-center gap-2">
+                  {index > 0 && <span className="text-fg-3" aria-hidden>·</span>}
+                  <span className="vf-meta text-fg-2">{item}</span>
+                </span>
+              ))}
+            </div>
           )}
         </div>
 
         {actions && (
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex flex-shrink-0 items-center gap-2">
             {Array.isArray(actions) ? (
               actions.map((action, index) => {
                 const Icon = action.icon
                 const buttonContent = (
                   <>
-                    {Icon && <Icon className="h-4 w-4 mr-2" />}
+                    {Icon && <Icon className="mr-2 h-4 w-4" />}
                     {action.label}
                   </>
                 )

@@ -63,19 +63,27 @@ export function EmptyState({ icon, title, description, action, tips, className }
     return <div className="mt-4">{action}</div>
   }
 
+  // VF console glyph-tile: a 64px bordered tile holds the icon, a mono title,
+  // helper copy, and `$`-prompt helper lines for the tips. Same props as
+  // before (icon/title/description/action/tips/className) so every call site
+  // is untouched.
   return (
     <div className={cn('flex flex-col items-center justify-center py-12 text-center', className)}>
-      {icon && <div className="mb-4 text-muted-foreground">{icon}</div>}
-      <h3 className="text-lg font-medium">{title}</h3>
-      {description && <p className="mt-1 text-sm text-muted-foreground max-w-sm">{description}</p>}
+      {icon && (
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[3px] border border-line bg-bg-2 text-fg-2">
+          {icon}
+        </div>
+      )}
+      <h3 className="font-mono text-[15px] font-semibold tracking-tight text-fg">{title}</h3>
+      {description && <p className="mt-1 max-w-sm text-sm text-fg-2">{description}</p>}
       {renderAction()}
       {tips && tips.length > 0 && (
-        <div className="mt-6 text-left max-w-md">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Tips</p>
+        <div className="mt-6 max-w-md text-left">
+          <p className="vf-thead mb-2 text-fg-3">Tips</p>
           <ul className="space-y-1">
             {tips.map((tip, index) => (
-              <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                <span className="text-primary">•</span>
+              <li key={index} className="flex items-start gap-2 font-mono text-[12px] text-fg-2">
+                <span className="select-none text-accent-brand">$</span>
                 <span>{tip}</span>
               </li>
             ))}
