@@ -59,6 +59,7 @@ import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { MISPOriginPanel } from '@/components/MISPOriginPanel'
 import { DeployDialog } from '@/components/rules/DeployDialog'
 import { DeployStatusBadge } from '@/components/rules/DeployStatusBadge'
+import { EnvironmentBadge } from '@/components/EnvironmentBadge'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -1244,6 +1245,8 @@ export default function RuleEditorPage() {
             </div>
             {!isNew && (
               <div className="mt-1 flex items-center gap-2">
+                {/* Which env's deployment state this editor is showing. */}
+                <EnvironmentBadge />
                 <DeployStatusBadge
                   rule={{
                     status,

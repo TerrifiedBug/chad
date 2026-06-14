@@ -1,6 +1,7 @@
 // frontend/src/components/AppLayout.tsx
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useActiveEnvironmentId } from '@/stores/environment-store'
 import { cn } from '@/lib/utils'
 import { AppHeader } from '@/components/AppHeader'
 import { OpenSearchBanner } from '@/components/OpenSearchBanner'
@@ -35,6 +36,29 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Subscribe to bulk-deploy progress over /ws so the persistent panel works
   // even if the user navigates away from the Rules page mid-deploy.
   useDeployProgressWs()
+
+  // On environment switch, redirect out of any resource *detail* route back to
+  // its list (e.g. /rules/:id -> /rules). A detail view shows one env's
+  // deployment state; after switching envs that view would be stale / may not
+  // even exist in the new env, so we bounce to the list which re-fetches scoped
+  // to the now-active env. We track the prior id in a ref so the redirect fires
+  // only on an actual change, never on first mount.
+  const activeEnvironmentId = useActiveEnvironmentId()
+  const prevEnvironmentIdRef = useRef(activeEnvironmentId)
+  useEffect(() => {
+    const prev = prevEnvironmentIdRef.current
+    if (prev !== null && prev !== activeEnvironmentId) {
+      // Section detail routes look like /{section}/{id}. The environments pages
+      // are intentionally not env-scoped, so they're excluded.
+      const match = location.pathname.match(
+        /^\/(rules|alerts|index-patterns|correlation)\/([^/]+)$/
+      )
+      if (match && match[2] !== 'new') {
+        navigate(`/${match[1]}`, { replace: true })
+      }
+    }
+    prevEnvironmentIdRef.current = activeEnvironmentId
+  }, [activeEnvironmentId, location.pathname, navigate])
 
   const focusSearch = useCallback(() => {
     const searchInput = document.querySelector<HTMLInputElement>(

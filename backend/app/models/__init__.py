@@ -13,6 +13,7 @@ from app.models.deployment_request import (
     DeploymentRequestStatus,
 )
 from app.models.enrichment_webhook import EnrichmentWebhook, IndexPatternEnrichmentWebhook
+from app.models.environment import Environment, RuleEnvironmentDeployment
 from app.models.field_mapping import FieldMapping, MappingOrigin
 from app.models.health_alert_suppression import HealthAlertSuppression
 from app.models.health_check import HealthCheckLog
@@ -46,6 +47,8 @@ __all__ = [
     "AlertNotificationSetting",
     "APIKey",
     "EnrichmentWebhook",
+    "Environment",
+    "RuleEnvironmentDeployment",
     "AttackTechnique",
     "AuditChainTail",
     "AuditLog",

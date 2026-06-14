@@ -39,6 +39,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_sigmahq": True,
         "manage_correlation": True,
         "view_system_logs": True,
+        "manage_environments": True,
     },
     "analyst": {
         "manage_users": False,
@@ -55,6 +56,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_sigmahq": True,
         "manage_correlation": True,
         "view_system_logs": True,
+        "manage_environments": False,
     },
     "viewer": {
         "manage_users": False,
@@ -69,6 +71,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "manage_sigmahq": False,
         "manage_correlation": False,
         "view_system_logs": False,
+        "manage_environments": False,
     },
 }
 
@@ -85,4 +88,5 @@ PERMISSION_DESCRIPTIONS = {
     "manage_sigmahq": "Sync and import SigmaHQ rules",
     "manage_correlation": "Create, edit, and delete correlation rules",
     "view_system_logs": "Access the system log viewer",
+    "manage_environments": "Create, edit, and delete deployment environments",
 }

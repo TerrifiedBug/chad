@@ -29,6 +29,57 @@ class TestPercolatorIndexNaming:
         assert service.get_percolator_index_name("specific-index") == "chad-percolator-specific-index"
 
 
+class TestPercolatorPerEnvNaming:
+    """Per-environment percolator namespace (Model B). Default/legacy env keeps
+    the unprefixed legacy name; non-default envs get a slug prefix."""
+
+    def _env(self, name, is_default=False, prefix=None):
+        env = MagicMock()
+        env.name = name
+        env.is_default = is_default
+        env.opensearch_index_prefix = prefix
+        # Mirror the real Environment.slug property.
+        from app.models.environment import environment_slug
+
+        env.slug = environment_slug(prefix or name)
+        return env
+
+    def test_environment_none_is_legacy_name(self):
+        """environment=None (legacy callers) -> unprefixed legacy name (no re-index)."""
+        service = PercolatorService(MagicMock())
+        assert (
+            service.get_percolator_index_name("logs-windows-*", environment=None)
+            == "chad-percolator-logs-windows"
+        )
+
+    def test_default_environment_is_legacy_name(self):
+        """The default env MUST resolve to the existing legacy name (back-compat)."""
+        service = PercolatorService(MagicMock())
+        default_env = self._env("Production", is_default=True)
+        assert (
+            service.get_percolator_index_name("logs-windows-*", environment=default_env)
+            == "chad-percolator-logs-windows"
+        )
+
+    def test_non_default_environment_is_prefixed(self):
+        """A non-default env namespaces the percolator index with its slug."""
+        service = PercolatorService(MagicMock())
+        dev_env = self._env("Dev Cluster", is_default=False)
+        assert (
+            service.get_percolator_index_name("logs-windows-*", environment=dev_env)
+            == "chad-percolator-dev-cluster-logs-windows"
+        )
+
+    def test_non_default_environment_explicit_prefix(self):
+        """opensearch_index_prefix overrides the name-derived slug."""
+        service = PercolatorService(MagicMock())
+        env = self._env("Staging", is_default=False, prefix="stg")
+        assert (
+            service.get_percolator_index_name("logs-windows-*", environment=env)
+            == "chad-percolator-stg-logs-windows"
+        )
+
+
 class TestPercolatorServiceMocked:
     """Test percolator service with mocked OpenSearch client."""
 

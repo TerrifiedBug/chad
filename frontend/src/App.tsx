@@ -30,6 +30,8 @@ import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
 import LiveAlertFeedPage from '@/pages/LiveAlertFeed'
 import IOCMatchesPage from '@/pages/IOCMatches'
 import ApprovalsPage from '@/pages/Approvals'
+import EnvironmentsPage from '@/pages/Environments'
+import EnvironmentDetailPage from '@/pages/EnvironmentDetail'
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -189,6 +191,16 @@ function AppRoutes() {
         <AuthRoute>
           <AppLayout><ApprovalsPage /></AppLayout>
         </AuthRoute>
+      } />
+      <Route path="/environments" element={
+        <ProtectedRoute permission="manage_environments">
+          <AppLayout><EnvironmentsPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/environments/:id" element={
+        <ProtectedRoute permission="manage_environments">
+          <AppLayout><EnvironmentDetailPage /></AppLayout>
+        </ProtectedRoute>
       } />
       <Route path="/live" element={
         <AuthRoute>

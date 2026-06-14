@@ -20,6 +20,7 @@ from app.api.correlation_rules import router as correlation_rules_router
 from app.api.deployment_requests import router as deployment_requests_router
 from app.api.deps import get_db
 from app.api.enrichment_webhooks import router as enrichment_webhooks_router
+from app.api.environments import router as environments_router
 from app.api.export import router as export_router
 from app.api.external import router as external_router
 from app.api.field_mappings import router as field_mappings_router
@@ -392,6 +393,7 @@ app.include_router(misp_sync_router, prefix="/api")
 app.include_router(correlation_rules_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
+app.include_router(environments_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
 app.include_router(sso_router, prefix="/api")
 app.include_router(scim_router, prefix="/api")
