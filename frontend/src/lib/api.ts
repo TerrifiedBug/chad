@@ -791,6 +791,10 @@ export type DeploymentRequestResponse = {
   item_count: number
   rule_titles: string[]
   age_seconds: number
+  // Populated when this request is a promotion into a specific target env (the
+  // dual-control `target_environment_id` seam). Null/absent for plain deploys —
+  // older backends omit it entirely, so treat undefined as "no target env".
+  target_environment_id?: string | null
 }
 
 export type DeploymentRequestItemDetail = {
@@ -1437,6 +1441,29 @@ export type EnvironmentUpdate = Partial<EnvironmentCreate> & {
   is_default?: boolean
 }
 
+// --- Promotion types (advance a target env's pinned version to the source's) ---
+// Request body for POST /environments/{targetId}/promote.
+export type PromoteRequest = {
+  rule_ids: string[]
+  // The env the pinned version is taken FROM (the active env in the UI).
+  source_environment_id: string
+  change_reason: string
+}
+
+// Per-rule outcome when the promotion applied immediately (target env gate OFF).
+export type PromoteRuleResult = {
+  rule_id: string
+  status: string
+  reason?: string | null
+}
+
+// Discriminated result for promote(): either it applied immediately (gate OFF)
+// returning per-rule results, or a deployment request was filed for review
+// (target env require_deploy_approval is on / 202).
+export type PromoteResult =
+  | { pendingApproval: false; results: PromoteRuleResult[] }
+  | { pendingApproval: true; requestId: string; message: string }
+
 // Environments API. List is team-scoped server-side (returns the envs the
 // current user's team(s) can see). Mutations require manage_environments/admin.
 export const environmentsApi = {
@@ -1453,6 +1480,25 @@ export const environmentsApi = {
   // Mark this env as the team default (unsets the prior default server-side).
   setDefault: (id: string) =>
     api.patch<Environment>(`/environments/${id}`, { is_default: true }),
+  // Promote the pinned source-env version of each rule into the target env.
+  // Returns 200 with per-rule results (applied) or 202 pending_approval when
+  // the target env's require_deploy_approval gate is on — same seam as deploy().
+  promote: async (targetId: string, body: PromoteRequest): Promise<PromoteResult> => {
+    const { status, body: data } = await postRaw(
+      `/environments/${targetId}/promote`,
+      body,
+      'promote'
+    )
+    // 202 = target env requires approval; a deployment request was filed.
+    if (status === 202 && data?.status === 'pending_approval') {
+      return {
+        pendingApproval: true,
+        requestId: data.deployment_request_id,
+        message: data.message,
+      }
+    }
+    return { pendingApproval: false, results: (data?.results ?? []) as PromoteRuleResult[] }
+  },
 }
 
 // --- SSO / OIDC provider types ---

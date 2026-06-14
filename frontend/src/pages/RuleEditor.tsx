@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link, Beaker, TestTube, TrendingUp, ShieldAlert, GitCompare } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link, Beaker, TestTube, TrendingUp, ShieldAlert, GitCompare, ArrowUpToLine } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -58,8 +58,10 @@ import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { MISPOriginPanel } from '@/components/MISPOriginPanel'
 import { DeployDialog } from '@/components/rules/DeployDialog'
+import { PromoteDialog } from '@/components/rules/PromoteDialog'
 import { DeployStatusBadge } from '@/components/rules/DeployStatusBadge'
 import { EnvironmentBadge } from '@/components/EnvironmentBadge'
+import { useActiveEnvironmentId } from '@/stores/environment-store'
 
 const DEFAULT_RULE = `title: My Detection Rule
 status: experimental
@@ -88,6 +90,7 @@ export default function RuleEditorPage() {
   const location = useLocation()
   const { hasPermission } = useAuth()
   const { showToast } = useToast()
+  const activeEnvironmentId = useActiveEnvironmentId()
   const isNew = !id || id === 'new'
   const canManageRules = hasPermission('manage_rules')
 
@@ -238,6 +241,8 @@ export default function RuleEditorPage() {
 
   // New multi-step deploy dialog (replaces inline reason + pre-deployment modal)
   const [showDeployDialog, setShowDeployDialog] = useState(false)
+  // Multi-step promote dialog (advance a target env to the active env's version)
+  const [showPromoteDialog, setShowPromoteDialog] = useState(false)
   // Public dual-control gate flag (advisory; the 202 result is authoritative)
   const [requireDeployApproval, setRequireDeployApproval] = useState(false)
 
@@ -1348,6 +1353,14 @@ export default function RuleEditorPage() {
                     disabled={!canManageRules || isRollbackRedeploying}
                   >
                     <RotateCcw className="mr-2 h-4 w-4" /> Roll back &amp; redeploy v{deployedVersion}
+                  </DropdownMenuItem>
+                )}
+                {deployedVersion != null && (
+                  <DropdownMenuItem
+                    onClick={() => setShowPromoteDialog(true)}
+                    disabled={!canManageRules}
+                  >
+                    <ArrowUpToLine className="mr-2 h-4 w-4" /> Promote to environment…
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
@@ -2608,6 +2621,17 @@ export default function RuleEditorPage() {
           ruleTitle={title || 'Untitled Rule'}
           requiresApproval={requireDeployApproval}
           onDeployed={handleDeployed}
+        />
+      )}
+
+      {/* Multi-step Promote Dialog (Target → Preflight → Diff → Reason → Confirm) */}
+      {id && (
+        <PromoteDialog
+          open={showPromoteDialog}
+          onOpenChange={setShowPromoteDialog}
+          rules={[{ id, title: title || 'Untitled Rule' }]}
+          sourceEnvironmentId={activeEnvironmentId}
+          onPromoted={() => loadRule()}
         />
       )}
 
