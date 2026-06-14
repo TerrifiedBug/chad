@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   tiApi,
   TISourceConfig,
   TISourceType,
   TISourceConfigUpdate,
   TI_SOURCE_INFO,
+  type TIAutomationSettings,
 } from '@/lib/api'
 import { MISPSyncDashboard } from '@/components/ti/MISPSyncDashboard'
 import { useToast } from '@/components/ui/toast-provider'
@@ -33,6 +35,88 @@ type SourceFormState = {
   isTesting: boolean
   isSaving: boolean
   testResult: { success: boolean; error?: string | null } | null
+}
+
+function TIAutomationCard() {
+  const { showToast } = useToast()
+  const queryClient = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['ti-automation'],
+    queryFn: () => tiApi.getAutomation(),
+  })
+  const [ttl, setTtl] = useState('')
+  useEffect(() => {
+    if (data) setTtl(String(data.cache_ttl_seconds))
+  }, [data])
+
+  const mutation = useMutation({
+    mutationFn: (patch: Partial<TIAutomationSettings>) => tiApi.updateAutomation(patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ti-automation'] })
+      showToast('TI automation updated', 'success')
+    },
+    onError: (e) => showToast(e instanceof Error ? e.message : 'Update failed', 'error'),
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Shield className="h-5 w-5" />
+          TI Automation
+        </CardTitle>
+        <div className="text-sm text-muted-foreground">
+          Feed sightings back to MISP and tune enrichment caching.
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between rounded-[3px] border border-line p-4">
+          <div className="space-y-0.5">
+            <Label htmlFor="misp-auto-push">Auto-record MISP sightings</Label>
+            <p className="text-xs text-muted-foreground">
+              When an alert matches an IOC pulled from MISP, record a sighting back
+              to MISP. Sightings only — never creates events.
+            </p>
+          </div>
+          <Switch
+            id="misp-auto-push"
+            checked={data?.misp_auto_push ?? false}
+            disabled={mutation.isPending}
+            onCheckedChange={(c) => mutation.mutate({ misp_auto_push: c })}
+          />
+        </div>
+
+        <div className="space-y-2 rounded-[3px] border border-line p-4">
+          <Label htmlFor="ti-cache-ttl">Enrichment cache TTL (seconds)</Label>
+          <p className="text-xs text-muted-foreground">
+            How long aggregated TI lookups are cached in Redis to avoid hammering
+            provider APIs. Saving flushes the existing cache.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              id="ti-cache-ttl"
+              type="number"
+              min={0}
+              value={ttl}
+              onChange={(e) => setTtl(e.target.value)}
+              className="font-mono max-w-[160px]"
+            />
+            <Button
+              variant="outline"
+              disabled={
+                mutation.isPending ||
+                ttl === '' ||
+                Number(ttl) === data?.cache_ttl_seconds
+              }
+              onClick={() => mutation.mutate({ cache_ttl_seconds: Math.max(0, Number(ttl)) })}
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function TISettings() {
@@ -218,6 +302,7 @@ export default function TISettings() {
 
   return (
     <div className="space-y-6">
+      <TIAutomationCard />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
