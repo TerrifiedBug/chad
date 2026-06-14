@@ -59,10 +59,23 @@ export default function LoginPage() {
     return null
   }
 
-  const handleSsoLogin = () => {
-    // Redirect to SSO login endpoint
-    window.location.href = authApi.getSsoLoginUrl()
+  const handleSsoLogin = (providerId?: string) => {
+    // Redirect to the (optionally provider-scoped) SSO login endpoint.
+    window.location.href = authApi.getSsoLoginUrl(providerId)
   }
+
+  // Normalize the status into a provider list. Prefer the multi-provider
+  // `providers` array; fall back to the legacy single-provider scalar fields so
+  // older backends keep working (one unnamed/global provider button).
+  const ssoProviders =
+    ssoStatus?.providers && ssoStatus.providers.length > 0
+      ? ssoStatus.providers
+      : ssoStatus?.enabled && ssoStatus?.configured
+        ? [{ id: '', name: ssoStatus.provider_name || 'SSO' }]
+        : []
+  const ssoAvailable = ssoProviders.length > 0
+  // Enforcement: prefer the new flag, fall back to the legacy `sso_only` alias.
+  const ssoEnforced = ssoStatus?.sso_enforced ?? ssoStatus?.sso_only ?? false
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -180,7 +193,7 @@ export default function LoginPage() {
                 Back to Login
               </Button>
             </form>
-          ) : ssoStatus?.sso_only ? (
+          ) : ssoEnforced ? (
             // SSO-Only Mode: Show only SSO login
             <div className="space-y-4">
               {/* Header message */}
@@ -190,32 +203,37 @@ export default function LoginPage() {
                   SSO Authentication Required
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  Please sign in using {ssoStatus.provider_name || 'SSO'} to access CHAD.
+                  Please sign in with your identity provider to access CHAD.
                 </p>
               </div>
 
-              {/* SSO Login Button */}
+              {/* SSO Login Buttons — one per enabled provider */}
               {ssoLoading ? (
                 <div className="flex items-center justify-center">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 </div>
-              ) : ssoStatus?.enabled && ssoStatus?.configured ? (
-                <Button
-                  type="button"
-                  variant="default"
-                  className="w-full"
-                  onClick={handleSsoLogin}
-                >
-                  <Shield className="h-4 w-4 mr-2" />
-                  Sign in with {ssoStatus.provider_name}
-                </Button>
+              ) : ssoAvailable ? (
+                <div className="space-y-2">
+                  {ssoProviders.map((provider) => (
+                    <Button
+                      key={provider.id || provider.name}
+                      type="button"
+                      variant="default"
+                      className="w-full"
+                      onClick={() => handleSsoLogin(provider.id || undefined)}
+                    >
+                      <Shield className="h-4 w-4 mr-2" />
+                      Sign in with {provider.name}
+                    </Button>
+                  ))}
+                </div>
               ) : (
                 /* Fallback: SSO not configured */
                 <div className="text-destructive text-sm text-center p-4 bg-destructive/10 rounded-md">
                   <Shield className="h-8 w-8 mx-auto mb-2" />
                   <p className="font-medium">Authentication Error</p>
                   <p className="mt-1">
-                    SSO-only mode is enabled, but SSO is not configured.
+                    SSO-only mode is enabled, but no SSO provider is configured.
                     <br />
                     Please contact your administrator.
                   </p>
@@ -257,12 +275,12 @@ export default function LoginPage() {
                 </Button>
               </form>
 
-              {/* SSO Login */}
+              {/* SSO Login — one button per enabled provider */}
               {ssoLoading ? (
                 <div className="mt-6 pt-6 border-t flex items-center justify-center">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 </div>
-              ) : ssoStatus?.enabled && ssoStatus?.configured ? (
+              ) : ssoAvailable ? (
                 <div className="mt-6 pt-6 border-t">
                   <div className="relative mb-4">
                     <div className="absolute inset-0 flex items-center">
@@ -272,14 +290,19 @@ export default function LoginPage() {
                       <span className="bg-card px-2 text-muted-foreground">Or</span>
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleSsoLogin}
-                  >
-                    Sign in with {ssoStatus.provider_name}
-                  </Button>
+                  <div className="space-y-2">
+                    {ssoProviders.map((provider) => (
+                      <Button
+                        key={provider.id || provider.name}
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => handleSsoLogin(provider.id || undefined)}
+                      >
+                        Sign in with {provider.name}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 

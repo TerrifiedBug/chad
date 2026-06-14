@@ -143,6 +143,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     EXEMPT_PREFIXES = (
         "/api/logs/",  # Log ingestion uses per-index-pattern auth tokens
         "/api/external/",  # External API uses API keys
+        "/api/scim/",  # SCIM 2.0 uses a constant-time bearer token (IdP-driven)
     )
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

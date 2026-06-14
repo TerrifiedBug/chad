@@ -33,12 +33,13 @@ from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
 from app.models.rule_exception import ExceptionOperator, RuleException
 from app.models.setting import Setting
+from app.models.sso_provider import SSOGroupMapping, SSOProvider
 from app.models.system_log import SystemLog
 from app.models.team import Team
 from app.models.threshold_state import ThresholdMatch
 from app.models.ti_config import TISourceConfig, TISourceType
 from app.models.two_factor_token import TwoFactorToken
-from app.models.user import User, UserRole
+from app.models.user import AuthMethod, ProvisionedVia, TeamSource, User, UserRole
 
 __all__ = [
     "AlertComment",
@@ -79,13 +80,18 @@ __all__ = [
     "RuleStatus",
     "RuleVersion",
     "Setting",
+    "SSOGroupMapping",
+    "SSOProvider",
     "SystemLog",
     "SystemNotificationSetting",
     "Team",
+    "TeamSource",
     "ThresholdMatch",
     "TISourceConfig",
     "TISourceType",
     "TwoFactorToken",
+    "AuthMethod",
+    "ProvisionedVia",
     "User",
     "UserRole",
     "Webhook",
