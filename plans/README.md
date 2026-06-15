@@ -15,13 +15,13 @@ not re-audited.
 | Plan | Title | Priority | Effort | Risk | Depends on | Status |
 |------|-------|----------|--------|------|------------|--------|
 | 001 | Make CI actually gate backend (tests, lint, typecheck) | P1 | M | MED | — | TODO |
-| 002 | Fix naive `datetime.utcnow()` in correlation engine | P1 | S | LOW | 001* | TODO |
-| 003 | Code-split heavy frontend routes (Monaco, rare pages) | P2 | M | MED | — | TODO |
-| 004 | Encrypt pending TOTP setup secret at rest | P2 | S | LOW | 001* | TODO |
-| 005 | Harden AI Copilot prompts against injection | P2 | S | LOW | 001* | TODO |
-| 006 | Webhook SSRF hardening (fail-closed DNS, no-redirect) | P2 | S | LOW | 001* | TODO |
-| 009 | SPIKE: investigate alert org/team tenant isolation | P2 | S | LOW | — | TODO |
-| 007 | Bound & name the alert-list over-fetch | P3 | S | LOW | 001* | TODO |
+| 002 | Fix naive `datetime.utcnow()` in correlation engine | P1 | S | LOW | 001* | DONE |
+| 003 | Code-split heavy frontend routes (Monaco, rare pages) | P2 | M | MED | — | DONE |
+| 004 | Encrypt pending TOTP setup secret at rest | P2 | S | LOW | 001* | DONE |
+| 005 | Harden AI Copilot prompts against injection | P2 | S | LOW | 001* | DONE |
+| 006 | Webhook SSRF hardening (fail-closed DNS, no-redirect) | P2 | S | LOW | 001* | DONE |
+| 009 | SPIKE: investigate alert org/team tenant isolation | P2 | S | LOW | — | DONE (verdict: latent — see 009-findings.md) |
+| 007 | Bound & name the alert-list over-fetch | P3 | S | LOW | 001* | DONE |
 | 008 | Consolidate duplicated nested-dict helpers | P3 | S | LOW | — | TODO |
 | 010 | Decompose `api/rules.py` god module (URL-preserving) | P3 | L | HIGH | 001 | TODO |
 
