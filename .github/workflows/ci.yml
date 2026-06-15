@@ -61,6 +61,11 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/chad_test
           SECRET_KEY: test-secret-key-for-ci
           OPENSEARCH_URL: http://localhost:9200
+          # Strong, non-default test secrets (>=32 chars, not on the insecure-default
+          # list) so Settings validation passes at conftest import. CI-only values.
+          JWT_SECRET_KEY: ci-test-jwt-secret-not-for-production-use-0123456789
+          SESSION_SECRET_KEY: ci-test-session-secret-not-for-production-0123456789
+          CHAD_ENCRYPTION_KEY: ci-test-encryption-key-not-for-production-0123456789
         run: |
           cd backend
           pytest --cov=app --cov-report=xml
