@@ -266,6 +266,7 @@ export type UpdateCheckResponse = {
 // Security settings types
 export type SecuritySettings = {
   force_2fa_on_signup: boolean
+  enforce_mfa?: boolean
   api_key_rate_limit: number
 }
 
@@ -795,6 +796,19 @@ export type DeploymentRequestResponse = {
   // dual-control `target_environment_id` seam). Null/absent for plain deploys —
   // older backends omit it entirely, so treat undefined as "no target env".
   target_environment_id?: string | null
+  // Maker-checker hardening (I3): quorum progress + approval SLA. Older backends
+  // omit these; treat undefined as a 1-approver request with no deadline.
+  required_approvals?: number
+  approvals_count?: number
+  approval_deadline?: string | null
+  is_overdue?: boolean
+}
+
+export type DeploymentRequestApprovalInfo = {
+  approver_id: string
+  approver_email: string | null
+  note: string | null
+  created_at: string
 }
 
 export type DeploymentRequestItemDetail = {
@@ -813,6 +827,7 @@ export type DeploymentRequestItemDetail = {
 
 export type DeploymentRequestDetailResponse = DeploymentRequestResponse & {
   items: DeploymentRequestItemDetail[]
+  approvals?: DeploymentRequestApprovalInfo[]
 }
 
 export type DeploymentRequestStats = {
@@ -849,6 +864,9 @@ export const deploymentRequestsApi = {
     }),
   cancel: (id: string) =>
     api.post<DeploymentRequestResponse>(`/deployment-requests/${id}/cancel`, {}),
+  // Re-file a fresh PENDING request from a rejected/stale/cancelled one (I3).
+  resubmit: (id: string) =>
+    api.post<DeploymentRequestResponse>(`/deployment-requests/${id}/resubmit`, {}),
 }
 
 // Governance / deployment settings (admin) — lives under notification settings
@@ -1090,6 +1108,9 @@ export type Alert = {
   owner_id?: string
   owner_username?: string
   owned_at?: string
+  // SLA: stamped by the breach-scan job once an open alert passes its target.
+  sla_breached?: boolean
+  sla_due_at?: string | null
   exception_created?: {
     exception_id: string
     field: string
@@ -1171,11 +1192,16 @@ export const alertsApi = {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
       return r
     }),
-  assign: async (alertId: string): Promise<{ message: string; owner: string }> => {
-    return api.post(`/alerts/${alertId}/assign`)
+  // Omit assigneeId to self-assign; pass a user id to assign a teammate.
+  assign: async (alertId: string, assigneeId?: string): Promise<{ message: string; owner: string }> => {
+    return api.post(`/alerts/${alertId}/assign`, assigneeId ? { assignee_id: assigneeId } : {})
   },
   unassign: async (alertId: string): Promise<{ message: string }> => {
     return api.post(`/alerts/${alertId}/unassign`)
+  },
+  // Users the current actor may assign alerts to (their team + self).
+  assignableUsers: async (): Promise<{ id: string; email: string }[]> => {
+    return api.get(`/alerts/assignable-users`)
   },
   getRelated: (alertId: string, limit?: number) => {
     const params = new URLSearchParams()
@@ -1294,6 +1320,9 @@ export const usersApi = {
     api.post<{ temporary_password: string; message: string }>(
       `/users/${userId}/reset-password`
     ),
+  // Sign a user out everywhere (bump token_version) — I4 session revocation.
+  revokeSessions: (userId: string) =>
+    api.post<{ success: boolean; message: string }>(`/users/${userId}/revoke-sessions`, {}),
   // Explicit admin-initiated promotion of a local account to SSO (sets SSO
   // auth + provenance, removes the local password). Enables SSO login for it.
   promoteToSso: (userId: string) =>
@@ -1359,6 +1388,8 @@ export type CurrentUser = {
   auth_method: 'local' | 'sso'
   must_change_password: boolean
   totp_enabled?: boolean
+  mfa_enforced?: boolean
+  mfa_required?: boolean
   permissions?: Record<string, boolean>
   notification_preferences?: NotificationPreferences
 }
@@ -1380,6 +1411,9 @@ export const authApi = {
     api.get<SsoStatus>('/auth/sso/status'),
   getMe: () =>
     api.get<CurrentUser>('/auth/me'),
+  // Break-glass: invalidate every active session org-wide (I4).
+  revokeAllSessions: () =>
+    api.post<{ message: string }>('/auth/revoke-all-sessions', {}),
   // SSO login is handled by redirect, not API call. With multi-provider OIDC the
   // login flow is scoped to a provider id; the legacy zero-arg form is kept for
   // back-compat with single-provider deployments.
@@ -1422,6 +1456,398 @@ export type Team = {
 export const teamsApi = {
   list: () =>
     api.get<Team[]>('/teams'),
+}
+
+// --- Gated bidirectional GitOps inbound import (I6) ---
+export type GitImportItem = {
+  path: string
+  title: string | null
+  status: 'new' | 'modified' | 'unchanged'
+  rule_id: string | null
+}
+export type GitImportPreview = { items: GitImportItem[]; total: number }
+export type GitImportResult = {
+  updated: { path: string; rule_id: string; version: number }[]
+  skipped: { path: string; reason: string }[]
+}
+export const gitopsApi = {
+  getInbound: () => api.get<{ enabled: boolean }>('/gitops/inbound'),
+  setInbound: (enabled: boolean) => api.put<{ enabled: boolean }>('/gitops/inbound', { enabled }),
+  importPreview: (envId: string) =>
+    api.post<GitImportPreview>(`/gitops/environments/${envId}/import-preview`, {}),
+  importApply: (envId: string, paths: string[]) =>
+    api.post<GitImportResult>(`/gitops/environments/${envId}/import`, { paths }),
+}
+
+// --- Scheduled reporting + compliance (F5) ---
+export type ReportSchedule = {
+  id: string
+  name: string
+  report_type: string
+  cadence: string
+  framework: string | null
+  delivery_type: string
+  delivery_target: string | null
+  delivery_header_name: string | null
+  enabled: boolean
+  last_run_at: string | null
+  next_run_at: string | null
+  created_at: string
+  updated_at: string
+}
+export type ReportScheduleCreate = {
+  name: string
+  report_type: string
+  cadence: string
+  framework?: string | null
+  delivery_type?: string
+  delivery_target?: string | null
+  delivery_header_name?: string | null
+  delivery_header_value?: string | null
+  enabled?: boolean
+}
+export type ReportPreview = {
+  generated_at: string
+  type: string
+  framework?: string
+  framework_name?: string
+  sections: Record<string, unknown>[]
+}
+export const reportSchedulesApi = {
+  list: () => api.get<ReportSchedule[]>('/report-schedules'),
+  create: (data: ReportScheduleCreate) => api.post<ReportSchedule>('/report-schedules', data),
+  update: (id: string, data: Partial<ReportScheduleCreate>) =>
+    api.put<ReportSchedule>(`/report-schedules/${id}`, data),
+  remove: (id: string) => api.delete(`/report-schedules/${id}`),
+  run: (id: string) => api.post<{ delivered: boolean; report: ReportPreview }>(`/report-schedules/${id}/run`, {}),
+  preview: (reportType: string, framework?: string) => {
+    const q = new URLSearchParams({ report_type: reportType })
+    if (framework) q.set('framework', framework)
+    return api.get<ReportPreview>(`/report-schedules/preview?${q.toString()}`)
+  },
+}
+
+// --- Organizations (multi-tenant / MSSP) ---
+export type Organization = {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  suspended_at: string | null
+  deleted_at: string | null
+  description: string | null
+  created_at: string
+  updated_at: string
+}
+export type OrganizationCreate = {
+  name: string
+  slug: string
+  plan?: string
+  description?: string | null
+}
+export const organizationsApi = {
+  list: () => api.get<Organization[]>('/organizations'),
+  create: (data: OrganizationCreate) => api.post<Organization>('/organizations', data),
+  update: (id: string, data: { name?: string; plan?: string; description?: string; suspended?: boolean }) =>
+    api.put<Organization>(`/organizations/${id}`, data),
+  remove: (id: string) => api.delete(`/organizations/${id}`),
+}
+
+// --- Saved views (named, reusable list filter presets) ---
+export type SavedViewResource = 'alerts' | 'ioc_matches' | 'rules' | 'correlation'
+
+export type SavedView = {
+  id: string
+  name: string
+  resource: SavedViewResource
+  owner_id: string
+  team_id: string | null
+  is_shared: boolean
+  is_default: boolean
+  filters: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type SavedViewCreate = {
+  name: string
+  resource: SavedViewResource
+  filters: Record<string, unknown>
+  is_shared?: boolean
+  is_default?: boolean
+}
+
+export type SavedViewUpdate = {
+  name?: string
+  filters?: Record<string, unknown>
+  is_shared?: boolean
+  is_default?: boolean
+}
+
+export const savedViewsApi = {
+  list: (resource: SavedViewResource) =>
+    api.get<SavedView[]>(`/saved-views?resource=${encodeURIComponent(resource)}`),
+  create: (data: SavedViewCreate) =>
+    api.post<SavedView>('/saved-views', data),
+  update: (id: string, data: SavedViewUpdate) =>
+    api.put<SavedView>(`/saved-views/${id}`, data),
+  remove: (id: string) =>
+    api.delete(`/saved-views/${id}`),
+}
+
+// --- Case management (investigation workspace) ---
+export type CaseStatus = 'open' | 'investigating' | 'contained' | 'closed'
+
+export type CaseSummary = {
+  id: string
+  number: number
+  title: string
+  description: string | null
+  status: CaseStatus
+  severity: string
+  owner_id: string | null
+  owner_email: string | null
+  team_id: string | null
+  created_by: string | null
+  sla_due_at: string | null
+  sla_breached: boolean
+  closed_at: string | null
+  tags: string[] | null
+  alert_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type CaseAlertLink = {
+  id: string
+  alert_id: string
+  alert_title: string | null
+  alert_severity: string | null
+  added_by: string | null
+  added_at: string
+}
+
+export type CaseEvent = {
+  id: string
+  event_type: string
+  actor_id: string | null
+  actor_email: string | null
+  message: string
+  event_metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+export type CaseComment = {
+  id: string
+  content: string
+  user_id: string
+  user_email: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export type CaseDetail = CaseSummary & {
+  alerts: CaseAlertLink[]
+  events: CaseEvent[]
+  comments: CaseComment[]
+}
+
+export type CaseCreate = {
+  title: string
+  description?: string | null
+  severity?: string
+  owner_id?: string | null
+  tags?: string[] | null
+  alert_ids?: string[]
+}
+
+export const casesApi = {
+  list: (params: { status?: string; owner?: string; severity?: string; search?: string; limit?: number; offset?: number } = {}) => {
+    const q = new URLSearchParams()
+    if (params.status) q.set('status', params.status)
+    if (params.owner) q.set('owner', params.owner)
+    if (params.severity) q.set('severity', params.severity)
+    if (params.search) q.set('search', params.search)
+    if (params.limit != null) q.set('limit', String(params.limit))
+    if (params.offset != null) q.set('offset', String(params.offset))
+    const qs = q.toString()
+    return api.get<{ cases: CaseSummary[]; total: number }>(`/cases${qs ? `?${qs}` : ''}`)
+  },
+  get: (id: string) => api.get<CaseDetail>(`/cases/${id}`),
+  create: (data: CaseCreate) => api.post<CaseSummary>('/cases', data),
+  update: (id: string, data: { title?: string; description?: string; severity?: string; tags?: string[] }) =>
+    api.put<CaseSummary>(`/cases/${id}`, data),
+  setStatus: (id: string, statusValue: CaseStatus, note?: string) =>
+    api.post<CaseSummary>(`/cases/${id}/status`, { status: statusValue, note }),
+  assign: (id: string, ownerId: string | null) =>
+    api.post<CaseSummary>(`/cases/${id}/assign`, { owner_id: ownerId }),
+  addAlerts: (id: string, alertIds: string[]) =>
+    api.post<CaseSummary>(`/cases/${id}/alerts`, { alert_ids: alertIds }),
+  removeAlert: (id: string, alertId: string) =>
+    api.delete(`/cases/${id}/alerts/${alertId}`),
+  addComment: (id: string, content: string) =>
+    api.post<CaseComment>(`/cases/${id}/comments`, { content }),
+  deleteComment: (id: string, commentId: string) =>
+    api.delete(`/cases/${id}/comments/${commentId}`),
+}
+
+// --- SLA policy (per-severity triage time targets, in minutes) ---
+export type SlaSeverity = 'critical' | 'high' | 'medium' | 'low' | 'informational'
+export type SlaPolicy = {
+  enabled: boolean
+  targets_minutes: Record<SlaSeverity, number>
+}
+
+export const slaApi = {
+  get: () => api.get<SlaPolicy>('/sla-policy'),
+  update: (policy: SlaPolicy) => api.put<SlaPolicy>('/sla-policy', policy),
+}
+
+// ============================================================================
+// AI Detection Copilot API (F3)
+// ============================================================================
+
+export type GenerateRuleRequest = {
+  description: string
+  logsource_hint?: string | null
+}
+
+export type GenerateRuleResponse = {
+  yaml: string
+  explanation: string
+}
+
+export type SummarizeAlertResponse = {
+  summary: string
+  recommended_actions: string[]
+}
+
+export type ExceptionSuggestion = {
+  field: string
+  operator: string
+  value: unknown
+  rationale: string
+  risk: string
+}
+
+export type SuggestExceptionsResponse = {
+  suggestions: ExceptionSuggestion[]
+}
+
+export const aiCopilotApi = {
+  generateRule: (data: GenerateRuleRequest) =>
+    api.post<GenerateRuleResponse>('/ai/copilot/generate-rule', data),
+  summarizeAlert: (alertDocument: Record<string, unknown>) =>
+    api.post<SummarizeAlertResponse>('/ai/copilot/summarize-alert', {
+      alert_document: alertDocument,
+    }),
+  suggestExceptions: (data: {
+    rule_yaml: string
+    false_positive_examples: Record<string, unknown>[]
+  }) => api.post<SuggestExceptionsResponse>('/ai/copilot/suggest-exceptions', data),
+}
+
+// ── Coverage-gap rule recommendations (F6) ──────────────────────────────────
+export type SuggestedRule = {
+  title: string
+  path: string
+  severity: string
+  rule_type: string // "detection" | "threat_hunting" | "emerging_threats"
+  compatible: boolean
+}
+
+export type CoverageRecommendation = {
+  technique_id: string
+  technique_name: string
+  tactic: string
+  current_coverage: number
+  reason: string
+  suggested_rule_titles: string[]
+  suggested_rules: SuggestedRule[]
+  priority: number
+}
+
+export type CoverageRecommendationsResponse = {
+  recommendations: CoverageRecommendation[]
+  total: number
+}
+
+export const recommendationsApi = {
+  coverage: (params?: { limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.limit != null) searchParams.set('limit', String(params.limit))
+    const query = searchParams.toString()
+    return api.get<CoverageRecommendationsResponse>(
+      `/recommendations/coverage${query ? `?${query}` : ''}`
+    )
+  },
+}
+
+// --- Detection-as-Code CI (rule lint + FP backtest + coverage gate) ---
+
+export interface RuleCICheck {
+  name: string // lint | field_validation | fp_backtest | coverage
+  status: 'pass' | 'warn' | 'fail' | 'skipped'
+  detail: string
+  data: Record<string, unknown>
+}
+
+export interface RuleCIReport {
+  passed: boolean
+  checks: RuleCICheck[]
+  summary: string
+}
+
+export interface RuleCICheckOptions {
+  index_pattern_id?: string
+  fp_threshold?: number
+  backtest_days?: number
+  run_backtest?: boolean
+}
+
+export const ruleCiApi = {
+  // Run CI over an arbitrary (possibly unsaved) rule YAML.
+  check: (params: { yaml_content: string } & RuleCICheckOptions) =>
+    api.post<RuleCIReport>('/rule-ci/check', {
+      yaml_content: params.yaml_content,
+      index_pattern_id: params.index_pattern_id || null,
+      fp_threshold: params.fp_threshold ?? null,
+      backtest_days: params.backtest_days ?? null,
+      run_backtest: params.run_backtest ?? true,
+    }),
+  // Run CI over a stored rule (loads its YAML + index pattern server-side).
+  checkStored: (ruleId: string, options?: RuleCICheckOptions) =>
+    api.post<RuleCIReport>(`/rule-ci/${ruleId}/check`, {
+      yaml_content: ' ',
+      index_pattern_id: options?.index_pattern_id || null,
+      fp_threshold: options?.fp_threshold ?? null,
+      backtest_days: options?.backtest_days ?? null,
+      run_backtest: options?.run_backtest ?? true,
+    }),
+}
+
+// --- Audit hardening settings (I5: retention, SIEM forward, PII redaction) ---
+export type AuditForwardConfig = {
+  enabled: boolean
+  format: string
+  url: string | null
+  header_name: string | null
+  has_header_value: boolean
+}
+export type AuditSettings = {
+  retention_days: number
+  forward: AuditForwardConfig
+  redaction: { enabled: boolean; fields: string[] }
+}
+export type AuditSettingsUpdate = {
+  retention_days: number
+  forward: { enabled: boolean; format: string; url?: string | null; header_name?: string | null; header_value?: string | null }
+  redaction: { enabled: boolean; fields: string[] }
+}
+export const auditSettingsApi = {
+  get: () => api.get<AuditSettings>('/audit-settings'),
+  update: (data: AuditSettingsUpdate) => api.put<AuditSettings>('/audit-settings', data),
+  testForward: () => api.post<{ forwarded: number }>('/audit-settings/test-forward', {}),
 }
 
 // --- Environment types (Model B: one rule identity, per-env deployment state) ---

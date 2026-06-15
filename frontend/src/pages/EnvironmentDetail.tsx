@@ -17,6 +17,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { KpiStrip, KpiTile } from '@/components/ui/kpi-tile'
 import { Badge } from '@/components/ui/badge'
+import { GitImportPanel } from '@/components/environments/GitImportPanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -432,6 +433,9 @@ function GitTab({ env }: { env: Environment }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Gated bidirectional GitOps import (I6) */}
+      <GitImportPanel envId={env.id} />
     </div>
   )
 }

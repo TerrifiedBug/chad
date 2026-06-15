@@ -189,9 +189,22 @@ export default function ApprovalsPage() {
     },
   })
 
+  const resubmitMutation = useMutation({
+    mutationFn: (id: string) => deploymentRequestsApi.resubmit(id),
+    onSuccess: () => {
+      showToast('Request resubmitted for review', 'success')
+      setSelectedId(null)
+      refetchAll()
+    },
+    onError: (err) => {
+      showToast(err instanceof Error ? err.message : 'Resubmit failed', 'error')
+    },
+  })
+
   const detail = detailQuery.data
   const isOwnRequest = !!detail && !!user && detail.requested_by === user.id
   const isPending = detail?.status === 'pending'
+  const isResubmittable = !!detail && ['rejected', 'stale', 'cancelled'].includes(detail.status)
   // Self-review is blocked for non-admins (and users lacking the permission).
   // Admins are exempt so a single-admin deployment isn't permanently blocked.
   const blockedAsOwn = isOwnRequest && !isAdmin
@@ -303,9 +316,19 @@ export default function ApprovalsPage() {
                       {req.requester_email || 'Unknown'}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusBadgeVariant(req.status)}>
-                        {capitalize(req.status)}
-                      </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant={statusBadgeVariant(req.status)}>
+                          {capitalize(req.status)}
+                        </Badge>
+                        {req.status === 'pending' && (req.required_approvals ?? 1) > 1 && (
+                          <span className="text-xs text-muted-foreground">
+                            {req.approvals_count ?? 0}/{req.required_approvals} approvals
+                          </span>
+                        )}
+                        {req.is_overdue && (
+                          <Badge variant="destructive" className="text-[10px]">Overdue</Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">
                       <RelativeTime date={req.created_at} />
@@ -334,6 +357,15 @@ export default function ApprovalsPage() {
             )}
 
             <DialogFooter className="flex-col sm:flex-row sm:justify-between gap-2">
+              {detail && isOwnRequest && isResubmittable && (
+                <Button
+                  variant="outline"
+                  onClick={() => resubmitMutation.mutate(detail.id)}
+                  disabled={resubmitMutation.isPending}
+                >
+                  {resubmitMutation.isPending ? 'Resubmitting…' : 'Resubmit'}
+                </Button>
+              )}
               {detail && isOwnRequest && isPending && (
                 <Button
                   variant="ghost"

@@ -25,6 +25,8 @@ import {
   GitPullRequest,
   Layers,
   ArrowLeft,
+  FolderOpen,
+  FileBarChart,
 } from 'lucide-react'
 
 export type NavItem = {
@@ -51,6 +53,7 @@ export const navSections: NavSection[] = [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
       { href: '/alerts', label: 'Alerts', icon: Bell },
       { href: '/ioc-matches', label: 'IOC Matches', icon: ShieldAlert },
+      { href: '/cases', label: 'Cases', icon: FolderOpen },
       { href: '/rules', label: 'Rules', icon: ScrollText },
       { href: '/approvals', label: 'Approvals', icon: GitPullRequest, permissionsAny: ['deploy_rules', 'approve_deployments'] },
     ],
@@ -59,6 +62,7 @@ export const navSections: NavSection[] = [
     label: 'Intelligence',
     items: [
       { href: '/attack', label: 'ATT&CK', icon: Target },
+      { href: '/reports', label: 'Reports', icon: FileBarChart },
       { href: '/index-patterns', label: 'Index Patterns', icon: Database, permission: 'manage_index_config' },
     ],
   },

@@ -30,6 +30,7 @@ from app.schemas.alert import (
     RelatedAlertsResponse,
 )
 from app.schemas.alert_comment import AlertCommentCreate, AlertCommentResponse, AlertCommentUpdate
+from app.schemas.sla import AssignAlertRequest
 from app.services.alert_cache import AlertCache
 from app.services.alerts import AlertService, cluster_alerts
 from app.services.audit import audit_log
@@ -232,6 +233,33 @@ async def get_alert_counts(
     """Get alert counts by status and severity for dashboard."""
     alert_service = AlertService(os_client)
     return alert_service.get_alert_counts(index_pattern=index_pattern, exclude_ioc=exclude_ioc)
+
+
+@router.get("/assignable-users")
+async def list_assignable_users(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+):
+    """Users the current actor may assign alerts to.
+
+    Admins get all active users; others get active members of their own team
+    (plus themselves). Registered before ``/{alert_id}`` so the literal path is
+    not captured as an alert id.
+    """
+    from app.models.user import UserRole
+
+    stmt = select(User).where(User.is_active.is_(True))
+    if current_user.role != UserRole.ADMIN:
+        # Same-team members the actor is allowed to assign to (+ themselves).
+        if current_user.team_id is not None:
+            stmt = stmt.where(
+                (User.team_id == current_user.team_id) | (User.id == current_user.id)
+            )
+        else:
+            stmt = stmt.where(User.id == current_user.id)
+    stmt = stmt.order_by(User.email)
+    users = (await db.execute(stmt)).scalars().all()
+    return [{"id": str(u.id), "email": u.email} for u in users]
 
 
 @router.get("/{alert_id}", response_model=AlertResponse)
@@ -772,6 +800,32 @@ async def delete_alert_comment(
 # ----- Alert Ownership Endpoints -----
 
 
+async def _resolve_assignee(
+    db: AsyncSession, current_user: User, assignee_id: UUID | None
+) -> User:
+    """Resolve who an alert is being assigned to.
+
+    No ``assignee_id`` → self-assign (back-compat). With one, the target must be
+    an active user the actor may assign to: same team as the actor, or the actor
+    is an admin (admins can assign across teams).
+    """
+    if assignee_id is None or assignee_id == current_user.id:
+        return current_user
+
+    from app.models.user import UserRole
+
+    assignee = (
+        await db.execute(select(User).where(User.id == assignee_id))
+    ).scalar_one_or_none()
+    if assignee is None or not assignee.is_active:
+        raise HTTPException(status_code=404, detail="Assignee not found or inactive")
+    if current_user.role != UserRole.ADMIN and assignee.team_id != current_user.team_id:
+        raise HTTPException(
+            status_code=403, detail="You can only assign alerts to members of your team"
+        )
+    return assignee
+
+
 @router.post("/{alert_id}/assign")
 async def assign_alert(
     alert_id: str,
@@ -779,8 +833,14 @@ async def assign_alert(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
     os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    body: AssignAlertRequest | None = None,
 ):
-    """Assign alert to current user. Requires manage_alerts permission (viewers cannot take ownership)."""
+    """Assign an alert to a user.
+
+    Self-assign when no ``assignee_id`` is given (back-compat); otherwise assign
+    to the named teammate. Requires manage_alerts (viewers cannot take ownership).
+    """
+    assignee = await _resolve_assignee(db, current_user, body.assignee_id if body else None)
     try:
         # First find the alert to get its index and document ID
         result = os_client.search(
@@ -800,8 +860,8 @@ async def assign_alert(
             id=doc_id,
             body={
                 "doc": {
-                    "owner_id": str(current_user.id),
-                    "owner_username": current_user.email,
+                    "owner_id": str(assignee.id),
+                    "owner_username": assignee.email,
                     "owned_at": datetime.now(UTC).isoformat(),
                 }
             },
@@ -809,10 +869,13 @@ async def assign_alert(
         )
         await audit_log(
             db, current_user.id, "alert.assign", "alert",
-            alert_id, {"owner": current_user.email}, ip_address=get_client_ip(request)
+            alert_id,
+            {"owner": assignee.email, "assigned_by": current_user.email,
+             "self": assignee.id == current_user.id},
+            ip_address=get_client_ip(request),
         )
         await db.commit()
-        return {"message": "Alert assigned", "owner": current_user.email}
+        return {"message": "Alert assigned", "owner": assignee.email}
     except HTTPException:
         raise
     except Exception as e:

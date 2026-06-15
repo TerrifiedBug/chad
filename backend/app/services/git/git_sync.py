@@ -133,6 +133,37 @@ class GitSyncService:
         except GitCommandError as e:
             raise GitSyncError(f"Git push failed: {self._redact(e)}") from None
 
+    def read_rules(self, subdir: str) -> dict[str, str]:
+        """Clone the repo (read-only) and return ``{relpath: yaml content}`` for
+        every ``*.yml`` / ``*.yaml`` under ``subdir``.
+
+        Inbound/read-only counterpart of push_file, used by the gated GitOps
+        import. Never writes or pushes — it only reads the remote state so an
+        operator can review proposed rule changes before they touch CHAD.
+        """
+        out: dict[str, str] = {}
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                repo = Repo.clone_from(self._authed_url(), tmp)
+                self._checkout_branch(repo)
+                base = os.path.join(tmp, subdir)
+                if not os.path.isdir(base):
+                    return out
+                for root, _dirs, files in os.walk(base):
+                    for fname in files:
+                        if not fname.endswith((".yml", ".yaml")):
+                            continue
+                        abs_path = os.path.join(root, fname)
+                        rel = os.path.relpath(abs_path, tmp)
+                        try:
+                            with open(abs_path, encoding="utf-8") as fh:
+                                out[rel] = fh.read()
+                        except OSError:
+                            continue
+                return out
+        except GitCommandError as e:
+            raise GitSyncError(f"Git read failed: {self._redact(e)}") from None
+
     def delete_file(self, file_path: str, commit_message: str) -> str | None:
         """Remove ``file_path`` and push. No-op (returns None) if absent."""
         author = Actor(self.author_name, self.author_email)

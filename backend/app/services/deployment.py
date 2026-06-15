@@ -102,19 +102,24 @@ async def create_deployment_request(
     change_reason: str,
     sigma_rules: list[Rule] | None = None,
     correlation_rules: list[CorrelationRule] | None = None,
+    required_approvals: int = 1,
+    approval_deadline=None,
 ) -> DeploymentRequest:
     """Build a PENDING request, pinning each rule's current version.
 
     Single source of truth for request creation, used by the generic create
     endpoint and by each gated deploy path (deploy / bulk / unsnooze /
     correlation). Caller owns audit + commit. ``sigma_rules`` must have their
-    ``versions`` relationship loaded for correct pinning.
+    ``versions`` relationship loaded for correct pinning. ``required_approvals``
+    sets the quorum (default 1 = single checker).
     """
     req = DeploymentRequest(
         requested_by=requested_by,
         team_id=team_id,
         change_reason=change_reason,
         status=DeploymentRequestStatus.PENDING.value,
+        required_approvals=max(1, required_approvals),
+        approval_deadline=approval_deadline,
     )
     for rule in sigma_rules or []:
         req.items.append(

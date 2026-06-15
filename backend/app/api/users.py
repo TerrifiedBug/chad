@@ -134,6 +134,30 @@ async def unlock_user_account(
     }
 
 
+@router.post("/{user_id}/revoke-sessions", response_model=dict)
+async def revoke_user_sessions(
+    user_id: UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("manage_users"))],
+):
+    """Sign a user out everywhere by bumping their token_version (I4).
+
+    Every JWT carries the version it was minted with; bumping invalidates them
+    all on the next request (see app.api.deps.get_current_user).
+    """
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.token_version += 1
+    await audit_log(
+        db, current_user.id, "user.revoke_sessions", "user", str(user_id),
+        {"email": user.email}, ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    return {"success": True, "email": user.email, "message": f"Sessions revoked for {user.email}"}
+
+
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     data: UserCreate,

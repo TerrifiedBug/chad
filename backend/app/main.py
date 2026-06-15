@@ -10,11 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.api.ai_copilot import router as ai_copilot_router
 from app.api.alerts import router as alerts_router
 from app.api.api_keys import router as api_keys_router
 from app.api.attack import router as attack_router
 from app.api.audit import router as audit_router
+from app.api.audit_settings import router as audit_settings_router
 from app.api.auth import router as auth_router
+from app.api.cases import router as cases_router
 from app.api.circuit_breakers import router as circuit_breakers_router
 from app.api.correlation_rules import router as correlation_rules_router
 from app.api.deployment_requests import router as deployment_requests_router
@@ -24,6 +27,7 @@ from app.api.environments import router as environments_router
 from app.api.export import router as export_router
 from app.api.external import router as external_router
 from app.api.field_mappings import router as field_mappings_router
+from app.api.git_import import router as git_import_router
 from app.api.health import router as health_router
 from app.api.index_patterns import router as index_patterns_router
 from app.api.jira import router as jira_router
@@ -34,13 +38,19 @@ from app.api.misp_feedback import router as misp_feedback_router
 from app.api.misp_sync import router as misp_sync_router
 from app.api.mode import router as mode_router
 from app.api.notifications import router as notifications_router
+from app.api.organizations import router as organizations_router
 from app.api.permissions import router as permissions_router
 from app.api.queue import router as queue_router
+from app.api.recommendations import router as recommendations_router
+from app.api.report_schedules import router as report_schedules_router
 from app.api.reports import router as reports_router
+from app.api.rule_ci import router as rule_ci_router
 from app.api.rules import router as rules_router
+from app.api.saved_views import router as saved_views_router
 from app.api.scim import router as scim_router
 from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
+from app.api.sla import router as sla_router
 from app.api.sso import router as sso_router
 from app.api.stats import router as stats_router
 from app.api.system_logs import router as system_logs_router
@@ -148,7 +158,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
-    redirect_slashes=False,  # Disable automatic trailing slash redirects to avoid hostname issues in proxied environments
+    # Disable automatic trailing slash redirects to avoid hostname issues in proxied environments
+    redirect_slashes=False,
 )
 
 # Register custom exception handler for standardized error responses
@@ -393,6 +404,16 @@ app.include_router(misp_sync_router, prefix="/api")
 app.include_router(correlation_rules_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
+app.include_router(saved_views_router, prefix="/api")
+app.include_router(sla_router, prefix="/api")
+app.include_router(cases_router, prefix="/api")
+app.include_router(audit_settings_router, prefix="/api")
+app.include_router(ai_copilot_router, prefix="/api")
+app.include_router(recommendations_router, prefix="/api")
+app.include_router(rule_ci_router, prefix="/api")
+app.include_router(organizations_router, prefix="/api")
+app.include_router(report_schedules_router, prefix="/api")
+app.include_router(git_import_router, prefix="/api")
 app.include_router(environments_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
 app.include_router(sso_router, prefix="/api")

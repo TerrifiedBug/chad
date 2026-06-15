@@ -278,6 +278,15 @@ class SchedulerService:
             # Add git config-as-code sync drain job (runs every 30 seconds)
             self._schedule_git_sync()
 
+            # Add SLA breach scan job (runs every 5 minutes)
+            self._schedule_sla_scan()
+
+            # Add audit maintenance jobs (retention purge + SIEM forward)
+            self._schedule_audit_maintenance()
+
+            # Add scheduled-reports delivery job (every 15 minutes)
+            self._schedule_report_delivery()
+
             # Add health-metrics retention cleanup job (runs daily)
             self._schedule_health_metrics_cleanup()
 
@@ -366,6 +375,199 @@ class SchedulerService:
                 category=LogCategory.BACKGROUND,
                 service="git_sync",
                 message=f"Scheduled git sync failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    def _schedule_sla_scan(self):
+        """Schedule the alert-SLA breach scan (every 5 minutes).
+
+        No-op while the SLA policy is disabled; when enabled it stamps
+        ``sla_breached`` onto open alerts whose target time has elapsed and
+        raises one operational warning per batch.
+        """
+        scheduler.add_job(
+            self._run_sla_scan,
+            trigger=IntervalTrigger(minutes=5),
+            id="sla_scan",
+            name="alert SLA breach scan",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=300,
+        )
+        logger.info("Scheduled sla_scan job (every 5 minutes)")
+
+    async def _run_sla_scan(self):
+        """Execute the SLA breach scan with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:sla_scan",
+            timeout=300,
+            job_func=self._execute_sla_scan,
+        )
+
+    async def _execute_sla_scan(self):
+        """Flag any newly-breached SLAs across open alerts."""
+        from app.services.opensearch import get_client_from_settings
+        from app.services.sla import scan_sla_breaches
+
+        session = await self._get_session()
+        try:
+            os_client = await get_client_from_settings(session)
+            if os_client is None:
+                return  # OpenSearch not configured yet
+            flagged = await scan_sla_breaches(session, os_client)
+            if flagged:
+                logger.info("SLA scan: flagged %s breached alert(s)", flagged)
+        except Exception as e:
+            logger.error("Scheduled SLA scan failed: %s", e)
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="sla_scan",
+                message=f"Scheduled SLA scan failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    def _schedule_audit_maintenance(self):
+        """Schedule audit retention purge (daily) + SIEM forward (every 5 min).
+
+        Both no-op while their respective settings are disabled.
+        """
+        scheduler.add_job(
+            self._run_audit_retention,
+            trigger=CronTrigger(hour=4, minute=15),
+            id="audit_retention",
+            name="audit log retention purge",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        scheduler.add_job(
+            self._run_audit_forward,
+            trigger=IntervalTrigger(minutes=5),
+            id="audit_forward",
+            name="audit SIEM forward",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=300,
+        )
+        logger.info("Scheduled audit maintenance jobs (retention daily 4:15 AM, forward every 5 min)")
+
+    async def _run_audit_retention(self):
+        await self._run_with_lock(
+            "scheduler:audit_retention", timeout=600, job_func=self._execute_audit_retention
+        )
+
+    async def _execute_audit_retention(self):
+        from app.services.audit_export import purge_old_audit_logs
+
+        session = await self._get_session()
+        try:
+            purged = await purge_old_audit_logs(session)
+            if purged:
+                logger.info("Audit retention: purged %s rows", purged)
+        except Exception as e:
+            logger.error("Audit retention failed: %s", e)
+            await system_log_service.log_error(
+                session, category=LogCategory.BACKGROUND, service="audit_retention",
+                message=f"Audit retention failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    async def _run_audit_forward(self):
+        await self._run_with_lock(
+            "scheduler:audit_forward", timeout=300, job_func=self._execute_audit_forward
+        )
+
+    async def _execute_audit_forward(self):
+        from app.core.encryption import decrypt
+        from app.services.audit_export import forward_new_audit_events
+
+        session = await self._get_session()
+        try:
+            forwarded = await forward_new_audit_events(session, decrypt_header=decrypt)
+            if forwarded:
+                logger.info("Audit forward: shipped %s event(s)", forwarded)
+        except Exception as e:
+            logger.error("Audit forward failed: %s", e)
+            await system_log_service.log_error(
+                session, category=LogCategory.BACKGROUND, service="audit_forward",
+                message=f"Audit forward failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    def _schedule_report_delivery(self):
+        """Schedule delivery of due scheduled reports (every 15 minutes).
+
+        No-op when no schedule is due; builds + delivers each due report and
+        advances its next_run_at.
+        """
+        scheduler.add_job(
+            self._run_report_delivery,
+            trigger=IntervalTrigger(minutes=15),
+            id="report_delivery",
+            name="scheduled report delivery",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=900,
+        )
+        logger.info("Scheduled report_delivery job (every 15 minutes)")
+
+    async def _run_report_delivery(self):
+        await self._run_with_lock(
+            "scheduler:report_delivery", timeout=600, job_func=self._execute_report_delivery
+        )
+
+    async def _execute_report_delivery(self):
+        from datetime import UTC, datetime
+
+        from sqlalchemy import select
+
+        from app.core.encryption import decrypt
+        from app.models.report_schedule import ReportSchedule
+        from app.services.opensearch import get_client_from_settings
+        from app.services.reporting import build_report, compute_next_run, deliver_report
+
+        session = await self._get_session()
+        try:
+            now = datetime.now(UTC)
+            due = list(
+                (
+                    await session.execute(
+                        select(ReportSchedule).where(
+                            ReportSchedule.enabled.is_(True),
+                            ReportSchedule.next_run_at.isnot(None),
+                            ReportSchedule.next_run_at <= now,
+                        )
+                    )
+                ).scalars().all()
+            )
+            if not due:
+                return
+            os_client = await get_client_from_settings(session)
+            for schedule in due:
+                try:
+                    report = await build_report(
+                        session, os_client, schedule.report_type, schedule.framework
+                    )
+                    await deliver_report(schedule, report, decrypt_header=decrypt)
+                except Exception as e:
+                    logger.warning("Report %s build/deliver failed: %s", schedule.id, e)
+                schedule.last_run_at = now
+                schedule.next_run_at = compute_next_run(now, schedule.cadence)
+            await session.commit()
+            logger.info("Report delivery: processed %s due report(s)", len(due))
+        except Exception as e:
+            logger.error("Scheduled report delivery failed: %s", e)
+            await system_log_service.log_error(
+                session, category=LogCategory.BACKGROUND, service="report_delivery",
+                message=f"Scheduled report delivery failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
         finally:

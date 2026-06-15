@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import yaml from 'js-yaml'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link, Beaker, TestTube, TrendingUp, ShieldAlert, GitCompare, ArrowUpToLine } from 'lucide-react'
+import { ArrowLeft, Check, X, Play, AlertCircle, Rocket, RotateCcw, Loader2, Trash2, Plus, Clock, History, Download, AlignLeft, FileCode, FileText, ChevronDown, ChevronUp, Copy, Link, Beaker, TestTube, TrendingUp, ShieldAlert, GitCompare, ArrowUpToLine, Sparkles, ShieldCheck } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -55,6 +55,8 @@ import { useToast } from '@/components/ui/toast-provider'
 import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
+import { AiCopilotDialog } from '@/components/ai/AiCopilotDialog'
+import { RuleCiPanel } from '@/components/rules/RuleCiPanel'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { MISPOriginPanel } from '@/components/MISPOriginPanel'
 import { DeployDialog } from '@/components/rules/DeployDialog'
@@ -218,6 +220,8 @@ export default function RuleEditorPage() {
   const [showExceptions, setShowExceptions] = useState(false)
   const [showCorrelation, setShowCorrelation] = useState(false)
   const [showTest, setShowTest] = useState(false)
+  const [aiCopilotOpen, setAiCopilotOpen] = useState(false)
+  const [showCi, setShowCi] = useState(false)
   const [showHistoricalTest, setShowHistoricalTest] = useState(false)
 
   // Unmapped fields dialog state
@@ -1504,16 +1508,28 @@ export default function RuleEditorPage() {
           <div className="border rounded-lg overflow-hidden">
             <div className="flex items-center justify-between bg-muted/50 px-3 py-1.5 border-b">
               <span className="text-xs text-muted-foreground">Sigma YAML</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={formatYaml}
-                className="h-6 text-xs"
-                disabled={!canManageRules}
-              >
-                <AlignLeft className="h-3 w-3 mr-1" />
-                Format
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setAiCopilotOpen(true)}
+                  className="h-6 text-xs"
+                  disabled={!canManageRules}
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Generate with AI
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={formatYaml}
+                  className="h-6 text-xs"
+                  disabled={!canManageRules}
+                >
+                  <AlignLeft className="h-3 w-3 mr-1" />
+                  Format
+                </Button>
+              </div>
             </div>
             <YamlEditor
               value={yamlContent}
@@ -1765,6 +1781,35 @@ export default function RuleEditorPage() {
               </CardContent>
             )}
           </Card>
+
+          {/* Detection-as-Code CI Card (F2) */}
+          <Card>
+            <CardHeader className="py-3 cursor-pointer" onClick={() => setShowCi(!showCi)}>
+              <CardTitle className="text-sm font-medium flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                  <span>CI Checks</span>
+                </div>
+                {showCi ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </CardTitle>
+            </CardHeader>
+            {showCi && (
+              <CardContent>
+                <RuleCiPanel
+                  yamlContent={yamlContent}
+                  indexPatternId={indexPatternId || undefined}
+                  ruleId={isNew ? undefined : id}
+                />
+              </CardContent>
+            )}
+          </Card>
+
+          {/* AI Detection Copilot — generate a Sigma rule from a description (F3) */}
+          <AiCopilotDialog
+            open={aiCopilotOpen}
+            onOpenChange={setAiCopilotOpen}
+            onApply={(yaml) => handleYamlChange(yaml)}
+          />
 
           {/* Historical Dry-Run Test Modal */}
           <Dialog open={showHistoricalTest} onOpenChange={setShowHistoricalTest}>

@@ -9,7 +9,7 @@ are team-scoped so reviewers only see their team's requests.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -25,6 +25,7 @@ from app.models.correlation_rule import CorrelationRule
 from app.models.deployment_request import (
     DeploymentItemApplyStatus,
     DeploymentRequest,
+    DeploymentRequestApproval,
     DeploymentRequestItem,
     DeploymentRequestKind,
     DeploymentRequestStatus,
@@ -33,6 +34,7 @@ from app.models.environment import Environment
 from app.models.rule import Rule
 from app.models.user import User, UserRole
 from app.schemas.deployment_request import (
+    DeploymentRequestApprovalInfo,
     DeploymentRequestCreate,
     DeploymentRequestDetailResponse,
     DeploymentRequestItemDetail,
@@ -64,6 +66,9 @@ async def _load_request(db: AsyncSession, request_id: UUID) -> DeploymentRequest
             selectinload(DeploymentRequest.items),
             selectinload(DeploymentRequest.requester),
             selectinload(DeploymentRequest.reviewer),
+            selectinload(DeploymentRequest.approvals).selectinload(
+                DeploymentRequestApproval.approver
+            ),
         )
     )
     return result.scalar_one_or_none()
@@ -90,6 +95,25 @@ def _item_title(item: DeploymentRequestItem, titles: dict[UUID, str]) -> str | N
     return titles.get(key) if key else None
 
 
+async def _approval_deadline(db: AsyncSession) -> datetime | None:
+    """Compute the approval SLA deadline from the configured horizon (hours).
+
+    Setting key ``deploy_approval_sla_hours`` (int); 0 / unset = no deadline.
+    """
+    from app.services.settings import get_setting
+
+    cfg = await get_setting(db, "deploy_approval_sla_hours")
+    hours = 0
+    if isinstance(cfg, dict):
+        try:
+            hours = int(cfg.get("hours", 0))
+        except (TypeError, ValueError):
+            hours = 0
+    if hours <= 0:
+        return None
+    return datetime.now(UTC) + timedelta(hours=hours)
+
+
 def _build_summary(
     req: DeploymentRequest, titles: dict[UUID, str], now: datetime
 ) -> DeploymentRequestResponse:
@@ -109,6 +133,14 @@ def _build_summary(
         item_count=len(req.items),
         rule_titles=[t for t in (_item_title(i, titles) for i in req.items) if t],
         age_seconds=(now - req.created_at).total_seconds(),
+        required_approvals=req.required_approvals,
+        approvals_count=len(req.approvals),
+        approval_deadline=req.approval_deadline,
+        is_overdue=(
+            req.status == DeploymentRequestStatus.PENDING.value
+            and req.approval_deadline is not None
+            and now > req.approval_deadline
+        ),
     )
 
 
@@ -168,6 +200,15 @@ async def _build_detail(
     return DeploymentRequestDetailResponse(
         **summary.model_dump(),
         items=item_details,
+        approvals=[
+            DeploymentRequestApprovalInfo(
+                approver_id=a.approver_id,
+                approver_email=a.approver.email if a.approver else None,
+                note=a.note,
+                created_at=a.created_at,
+            )
+            for a in sorted(req.approvals, key=lambda a: a.created_at)
+        ],
     )
 
 
@@ -213,6 +254,8 @@ async def file_deployment_request(
         team_id=current_user.team_id,
         change_reason=data.change_reason,
         sigma_rules=[rules[rid] for rid in unique_ids],
+        required_approvals=data.required_approvals or 1,
+        approval_deadline=await _approval_deadline(db),
     )
 
     await audit_log(
@@ -394,6 +437,37 @@ async def approve_deployment_request(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot approve your own deployment request",
         )
+
+    # --- Multi-approver quorum (I3) -------------------------------------------
+    # Record this checker's approval (idempotent per user). When the recorded
+    # approvals are still short of required_approvals, the request stays PENDING
+    # and we return the updated progress without applying. The final approver
+    # (count == required) falls through to the existing stale-check + atomic
+    # claim + apply path, so the apply remains single-writer and race-safe.
+    if any(a.approver_id == current_user.id for a in req.approvals):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already approved this request",
+        )
+    db.add(DeploymentRequestApproval(request_id=req.id, approver_id=current_user.id))
+    await db.commit()
+    await audit_log(
+        db, current_user.id, "deployment_request.approval_recorded", "deployment_request",
+        str(request_id), {}, ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    # Expire just this request so the reload truly refetches the new approval
+    # (sessions configured with expire_on_commit=False otherwise return the
+    # stale, already-loaded approvals collection). Scoped to ``req`` so we don't
+    # disturb other identity-mapped objects.
+    db.expire(req)
+    req = await _load_request(db, request_id)
+    if req is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    if len(req.approvals) < req.required_approvals:
+        # Quorum not yet met — leave PENDING and report progress.
+        return await _build_detail(db, req, datetime.now(UTC))
 
     # All-or-nothing stale pre-check: if any pinned rule changed, apply nothing.
     if await _detect_stale(db, req):
@@ -621,6 +695,81 @@ async def reject_deployment_request(
     await db.commit()
 
     return await _build_detail(db, await _load_request(db, request_id), datetime.now(UTC))
+
+
+# Terminal states a requester can re-file from without re-selecting rules.
+_RESUBMITTABLE = frozenset(
+    {
+        DeploymentRequestStatus.REJECTED.value,
+        DeploymentRequestStatus.STALE.value,
+        DeploymentRequestStatus.CANCELLED.value,
+    }
+)
+
+
+@router.post("/{request_id}/resubmit", response_model=DeploymentRequestResponse,
+             status_code=status.HTTP_201_CREATED)
+async def resubmit_deployment_request(
+    request_id: UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission_dep("deploy_rules"))],
+):
+    """Re-file a fresh PENDING request from a rejected/stale/cancelled one.
+
+    Re-pins the same rules at their *current* versions (so a stale request picks
+    up the edits that invalidated it) instead of forcing the maker to re-select
+    every rule. Approvals start over.
+    """
+    req = await _load_request(db, request_id)
+    if req is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    _enforce_team_visibility(req, current_user)
+    if req.status not in _RESUBMITTABLE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Only rejected/stale/cancelled requests can be resubmitted (current: '{req.status}')",
+        )
+
+    sigma_ids = [i.rule_id for i in req.items if i.rule_id is not None]
+    corr_ids = [i.correlation_rule_id for i in req.items if i.correlation_rule_id is not None]
+    if not sigma_ids and not corr_ids:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nothing to resubmit")
+
+    sigma_rules: list[Rule] = []
+    if sigma_ids:
+        rows = await db.execute(
+            select(Rule).where(Rule.id.in_(sigma_ids)).options(selectinload(Rule.versions))
+        )
+        sigma_rules = list(rows.scalars().all())
+        for rule in sigma_rules:
+            if not can_access_resource(rule, current_user):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to a rule")
+
+    correlation_rules: list[CorrelationRule] = []
+    if corr_ids:
+        rows = await db.execute(select(CorrelationRule).where(CorrelationRule.id.in_(corr_ids)))
+        correlation_rules = list(rows.scalars().all())
+
+    new_req = await create_deployment_request(
+        db,
+        requested_by=current_user.id,
+        team_id=current_user.team_id,
+        change_reason=f"Resubmit of request {req.id}: {req.change_reason}",
+        sigma_rules=sigma_rules,
+        correlation_rules=correlation_rules,
+        required_approvals=req.required_approvals,
+        approval_deadline=await _approval_deadline(db),
+    )
+    await audit_log(
+        db, current_user.id, "deployment_request.resubmitted", "deployment_request",
+        str(new_req.id), {"resubmit_of": str(req.id)}, ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    loaded = await _load_request(db, new_req.id)
+    titles = await _rule_title_map(db, loaded.items)
+    return _build_summary(loaded, titles, datetime.now(UTC))
 
 
 # --------------------------------------------------------------------------- #

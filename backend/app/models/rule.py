@@ -80,6 +80,10 @@ class Rule(Base, UUIDMixin, TimestampMixin):
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
     )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True, index=True,
+    )
 
     # Relationships
     index_pattern: Mapped[IndexPattern] = relationship("IndexPattern")

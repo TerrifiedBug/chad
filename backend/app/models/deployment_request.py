@@ -14,7 +14,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -89,6 +89,16 @@ class DeploymentRequest(Base, UUIDMixin, TimestampMixin):
     change_reason: Mapped[str] = mapped_column(Text, nullable=False)
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Multi-approver quorum: how many distinct approvals are required before the
+    # request transitions APPROVED + applies. Default 1 = today's single-checker
+    # behaviour. The maker still cannot be a checker (self-review guard).
+    required_approvals: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # Optional approval SLA deadline (informational + surfaced as "overdue").
+    approval_deadline: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Owning team for resource-scoped RBAC (mirrors Rule.team_id). Nullable =
     # global / un-owned.
     team_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -111,8 +121,42 @@ class DeploymentRequest(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    approvals: Mapped[list[DeploymentRequestApproval]] = relationship(
+        "DeploymentRequestApproval",
+        back_populates="request",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     requester: Mapped[User] = relationship("User", foreign_keys=[requested_by])
     reviewer: Mapped[User | None] = relationship("User", foreign_keys=[reviewed_by])
+
+
+class DeploymentRequestApproval(Base, UUIDMixin):
+    """One checker's approval toward a request's required-approvals quorum."""
+
+    __tablename__ = "deployment_request_approvals"
+    __table_args__ = (
+        UniqueConstraint("request_id", "approver_id", name="uq_deployment_request_approval"),
+    )
+
+    request_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("deployment_requests.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    approver_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    request: Mapped[DeploymentRequest] = relationship(
+        "DeploymentRequest", back_populates="approvals"
+    )
+    approver: Mapped[User] = relationship("User", foreign_keys=[approver_id])
 
 
 class DeploymentRequestItem(Base, UUIDMixin):

@@ -3,11 +3,20 @@ from app.models.api_key import APIKey
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.audit_chain_tail import AuditChainTail
 from app.models.audit_log import AuditLog
+from app.models.case import (
+    Case,
+    CaseAlert,
+    CaseComment,
+    CaseEvent,
+    CaseEventType,
+    CaseStatus,
+)
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_rule_comment import CorrelationRuleComment
 from app.models.deployment_request import (
     DeploymentItemApplyStatus,
     DeploymentRequest,
+    DeploymentRequestApproval,
     DeploymentRequestItem,
     DeploymentRequestKind,
     DeploymentRequestStatus,
@@ -29,11 +38,14 @@ from app.models.notification_settings import (
     SystemNotificationSetting,
     Webhook,
 )
+from app.models.organization import Organization
+from app.models.report_schedule import ReportCadence, ReportSchedule, ReportType
 from app.models.poll_state import IndexPatternPollState
 from app.models.role_permission import DEFAULT_ROLE_PERMISSIONS, RolePermission
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.rule_comment import RuleComment
 from app.models.rule_exception import ExceptionOperator, RuleException
+from app.models.saved_view import SavedView
 from app.models.setting import Setting
 from app.models.sso_provider import SSOGroupMapping, SSOProvider
 from app.models.system_log import SystemLog
@@ -53,11 +65,18 @@ __all__ = [
     "AttackTechnique",
     "AuditChainTail",
     "AuditLog",
+    "Case",
+    "CaseAlert",
+    "CaseComment",
+    "CaseEvent",
+    "CaseEventType",
+    "CaseStatus",
     "CorrelationRule",
     "CorrelationRuleComment",
     "CorrelationRuleVersion",
     "DeploymentItemApplyStatus",
     "DeploymentRequest",
+    "DeploymentRequestApproval",
     "DeploymentRequestItem",
     "DeploymentRequestKind",
     "DeploymentRequestStatus",
@@ -76,6 +95,10 @@ __all__ = [
     "IndexPatternPollState",
     "LoginAttempt",
     "NotificationSettings",
+    "Organization",
+    "ReportCadence",
+    "ReportSchedule",
+    "ReportType",
     "RolePermission",
     "Rule",
     "RuleAttackMapping",
@@ -84,6 +107,7 @@ __all__ = [
     "RuleSource",
     "RuleStatus",
     "RuleVersion",
+    "SavedView",
     "Setting",
     "SSOGroupMapping",
     "SSOProvider",

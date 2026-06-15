@@ -56,6 +56,7 @@ import { KpiStrip, KpiTile } from '@/components/ui/kpi-tile'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { Badge as StatusBadge } from '@/components/ui/badge'
 import { SeverityPills } from '@/components/filters/SeverityPills'
+import { SavedViewsMenu } from '@/components/filters/SavedViewsMenu'
 import { chunkedBulkOperation, type BulkProgress } from '@/lib/bulk-utils'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
@@ -126,6 +127,35 @@ export default function AlertsPage() {
         ? prev.filter(t => t !== type)
         : [...prev, type]
     )
+  }
+
+  // The filter set captured into / restored from a saved view.
+  const currentFilters = {
+    search,
+    status: statusFilter,
+    severity: severityFilter,
+    type: alertTypeFilter,
+    owner: ownerFilter,
+  }
+  const applySavedView = (filters: Record<string, unknown>) => {
+    setSearch(typeof filters.search === 'string' ? filters.search : '')
+    const status = filters.status
+    setStatusFilter(
+      status === 'new' || status === 'acknowledged' || status === 'resolved' || status === 'false_positive'
+        ? status
+        : 'all'
+    )
+    setSeverityFilter(
+      Array.isArray(filters.severity)
+        ? (filters.severity as string[]).filter(s => SEVERITIES.includes(s as typeof SEVERITIES[number]))
+        : []
+    )
+    setAlertTypeFilter(
+      Array.isArray(filters.type)
+        ? (filters.type as string[]).filter(t => ALERT_TYPES.includes(t as AlertType)) as AlertType[]
+        : []
+    )
+    setOwnerFilter(typeof filters.owner === 'string' ? filters.owner : null)
   }
   const [pageSize, setPageSize] = useState(25)
 
@@ -705,6 +735,7 @@ export default function AlertsPage() {
 
           {/* Refresh and Compact toggle */}
           <div className="ml-auto flex items-center gap-1">
+            <SavedViewsMenu resource="alerts" currentFilters={currentFilters} onApply={applySavedView} />
             <Button variant="ghost" size="icon" onClick={loadData} title="Refresh" className="text-muted-foreground">
               <RotateCcw className="h-4 w-4" />
             </Button>
