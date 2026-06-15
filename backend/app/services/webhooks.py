@@ -84,9 +84,9 @@ def _validate_url_components(url: str) -> tuple[bool, str, Any]:
                     except ValueError:
                         continue
             except socket.gaierror:
-                # DNS resolution failed - could be temporary, allow the request
-                # The actual HTTP request will fail if the host is unreachable
-                pass
+                # Fail closed: if we cannot resolve the host we cannot prove the
+                # destination is not internal, so refuse rather than allow.
+                return False, "Webhook host could not be resolved", None
 
         return True, "", parsed
 
@@ -348,7 +348,7 @@ async def send_webhook(
     payload = formatter(alert, alert_url)
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(follow_redirects=False) as client:
             response = await client.post(
                 sanitized_url,
                 json=payload,
