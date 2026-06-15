@@ -417,7 +417,7 @@ async def test_rollback_redeploy_gate_off_applies(
                 __import__("datetime").UTC),
         )
     )
-    monkeypatch.setattr("app.api.rules._pending.apply_sigma_rule_deployment", apply_mock)
+    monkeypatch.setattr("app.api.rules.deploy.apply_sigma_rule_deployment", apply_mock)
 
     app.dependency_overrides[get_opensearch_client] = lambda: MagicMock()
     try:
@@ -460,7 +460,7 @@ async def test_rollback_redeploy_gate_on_files_request(
     await test_session.commit()
 
     apply_mock = AsyncMock()
-    monkeypatch.setattr("app.api.rules._pending.apply_sigma_rule_deployment", apply_mock)
+    monkeypatch.setattr("app.api.rules.deploy.apply_sigma_rule_deployment", apply_mock)
 
     app.dependency_overrides[get_opensearch_client] = lambda: MagicMock()
     try:
