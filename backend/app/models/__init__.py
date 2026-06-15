@@ -16,6 +16,7 @@ from app.models.correlation_rule_comment import CorrelationRuleComment
 from app.models.deployment_request import (
     DeploymentItemApplyStatus,
     DeploymentRequest,
+    DeploymentRequestApproval,
     DeploymentRequestItem,
     DeploymentRequestKind,
     DeploymentRequestStatus,
@@ -73,6 +74,7 @@ __all__ = [
     "CorrelationRuleVersion",
     "DeploymentItemApplyStatus",
     "DeploymentRequest",
+    "DeploymentRequestApproval",
     "DeploymentRequestItem",
     "DeploymentRequestKind",
     "DeploymentRequestStatus",

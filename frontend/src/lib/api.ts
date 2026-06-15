@@ -795,6 +795,19 @@ export type DeploymentRequestResponse = {
   // dual-control `target_environment_id` seam). Null/absent for plain deploys —
   // older backends omit it entirely, so treat undefined as "no target env".
   target_environment_id?: string | null
+  // Maker-checker hardening (I3): quorum progress + approval SLA. Older backends
+  // omit these; treat undefined as a 1-approver request with no deadline.
+  required_approvals?: number
+  approvals_count?: number
+  approval_deadline?: string | null
+  is_overdue?: boolean
+}
+
+export type DeploymentRequestApprovalInfo = {
+  approver_id: string
+  approver_email: string | null
+  note: string | null
+  created_at: string
 }
 
 export type DeploymentRequestItemDetail = {
@@ -813,6 +826,7 @@ export type DeploymentRequestItemDetail = {
 
 export type DeploymentRequestDetailResponse = DeploymentRequestResponse & {
   items: DeploymentRequestItemDetail[]
+  approvals?: DeploymentRequestApprovalInfo[]
 }
 
 export type DeploymentRequestStats = {
@@ -849,6 +863,9 @@ export const deploymentRequestsApi = {
     }),
   cancel: (id: string) =>
     api.post<DeploymentRequestResponse>(`/deployment-requests/${id}/cancel`, {}),
+  // Re-file a fresh PENDING request from a rejected/stale/cancelled one (I3).
+  resubmit: (id: string) =>
+    api.post<DeploymentRequestResponse>(`/deployment-requests/${id}/resubmit`, {}),
 }
 
 // Governance / deployment settings (admin) — lives under notification settings

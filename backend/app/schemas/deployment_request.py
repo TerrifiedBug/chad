@@ -11,6 +11,17 @@ class DeploymentRequestCreate(BaseModel):
 
     rule_ids: list[UUID] = Field(..., min_length=1)
     change_reason: str = Field(..., min_length=1, max_length=10000)
+    # Optional quorum override (default 1). Capped server-side.
+    required_approvals: int | None = Field(default=None, ge=1, le=10)
+
+
+class DeploymentRequestApprovalInfo(BaseModel):
+    """One recorded approval toward the quorum."""
+
+    approver_id: UUID
+    approver_email: str | None
+    note: str | None
+    created_at: datetime
 
 
 class DeploymentRequestReject(BaseModel):
@@ -58,12 +69,18 @@ class DeploymentRequestResponse(BaseModel):
     item_count: int
     rule_titles: list[str]
     age_seconds: float
+    # Maker-checker hardening (I3): quorum progress + approval SLA.
+    required_approvals: int = 1
+    approvals_count: int = 0
+    approval_deadline: datetime | None = None
+    is_overdue: bool = False
 
 
 class DeploymentRequestDetailResponse(DeploymentRequestResponse):
     """Detail view with per-item diff data."""
 
     items: list[DeploymentRequestItemDetail]
+    approvals: list[DeploymentRequestApprovalInfo] = Field(default_factory=list)
 
 
 class DeploymentRequestStats(BaseModel):
