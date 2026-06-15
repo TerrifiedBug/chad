@@ -1458,6 +1458,54 @@ export const teamsApi = {
     api.get<Team[]>('/teams'),
 }
 
+// --- Scheduled reporting + compliance (F5) ---
+export type ReportSchedule = {
+  id: string
+  name: string
+  report_type: string
+  cadence: string
+  framework: string | null
+  delivery_type: string
+  delivery_target: string | null
+  delivery_header_name: string | null
+  enabled: boolean
+  last_run_at: string | null
+  next_run_at: string | null
+  created_at: string
+  updated_at: string
+}
+export type ReportScheduleCreate = {
+  name: string
+  report_type: string
+  cadence: string
+  framework?: string | null
+  delivery_type?: string
+  delivery_target?: string | null
+  delivery_header_name?: string | null
+  delivery_header_value?: string | null
+  enabled?: boolean
+}
+export type ReportPreview = {
+  generated_at: string
+  type: string
+  framework?: string
+  framework_name?: string
+  sections: Record<string, unknown>[]
+}
+export const reportSchedulesApi = {
+  list: () => api.get<ReportSchedule[]>('/report-schedules'),
+  create: (data: ReportScheduleCreate) => api.post<ReportSchedule>('/report-schedules', data),
+  update: (id: string, data: Partial<ReportScheduleCreate>) =>
+    api.put<ReportSchedule>(`/report-schedules/${id}`, data),
+  remove: (id: string) => api.delete(`/report-schedules/${id}`),
+  run: (id: string) => api.post<{ delivered: boolean; report: ReportPreview }>(`/report-schedules/${id}/run`, {}),
+  preview: (reportType: string, framework?: string) => {
+    const q = new URLSearchParams({ report_type: reportType })
+    if (framework) q.set('framework', framework)
+    return api.get<ReportPreview>(`/report-schedules/preview?${q.toString()}`)
+  },
+}
+
 // --- Organizations (multi-tenant / MSSP) ---
 export type Organization = {
   id: string

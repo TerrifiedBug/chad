@@ -284,6 +284,9 @@ class SchedulerService:
             # Add audit maintenance jobs (retention purge + SIEM forward)
             self._schedule_audit_maintenance()
 
+            # Add scheduled-reports delivery job (every 15 minutes)
+            self._schedule_report_delivery()
+
             # Add health-metrics retention cleanup job (runs daily)
             self._schedule_health_metrics_cleanup()
 
@@ -494,6 +497,77 @@ class SchedulerService:
             await system_log_service.log_error(
                 session, category=LogCategory.BACKGROUND, service="audit_forward",
                 message=f"Audit forward failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    def _schedule_report_delivery(self):
+        """Schedule delivery of due scheduled reports (every 15 minutes).
+
+        No-op when no schedule is due; builds + delivers each due report and
+        advances its next_run_at.
+        """
+        scheduler.add_job(
+            self._run_report_delivery,
+            trigger=IntervalTrigger(minutes=15),
+            id="report_delivery",
+            name="scheduled report delivery",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=900,
+        )
+        logger.info("Scheduled report_delivery job (every 15 minutes)")
+
+    async def _run_report_delivery(self):
+        await self._run_with_lock(
+            "scheduler:report_delivery", timeout=600, job_func=self._execute_report_delivery
+        )
+
+    async def _execute_report_delivery(self):
+        from datetime import UTC, datetime
+
+        from sqlalchemy import select
+
+        from app.core.encryption import decrypt
+        from app.models.report_schedule import ReportSchedule
+        from app.services.opensearch import get_client_from_settings
+        from app.services.reporting import build_report, compute_next_run, deliver_report
+
+        session = await self._get_session()
+        try:
+            now = datetime.now(UTC)
+            due = list(
+                (
+                    await session.execute(
+                        select(ReportSchedule).where(
+                            ReportSchedule.enabled.is_(True),
+                            ReportSchedule.next_run_at.isnot(None),
+                            ReportSchedule.next_run_at <= now,
+                        )
+                    )
+                ).scalars().all()
+            )
+            if not due:
+                return
+            os_client = await get_client_from_settings(session)
+            for schedule in due:
+                try:
+                    report = await build_report(
+                        session, os_client, schedule.report_type, schedule.framework
+                    )
+                    await deliver_report(schedule, report, decrypt_header=decrypt)
+                except Exception as e:
+                    logger.warning("Report %s build/deliver failed: %s", schedule.id, e)
+                schedule.last_run_at = now
+                schedule.next_run_at = compute_next_run(now, schedule.cadence)
+            await session.commit()
+            logger.info("Report delivery: processed %s due report(s)", len(due))
+        except Exception as e:
+            logger.error("Scheduled report delivery failed: %s", e)
+            await system_log_service.log_error(
+                session, category=LogCategory.BACKGROUND, service="report_delivery",
+                message=f"Scheduled report delivery failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
         finally:

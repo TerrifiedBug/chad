@@ -24,6 +24,7 @@ import SettingsSection from '@/pages/settings/SettingsSection'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
 import OrganizationsPage from '@/pages/Organizations'
+import ReportsPage from '@/pages/Reports'
 import SigmaHQPage from '@/pages/SigmaHQ'
 import MISPPage from '@/pages/MISP'
 import HealthPage from '@/pages/Health'
@@ -205,6 +206,11 @@ function AppRoutes() {
       <Route path="/cases" element={
         <AuthRoute>
           <AppLayout><CasesPage /></AppLayout>
+        </AuthRoute>
+      } />
+      <Route path="/reports" element={
+        <AuthRoute>
+          <AppLayout><ReportsPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/cases/:id" element={

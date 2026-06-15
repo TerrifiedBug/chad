@@ -39,6 +39,7 @@ from app.models.notification_settings import (
     Webhook,
 )
 from app.models.organization import Organization
+from app.models.report_schedule import ReportCadence, ReportSchedule, ReportType
 from app.models.poll_state import IndexPatternPollState
 from app.models.role_permission import DEFAULT_ROLE_PERMISSIONS, RolePermission
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
@@ -95,6 +96,9 @@ __all__ = [
     "LoginAttempt",
     "NotificationSettings",
     "Organization",
+    "ReportCadence",
+    "ReportSchedule",
+    "ReportType",
     "RolePermission",
     "Rule",
     "RuleAttackMapping",

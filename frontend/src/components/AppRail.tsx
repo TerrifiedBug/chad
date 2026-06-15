@@ -26,6 +26,7 @@ import {
   Layers,
   ArrowLeft,
   FolderOpen,
+  FileBarChart,
 } from 'lucide-react'
 
 export type NavItem = {
@@ -61,6 +62,7 @@ export const navSections: NavSection[] = [
     label: 'Intelligence',
     items: [
       { href: '/attack', label: 'ATT&CK', icon: Target },
+      { href: '/reports', label: 'Reports', icon: FileBarChart },
       { href: '/index-patterns', label: 'Index Patterns', icon: Database, permission: 'manage_index_config' },
     ],
   },
