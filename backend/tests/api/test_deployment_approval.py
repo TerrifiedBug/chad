@@ -153,7 +153,7 @@ async def test_gate_off_deploy_goes_direct(
                                  deployed_at=__import__("datetime").datetime.now(
                                      __import__("datetime").UTC))
 
-    monkeypatch.setattr("app.api.rules.apply_sigma_rule_deployment", _fake_apply)
+    monkeypatch.setattr("app.api.rules._pending.apply_sigma_rule_deployment", _fake_apply)
 
     resp = await client.post(
         f"/api/rules/{rule.id}/deploy",

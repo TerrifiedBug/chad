@@ -686,7 +686,7 @@ async def test_get_index_pattern_fields(
     }
 
     # Patch get_opensearch_client
-    with patch("app.api.rules.get_opensearch_client", return_value=mock_os):
+    with patch("app.api.rules._pending.get_opensearch_client", return_value=mock_os):
         response = await authenticated_client.get(
             f"/api/rules/index-fields/{index_pattern.id}",
         )

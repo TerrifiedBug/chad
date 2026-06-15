@@ -65,12 +65,15 @@ Repo convention: CI jobs `cd backend` then run the tool directly (see the fronte
 
 ## Scope
 
-**In scope** (the only files you should modify):
-- `.github/workflows/ci.yml`
+**In scope** (the files you may modify):
+- `.github/workflows/ci.yml` — wire the gates (Steps 2, 3).
+- `backend/pyproject.toml` — ruff `ignore = ["UP042","E402"]` with rationale + pytest determinism `addopts` (Steps 3b, 3c).
+- `backend/app/**` — ONLY line-wrapping for `E501` and targeted `# noqa` comments (Step 3b). No behavior changes, no logic edits.
 
 **Out of scope** (do NOT touch):
-- Any application source under `backend/app/` — this plan does NOT fix test/lint/type failures it surfaces; it only wires the gates. If turning on a gate reveals failures, that is a STOP condition (see below), not a license to mass-edit source.
-- `backend/pyproject.toml` — tool config is already correct.
+- Any *behavioral* change to application source — E501 fixes are line-wrapping only; if a fix would alter behavior, STOP.
+- The `(str, Enum)` → `StrEnum` migration (UP042) — waived, not performed (changes serialization).
+- The deep async test-isolation rework — deferred to a separate plan; this plan only pins determinism.
 - The `release.yml` / `docker-build.yml` workflows.
 
 ## Git workflow
@@ -83,14 +86,15 @@ Repo convention: CI jobs `cd backend` then run the tool directly (see the fronte
 
 ### Step 1: Establish the current test baseline (READ-ONLY)
 
-Run the full backend suite locally exactly as it stands:
+Run the full backend suite locally (deterministic ordering, skipping the GitPython-collection dir that the dev container can't import):
 
-`docker compose -f docker-compose.dev.yml run --rm backend pytest -q`
+`docker compose -f docker-compose.dev.yml run --rm backend pytest -p no:randomly --ignore=tests/services/git -q`
 
-Record the result. Three outcomes:
-- **All green** → proceed to Step 2.
-- **Failures that are clearly infra-only** (e.g. connection refused to OpenSearch) → note them; Step 2 adds the OpenSearch service which should resolve them. Proceed.
-- **Real test failures unrelated to infra** → **STOP and report** the failing test names. The pytest gate cannot be turned on over a red suite; the human must triage first.
+Record the result. Outcomes:
+- **All green** → proceed; Step 3c makes the gate ordering-deterministic.
+- **Failures clearly infra-only** (e.g. OpenSearch connection refused) → Step 2 adds the OpenSearch service; proceed.
+- **Intermittent errors only under random ordering** → expected pre-existing flakiness; Step 3c pins determinism. Confirm the suite is green under the chosen deterministic setting.
+- **Real, deterministic test failures unrelated to infra** → **STOP and report** the failing test names. The gate cannot go on over a deterministically-red suite.
 
 ### Step 2: Add an OpenSearch service container to the `test-backend` job
 
@@ -143,12 +147,34 @@ Replace the "Run tests" step body so the exit code propagates (remove `|| echo �
           mypy app
 ```
 
-Rationale baked in: `ruff` is gating because it is fast and the config is already adopted (Step 1's lint run tells you if the tree is clean). `mypy` uses `continue-on-error: true` because the codebase is only partially typed (`disallow_untyped_defs = false`) and a hard mypy gate would block all PRs on day one. A follow-up plan can ratchet mypy to gating once the error count is driven down.
+Rationale baked in: `ruff` gates (fast, config already adopted); `mypy` uses `continue-on-error: true` because the codebase is only partially typed (`disallow_untyped_defs = false`) and a hard mypy gate would block all PRs day one. Follow-up: ratchet mypy to gating later.
 
-Before committing, confirm ruff is actually clean locally:
-`docker compose -f docker-compose.dev.yml run --rm backend ruff check .`
-- Clean (exit 0) → keep ruff gating as written.
-- **Not clean** → **STOP and report** the violation count and the top offending files. Do NOT mass-fix lint here; either the human approves a separate cleanup or the ruff step ships as `ruff check . || true` with a TODO — ask, don't decide.
+### Step 3b: Resolve the pre-existing ruff debt so the gate is viable (MEASURED)
+
+`ruff check app/` currently reports **109 errors** (measured at `ccf9970`, breakdown via `ruff check app/ --statistics`):
+
+| Count | Rule | Decision |
+|---|---|---|
+| 56 | `E501` line-too-long | **FIX** — wrap genuinely long lines. Re-measure AFTER plan 010 (it restructures `rules.py`, which holds ~12 of these); fix the post-010 set. |
+| 30 | `UP042` replace-str-enum (`(str, Enum)`→`StrEnum`) | **WAIVE** with rationale — migrating changes enum `str()`/serialization output; these enums back DB columns + Pydantic schemas + API responses. The `(str, Enum)` pattern is intentional and stable. Not a correctness bug. |
+| 21 | `E402` module-import-not-at-top | **WAIVE** with rationale — deliberate late/in-function imports to break circular dependencies (e.g. lazy GitPython). Hoisting them reintroduces cycles. |
+| 2 | `I001` unsorted-imports | **FIX** — `ruff check --fix` (safe, auto). |
+
+Concretely:
+1. Add to `backend/pyproject.toml` `[tool.ruff.lint]` an `ignore = ["UP042", "E402"]` with a comment explaining each (intentional str-enum serialization stability; intentional late imports for cycle avoidance). If a *few* specific E402/UP042 sites are genuinely fixable without risk, prefer a targeted `# noqa: <code>  # <reason>` there over the global ignore — but the global ignore is acceptable given the volume and intent.
+2. `ruff check --fix app/` to clear the 2 `I001`.
+3. Wrap the remaining `E501` long lines (these are real). This is mechanical; do it AFTER plan 010 lands so you fix the final file set, not lines that are about to move.
+4. Re-run `ruff check app/` → must reach exit 0 before flipping the gate on.
+
+**Do NOT** auto-`--fix` with `--unsafe-fixes` (that would attempt the risky UP042 StrEnum migration).
+
+### Step 3c: Make the gated suite deterministic (MEASURED)
+
+The suite depends on `pytest-randomly` (random test order each run) and has **pre-existing order-dependent flakiness** — certain random orderings produce intermittent ERRORS in unrelated tests (observed: async event-loop/connection interaction surfacing in correlation tests when other suites run first; `test_engine` is function-scoped so it is NOT row leakage). A gate over a non-deterministic suite is a flaky gate.
+
+Bounded fix for THIS plan: make CI deterministic by pinning the random seed. Add to `backend/pyproject.toml` `[tool.pytest.ini_options]` `addopts = "-p randomly --randomly-seed=<pick a fixed int>"` (or `addopts = "-p no:randomly"` to disable reordering entirely). Verify the full suite passes deterministically under the chosen setting before flipping the gate. **Deferred (separate plan):** the underlying async test-isolation fix (so the suite is robust under ANY ordering) — document it, don't attempt the 140-file rework here.
+
+Also note: `tests/services/git/` fails collection when GitPython is absent. CI installs `requirements.txt` (which pins `GitPython>=3.1.43`), so CI is fine; locally in a container missing it, use `--ignore=tests/services/git`. Confirm the CI image actually installs `requirements.txt` (it does, per the Install step).
 
 **Verify**: `python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` → exit 0; and `grep -c "|| echo" .github/workflows/ci.yml` → `0`.
 
@@ -169,17 +195,18 @@ ALL must hold:
 - [ ] `.github/workflows/ci.yml` contains an `opensearch` service under `test-backend`
 - [ ] `.github/workflows/ci.yml` contains a `ruff check .` step and an `mypy app` step (mypy with `continue-on-error: true`)
 - [ ] `python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` exits 0
-- [ ] Backend suite is green locally and `ruff check .` is clean locally
-- [ ] No files outside `.github/workflows/ci.yml` modified (`git status`)
+- [ ] `ruff check app/` exits 0 locally (after Step 3b: I001 auto-fixed, E501 wrapped, UP042+E402 waived with documented rationale in `pyproject.toml`)
+- [ ] Full backend suite green locally under the deterministic setting chosen in Step 3c
+- [ ] In-scope files only: `.github/workflows/ci.yml`, `backend/pyproject.toml` (ruff ignore + pytest determinism), plus any `backend/app/**` lines wrapped for E501 and any `# noqa` added (`git status`)
 - [ ] `plans/README.md` status row updated
 
 ## STOP conditions
 
 Stop and report back (do not improvise) if:
-- The current backend suite (Step 1) has real, non-infra test failures — the gate cannot go on over red.
-- `ruff check .` reports violations — do not mass-fix; ask how to proceed.
+- The backend suite has real, deterministic, non-infra test failures — the gate cannot go on over red.
+- Clearing E501 would require changing code behavior (not just line-wrapping) — report those sites.
 - The OpenSearch service makes CI exceed a reasonable time budget or the image fails health checks repeatedly.
-- Turning on the pytest gate would require touching `backend/app/` source.
+- A `UP042`/`E402` site you intended to *fix* (not waive) turns out to change behavior — waive it instead and note it.
 
 ## Maintenance notes
 
