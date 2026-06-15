@@ -37,6 +37,7 @@ from app.api.misp_feedback import router as misp_feedback_router
 from app.api.misp_sync import router as misp_sync_router
 from app.api.mode import router as mode_router
 from app.api.notifications import router as notifications_router
+from app.api.organizations import router as organizations_router
 from app.api.permissions import router as permissions_router
 from app.api.queue import router as queue_router
 from app.api.recommendations import router as recommendations_router
@@ -408,6 +409,7 @@ app.include_router(audit_settings_router, prefix="/api")
 app.include_router(ai_copilot_router, prefix="/api")
 app.include_router(recommendations_router, prefix="/api")
 app.include_router(rule_ci_router, prefix="/api")
+app.include_router(organizations_router, prefix="/api")
 app.include_router(environments_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
 app.include_router(sso_router, prefix="/api")

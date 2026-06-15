@@ -14,6 +14,7 @@ import {
   Shield,
   KeyRound,
   Users,
+  Building2,
   Globe,
   Target,
   Webhook,
@@ -55,6 +56,7 @@ export const settingsNavGroups: SettingsNavGroup[] = [
       { id: 'security', label: 'Security', description: 'Sessions, 2FA, rate limiting', icon: Shield, href: '/settings/security', permission: 'manage_settings' },
       { id: 'sso', label: 'SSO & Provisioning', description: 'OIDC providers, group sync, SCIM', icon: KeyRound, href: '/settings/sso', permission: 'manage_settings' },
       { id: 'users', label: 'Users & Roles', description: 'Manage users and role permissions', icon: Users, href: '/settings/users', permission: 'manage_users' },
+      { id: 'organizations', label: 'Organizations', description: 'Tenants for multi-tenant / MSSP', icon: Building2, href: '/settings/organizations', permission: 'manage_users' },
     ],
   },
   {

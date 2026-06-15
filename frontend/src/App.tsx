@@ -23,6 +23,7 @@ import SettingsHub from '@/pages/SettingsHub'
 import SettingsSection from '@/pages/settings/SettingsSection'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
+import OrganizationsPage from '@/pages/Organizations'
 import SigmaHQPage from '@/pages/SigmaHQ'
 import MISPPage from '@/pages/MISP'
 import HealthPage from '@/pages/Health'
@@ -262,6 +263,11 @@ function AppRoutes() {
         <AuthRoute>
           <AppLayout><ApiKeysPage /></AppLayout>
         </AuthRoute>
+      } />
+      <Route path="/settings/organizations" element={
+        <ProtectedRoute permission="manage_users">
+          <AppLayout><OrganizationsPage /></AppLayout>
+        </ProtectedRoute>
       } />
       <Route path="/sigmahq" element={
         <ProtectedRoute permission="manage_sigmahq">

@@ -85,6 +85,13 @@ class User(Base, UUIDMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
     )
 
+    # Tenant the user belongs to (multi-tenant / MSSP). Backfilled to the default
+    # org for existing/OSS installs.
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True, index=True,
+    )
+
     # How team_id was assigned: "manual" (admin-set, never clobbered by group
     # reconciliation) or "group_mapping" (owned by the SSO reconciliation writer).
     # Stored as a plain string (not a PG enum) to keep the migration additive and

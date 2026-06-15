@@ -1449,6 +1449,32 @@ export const teamsApi = {
     api.get<Team[]>('/teams'),
 }
 
+// --- Organizations (multi-tenant / MSSP) ---
+export type Organization = {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  suspended_at: string | null
+  deleted_at: string | null
+  description: string | null
+  created_at: string
+  updated_at: string
+}
+export type OrganizationCreate = {
+  name: string
+  slug: string
+  plan?: string
+  description?: string | null
+}
+export const organizationsApi = {
+  list: () => api.get<Organization[]>('/organizations'),
+  create: (data: OrganizationCreate) => api.post<Organization>('/organizations', data),
+  update: (id: string, data: { name?: string; plan?: string; description?: string; suspended?: boolean }) =>
+    api.put<Organization>(`/organizations/${id}`, data),
+  remove: (id: string) => api.delete(`/organizations/${id}`),
+}
+
 // --- Saved views (named, reusable list filter presets) ---
 export type SavedViewResource = 'alerts' | 'ioc_matches' | 'rules' | 'correlation'
 
