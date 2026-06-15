@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { SlaPolicyCard } from '@/components/settings/SlaPolicyCard'
 import { AuditSettingsCard } from '@/components/settings/AuditSettingsCard'
+import { IdpSecurityCard } from '@/components/settings/IdpSecurityCard'
 import {
   Card,
   CardContent,
@@ -666,6 +667,8 @@ export default function SettingsPage({ activeTab: activeTabProp }: { activeTab?:
           <SlaPolicyCard />
           {/* Audit hardening (retention, SIEM forward, PII redaction) */}
           <AuditSettingsCard />
+          {/* Enterprise identity: enforce MFA + session revocation */}
+          <IdpSecurityCard />
           {/* Session & Rate Limiting */}
           <Collapsible defaultOpen>
             <Card>

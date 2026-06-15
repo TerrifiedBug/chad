@@ -266,6 +266,7 @@ export type UpdateCheckResponse = {
 // Security settings types
 export type SecuritySettings = {
   force_2fa_on_signup: boolean
+  enforce_mfa?: boolean
   api_key_rate_limit: number
 }
 
@@ -1319,6 +1320,9 @@ export const usersApi = {
     api.post<{ temporary_password: string; message: string }>(
       `/users/${userId}/reset-password`
     ),
+  // Sign a user out everywhere (bump token_version) — I4 session revocation.
+  revokeSessions: (userId: string) =>
+    api.post<{ success: boolean; message: string }>(`/users/${userId}/revoke-sessions`, {}),
   // Explicit admin-initiated promotion of a local account to SSO (sets SSO
   // auth + provenance, removes the local password). Enables SSO login for it.
   promoteToSso: (userId: string) =>
@@ -1384,6 +1388,8 @@ export type CurrentUser = {
   auth_method: 'local' | 'sso'
   must_change_password: boolean
   totp_enabled?: boolean
+  mfa_enforced?: boolean
+  mfa_required?: boolean
   permissions?: Record<string, boolean>
   notification_preferences?: NotificationPreferences
 }
@@ -1405,6 +1411,9 @@ export const authApi = {
     api.get<SsoStatus>('/auth/sso/status'),
   getMe: () =>
     api.get<CurrentUser>('/auth/me'),
+  // Break-glass: invalidate every active session org-wide (I4).
+  revokeAllSessions: () =>
+    api.post<{ message: string }>('/auth/revoke-all-sessions', {}),
   // SSO login is handled by redirect, not API call. With multi-provider OIDC the
   // login flow is scoped to a provider id; the legacy zero-arg form is kept for
   // back-compat with single-provider deployments.

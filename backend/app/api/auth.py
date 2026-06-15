@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -548,6 +548,15 @@ async def get_current_user_info(
     # Get user's permissions
     permissions = await get_role_permissions(db, current_user.role)
 
+    # Org-wide enforced MFA (I4): when on, a local user without TOTP must enrol.
+    security_settings = await get_setting(db, "security")
+    mfa_enforced = bool(security_settings and security_settings.get("enforce_mfa", False))
+    mfa_required = (
+        mfa_enforced
+        and current_user.auth_method == AuthMethod.LOCAL
+        and not current_user.totp_enabled
+    )
+
     return {
         "id": str(current_user.id),
         "email": current_user.email,
@@ -556,12 +565,34 @@ async def get_current_user_info(
         "auth_method": current_user.auth_method.value,
         "must_change_password": current_user.must_change_password,
         "totp_enabled": current_user.totp_enabled,
+        "mfa_enforced": mfa_enforced,
+        "mfa_required": mfa_required,
         "permissions": permissions,
         "notification_preferences": current_user.notification_preferences or {
             "browser_notifications": False,
             "severities": ["critical", "high"]
         },
     }
+
+
+@router.post("/revoke-all-sessions")
+async def revoke_all_sessions(
+    http_request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin: Annotated[User, Depends(require_admin)],
+):
+    """Invalidate every active session by bumping all users' token_version (I4).
+
+    Forces every user (including this admin) to re-authenticate — the break-glass
+    control for a suspected token compromise.
+    """
+    await db.execute(update(User).values(token_version=User.token_version + 1))
+    await audit_log(
+        db, admin.id, "auth.revoke_all_sessions", "user", None, {},
+        ip_address=get_client_ip(http_request),
+    )
+    await db.commit()
+    return {"message": "All sessions revoked. Every user must sign in again."}
 
 
 @router.patch("/me/notifications")
