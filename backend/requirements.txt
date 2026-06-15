@@ -42,7 +42,7 @@ GitPython>=3.1.43
 prometheus-client>=0.20.0  # Prometheus pipeline metrics (eps, alerts, latency)
 
 # OpenSearch client
-opensearch-py==2.5.0
+opensearch-py==3.2.0
 
 # Redis for distributed locking and queue management
 redis>=5.0.0
