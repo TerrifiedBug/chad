@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SlaBadge } from '@/components/alerts/SlaBadge'
+import { AddToCaseButton } from '@/components/alerts/AddToCaseButton'
 import { useToast } from '@/components/ui/toast-provider'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
@@ -1132,6 +1133,7 @@ export default function AlertDetailPage() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          {id && <AddToCaseButton alertId={id} alertTitle={alert.rule_title} disabled={!hasPermission('manage_alerts')} />}
           <Select
             value={alert.status}
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}

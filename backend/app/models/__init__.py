@@ -3,6 +3,14 @@ from app.models.api_key import APIKey
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.audit_chain_tail import AuditChainTail
 from app.models.audit_log import AuditLog
+from app.models.case import (
+    Case,
+    CaseAlert,
+    CaseComment,
+    CaseEvent,
+    CaseEventType,
+    CaseStatus,
+)
 from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_rule_comment import CorrelationRuleComment
 from app.models.deployment_request import (
@@ -54,6 +62,12 @@ __all__ = [
     "AttackTechnique",
     "AuditChainTail",
     "AuditLog",
+    "Case",
+    "CaseAlert",
+    "CaseComment",
+    "CaseEvent",
+    "CaseEventType",
+    "CaseStatus",
     "CorrelationRule",
     "CorrelationRuleComment",
     "CorrelationRuleVersion",

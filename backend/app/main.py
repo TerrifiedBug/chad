@@ -15,6 +15,7 @@ from app.api.api_keys import router as api_keys_router
 from app.api.attack import router as attack_router
 from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
+from app.api.cases import router as cases_router
 from app.api.circuit_breakers import router as circuit_breakers_router
 from app.api.correlation_rules import router as correlation_rules_router
 from app.api.deployment_requests import router as deployment_requests_router
@@ -398,6 +399,7 @@ app.include_router(reports_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
 app.include_router(saved_views_router, prefix="/api")
 app.include_router(sla_router, prefix="/api")
+app.include_router(cases_router, prefix="/api")
 app.include_router(environments_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
 app.include_router(sso_router, prefix="/api")

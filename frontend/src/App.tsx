@@ -17,6 +17,8 @@ import IndexPatternsPage from '@/pages/IndexPatterns'
 import IndexPatternDetailPage from '@/pages/IndexPatternDetail'
 import AlertsPage from '@/pages/Alerts'
 import AlertDetailPage from '@/pages/AlertDetail'
+import CasesPage from '@/pages/Cases'
+import CaseDetailPage from '@/pages/CaseDetail'
 import SettingsHub from '@/pages/SettingsHub'
 import SettingsSection from '@/pages/settings/SettingsSection'
 import ChangePasswordPage from '@/pages/ChangePassword'
@@ -197,6 +199,16 @@ function AppRoutes() {
       <Route path="/ioc-matches" element={
         <AuthRoute>
           <AppLayout><IOCMatchesPage /></AppLayout>
+        </AuthRoute>
+      } />
+      <Route path="/cases" element={
+        <AuthRoute>
+          <AppLayout><CasesPage /></AppLayout>
+        </AuthRoute>
+      } />
+      <Route path="/cases/:id" element={
+        <AuthRoute>
+          <AppLayout><CaseDetailPage /></AppLayout>
         </AuthRoute>
       } />
       <Route path="/approvals" element={

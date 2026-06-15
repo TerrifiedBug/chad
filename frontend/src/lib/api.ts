@@ -1474,6 +1474,102 @@ export const savedViewsApi = {
     api.delete(`/saved-views/${id}`),
 }
 
+// --- Case management (investigation workspace) ---
+export type CaseStatus = 'open' | 'investigating' | 'contained' | 'closed'
+
+export type CaseSummary = {
+  id: string
+  number: number
+  title: string
+  description: string | null
+  status: CaseStatus
+  severity: string
+  owner_id: string | null
+  owner_email: string | null
+  team_id: string | null
+  created_by: string | null
+  sla_due_at: string | null
+  sla_breached: boolean
+  closed_at: string | null
+  tags: string[] | null
+  alert_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type CaseAlertLink = {
+  id: string
+  alert_id: string
+  alert_title: string | null
+  alert_severity: string | null
+  added_by: string | null
+  added_at: string
+}
+
+export type CaseEvent = {
+  id: string
+  event_type: string
+  actor_id: string | null
+  actor_email: string | null
+  message: string
+  event_metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+export type CaseComment = {
+  id: string
+  content: string
+  user_id: string
+  user_email: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export type CaseDetail = CaseSummary & {
+  alerts: CaseAlertLink[]
+  events: CaseEvent[]
+  comments: CaseComment[]
+}
+
+export type CaseCreate = {
+  title: string
+  description?: string | null
+  severity?: string
+  owner_id?: string | null
+  tags?: string[] | null
+  alert_ids?: string[]
+}
+
+export const casesApi = {
+  list: (params: { status?: string; owner?: string; severity?: string; search?: string; limit?: number; offset?: number } = {}) => {
+    const q = new URLSearchParams()
+    if (params.status) q.set('status', params.status)
+    if (params.owner) q.set('owner', params.owner)
+    if (params.severity) q.set('severity', params.severity)
+    if (params.search) q.set('search', params.search)
+    if (params.limit != null) q.set('limit', String(params.limit))
+    if (params.offset != null) q.set('offset', String(params.offset))
+    const qs = q.toString()
+    return api.get<{ cases: CaseSummary[]; total: number }>(`/cases${qs ? `?${qs}` : ''}`)
+  },
+  get: (id: string) => api.get<CaseDetail>(`/cases/${id}`),
+  create: (data: CaseCreate) => api.post<CaseSummary>('/cases', data),
+  update: (id: string, data: { title?: string; description?: string; severity?: string; tags?: string[] }) =>
+    api.put<CaseSummary>(`/cases/${id}`, data),
+  setStatus: (id: string, statusValue: CaseStatus, note?: string) =>
+    api.post<CaseSummary>(`/cases/${id}/status`, { status: statusValue, note }),
+  assign: (id: string, ownerId: string | null) =>
+    api.post<CaseSummary>(`/cases/${id}/assign`, { owner_id: ownerId }),
+  addAlerts: (id: string, alertIds: string[]) =>
+    api.post<CaseSummary>(`/cases/${id}/alerts`, { alert_ids: alertIds }),
+  removeAlert: (id: string, alertId: string) =>
+    api.delete(`/cases/${id}/alerts/${alertId}`),
+  addComment: (id: string, content: string) =>
+    api.post<CaseComment>(`/cases/${id}/comments`, { content }),
+  deleteComment: (id: string, commentId: string) =>
+    api.delete(`/cases/${id}/comments/${commentId}`),
+}
+
 // --- SLA policy (per-severity triage time targets, in minutes) ---
 export type SlaSeverity = 'critical' | 'high' | 'medium' | 'low' | 'informational'
 export type SlaPolicy = {
