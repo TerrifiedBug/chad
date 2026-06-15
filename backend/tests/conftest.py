@@ -9,6 +9,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.core.security import create_access_token, get_password_hash
 from app.db.base import Base
@@ -97,7 +98,7 @@ def event_loop_policy():
 @pytest_asyncio.fixture(scope="function")
 async def test_engine():
     """Create a test database engine."""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
 
     # Drop all tables and enum types to ensure clean state
     async with engine.begin() as conn:
