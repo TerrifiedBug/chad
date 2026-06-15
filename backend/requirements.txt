@@ -30,7 +30,7 @@ pysigma-backend-opensearch>=1.0.0
 mitreattack-python>=3.0.0
 
 # GeoIP
-geoip2>=4.8.0
+geoip2>=5.2.0
 
 # Background scheduling
 apscheduler>=3.10.0
