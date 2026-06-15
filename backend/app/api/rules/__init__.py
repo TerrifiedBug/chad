@@ -14,7 +14,7 @@ moved into their dedicated group module.
 
 from fastapi import APIRouter
 
-from app.api.rules import _pending, metadata
+from app.api.rules import _pending, exceptions, metadata
 
 router = APIRouter()
 
@@ -22,4 +22,5 @@ router = APIRouter()
 # (static paths before /{rule_id}) is preserved. _pending still holds the
 # not-yet-extracted groups in their original relative order.
 router.include_router(_pending.router)
+router.include_router(exceptions.router)
 router.include_router(metadata.router)
