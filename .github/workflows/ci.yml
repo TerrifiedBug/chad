@@ -29,10 +29,13 @@ jobs:
       - name: Build backend image
         run: docker compose -f docker-compose.dev.yml build backend
 
+      # No --cov: pytest-cov is not in the backend image (requirements.txt ships
+      # pytest + pytest-asyncio only). Coverage upload was best-effort/non-gating
+      # anyway; the gating signal is pass/fail.
       - name: Run backend tests (in container)
         run: |
           docker compose -f docker-compose.dev.yml run --rm backend \
-            pytest --cov=app --cov-report=xml --ignore=tests/integration
+            pytest --ignore=tests/integration
 
       - name: Lint (ruff)
         run: docker compose -f docker-compose.dev.yml run --rm backend ruff check .
@@ -40,14 +43,6 @@ jobs:
       - name: Typecheck (mypy, non-blocking)
         continue-on-error: true
         run: docker compose -f docker-compose.dev.yml run --rm backend mypy app
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        if: success()
-        continue-on-error: true
-        with:
-          file: backend/coverage.xml
-          flags: backend
 
   test-frontend:
     runs-on: ubuntu-latest
