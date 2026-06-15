@@ -57,7 +57,7 @@ aiosqlite==0.20.0
 ruff==0.15.8
 
 # Security
-nh3>=0.2.17  # Fast HTML sanitization (binding to Rust ammonia)
+nh3>=0.3.5  # Fast HTML sanitization (binding to Rust ammonia)
 regex>=2024.11.6  # Timeout-capable regex engine (ReDoS protection on the ingest hot path)
 
 # Reporting
