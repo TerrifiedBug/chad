@@ -17,6 +17,7 @@ from app.models.correlation_rule import CorrelationRule, CorrelationRuleVersion
 from app.models.correlation_state import CorrelationState
 from app.models.rule import Rule
 from app.services.field_mapping import resolve_mappings
+from app.utils.nested import get_nested_value
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +43,6 @@ def is_rule_snoozed(corr_rule: CorrelationRule) -> bool:
             snooze_until = snooze_until.replace(tzinfo=UTC)
         return now < snooze_until
     return False
-
-
-def get_nested_value(obj: dict, path: str) -> any:
-    """Get a value from a nested dict using dot notation."""
-    keys = path.split('.')
-    value = obj
-    for key in keys:
-        if isinstance(value, dict):
-            value = value.get(key)
-        else:
-            return None
-    return value
 
 
 async def resolve_entity_field(

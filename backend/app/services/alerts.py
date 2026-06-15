@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.regex_safe import safe_search
 from app.models.rule_exception import ExceptionOperator
 from app.services.system_log import LogCategory, system_log_service
+from app.utils.nested import get_nested_value
 
 if TYPE_CHECKING:
     from app.services.alert_cache import AlertCache
@@ -50,18 +51,6 @@ def generate_deterministic_alert_id(rule_id: str, log_document: dict) -> str:
     # Combine rule_id + event_hash + time_bucket
     composite = f"{rule_id}:{event_hash}:{time_bucket}"
     return hashlib.sha256(composite.encode()).hexdigest()[:32]
-
-
-def get_nested_value(obj: dict, path: str) -> Any:
-    """Get a value from a nested dict using dot notation."""
-    keys = path.split(".")
-    value = obj
-    for key in keys:
-        if isinstance(value, dict) and key in value:
-            value = value[key]
-        else:
-            return None
-    return value
 
 
 def check_exception_match(
