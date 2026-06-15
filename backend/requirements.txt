@@ -23,7 +23,7 @@ pydantic-settings==2.13.1
 email-validator==2.3.0
 
 # Sigma (for future tasks)
-pysigma>=0.11.0
+pysigma>=1.3.3
 pysigma-backend-opensearch>=1.0.0
 
 # MITRE ATT&CK
