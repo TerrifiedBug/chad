@@ -25,6 +25,21 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      opensearch:
+        image: opensearchproject/opensearch:2.5.0
+        env:
+          discovery.type: single-node
+          plugins.security.disabled: "true"
+          OPENSEARCH_INITIAL_ADMIN_PASSWORD: ChadCi!Passw0rd
+          OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -sf http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -48,7 +63,18 @@ jobs:
           OPENSEARCH_URL: http://localhost:9200
         run: |
           cd backend
-          pytest --cov=app --cov-report=xml || echo "Tests completed (some may have been skipped)"
+          pytest --cov=app --cov-report=xml
+
+      - name: Lint (ruff)
+        run: |
+          cd backend
+          ruff check app/
+
+      - name: Typecheck (mypy, non-blocking)
+        continue-on-error: true
+        run: |
+          cd backend
+          mypy app
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
