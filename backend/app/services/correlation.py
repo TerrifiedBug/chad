@@ -280,7 +280,7 @@ async def check_correlation(
             rule_id,
         )
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         for corr_rule, deployed_data in corr_rules_data:
             # Determine which rule in the pair just fired and which to wait for
@@ -375,7 +375,7 @@ async def cleanup_expired_states(db: AsyncSession) -> int:
     Returns:
         Number of states cleaned up
     """
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     result = await db.execute(
         select(CorrelationState).where(CorrelationState.expires_at < now)

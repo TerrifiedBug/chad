@@ -182,6 +182,106 @@ async def test_check_correlation_stores_state_on_first_rule(db_session, test_use
 
 
 @pytest.mark.asyncio
+async def test_check_correlation_stores_tz_aware_datetimes(db_session, test_user):
+    """Regression: stored correlation state must use tz-aware datetimes.
+
+    CorrelationState.triggered_at/expires_at are DateTime(timezone=True).
+    The service must populate them with tz-aware values (datetime.now(UTC)),
+    not naive datetime.utcnow(), to avoid naive/aware comparison errors and
+    off-by-offset window math.
+    """
+    index_pattern = IndexPattern(
+        id=uuid.uuid4(),
+        name="logs-test-corr-tz",
+        pattern="logs-*",
+        percolator_index="chad-percolator-logs-test-corr-tz",
+    )
+    db_session.add(index_pattern)
+    await db_session.flush()
+
+    rule_a = Rule(
+        id=uuid.uuid4(),
+        title="Rule A",
+        description="Test",
+        yaml_content="detection:\n  selection:\n    Image: '*'",
+        severity="medium",
+        status=RuleStatus.DEPLOYED,
+        source=RuleSource.USER,
+        index_pattern_id=index_pattern.id,
+        created_by=test_user.id,
+    )
+    rule_b = Rule(
+        id=uuid.uuid4(),
+        title="Rule B",
+        description="Test",
+        yaml_content="detection:\n  selection:\n    Image: '*'",
+        severity="medium",
+        status=RuleStatus.DEPLOYED,
+        source=RuleSource.USER,
+        index_pattern_id=index_pattern.id,
+        created_by=test_user.id,
+    )
+    db_session.add_all([rule_a, rule_b])
+    await db_session.flush()
+
+    corr_rule = CorrelationRule(
+        id=uuid.uuid4(),
+        name="Test Correlation TZ",
+        rule_a_id=rule_a.id,
+        rule_b_id=rule_b.id,
+        entity_field="Image",
+        time_window_minutes=5,
+        severity="high",
+        deployed_at=datetime.now(UTC),
+        deployed_version=1,
+        current_version=1,
+        created_by=test_user.id,
+    )
+    db_session.add(corr_rule)
+    await db_session.flush()
+
+    version = CorrelationRuleVersion(
+        id=uuid.uuid4(),
+        correlation_rule_id=corr_rule.id,
+        version_number=1,
+        name="Test Correlation TZ",
+        rule_a_id=rule_a.id,
+        rule_b_id=rule_b.id,
+        entity_field="Image",
+        time_window_minutes=5,
+        severity="high",
+        changed_by=test_user.id,
+        change_reason="Initial deployment",
+    )
+    db_session.add(version)
+    await db_session.commit()
+
+    with patch('app.services.correlation.resolve_entity_field', new_callable=AsyncMock) as mock_resolve:
+        mock_resolve.return_value = "/usr/bin/malware"
+
+        log_document = {"process": {"executable": "/usr/bin/malware"}}
+        result = await check_correlation(
+            db_session,
+            rule_id=rule_a.id,
+            log_document=log_document,
+            alert_id="alert-tz-001",
+        )
+
+        # No pair yet — state is stored
+        assert result == []
+
+        await db_session.flush()
+        states_result = await db_session.execute(
+            select(CorrelationState).where(CorrelationState.correlation_rule_id == corr_rule.id)
+        )
+        state = states_result.scalar_one_or_none()
+        assert state is not None
+        # The core regression assertion: both datetimes are tz-aware.
+        assert state.triggered_at.tzinfo is not None
+        assert state.expires_at.tzinfo is not None
+
+
+@pytest.mark.asyncio
 async def test_check_correlation_triggers_on_second_rule(db_session, test_user):
     """Test that check_correlation triggers when second rule fires within window."""
     index_pattern = IndexPattern(
