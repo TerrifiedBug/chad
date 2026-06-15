@@ -123,6 +123,24 @@ async def test_resubmit_after_rejection(client, test_session, test_index_pattern
 
 
 @pytest.mark.asyncio
+async def test_list_loads_approvals_without_500(client, test_session, test_index_pattern, admin_user):
+    # Regression: the list endpoint must eager-load `approvals`; _build_summary
+    # reads len(req.approvals) and otherwise lazy-loads in async → 500.
+    await _seed(test_session)
+    rule = await _make_rule(test_session, test_index_pattern, admin_user)
+    requester = await _make_user(test_session, UserRole.ANALYST, "maker5@example.com")
+    created = await _file(client, rule, requester, required_approvals=2)
+    # Record one approval (stays pending with 1/2).
+    await client.post(f"/api/deployment-requests/{created['id']}/approve", json={}, headers=_auth(admin_user))
+
+    listed = await client.get("/api/deployment-requests?status_filter=pending", headers=_auth(admin_user))
+    assert listed.status_code == 200, listed.text
+    row = next(r for r in listed.json() if r["id"] == created["id"])
+    assert row["approvals_count"] == 1
+    assert row["required_approvals"] == 2
+
+
+@pytest.mark.asyncio
 async def test_cannot_resubmit_pending(client, test_session, test_index_pattern, admin_user):
     await _seed(test_session)
     rule = await _make_rule(test_session, test_index_pattern, admin_user)

@@ -19,6 +19,7 @@ import {
   Sheet,
   SheetContent,
 } from '@/components/ui/sheet'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -143,7 +144,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         <div className="mx-auto max-w-screen-2xl">
           {/* Keyed by route so navigating away from a crashed page resets the boundary. */}
           <ErrorBoundary key={location.pathname}>
-            {children}
+            {/* Global tooltip provider so pages using RelativeTime/Tooltip work
+                without each wrapping their own (radix allows nested providers,
+                so pages that still wrap their own keep working). */}
+            <TooltipProvider>
+              {children}
+            </TooltipProvider>
           </ErrorBoundary>
         </div>
       </main>
