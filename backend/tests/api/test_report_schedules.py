@@ -1,9 +1,11 @@
 """Tests for scheduled reporting (F5): report builder + schedule API."""
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 
+from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash
 from app.models.user import User, UserRole
 from app.services.reporting import COMPLIANCE_FRAMEWORKS, build_report, compute_next_run
@@ -74,11 +76,15 @@ async def test_schedule_crud_and_preview(client, test_session):
     assert prev.status_code == 200, prev.text
     assert prev.json()["type"] == "coverage"
 
-    created = await client.post(
-        "/api/report-schedules", headers=_auth(admin),
-        json={"name": "Weekly coverage", "report_type": "coverage", "cadence": "weekly",
-              "delivery_type": "webhook", "delivery_target": "https://siem.example.com/reports"},
-    )
+    # Bypass the fail-closed webhook DNS/SSRF guard so this CRUD test does not depend on live
+    # DNS resolution of the delivery target host. test_invalid_delivery_url_rejected still
+    # exercises rejection.
+    with patch.object(settings, "ALLOW_INTERNAL_WEBHOOK_IPS", True):
+        created = await client.post(
+            "/api/report-schedules", headers=_auth(admin),
+            json={"name": "Weekly coverage", "report_type": "coverage", "cadence": "weekly",
+                  "delivery_type": "webhook", "delivery_target": "https://siem.example.com/reports"},
+        )
     assert created.status_code == 201, created.text
     assert created.json()["next_run_at"] is not None
     sid = created.json()["id"]

@@ -276,30 +276,29 @@ class TestProviderCreateSsrf:
         assert "issuer" in resp.text.lower()
 
     @pytest.mark.asyncio
-    async def test_create_rejects_internal_ip_issuer(self, authenticated_client: AsyncClient):
-        from app.core.config import settings
-
-        with patch.object(settings, "ALLOW_INTERNAL_WEBHOOK_IPS", False):
-            resp = await authenticated_client.post(
-                "/api/auth/sso/providers",
-                json=_payload(issuer_url="https://169.254.169.254"),
-            )
-        assert resp.status_code == 400
+    async def test_create_allows_internal_ip_issuer(self, authenticated_client: AsyncClient):
+        # Per validate_issuer_url (sso_providers.py): the issuer is admin-set, not
+        # attacker-supplied, and self-hosted IdPs (Authentik/Keycloak/PocketID) legitimately
+        # live on private networks — internal IPs are intentionally PERMITTED; only https is required.
+        resp = await authenticated_client.post(
+            "/api/auth/sso/providers",
+            json=_payload(issuer_url="https://169.254.169.254"),
+        )
+        assert resp.status_code == 201
 
     @pytest.mark.asyncio
-    async def test_build_client_refuses_internal_issuer(self, test_session):
-        # The login-path client builder also enforces the SSRF guard.
-        from app.core.config import settings
+    async def test_build_client_allows_internal_issuer(self, test_session):
+        # The login-path client builder accepts internal-IP issuers for the same reason
+        # validate_issuer_url permits them: admin-set self-hosted IdPs on private networks.
         from app.models.sso_provider import SSOProvider
         from app.services.sso_providers import build_provider_client
 
         provider = SSOProvider(
-            id=uuid.uuid4(), name="Evil", enabled=True,
+            id=uuid.uuid4(), name="Self-hosted IdP", enabled=True,
             issuer_url="https://127.0.0.1", client_id="c",
         )
-        with patch.object(settings, "ALLOW_INTERNAL_WEBHOOK_IPS", False):
-            with pytest.raises(ValueError):
-                build_provider_client(provider)
+        # Should not raise.
+        build_provider_client(provider)
 
 
 class TestSsoEnforcement:

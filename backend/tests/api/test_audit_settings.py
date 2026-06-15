@@ -1,9 +1,11 @@
 """Tests for the audit hardening settings API."""
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 
+from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash
 from app.models.user import User, UserRole
 
@@ -67,13 +69,16 @@ async def test_forward_rejects_invalid_url_scheme(client, test_session):
 @pytest.mark.asyncio
 async def test_header_value_write_only(client, test_session):
     admin = await _make_user(test_session, "admin4@example.com", UserRole.ADMIN)
-    resp = await client.put(
-        "/api/audit-settings", headers=_auth(admin),
-        json={"retention_days": 90,
-              "forward": {"enabled": True, "url": "https://siem.example.com/ingest",
-                          "format": "cef", "header_name": "Authorization", "header_value": "Bearer secret"},
-              "redaction": {"enabled": True, "fields": ["email"]}},
-    )
+    # Bypass the fail-closed webhook DNS/SSRF guard so this settings test does not depend on
+    # live DNS resolution of the forward URL host.
+    with patch.object(settings, "ALLOW_INTERNAL_WEBHOOK_IPS", True):
+        resp = await client.put(
+            "/api/audit-settings", headers=_auth(admin),
+            json={"retention_days": 90,
+                  "forward": {"enabled": True, "url": "https://siem.example.com/ingest",
+                              "format": "cef", "header_name": "Authorization", "header_value": "Bearer secret"},
+                  "redaction": {"enabled": True, "fields": ["email"]}},
+        )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["retention_days"] == 90
