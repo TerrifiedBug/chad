@@ -1,7 +1,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, mispApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator, RelatedAlertsResponse } from '@/lib/api'
+import { alertsApi, alertCommentsApi, correlationRulesApi, rulesApi, mispApi, slaApi, Alert, AlertComment, AlertStatus, TIEnrichmentIndicator, CorrelationRule, ExceptionOperator, RelatedAlertsResponse } from '@/lib/api'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { SlaBadge } from '@/components/alerts/SlaBadge'
 import { useToast } from '@/components/ui/toast-provider'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
@@ -677,6 +685,22 @@ export default function AlertDetailPage() {
     queryFn: () => mispApi.getStatus(),
   })
 
+  // SLA policy drives the alert's SLA badge (severity → target time).
+  const { data: slaPolicy } = useQuery({
+    queryKey: ['sla-policy'],
+    queryFn: () => slaApi.get(),
+    staleTime: 5 * 60_000,
+  })
+
+  // Teammates the actor may assign this alert to (loaded on demand for the menu).
+  const canAssign = hasPermission('manage_alerts') && osAvailable
+  const { data: assignableUsers = [] } = useQuery({
+    queryKey: ['assignable-users'],
+    queryFn: () => alertsApi.assignableUsers(),
+    enabled: canAssign,
+    staleTime: 5 * 60_000,
+  })
+
   // Helper to generate unique condition IDs
   const generateConditionId = () => `cond-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
@@ -820,6 +844,20 @@ export default function AlertDetailPage() {
       }
     } catch {
       showToast('Failed to update ownership', 'error')
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
+  const handleAssignTo = async (assigneeId: string) => {
+    if (!id || !alert) return
+    setIsAssigning(true)
+    try {
+      const result = await alertsApi.assign(id, assigneeId)
+      setAlert({ ...alert, owner_id: assigneeId, owner_username: result.owner, owned_at: new Date().toISOString() })
+      showToast(`Assigned to ${result.owner}`, 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to assign alert', 'error')
     } finally {
       setIsAssigning(false)
     }
@@ -1071,6 +1109,29 @@ export default function AlertDetailPage() {
               'Take Ownership'
             )}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" disabled={!canAssign} title={!canAssign ? 'Requires manage_alerts' : 'Assign to a teammate'}>
+                Assign…
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
+              <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+              {assignableUsers.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No teammates available</div>
+              )}
+              {assignableUsers.map((u) => (
+                <DropdownMenuItem
+                  key={u.id}
+                  disabled={isAssigning || u.id === alert.owner_id}
+                  onSelect={() => handleAssignTo(u.id)}
+                >
+                  {u.email}
+                  {u.id === alert.owner_id && <span className="ml-auto text-xs text-muted-foreground">current</span>}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Select
             value={alert.status}
             onValueChange={(v) => handleStatusChange(v as AlertStatus)}
@@ -1129,6 +1190,12 @@ export default function AlertDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {slaPolicy?.enabled && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">SLA</span>
+                  <SlaBadge alert={alert} policy={slaPolicy} />
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Status</span>
                 <span

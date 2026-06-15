@@ -1090,6 +1090,9 @@ export type Alert = {
   owner_id?: string
   owner_username?: string
   owned_at?: string
+  // SLA: stamped by the breach-scan job once an open alert passes its target.
+  sla_breached?: boolean
+  sla_due_at?: string | null
   exception_created?: {
     exception_id: string
     field: string
@@ -1171,11 +1174,16 @@ export const alertsApi = {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
       return r
     }),
-  assign: async (alertId: string): Promise<{ message: string; owner: string }> => {
-    return api.post(`/alerts/${alertId}/assign`)
+  // Omit assigneeId to self-assign; pass a user id to assign a teammate.
+  assign: async (alertId: string, assigneeId?: string): Promise<{ message: string; owner: string }> => {
+    return api.post(`/alerts/${alertId}/assign`, assigneeId ? { assignee_id: assigneeId } : {})
   },
   unassign: async (alertId: string): Promise<{ message: string }> => {
     return api.post(`/alerts/${alertId}/unassign`)
+  },
+  // Users the current actor may assign alerts to (their team + self).
+  assignableUsers: async (): Promise<{ id: string; email: string }[]> => {
+    return api.get(`/alerts/assignable-users`)
   },
   getRelated: (alertId: string, limit?: number) => {
     const params = new URLSearchParams()
@@ -1464,6 +1472,18 @@ export const savedViewsApi = {
     api.put<SavedView>(`/saved-views/${id}`, data),
   remove: (id: string) =>
     api.delete(`/saved-views/${id}`),
+}
+
+// --- SLA policy (per-severity triage time targets, in minutes) ---
+export type SlaSeverity = 'critical' | 'high' | 'medium' | 'low' | 'informational'
+export type SlaPolicy = {
+  enabled: boolean
+  targets_minutes: Record<SlaSeverity, number>
+}
+
+export const slaApi = {
+  get: () => api.get<SlaPolicy>('/sla-policy'),
+  update: (policy: SlaPolicy) => api.put<SlaPolicy>('/sla-policy', policy),
 }
 
 // --- Environment types (Model B: one rule identity, per-env deployment state) ---

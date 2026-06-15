@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { SlaPolicyCard } from '@/components/settings/SlaPolicyCard'
 import {
   Card,
   CardContent,
@@ -660,6 +661,8 @@ export default function SettingsPage({ activeTab: activeTabProp }: { activeTab?:
       {/* Security Section - combines security, permissions, and sso */}
       {activeTab === 'security' && (
         <div className="space-y-6">
+          {/* Alert SLA policy (per-severity targets) */}
+          <SlaPolicyCard />
           {/* Session & Rate Limiting */}
           <Collapsible defaultOpen>
             <Card>

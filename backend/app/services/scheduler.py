@@ -278,6 +278,9 @@ class SchedulerService:
             # Add git config-as-code sync drain job (runs every 30 seconds)
             self._schedule_git_sync()
 
+            # Add SLA breach scan job (runs every 5 minutes)
+            self._schedule_sla_scan()
+
             # Add health-metrics retention cleanup job (runs daily)
             self._schedule_health_metrics_cleanup()
 
@@ -366,6 +369,57 @@ class SchedulerService:
                 category=LogCategory.BACKGROUND,
                 service="git_sync",
                 message=f"Scheduled git sync failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    def _schedule_sla_scan(self):
+        """Schedule the alert-SLA breach scan (every 5 minutes).
+
+        No-op while the SLA policy is disabled; when enabled it stamps
+        ``sla_breached`` onto open alerts whose target time has elapsed and
+        raises one operational warning per batch.
+        """
+        scheduler.add_job(
+            self._run_sla_scan,
+            trigger=IntervalTrigger(minutes=5),
+            id="sla_scan",
+            name="alert SLA breach scan",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=300,
+        )
+        logger.info("Scheduled sla_scan job (every 5 minutes)")
+
+    async def _run_sla_scan(self):
+        """Execute the SLA breach scan with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:sla_scan",
+            timeout=300,
+            job_func=self._execute_sla_scan,
+        )
+
+    async def _execute_sla_scan(self):
+        """Flag any newly-breached SLAs across open alerts."""
+        from app.services.opensearch import get_client_from_settings
+        from app.services.sla import scan_sla_breaches
+
+        session = await self._get_session()
+        try:
+            os_client = await get_client_from_settings(session)
+            if os_client is None:
+                return  # OpenSearch not configured yet
+            flagged = await scan_sla_breaches(session, os_client)
+            if flagged:
+                logger.info("SLA scan: flagged %s breached alert(s)", flagged)
+        except Exception as e:
+            logger.error("Scheduled SLA scan failed: %s", e)
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="sla_scan",
+                message=f"Scheduled SLA scan failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
         finally:

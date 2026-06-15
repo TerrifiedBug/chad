@@ -42,6 +42,7 @@ from app.api.saved_views import router as saved_views_router
 from app.api.scim import router as scim_router
 from app.api.settings import router as settings_router
 from app.api.sigmahq import router as sigmahq_router
+from app.api.sla import router as sla_router
 from app.api.sso import router as sso_router
 from app.api.stats import router as stats_router
 from app.api.system_logs import router as system_logs_router
@@ -149,7 +150,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
-    redirect_slashes=False,  # Disable automatic trailing slash redirects to avoid hostname issues in proxied environments
+    # Disable automatic trailing slash redirects to avoid hostname issues in proxied environments
+    redirect_slashes=False,
 )
 
 # Register custom exception handler for standardized error responses
@@ -395,6 +397,7 @@ app.include_router(correlation_rules_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
 app.include_router(saved_views_router, prefix="/api")
+app.include_router(sla_router, prefix="/api")
 app.include_router(environments_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
 app.include_router(sso_router, prefix="/api")
