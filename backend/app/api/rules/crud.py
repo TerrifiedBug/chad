@@ -320,7 +320,10 @@ async def create_rule(
     except Exception:
         pass  # Don't fail rule creation if tag parsing fails
 
-    await audit_log(db, current_user.id, "rule.create", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "rule.create", "rule", str(rule.id),
+        {"title": rule.title}, ip_address=get_client_ip(request),
+    )
     await db.commit()
     return rule
 
@@ -452,7 +455,10 @@ async def update_rule(
             if not update_data.get("change_reason") or not update_data.get("change_reason", "").strip():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Change reason is required when updating rules. Please explain why you're making this change.",
+                    detail=(
+                        "Change reason is required when updating rules. "
+                        "Please explain why you're making this change."
+                    ),
                 )
 
     # If yaml_content changed, create new version
@@ -521,7 +527,10 @@ async def update_rule(
         except Exception:
             pass  # Don't fail rule update if tag parsing fails
 
-    await audit_log(db, current_user.id, "rule.update", "rule", str(rule.id), {"title": rule.title}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "rule.update", "rule", str(rule.id),
+        {"title": rule.title}, ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     # If status changed and rule is deployed, sync to OpenSearch
@@ -560,7 +569,10 @@ async def delete_rule(
     audit_details = {"title": rule.title}
     if change_reason:
         audit_details["change_reason"] = change_reason
-    await audit_log(db, current_user.id, "rule.delete", "rule", str(rule_id), audit_details, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "rule.delete", "rule", str(rule_id),
+        audit_details, ip_address=get_client_ip(request),
+    )
 
     # Undeploy any correlation rules that reference this rule
     corr_result = await db.execute(

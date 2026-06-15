@@ -201,7 +201,10 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
 
-    await audit_log(db, current_user.id, "user.create", "user", str(user.id), {"email": user.email, "role": role.value}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "user.create", "user", str(user.id),
+        {"email": user.email, "role": role.value}, ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     return UserResponse(
@@ -257,7 +260,10 @@ async def delete_user(
     )
 
     await db.delete(user)
-    await audit_log(db, current_user.id, "user.delete", "user", str(user_id), {"email": email}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "user.delete", "user", str(user_id),
+        {"email": email}, ip_address=get_client_ip(request),
+    )
     await db.commit()
     return {"success": True}
 
@@ -312,7 +318,11 @@ async def update_user(
     if data.is_active is not None:
         user.is_active = data.is_active
 
-    await audit_log(db, current_user.id, "user.update", "user", str(user_id), {"email": user.email, "role": data.role, "is_active": data.is_active}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "user.update", "user", str(user_id),
+        {"email": user.email, "role": data.role, "is_active": data.is_active},
+        ip_address=get_client_ip(request),
+    )
     await db.commit()
     await db.refresh(user)
 
@@ -403,7 +413,10 @@ async def reset_user_password(
     user.password_hash = bcrypt.hash(temporary_password)
     user.must_change_password = True
 
-    await audit_log(db, current_user.id, "user.password_reset", "user", str(user_id), {"email": user.email}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "user.password_reset", "user", str(user_id),
+        {"email": user.email}, ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     return PasswordResetResponse(

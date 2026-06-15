@@ -365,7 +365,10 @@ async def bulk_undeploy_rules(
     await db.commit()
     await audit_log(
         db, current_user.id, "rule.bulk_undeploy", "rule", None,
-        {"count": len(success), "rule_ids": success, "change_reason": data.change_reason, "undeployed_correlations": all_undeployed_correlations},
+        {
+            "count": len(success), "rule_ids": success, "change_reason": data.change_reason,
+            "undeployed_correlations": all_undeployed_correlations,
+        },
         ip_address=get_client_ip(request)
     )
     await db.commit()
@@ -465,12 +468,19 @@ async def undeploy_rule(
     )
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.undeploy", "rule", str(rule.id), {"title": rule.title, "change_reason": change_reason, "undeployed_correlations": undeployed_correlations}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "rule.undeploy", "rule", str(rule.id),
+        {"title": rule.title, "change_reason": change_reason, "undeployed_correlations": undeployed_correlations},
+        ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     message = "Rule undeployed successfully" if was_deleted else "Rule was not found in percolator index"
     if undeployed_correlations:
-        message += f". Also undeployed {len(undeployed_correlations)} correlation rule(s): {', '.join(undeployed_correlations)}"
+        message += (
+            f". Also undeployed {len(undeployed_correlations)} correlation rule(s): "
+            f"{', '.join(undeployed_correlations)}"
+        )
 
     return RuleUndeployResponse(
         success=True,
@@ -543,7 +553,11 @@ async def rollback_rule(
     rule.yaml_content = target_version.yaml_content
 
     await db.commit()
-    await audit_log(db, current_user.id, "rule.rollback", "rule", str(rule.id), {"title": rule.title, "from_version": version_number, "to_version": new_version_number}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "rule.rollback", "rule", str(rule.id),
+        {"title": rule.title, "from_version": version_number, "to_version": new_version_number},
+        ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     return RuleRollbackResponse(

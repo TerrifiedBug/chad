@@ -109,7 +109,11 @@ async def create_rule_exception(
     db.add(exception)
     await db.commit()
     await db.refresh(exception)
-    await audit_log(db, current_user.id, "exception.create", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "field": exception.field, "change_reason": exception_data.change_reason}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "exception.create", "rule_exception", str(exception.id),
+        {"rule_id": str(rule_id), "field": exception.field, "change_reason": exception_data.change_reason},
+        ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     # If created from an alert, update alert status and record exception reference
@@ -174,7 +178,11 @@ async def update_rule_exception(
 
     await db.commit()
     await db.refresh(exception)
-    await audit_log(db, current_user.id, "exception.update", "rule_exception", str(exception.id), {"rule_id": str(rule_id), "change_reason": exception_data.change_reason}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "exception.update", "rule_exception", str(exception.id),
+        {"rule_id": str(rule_id), "change_reason": exception_data.change_reason},
+        ip_address=get_client_ip(request),
+    )
     await db.commit()
     return exception
 
@@ -204,7 +212,11 @@ async def delete_rule_exception(
         raise HTTPException(status_code=404, detail="Exception not found")
 
     # Capture details before delete
-    await audit_log(db, current_user.id, "exception.delete", "rule_exception", str(exception_id), {"rule_id": str(rule_id), "change_reason": change_reason}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "exception.delete", "rule_exception", str(exception_id),
+        {"rule_id": str(rule_id), "change_reason": change_reason},
+        ip_address=get_client_ip(request),
+    )
     await db.delete(exception)
     await db.commit()
 

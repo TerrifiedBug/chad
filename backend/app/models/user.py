@@ -1,11 +1,9 @@
+import uuid
 from enum import Enum
 
-import uuid
-
 from sqlalchemy import Boolean, ForeignKey, String
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.dialects.postgresql import ENUM as SAEnum
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.encryption import decrypt_with_fallback, encrypt
@@ -53,9 +51,13 @@ class User(Base, UUIDMixin, TimestampMixin):
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole, name="userrole", create_type=False), default=UserRole.VIEWER)
+    role: Mapped[UserRole] = mapped_column(
+        SAEnum(UserRole, name="userrole", create_type=False), default=UserRole.VIEWER
+    )
     is_active: Mapped[bool] = mapped_column(default=True)
-    auth_method: Mapped[AuthMethod] = mapped_column(SAEnum(AuthMethod, name="authmethodenum", create_type=False), default=AuthMethod.LOCAL, nullable=False)
+    auth_method: Mapped[AuthMethod] = mapped_column(
+        SAEnum(AuthMethod, name="authmethodenum", create_type=False), default=AuthMethod.LOCAL, nullable=False
+    )
     must_change_password: Mapped[bool] = mapped_column(default=False)
 
     # 2FA fields. The TOTP secret is stored encrypted at rest (Fernet); the DB

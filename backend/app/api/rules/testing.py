@@ -120,7 +120,8 @@ async def validate_rule(
                 if was_corrected:
                     import logging
                     logging.getLogger(__name__).info(
-                        f"Auto-corrected field mapping in validation: '{sigma_field}' -> '{target_field}' to '{corrected_field}'"
+                        f"Auto-corrected field mapping in validation: '{sigma_field}' -> "
+                        f"'{target_field}' to '{corrected_field}'"
                     )
             else:
                 corrected_mappings[sigma_field] = None

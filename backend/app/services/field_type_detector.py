@@ -54,7 +54,10 @@ def detect_field_type(
                         "field_type": field_type,
                         "has_keyword_subfield": True,
                         "recommended_field": f"{field_path}.keyword",
-                        "reason": f"Field '{field_path}' is type 'text' (analyzed). For wildcard/regex operators, use '{field_path}.keyword' for exact matching.",
+                        "reason": (
+                            f"Field '{field_path}' is type 'text' (analyzed). For wildcard/regex "
+                            f"operators, use '{field_path}.keyword' for exact matching."
+                        ),
                         "should_auto_correct": True,
                     }
                 elif field_type == "keyword":
@@ -81,7 +84,10 @@ def detect_field_type(
             "field_type": None,
             "has_keyword_subfield": False,
             "recommended_field": field_path,
-            "reason": f"Field '{field_path}' not found in index '{index_pattern}'. Mapping may be to a non-existent field.",
+            "reason": (
+                f"Field '{field_path}' not found in index '{index_pattern}'. "
+                "Mapping may be to a non-existent field."
+            ),
             "should_auto_correct": False,
         }
 

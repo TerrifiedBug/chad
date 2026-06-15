@@ -67,7 +67,9 @@ def _validate_alert_ids(alert_ids: list[str]) -> list[str]:
 
 
 class BulkAlertStatusUpdate(BaseModel):
-    alert_ids: list[str] = Field(..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to update")
+    alert_ids: list[str] = Field(
+        ..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to update"
+    )
     status: str  # new, acknowledged, resolved, false_positive
     change_reason: str | None = Field(None, min_length=1, max_length=10000)
 
@@ -78,7 +80,9 @@ class BulkAlertStatusUpdate(BaseModel):
 
 
 class BulkAlertDelete(BaseModel):
-    alert_ids: list[str] = Field(..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to delete")
+    alert_ids: list[str] = Field(
+        ..., min_length=1, max_length=MAX_BULK_OPERATIONS, description="List of alert IDs to delete"
+    )
     change_reason: str | None = Field(None, min_length=1, max_length=10000)
 
     @field_validator('alert_ids')
@@ -435,7 +439,10 @@ async def update_alert_status(
     if not success:
         raise HTTPException(500, "Failed to update alert status")
 
-    await audit_log(db, current_user.id, "alert.status_update", "alert", alert_id, {"status": update.status}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "alert.status_update", "alert", alert_id,
+        {"status": update.status}, ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     # Invalidate alert cache after status change

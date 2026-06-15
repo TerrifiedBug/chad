@@ -10,47 +10,52 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.encryption import decrypt
 from app.services.settings import get_setting
 
-AI_PROMPT_TEMPLATE = """You are a security data field mapping expert. Your task is to map Sigma detection rule field names to the actual field names present in a user's log data.
-
-## Context
-- Sigma rules use the Sigma taxonomy - a vendor-neutral field naming standard for detection rules
-- User logs may use different schemas: ECS (Elastic), OCSF, vendor-specific (auditd, sysmon), or custom
-- A correct mapping allows Sigma detection rules to query the user's actual log fields
-
-## Your Task
-Map each unmapped Sigma field to the best matching field from the available log fields.
-
-**Logsource context:**
-{logsource}
-
-**Unmapped Sigma fields:**
-{sigma_fields}
-
-**Available fields in user's logs:**
-{log_fields}
-
-## Guidelines
-1. Match based on semantic meaning, not just name similarity
-2. Common Sigma fields and their typical equivalents:
-   - SourceIp → src_ip, source.ip, client.ip
-   - DestinationIp → dst_ip, destination.ip, server.ip
-   - User → user.name, acct, username
-   - Image → process.executable, exe, process.name
-   - CommandLine → process.command_line, process.args, cmdline, command
-   - ParentImage → process.parent.executable, parent_exe
-   - TargetFilename → file.path, filepath, target_path
-   - SourcePort → src_port, source.port, client.port
-   - DestinationPort → dst_port, destination.port, server.port
-3. If no good match exists, return null for that field
-4. When uncertain, prefer the more specific match
-5. Consider the logsource context when making decisions
-6. IMPORTANT: Only suggest field names exactly as they appear in the available fields list. Do not add suffixes like .keyword - the system handles field type optimization automatically.
-
-## Response Format
-Return valid JSON only:
-{{"mappings": [
-    {{"sigma_field": "FieldName", "target_field": "matched_field_or_null", "confidence": 0.0_to_1.0, "reason": "brief explanation"}}
-]}}"""
+AI_PROMPT_TEMPLATE = (
+    "You are a security data field mapping expert. Your task is to map Sigma detection rule "
+    "field names to the actual field names present in a user's log data.\n"
+    "\n"
+    "## Context\n"
+    "- Sigma rules use the Sigma taxonomy - a vendor-neutral field naming standard for detection rules\n"
+    "- User logs may use different schemas: ECS (Elastic), OCSF, vendor-specific (auditd, sysmon), or custom\n"
+    "- A correct mapping allows Sigma detection rules to query the user's actual log fields\n"
+    "\n"
+    "## Your Task\n"
+    "Map each unmapped Sigma field to the best matching field from the available log fields.\n"
+    "\n"
+    "**Logsource context:**\n"
+    "{logsource}\n"
+    "\n"
+    "**Unmapped Sigma fields:**\n"
+    "{sigma_fields}\n"
+    "\n"
+    "**Available fields in user's logs:**\n"
+    "{log_fields}\n"
+    "\n"
+    "## Guidelines\n"
+    "1. Match based on semantic meaning, not just name similarity\n"
+    "2. Common Sigma fields and their typical equivalents:\n"
+    "   - SourceIp → src_ip, source.ip, client.ip\n"
+    "   - DestinationIp → dst_ip, destination.ip, server.ip\n"
+    "   - User → user.name, acct, username\n"
+    "   - Image → process.executable, exe, process.name\n"
+    "   - CommandLine → process.command_line, process.args, cmdline, command\n"
+    "   - ParentImage → process.parent.executable, parent_exe\n"
+    "   - TargetFilename → file.path, filepath, target_path\n"
+    "   - SourcePort → src_port, source.port, client.port\n"
+    "   - DestinationPort → dst_port, destination.port, server.port\n"
+    "3. If no good match exists, return null for that field\n"
+    "4. When uncertain, prefer the more specific match\n"
+    "5. Consider the logsource context when making decisions\n"
+    "6. IMPORTANT: Only suggest field names exactly as they appear in the available fields list. "
+    "Do not add suffixes like .keyword - the system handles field type optimization automatically.\n"
+    "\n"
+    "## Response Format\n"
+    "Return valid JSON only:\n"
+    "{{\"mappings\": [\n"
+    "    {{\"sigma_field\": \"FieldName\", \"target_field\": \"matched_field_or_null\", "
+    "\"confidence\": 0.0_to_1.0, \"reason\": \"brief explanation\"}}\n"
+    "]}}"
+)
 
 
 @dataclass
