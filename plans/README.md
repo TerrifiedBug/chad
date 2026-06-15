@@ -29,7 +29,7 @@ not re-audited.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale)
 
-**All 12 plans landed** on branch `advisor/implement-all-findings`. Consolidated verification (CI-like env, deterministic ordering): backend `1109 passed, 10 skipped, 0 failed`; `ruff check .` exit 0 (whole tree); frontend `npm run build` clean + 146 tests pass. Pre-existing debt resolved along the way: 109 `app/` + 49 `tests/` ruff errors cleared or waived-with-rationale (UP042/E402), the CI lint gate widened to the full tree, test ordering pinned deterministic (`-p no:randomly`), and 7 stale/brittle SSRF/SSO tests fixed. One known *intermittent* async test-isolation flake remains (documented; the 140-file isolation rework is deferred as a future plan). Not pushed / no PR — merge is the maintainer's call.
+**All 12 plans landed** on branch `advisor/implement-all-findings`. Consolidated verification (CI-like env, deterministic ordering): backend `1109 passed, 10 skipped, 0 failed`; `ruff check .` exit 0 (whole tree); frontend `npm run build` clean + 146 tests pass. Pre-existing debt resolved along the way: 109 `app/` + 49 `tests/` ruff errors cleared or waived-with-rationale (UP042/E402), the CI lint gate widened to the full tree, test ordering pinned deterministic (`-p no:randomly`), and 7 stale/brittle SSRF/SSO tests fixed. The intermittent async test-isolation flake was fixed (`d808e3a`): `test_engine` now uses `NullPool` (matching the DB-creation fixture), eliminating cross-event-loop connection reuse — full suite ran green 3×/3 afterward.
 
 \* "Depends on 001" is soft for 002/004/005/006/007: those fixes are safe to land
 independently, but 001 is what makes their new tests actually gate in CI. 010's
