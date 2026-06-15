@@ -45,6 +45,12 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 # Bulk operation schemas
 MAX_BULK_OPERATIONS = 100
 
+# When clustering or the owner filter is active we must fetch a wider window
+# than the caller's page so the service sees the full candidate set. Bounded to
+# the same ceiling as the `limit` query param (le=1000). Results are cached for
+# 30s (see AlertCache) so repeat queries don't re-hit OpenSearch.
+ALERT_WIDE_FETCH_LIMIT = 1000
+
 # CHAD alert IDs are NOT UUIDs — they are 32-char hex digests from
 # generate_deterministic_alert_id (sha256[:32]). The previous UUID() validation
 # rejected every real alert ID, breaking bulk status updates and bulk delete.
@@ -142,12 +148,12 @@ async def list_alerts(
     fetch_limit = limit
     fetch_offset = offset
     if clustering_settings and clustering_settings.get("enabled", False):
-        fetch_limit = 1000  # Fetch more alerts when clustering
+        fetch_limit = ALERT_WIDE_FETCH_LIMIT  # Fetch more alerts when clustering
         fetch_offset = 0    # Always start from the beginning for clustering
     elif owner_id:
         # "Assigned to me" filter - fetch all assigned alerts for the user
         # Users typically want to see all their assigned alerts at once
-        fetch_limit = 1000
+        fetch_limit = ALERT_WIDE_FETCH_LIMIT
         fetch_offset = 0
 
     # Use cached query path with circuit breaker protection
