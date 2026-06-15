@@ -10,97 +10,36 @@ jobs:
   test-backend:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: chad_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      opensearch:
-        image: opensearchproject/opensearch:2.5.0
-        env:
-          discovery.type: single-node
-          plugins.security.disabled: "true"
-          OPENSEARCH_INITIAL_ADMIN_PASSWORD: ChadCi!Passw0rd
-          OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
-        ports:
-          - 9200:9200
-        options: >-
-          --health-cmd "curl -sf http://localhost:9200/_cluster/health || exit 1"
-          --health-interval 15s
-          --health-timeout 10s
-          --health-retries 10
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: backend/requirements.txt
+      # Run the backend suite inside the project's canonical dev container
+      # (docker-compose.dev.yml) instead of on the bare runner. The container
+      # provides the environment the tests are written for — working dir /app,
+      # DEBUG=true, the "chad" DB, ALLOW_INTERNAL_WEBHOOK_IPS — so the tests that
+      # are coupled to it (audit-export CLI, csrf debug-origin, MISP sync) run
+      # here too; no --deselect needed. The compose backend defaults its secrets
+      # and DB, so no extra env is required.
+      # NOTE: tests/integration still needs a provisioned OpenSearch (indices +
+      # data) which docker-compose.dev.yml does not define, so it remains
+      # excluded here — see plans/013 for restoring it.
+      - name: Start test dependencies (postgres, redis)
+        run: docker compose -f docker-compose.dev.yml up -d postgres redis
 
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov
+      - name: Build backend image
+        run: docker compose -f docker-compose.dev.yml build backend
 
-      - name: Run tests
-        env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/chad_test
-          # conftest.py builds its own connection URL from POSTGRES_* (NOT DATABASE_URL),
-          # defaulting POSTGRES_HOST to the compose service name "postgres". In CI the
-          # service is reachable on localhost, so these must be set or every DB fixture
-          # fails with socket.gaierror (name resolution).
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: "5432"
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          TEST_POSTGRES_DB: chad_test
-          SECRET_KEY: test-secret-key-for-ci
-          OPENSEARCH_URL: http://localhost:9200
-          # Strong, non-default test secrets (>=32 chars, not on the insecure-default
-          # list) so Settings validation passes at conftest import. CI-only values.
-          JWT_SECRET_KEY: ci-test-jwt-secret-not-for-production-use-0123456789
-          SESSION_SECRET_KEY: ci-test-session-secret-not-for-production-0123456789
-          CHAD_ENCRYPTION_KEY: ci-test-encryption-key-not-for-production-0123456789
+      - name: Run backend tests (in container)
         run: |
-          cd backend
-          # tests/integration requires a fully-provisioned OpenSearch (indices/data),
-          # not just a bare service container — exercised separately, not in the PR gate.
-          # The deselected tests below are coupled to the docker container environment
-          # (CLI invoked from the container path /app; is_safe_origin reads DEBUG captured
-          # at import; the MISP scheduler job connects to the app "chad" DB) and cannot
-          # pass on a bare runner. They pass under the canonical `docker compose run
-          # backend pytest`. FOLLOW-UP: move CI to container-based testing to restore them.
-          pytest --cov=app --cov-report=xml --ignore=tests/integration \
-            --deselect tests/api/test_audit_export.py::test_chain_envelope_verifies_via_cli \
-            --deselect tests/api/test_audit_export.py::test_cli_detects_mutated_row \
-            --deselect tests/api/test_audit_export.py::test_cli_refuses_without_key \
-            --deselect tests/middleware/test_csrf.py::test_safe_origin_allows_localhost_in_debug \
-            --deselect tests/services/test_scheduler_misp.py::test_run_misp_sync_job
+          docker compose -f docker-compose.dev.yml run --rm backend \
+            pytest --cov=app --cov-report=xml --ignore=tests/integration
 
       - name: Lint (ruff)
-        run: |
-          cd backend
-          ruff check .
+        run: docker compose -f docker-compose.dev.yml run --rm backend ruff check .
 
       - name: Typecheck (mypy, non-blocking)
         continue-on-error: true
-        run: |
-          cd backend
-          mypy app
+        run: docker compose -f docker-compose.dev.yml run --rm backend mypy app
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
