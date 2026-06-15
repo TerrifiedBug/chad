@@ -59,6 +59,15 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/chad_test
+          # conftest.py builds its own connection URL from POSTGRES_* (NOT DATABASE_URL),
+          # defaulting POSTGRES_HOST to the compose service name "postgres". In CI the
+          # service is reachable on localhost, so these must be set or every DB fixture
+          # fails with socket.gaierror (name resolution).
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          TEST_POSTGRES_DB: chad_test
           SECRET_KEY: test-secret-key-for-ci
           OPENSEARCH_URL: http://localhost:9200
           # Strong, non-default test secrets (>=32 chars, not on the insecure-default
@@ -68,7 +77,10 @@ jobs:
           CHAD_ENCRYPTION_KEY: ci-test-encryption-key-not-for-production-0123456789
         run: |
           cd backend
-          pytest --cov=app --cov-report=xml
+          # tests/integration requires a fully-provisioned OpenSearch (indices/data),
+          # not just a bare service container — it is exercised separately, not in the
+          # PR gate. The unit/api/service suite is the gating signal.
+          pytest --cov=app --cov-report=xml --ignore=tests/integration
 
       - name: Lint (ruff)
         run: |
