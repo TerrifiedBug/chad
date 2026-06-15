@@ -14,18 +14,22 @@ not re-audited.
 
 | Plan | Title | Priority | Effort | Risk | Depends on | Status |
 |------|-------|----------|--------|------|------------|--------|
-| 001 | Make CI actually gate backend (tests, lint, typecheck) | P1 | M | MED | — | TODO |
-| 002 | Fix naive `datetime.utcnow()` in correlation engine | P1 | S | LOW | 001* | DONE |
-| 003 | Code-split heavy frontend routes (Monaco, rare pages) | P2 | M | MED | — | DONE |
-| 004 | Encrypt pending TOTP setup secret at rest | P2 | S | LOW | 001* | DONE |
-| 005 | Harden AI Copilot prompts against injection | P2 | S | LOW | 001* | DONE |
-| 006 | Webhook SSRF hardening (fail-closed DNS, no-redirect) | P2 | S | LOW | 001* | DONE |
+| 001 | Make CI actually gate backend (tests, lint, typecheck) | P1 | M | MED | — | DONE (`e47078a`,`ded7265`,`728ffe6`,`b47a456`) |
+| 002 | Fix naive `datetime.utcnow()` in correlation engine | P1 | S | LOW | 001* | DONE (`7430411`) |
+| 003 | Code-split heavy frontend routes (Monaco, rare pages) | P2 | M | MED | — | DONE (`bbe8e9c`) |
+| 004 | Encrypt pending TOTP setup secret at rest | P2 | S | LOW | 001* | DONE (`c72232d`) |
+| 005 | Harden AI Copilot prompts against injection | P2 | S | LOW | 001* | DONE (`1c0189b`) |
+| 006 | Webhook SSRF hardening (fail-closed DNS, no-redirect) | P2 | S | LOW | 001* | DONE (`b24dca1`) |
 | 009 | SPIKE: investigate alert org/team tenant isolation | P2 | S | LOW | — | DONE (verdict: latent — see 009-findings.md) |
-| 007 | Bound & name the alert-list over-fetch | P3 | S | LOW | 001* | DONE |
-| 008 | Consolidate duplicated nested-dict helpers | P3 | S | LOW | — | TODO |
-| 010 | Decompose `api/rules.py` god module (URL-preserving) | P3 | L | HIGH | 001 | TODO |
+| 007 | Bound & name the alert-list over-fetch | P3 | S | LOW | 001* | DONE (`ee7c255`) |
+| 008 | Consolidate duplicated nested-dict helpers | P3 | S | LOW | — | DONE (`c28b552`) |
+| 010 | Decompose `api/rules.py` god module (URL-preserving) | P3 | L | HIGH | 001 | DONE (8 commits `4739201`→`821660f`; 6-module package, 36-route OpenAPI snapshot stable) |
+| 011 | Remove Coverage Recommendations (heavy / container lockup) | P1 | M | MED | — | DONE (`2c06042`) — added mid-release |
+| 012 | Fix `get_opensearch_client` health-check import bug (0.11.1) | P1 | S | LOW | — | DONE (`d5536fd`) — added mid-release |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale)
+
+**All 12 plans landed** on branch `advisor/implement-all-findings`. Consolidated verification (CI-like env, deterministic ordering): backend `1109 passed, 10 skipped, 0 failed`; `ruff check .` exit 0 (whole tree); frontend `npm run build` clean + 146 tests pass. Pre-existing debt resolved along the way: 109 `app/` + 49 `tests/` ruff errors cleared or waived-with-rationale (UP042/E402), the CI lint gate widened to the full tree, test ordering pinned deterministic (`-p no:randomly`), and 7 stale/brittle SSRF/SSO tests fixed. One known *intermittent* async test-isolation flake remains (documented; the 140-file isolation rework is deferred as a future plan). Not pushed / no PR — merge is the maintainer's call.
 
 \* "Depends on 001" is soft for 002/004/005/006/007: those fixes are safe to land
 independently, but 001 is what makes their new tests actually gate in CI. 010's
