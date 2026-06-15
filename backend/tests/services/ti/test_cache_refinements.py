@@ -10,8 +10,8 @@ import pytest
 
 from app.services.ti.base import TIIndicatorType
 from app.services.ti.manager import (
-    DEFAULT_CACHE_TTL_SECONDS,
     _TI_CACHE_PREFIX,
+    DEFAULT_CACHE_TTL_SECONDS,
     TIEnrichmentManager,
 )
 

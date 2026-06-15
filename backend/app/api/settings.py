@@ -702,7 +702,10 @@ async def save_opensearch_config(
         setting = Setting(key="opensearch", value=config_value)
         db.add(setting)
 
-    await audit_log(db, current_user.id, "settings.update", "settings", "opensearch", {"host": config.host, "port": config.port}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "settings.update", "settings", "opensearch",
+        {"host": config.host, "port": config.port}, ip_address=get_client_ip(request),
+    )
     await db.commit()
 
     return {"success": True}
@@ -1062,7 +1065,10 @@ async def update_setting(
 
     # Log setting change without sensitive values
     masked_value = _mask_sensitive(key, value)
-    await audit_log(db, current_user.id, "settings.update", "settings", key, {"value": masked_value}, ip_address=get_client_ip(request))
+    await audit_log(
+        db, current_user.id, "settings.update", "settings", key,
+        {"value": masked_value}, ip_address=get_client_ip(request),
+    )
     await db.commit()
     return {"success": True}
 

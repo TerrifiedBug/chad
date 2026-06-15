@@ -202,7 +202,7 @@ async def test_deploy_preview_deployed_pull_rule(
     current=null (pull mode never touches the percolator)."""
     await _seed_opensearch(test_session)
     monkeypatch.setattr(
-        "app.api.rules.get_index_fields", lambda *a, **k: ["fieldA"]
+        "app.api.rules._shared.get_index_fields", lambda *a, **k: ["fieldA"]
     )
     ip = await _make_pull_pattern(test_session)
     rule = await _make_rule(
@@ -231,7 +231,7 @@ async def test_deploy_preview_deployed_push_rule_reads_percolator(
     """Push-mode deployed rule returns the live percolator query as current."""
     await _seed_opensearch(test_session)
     monkeypatch.setattr(
-        "app.api.rules.get_index_fields", lambda *a, **k: ["fieldA"]
+        "app.api.rules._shared.get_index_fields", lambda *a, **k: ["fieldA"]
     )
     live_query = {"bool": {"must": [{"query_string": {"query": "fieldA:value"}}]}}
     monkeypatch.setattr(
@@ -267,7 +267,7 @@ async def test_deploy_preview_undeployed_rule_current_null(
     """An undeployed rule has no live query -> current_deployed_query null."""
     await _seed_opensearch(test_session)
     monkeypatch.setattr(
-        "app.api.rules.get_index_fields", lambda *a, **k: ["fieldA"]
+        "app.api.rules._shared.get_index_fields", lambda *a, **k: ["fieldA"]
     )
     ip = await _make_pull_pattern(test_session)
     rule = await _make_rule(test_session, ip, admin_user)  # UNDEPLOYED
@@ -316,7 +316,7 @@ async def test_bulk_deploy_emits_deploy_progress(
     await _seed_opensearch(test_session)
     ip = await _make_pull_pattern(test_session)  # pull -> no real percolator write
     monkeypatch.setattr(
-        "app.api.rules.get_index_fields", lambda *a, **k: ["fieldA"]
+        "app.api.rules._shared.get_index_fields", lambda *a, **k: ["fieldA"]
     )
     r1 = await _make_rule(test_session, ip, admin_user, title="Bulk One")
     r2 = await _make_rule(test_session, ip, admin_user, title="Bulk Two")
@@ -364,7 +364,7 @@ async def test_bulk_deploy_broadcast_failure_does_not_break_deploy(
     await _seed_opensearch(test_session)
     ip = await _make_pull_pattern(test_session)
     monkeypatch.setattr(
-        "app.api.rules.get_index_fields", lambda *a, **k: ["fieldA"]
+        "app.api.rules._shared.get_index_fields", lambda *a, **k: ["fieldA"]
     )
     rule = await _make_rule(test_session, ip, admin_user, title="Boom WS")
 
@@ -417,7 +417,7 @@ async def test_rollback_redeploy_gate_off_applies(
                 __import__("datetime").UTC),
         )
     )
-    monkeypatch.setattr("app.api.rules.apply_sigma_rule_deployment", apply_mock)
+    monkeypatch.setattr("app.api.rules.deploy.apply_sigma_rule_deployment", apply_mock)
 
     app.dependency_overrides[get_opensearch_client] = lambda: MagicMock()
     try:
@@ -460,7 +460,7 @@ async def test_rollback_redeploy_gate_on_files_request(
     await test_session.commit()
 
     apply_mock = AsyncMock()
-    monkeypatch.setattr("app.api.rules.apply_sigma_rule_deployment", apply_mock)
+    monkeypatch.setattr("app.api.rules.deploy.apply_sigma_rule_deployment", apply_mock)
 
     app.dependency_overrides[get_opensearch_client] = lambda: MagicMock()
     try:

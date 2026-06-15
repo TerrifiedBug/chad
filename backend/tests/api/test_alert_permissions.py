@@ -72,7 +72,7 @@ async def test_alert_delete_requires_manage_alerts(
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires OpenSearch to be running - permission check passes but actual delete needs OpenSearch")
+@pytest.mark.skip(reason="Requires OpenSearch to be running - permission check passes but actual delete needs OpenSearch")  # noqa: E501
 async def test_alert_delete_with_manage_alerts(
     async_client: AsyncClient,
     test_session

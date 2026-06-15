@@ -66,7 +66,7 @@ class TestParseResponse:
     def test_parse_handles_json_in_markdown_without_lang(self):
         response = '''Here's the mapping:
         ```
-        {"mappings": [{"sigma_field": "User", "target_field": "username", "confidence": 0.85, "reason": "Semantic match"}]}
+{"mappings": [{"sigma_field": "User", "target_field": "username", "confidence": 0.85, "reason": "Semantic match"}]}
         ```'''
         suggestions = parse_ai_response(response)
         assert len(suggestions) == 1

@@ -327,7 +327,10 @@ class VirusTotalClient(TIClient):
         except httpx.TimeoutException:
             raise Exception("Connection timed out - VirusTotal may be slow or unreachable")
         except Exception as e:
-            if "Invalid API key" in str(e) or "API returned" in str(e) or "Could not connect" in str(e) or "timed out" in str(e):
+            if (
+                "Invalid API key" in str(e) or "API returned" in str(e)
+                or "Could not connect" in str(e) or "timed out" in str(e)
+            ):
                 raise  # Re-raise our descriptive errors
             raise Exception(f"Connection failed: {e}")
 

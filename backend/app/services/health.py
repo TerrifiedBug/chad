@@ -225,7 +225,10 @@ async def get_index_health(
     if minutes_since_last >= no_data_critical_minutes:
         status = HealthStatus.CRITICAL
         if is_pull_mode:
-            issues.append(f"No successful polls for {int(minutes_since_last)} minutes - check index accessibility and query errors")
+            issues.append(
+                f"No successful polls for {int(minutes_since_last)} minutes "
+                "- check index accessibility and query errors"
+            )
         else:
             issues.append(f"No data received for {int(minutes_since_last)} minutes")
     elif minutes_since_last >= no_data_warning_minutes:

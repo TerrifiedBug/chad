@@ -17,6 +17,7 @@ from app.services.ti import TIEnrichmentManager, TIIndicatorType
 from app.services.ti.ioc_cache import IOCCache
 from app.services.ti.ioc_types import IOCType
 from app.services.ti.manager import DEFAULT_CACHE_TTL_SECONDS
+from app.utils.nested import get_nested_value, set_nested_value
 
 logger = logging.getLogger(__name__)
 
@@ -47,29 +48,6 @@ INDICATOR_TYPE_HINTS = {
     "hash_sha256": TIIndicatorType.HASH_SHA256,
     "file_hash": TIIndicatorType.HASH_SHA256,  # Default to SHA256
 }
-
-
-def get_nested_value(doc: dict, path: str) -> Any:
-    """Get a value from a nested dict using dot notation."""
-    keys = path.split(".")
-    value = doc
-    for key in keys:
-        if isinstance(value, dict) and key in value:
-            value = value[key]
-        else:
-            return None
-    return value
-
-
-def set_nested_value(doc: dict, path: str, value: Any):
-    """Set a value in a nested dict using dot notation."""
-    keys = path.split(".")
-    current = doc
-    for key in keys[:-1]:
-        if key not in current:
-            current[key] = {}
-        current = current[key]
-    current[keys[-1]] = value
 
 
 def is_public_ip(ip: str) -> bool:

@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import DateTime, Index, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.encryption import decrypt_with_fallback, encrypt
 from app.db.base import Base, TimestampMixin
 
 
@@ -31,8 +32,22 @@ class TwoFactorToken(Base, TimestampMixin):
     # Token type: 'setup' or 'login'
     token_type: Mapped[str] = mapped_column(String(20), primary_key=True)
 
-    # The encrypted secret or temporary token
-    token_data: Mapped[str] = mapped_column(String(500), nullable=False)
+    # The encrypted secret or temporary token. Stored encrypted at rest
+    # (Fernet); the DB column stays named "token_data" and plaintext is
+    # read/written via the ``token_data`` property so call sites need no
+    # changes. Legacy plaintext rows are tolerated by decrypt_with_fallback.
+    token_data_encrypted: Mapped[str] = mapped_column(
+        "token_data", String(500), nullable=False
+    )
+
+    @property
+    def token_data(self) -> str:
+        """Plaintext token/secret (decrypted from the encrypted column)."""
+        return decrypt_with_fallback(self.token_data_encrypted) or ""
+
+    @token_data.setter
+    def token_data(self, value: str) -> None:
+        self.token_data_encrypted = encrypt(value)
 
     # Expiration timestamp (default: 10 minutes from creation)
     expires_at: Mapped[datetime] = mapped_column(
@@ -83,13 +98,14 @@ class TwoFactorToken(Base, TimestampMixin):
                 cls.token_type == token_type
             )
         )
-        # Create new token
+        # Create new token. token_data is a property (encrypt-on-write), so it
+        # is set after instantiation rather than via the declarative constructor.
         token = cls(
             user_id=user_id,
             token_type=token_type,
-            token_data=token_data,
             expires_at=datetime.now(UTC) + timedelta(minutes=expires_minutes)
         )
+        token.token_data = token_data
         db_session.add(token)
         await db_session.flush()
         return token

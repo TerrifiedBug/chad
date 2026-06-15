@@ -95,7 +95,7 @@ class TestUpdateRuleAttackMappings:
         rule = Rule(
             id=uuid.uuid4(),
             title="Test Rule",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
             source=RuleSource.USER,
             status=RuleStatus.UNDEPLOYED,
             severity="medium",

@@ -274,8 +274,12 @@ class PullModeSettingsUpdate(BaseModel):
 
     max_retries: int = Field(default=3, ge=1, le=10, description="Max retry attempts for failed polls")
     retry_delay_seconds: int = Field(default=5, ge=1, le=60, description="Delay between retries in seconds")
-    consecutive_failures_warning: int = Field(default=3, ge=1, le=50, description="Consecutive failures before warning status")
-    consecutive_failures_critical: int = Field(default=10, ge=1, le=100, description="Consecutive failures before critical status")
+    consecutive_failures_warning: int = Field(
+        default=3, ge=1, le=50, description="Consecutive failures before warning status"
+    )
+    consecutive_failures_critical: int = Field(
+        default=10, ge=1, le=100, description="Consecutive failures before critical status"
+    )
 
     @field_validator("consecutive_failures_critical")
     @classmethod
@@ -299,8 +303,12 @@ async def get_pull_mode_settings(
     return PullModeSettingsResponse(
         max_retries=pull_settings.get("max_retries", DEFAULT_PULL_MAX_RETRIES),
         retry_delay_seconds=pull_settings.get("retry_delay_seconds", DEFAULT_PULL_RETRY_DELAY_SECONDS),
-        consecutive_failures_warning=pull_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING),
-        consecutive_failures_critical=pull_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL),
+        consecutive_failures_warning=pull_settings.get(
+            "consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING
+        ),
+        consecutive_failures_critical=pull_settings.get(
+            "consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL
+        ),
     )
 
 
@@ -326,8 +334,12 @@ async def update_pull_mode_settings(
     return PullModeSettingsResponse(
         max_retries=pull_settings.get("max_retries", DEFAULT_PULL_MAX_RETRIES),
         retry_delay_seconds=pull_settings.get("retry_delay_seconds", DEFAULT_PULL_RETRY_DELAY_SECONDS),
-        consecutive_failures_warning=pull_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING),
-        consecutive_failures_critical=pull_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL),
+        consecutive_failures_warning=pull_settings.get(
+            "consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING
+        ),
+        consecutive_failures_critical=pull_settings.get(
+            "consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL
+        ),
     )
 
 
@@ -622,8 +634,12 @@ async def get_pull_mode_health(
 
     # Load configurable thresholds
     pull_mode_settings = await get_setting(db, "pull_mode") or {}
-    failures_warning = pull_mode_settings.get("consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING)
-    failures_critical = pull_mode_settings.get("consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL)
+    failures_warning = pull_mode_settings.get(
+        "consecutive_failures_warning", DEFAULT_PULL_CONSECUTIVE_FAILURES_WARNING
+    )
+    failures_critical = pull_mode_settings.get(
+        "consecutive_failures_critical", DEFAULT_PULL_CONSECUTIVE_FAILURES_CRITICAL
+    )
 
     # Load health thresholds for data freshness check
     health_thresholds = await get_setting(db, "health_thresholds") or {}
@@ -683,7 +699,10 @@ async def get_pull_mode_health(
                         # Only warn if there are enabled rules that should be polling
                         if status != "critical":
                             status = "warning"
-                        issues.append(f"No poll in {int(time_since.total_seconds() / 60)} minutes (expected every {pattern.poll_interval_minutes})")
+                        issues.append(
+                            f"No poll in {int(time_since.total_seconds() / 60)} minutes "
+                            f"(expected every {pattern.poll_interval_minutes})"
+                        )
                     else:
                         # No enabled rules - polling paused is expected, not a warning
                         notes.append("Polling paused - no enabled rules")

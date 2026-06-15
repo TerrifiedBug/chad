@@ -1747,42 +1747,6 @@ export const aiCopilotApi = {
   }) => api.post<SuggestExceptionsResponse>('/ai/copilot/suggest-exceptions', data),
 }
 
-// ── Coverage-gap rule recommendations (F6) ──────────────────────────────────
-export type SuggestedRule = {
-  title: string
-  path: string
-  severity: string
-  rule_type: string // "detection" | "threat_hunting" | "emerging_threats"
-  compatible: boolean
-}
-
-export type CoverageRecommendation = {
-  technique_id: string
-  technique_name: string
-  tactic: string
-  current_coverage: number
-  reason: string
-  suggested_rule_titles: string[]
-  suggested_rules: SuggestedRule[]
-  priority: number
-}
-
-export type CoverageRecommendationsResponse = {
-  recommendations: CoverageRecommendation[]
-  total: number
-}
-
-export const recommendationsApi = {
-  coverage: (params?: { limit?: number }) => {
-    const searchParams = new URLSearchParams()
-    if (params?.limit != null) searchParams.set('limit', String(params.limit))
-    const query = searchParams.toString()
-    return api.get<CoverageRecommendationsResponse>(
-      `/recommendations/coverage${query ? `?${query}` : ''}`
-    )
-  },
-}
-
 // --- Detection-as-Code CI (rule lint + FP backtest + coverage gate) ---
 
 export interface RuleCICheck {

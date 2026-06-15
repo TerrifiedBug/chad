@@ -2,6 +2,7 @@
 
 import pyotp
 
+from app.models.two_factor_token import TwoFactorToken
 from app.services.totp import (
     generate_backup_codes,
     generate_qr_uri,
@@ -65,3 +66,28 @@ def test_hash_and_verify_backup_code():
     assert hashed != code
     assert verify_backup_code(code, hashed) is True
     assert verify_backup_code("WRONG123", hashed) is False
+
+
+async def test_two_factor_token_data_encrypted_at_rest(test_session):
+    """Pending TOTP setup secret is stored encrypted, not as plaintext."""
+    secret = "JBSWY3DPEHPK3PXP"
+    token = await TwoFactorToken.create_token(
+        test_session,
+        user_id="u@example.com",
+        token_type="setup",
+        token_data=secret,
+    )
+
+    # The raw stored column must be ciphertext, not the plaintext secret.
+    assert token.token_data_encrypted != secret
+    # The property round-trips back to the original plaintext secret.
+    assert token.token_data == secret
+
+
+async def test_two_factor_token_data_legacy_plaintext_readable():
+    """Legacy plaintext rows (pre-encryption) are still readable via fallback."""
+    token = TwoFactorToken()
+    # Simulate a row written before encryption was introduced.
+    token.token_data_encrypted = "legacy-plaintext-value"
+
+    assert token.token_data == "legacy-plaintext-value"

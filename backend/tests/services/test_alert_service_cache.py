@@ -1,6 +1,5 @@
 # backend/tests/services/test_alert_service_cache.py
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -8,8 +7,8 @@ import pytest
 @pytest.mark.asyncio
 async def test_get_alerts_returns_cached_on_os_failure():
     """When OpenSearch fails but cache has data, return cached data."""
-    from app.services.alerts import AlertService
     from app.services.alert_cache import AlertCache
+    from app.services.alerts import AlertService
 
     os_client = MagicMock()
     os_client.search = MagicMock(side_effect=Exception("Connection refused"))
@@ -29,8 +28,8 @@ async def test_get_alerts_returns_cached_on_os_failure():
 @pytest.mark.asyncio
 async def test_get_alerts_caches_fresh_result():
     """Fresh OpenSearch result should be cached."""
-    from app.services.alerts import AlertService
     from app.services.alert_cache import AlertCache
+    from app.services.alerts import AlertService
 
     os_result = {
         "hits": {
@@ -57,8 +56,8 @@ async def test_get_alerts_caches_fresh_result():
 async def test_get_alerts_no_cache_no_os_raises():
     """When both cache and OpenSearch fail, raise error."""
     from app.core.exceptions import OpenSearchUnavailableError
-    from app.services.alerts import AlertService
     from app.services.alert_cache import AlertCache
+    from app.services.alerts import AlertService
 
     os_client = MagicMock()
     os_client.search = MagicMock(side_effect=Exception("Connection refused"))

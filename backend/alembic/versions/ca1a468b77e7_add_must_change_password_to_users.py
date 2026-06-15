@@ -37,7 +37,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_api_keys_key_hash'), 'api_keys', ['key_hash'], unique=True)
     op.create_index(op.f('ix_api_keys_user_id'), 'api_keys', ['user_id'], unique=False)
-    op.add_column('users', sa.Column('must_change_password', sa.Boolean(), server_default=sa.text('false'), nullable=False))
+    op.add_column('users', sa.Column('must_change_password', sa.Boolean(), server_default=sa.text('false'), nullable=False))  # noqa: E501
     # ### end Alembic commands ###
 
 

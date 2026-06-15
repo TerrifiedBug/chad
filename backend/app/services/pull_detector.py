@@ -271,7 +271,8 @@ class PullDetector:
         timestamp_field: str = "@timestamp",
         default_lookback_minutes: int = 60,
     ) -> dict[str, Any]:
-        """
+        (
+            """
         Wrap the base query with a time filter.
 
         Args:
@@ -279,11 +280,13 @@ class PullDetector:
             last_poll: Last successful poll time, or None for first poll
             now: Current time
             timestamp_field: The timestamp field name to filter on (configurable per index pattern)
-            default_lookback_minutes: Minutes to look back if no last_poll (defaults to 60, but uses poll_interval_minutes when available)
+            default_lookback_minutes: Minutes to look back if no last_poll """
+            """(defaults to 60, but uses poll_interval_minutes when available)
 
         Returns:
             Query with time range filter added
         """
+        )
         # If no last poll, look back by the configured interval (or default)
         if last_poll is None:
             last_poll = now - timedelta(minutes=default_lookback_minutes)
@@ -655,7 +658,8 @@ class PullDetector:
         last_poll: datetime | None,
         db: AsyncSession,  # Database session for field mapping resolution
     ) -> dict[str, Any]:
-        """
+        (
+            """
         Poll an index pattern for all deployed rules with full pagination support.
 
         Args:
@@ -667,8 +671,10 @@ class PullDetector:
             db: Database session for resolving field mappings
 
         Returns:
-            Dict with poll results: {"matches": int, "errors": list, "events_scanned": int, "duration_ms": int, "truncated": bool}
+            Dict with poll results: {"matches": int, "errors": list, """
+            """"events_scanned": int, "duration_ms": int, "truncated": bool}
         """
+        )
         import time as time_module
 
         from dateutil.parser import parse as parse_datetime
@@ -730,7 +736,9 @@ class PullDetector:
                         result = sigma_service.translate_with_mappings(rule.yaml_content, field_mappings_dict)
                         if not result.success:
                             errors_str = ", ".join(e.message for e in (result.errors or []))
-                            errors.append({"rule_id": str(rule.id), "error": f"Translation with mappings failed: {errors_str}"})
+                            errors.append(
+                                {"rule_id": str(rule.id), "error": f"Translation with mappings failed: {errors_str}"}
+                            )
                             continue
 
                 # Sigma returns {"query": {"query_string": ...}}, we need just {"query_string": ...}

@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, HttpUrl, field_validator
 
 # Valid HTTP header name pattern (RFC 7230)
-# Must be a token: 1*tchar where tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+# Must be a token: 1*tchar where tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA  # noqa: E501
 HTTP_HEADER_NAME_PATTERN = re.compile(r'^[A-Za-z0-9!#$%&\'*+\-.^_`|~]+$')
 
 

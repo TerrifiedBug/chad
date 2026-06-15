@@ -334,7 +334,10 @@ async def receive_logs(
     if index_pattern.mode == "pull":
         raise HTTPException(
             status_code=400,
-            detail=f"Index pattern '{index_pattern.name}' is in pull mode. Logs are queried from OpenSearch, not pushed.",
+            detail=(
+                f"Index pattern '{index_pattern.name}' is in pull mode. "
+                "Logs are queried from OpenSearch, not pushed."
+            ),
         )
 
     # Check rate limits if enabled
@@ -901,7 +904,10 @@ async def receive_logs_queue(
     if index_pattern.mode == "pull":
         raise HTTPException(
             status_code=400,
-            detail=f"Index pattern '{index_pattern.name}' is in pull mode. Logs are queried from OpenSearch, not pushed.",
+            detail=(
+                f"Index pattern '{index_pattern.name}' is in pull mode. "
+                "Logs are queried from OpenSearch, not pushed."
+            ),
         )
 
     # Check rate limits if enabled

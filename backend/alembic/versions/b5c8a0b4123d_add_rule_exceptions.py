@@ -24,7 +24,7 @@ def upgrade() -> None:
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('rule_id', sa.UUID(), nullable=False),
     sa.Column('field', sa.String(length=255), nullable=False),
-    sa.Column('operator', sa.Enum('EQUALS', 'NOT_EQUALS', 'CONTAINS', 'NOT_CONTAINS', 'STARTS_WITH', 'ENDS_WITH', 'REGEX', 'IN_LIST', name='exceptionoperator'), nullable=False),
+    sa.Column('operator', sa.Enum('EQUALS', 'NOT_EQUALS', 'CONTAINS', 'NOT_CONTAINS', 'STARTS_WITH', 'ENDS_WITH', 'REGEX', 'IN_LIST', name='exceptionoperator'), nullable=False),  # noqa: E501
     sa.Column('value', sa.Text(), nullable=False),
     sa.Column('reason', sa.Text(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),

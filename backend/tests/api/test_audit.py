@@ -47,7 +47,7 @@ class TestIPAddressLogging:
             "/api/rules",
             json={
                 "title": "Test IP Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "severity": "medium",
                 "index_pattern_id": str(pattern.id)
             },

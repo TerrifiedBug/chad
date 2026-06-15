@@ -104,7 +104,7 @@ class TestAttackCoverageSubtechniqueAggregation:
         rule = Rule(
             id=uuid.uuid4(),
             title="Test Coverage Rule",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
             source=RuleSource.USER,
             status=RuleStatus.UNDEPLOYED,
             severity="medium",
@@ -178,7 +178,7 @@ class TestAttackCoverageSubtechniqueAggregation:
         rule1 = Rule(
             id=uuid.uuid4(),
             title="Rule 1",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
             source=RuleSource.USER,
             status=RuleStatus.UNDEPLOYED,
             severity="medium",
@@ -188,7 +188,7 @@ class TestAttackCoverageSubtechniqueAggregation:
         rule2 = Rule(
             id=uuid.uuid4(),
             title="Rule 2",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection",  # noqa: E501
             source=RuleSource.USER,
             status=RuleStatus.UNDEPLOYED,
             severity="medium",
@@ -256,7 +256,7 @@ class TestAttackCoverageSubtechniqueAggregation:
         rule1 = Rule(
             id=uuid.uuid4(),
             title="Rule 1",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
             source=RuleSource.USER,
             status=RuleStatus.UNDEPLOYED,
             severity="medium",
@@ -266,7 +266,7 @@ class TestAttackCoverageSubtechniqueAggregation:
         rule2 = Rule(
             id=uuid.uuid4(),
             title="Rule 2",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection",  # noqa: E501
             source=RuleSource.USER,
             status=RuleStatus.UNDEPLOYED,
             severity="medium",

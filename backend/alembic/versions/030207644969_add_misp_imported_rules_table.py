@@ -38,7 +38,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['rule_id'], ['rules.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_misp_imported_rules_misp_event_id'), 'misp_imported_rules', ['misp_event_id'], unique=False)
+    op.create_index(op.f('ix_misp_imported_rules_misp_event_id'), 'misp_imported_rules', ['misp_event_id'], unique=False)  # noqa: E501
     op.create_index(op.f('ix_misp_imported_rules_rule_id'), 'misp_imported_rules', ['rule_id'], unique=False)
 
 

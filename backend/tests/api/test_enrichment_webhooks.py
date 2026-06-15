@@ -1,12 +1,14 @@
 """Tests for enrichment webhook API endpoints."""
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.encryption import encrypt
 from app.core.security import create_access_token, get_password_hash
 from app.db.session import get_db
@@ -158,17 +160,20 @@ class TestCreateEnrichmentWebhook:
     @pytest.mark.asyncio
     async def test_create_webhook_success(self, authenticated_client: AsyncClient):
         """Successfully create a webhook."""
-        response = await authenticated_client.post(
-            "/api/enrichment-webhooks",
-            json={
-                "name": "Entra ID Enrichment",
-                "url": "https://api.example.com/enrich",
-                "namespace": "entraid",
-                "method": "POST",
-                "timeout_seconds": 30,
-                "cache_ttl_seconds": 600,
-            },
-        )
+        # Bypass the fail-closed webhook DNS/SSRF guard for this happy-path CRUD test so it
+        # does not depend on live DNS resolution. The dedicated SSRF test pins it False.
+        with patch.object(settings, "ALLOW_INTERNAL_WEBHOOK_IPS", True):
+            response = await authenticated_client.post(
+                "/api/enrichment-webhooks",
+                json={
+                    "name": "Entra ID Enrichment",
+                    "url": "https://api.example.com/enrich",
+                    "namespace": "entraid",
+                    "method": "POST",
+                    "timeout_seconds": 30,
+                    "cache_ttl_seconds": 600,
+                },
+            )
         assert response.status_code == 201
         data = response.json()
         assert data["name"] == "Entra ID Enrichment"
@@ -180,16 +185,19 @@ class TestCreateEnrichmentWebhook:
     @pytest.mark.asyncio
     async def test_create_webhook_with_credentials(self, authenticated_client: AsyncClient):
         """Create webhook with authentication credentials."""
-        response = await authenticated_client.post(
-            "/api/enrichment-webhooks",
-            json={
-                "name": "Secure Webhook",
-                "url": "https://api.example.com/secure",
-                "namespace": "secure",
-                "header_name": "X-API-Key",
-                "header_value": "supersecret123",
-            },
-        )
+        # Bypass the fail-closed webhook DNS/SSRF guard for this happy-path CRUD test so it
+        # does not depend on live DNS resolution. The dedicated SSRF test pins it False.
+        with patch.object(settings, "ALLOW_INTERNAL_WEBHOOK_IPS", True):
+            response = await authenticated_client.post(
+                "/api/enrichment-webhooks",
+                json={
+                    "name": "Secure Webhook",
+                    "url": "https://api.example.com/secure",
+                    "namespace": "secure",
+                    "header_name": "X-API-Key",
+                    "header_value": "supersecret123",
+                },
+            )
         assert response.status_code == 201
         data = response.json()
         assert data["header_name"] == "X-API-Key"
@@ -231,14 +239,17 @@ class TestCreateEnrichmentWebhook:
         self, authenticated_client: AsyncClient, sample_webhook: EnrichmentWebhook
     ):
         """Reject duplicate namespace."""
-        response = await authenticated_client.post(
-            "/api/enrichment-webhooks",
-            json={
-                "name": "Another Webhook",
-                "url": "https://other.example.com",
-                "namespace": "test_namespace",  # Already exists in sample_webhook
-            },
-        )
+        # Bypass the fail-closed webhook DNS/SSRF guard so this duplicate-namespace test does
+        # not depend on live DNS resolution. The dedicated SSRF test pins it False.
+        with patch.object(settings, "ALLOW_INTERNAL_WEBHOOK_IPS", True):
+            response = await authenticated_client.post(
+                "/api/enrichment-webhooks",
+                json={
+                    "name": "Another Webhook",
+                    "url": "https://other.example.com",
+                    "namespace": "test_namespace",  # Already exists in sample_webhook
+                },
+            )
         assert response.status_code == 409
         assert "already exists" in response.json()["detail"]
 

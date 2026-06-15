@@ -73,7 +73,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['rule_id'], ['rules.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_correlation_lookup', 'correlation_state', ['correlation_rule_id', 'entity_value', 'expires_at'], unique=False)
+    op.create_index('idx_correlation_lookup', 'correlation_state', ['correlation_rule_id', 'entity_value', 'expires_at'], unique=False)  # noqa: E501
     # ### end Alembic commands ###
 
 

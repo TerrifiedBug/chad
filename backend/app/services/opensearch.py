@@ -80,7 +80,10 @@ def create_client(
 
         # Only log once per process lifetime
         if not _ssl_warning_logged:
-            logger.warning("[SECURITY] SSL certificate verification is DISABLED. This should only be used in development environments!")
+            logger.warning(
+                "[SECURITY] SSL certificate verification is DISABLED. "
+                "This should only be used in development environments!"
+            )
             _ssl_warning_logged = True
 
     return OpenSearch(
@@ -427,7 +430,9 @@ def _extract_fields(
                     fields.add(sub_full_name)
                     # Recurse if sub-field also has nested properties
                     if "properties" in sub_field_config:
-                        _extract_fields(sub_field_config["properties"], f"{sub_full_name}.", fields, include_multi_fields)
+                        _extract_fields(
+                            sub_field_config["properties"], f"{sub_full_name}.", fields, include_multi_fields
+                        )
 
 
 def get_time_fields(

@@ -41,7 +41,6 @@ from app.api.notifications import router as notifications_router
 from app.api.organizations import router as organizations_router
 from app.api.permissions import router as permissions_router
 from app.api.queue import router as queue_router
-from app.api.recommendations import router as recommendations_router
 from app.api.report_schedules import router as report_schedules_router
 from app.api.reports import router as reports_router
 from app.api.rule_ci import router as rule_ci_router
@@ -352,12 +351,10 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         opensearch_setting = await get_setting(db, "opensearch")
         if opensearch_setting:
             # OpenSearch is configured, check connectivity
-            from app.services.opensearch import get_opensearch_client
-            client = get_opensearch_client()
-            if client:
-                info = await client.info()
-                if info and info.get("status") == 200:
-                    checks["opensearch"] = True
+            from app.services.opensearch import get_client_from_settings
+            client = await get_client_from_settings(db)
+            if client is not None and client.ping():
+                checks["opensearch"] = True
     except Exception as e:
         logger.warning("OpenSearch health check failed: %s", e)
         # Don't fail the health check for OpenSearch issues (it's optional)
@@ -409,7 +406,6 @@ app.include_router(sla_router, prefix="/api")
 app.include_router(cases_router, prefix="/api")
 app.include_router(audit_settings_router, prefix="/api")
 app.include_router(ai_copilot_router, prefix="/api")
-app.include_router(recommendations_router, prefix="/api")
 app.include_router(rule_ci_router, prefix="/api")
 app.include_router(organizations_router, prefix="/api")
 app.include_router(report_schedules_router, prefix="/api")

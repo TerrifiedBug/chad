@@ -326,7 +326,10 @@ async def delete_index_pattern(
     if rule_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete index pattern: {rule_count} rule{'s' if rule_count != 1 else ''} {'are' if rule_count != 1 else 'is'} using this pattern. Reassign or delete the rules first.",
+            detail=(
+                f"Cannot delete index pattern: {rule_count} rule{'s' if rule_count != 1 else ''} "
+                f"{'are' if rule_count != 1 else 'is'} using this pattern. Reassign or delete the rules first."
+            ),
         )
 
     # Remove any pull poll job if this was a pull mode index

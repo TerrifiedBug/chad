@@ -78,7 +78,10 @@ class SigmaHQService:
 
             # Check hostname against whitelist
             if parsed.hostname not in SigmaHQService.ALLOWED_GIT_HOSTS:
-                return False, f"Repository host '{parsed.hostname}' is not allowed. Allowed hosts: {', '.join(SigmaHQService.ALLOWED_GIT_HOSTS)}"
+                return False, (
+                    f"Repository host '{parsed.hostname}' is not allowed. "
+                    f"Allowed hosts: {', '.join(SigmaHQService.ALLOWED_GIT_HOSTS)}"
+                )
 
             # Prevent file system traversal attempts in path
             if "../" in url or url.startswith("/") or url.startswith("~"):

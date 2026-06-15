@@ -176,7 +176,9 @@ async def create_field_mapping(
                                 "target_field": existing.target_field,
                                 "note": "This mapping already uses .keyword suffix - no update needed",
                             },
-                            "suggestion": "Update the existing mapping instead of creating a duplicate, or delete it first.",
+                            "suggestion": (
+                                "Update the existing mapping instead of creating a duplicate, or delete it first."
+                            ),
                         },
                     )
                 else:
@@ -196,7 +198,9 @@ async def create_field_mapping(
                                 "recommended": f"{existing.target_field}.keyword",
                                 "note": "The existing mapping should be updated to use .keyword for proper matching",
                             },
-                            "suggestion": f"Update mapping ID {existing.id} to use '{existing.target_field}.keyword' instead.",
+                            "suggestion": (
+                                f"Update mapping ID {existing.id} to use '{existing.target_field}.keyword' instead."
+                            ),
                         },
                     )
         # Re-raise if it's a different integrity error

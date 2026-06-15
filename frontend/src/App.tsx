@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ThemeProvider } from '@/hooks/use-theme'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
@@ -12,7 +13,7 @@ import LoginPage from '@/pages/Login'
 import OpenSearchWizard from '@/pages/OpenSearchWizard'
 import Dashboard from '@/pages/Dashboard'
 import RulesPage from '@/pages/Rules'
-import RuleEditorPage from '@/pages/RuleEditor'
+const RuleEditorPage = lazy(() => import('@/pages/RuleEditor'))
 import IndexPatternsPage from '@/pages/IndexPatterns'
 import IndexPatternDetailPage from '@/pages/IndexPatternDetail'
 import AlertsPage from '@/pages/Alerts'
@@ -23,20 +24,20 @@ import SettingsHub from '@/pages/SettingsHub'
 import SettingsSection from '@/pages/settings/SettingsSection'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import ApiKeysPage from '@/pages/ApiKeys'
-import OrganizationsPage from '@/pages/Organizations'
-import ReportsPage from '@/pages/Reports'
-import SigmaHQPage from '@/pages/SigmaHQ'
-import MISPPage from '@/pages/MISP'
-import HealthPage from '@/pages/Health'
-import FieldMappingsPage from '@/pages/FieldMappings'
-import AttackMatrixPage from '@/pages/AttackMatrix'
+const OrganizationsPage = lazy(() => import('@/pages/Organizations'))
+const ReportsPage = lazy(() => import('@/pages/Reports'))
+const SigmaHQPage = lazy(() => import('@/pages/SigmaHQ'))
+const MISPPage = lazy(() => import('@/pages/MISP'))
+const HealthPage = lazy(() => import('@/pages/Health'))
+const FieldMappingsPage = lazy(() => import('@/pages/FieldMappings'))
+const AttackMatrixPage = lazy(() => import('@/pages/AttackMatrix'))
 import AccountPage from '@/pages/Account'
-import CorrelationRuleEditorPage from '@/pages/CorrelationRuleEditor'
-import LiveAlertFeedPage from '@/pages/LiveAlertFeed'
-import IOCMatchesPage from '@/pages/IOCMatches'
+const CorrelationRuleEditorPage = lazy(() => import('@/pages/CorrelationRuleEditor'))
+const LiveAlertFeedPage = lazy(() => import('@/pages/LiveAlertFeed'))
+const IOCMatchesPage = lazy(() => import('@/pages/IOCMatches'))
 import ApprovalsPage from '@/pages/Approvals'
-import EnvironmentsPage from '@/pages/Environments'
-import EnvironmentDetailPage from '@/pages/EnvironmentDetail'
+const EnvironmentsPage = lazy(() => import('@/pages/Environments'))
+const EnvironmentDetailPage = lazy(() => import('@/pages/EnvironmentDetail'))
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -317,7 +318,13 @@ export default function App() {
         <AuthProvider>
           <OpenSearchStatusProvider>
             <ModeProvider>
-              <AppRoutes />
+              <Suspense fallback={
+                <div className="flex h-screen items-center justify-center bg-background">
+                  <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+                </div>
+              }>
+                <AppRoutes />
+              </Suspense>
             </ModeProvider>
           </OpenSearchStatusProvider>
         </AuthProvider>

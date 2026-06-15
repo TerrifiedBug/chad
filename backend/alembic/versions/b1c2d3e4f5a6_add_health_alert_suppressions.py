@@ -23,7 +23,7 @@ def upgrade() -> None:
     op.create_table(
         'health_alert_suppressions',
         sa.Column('id', UUID(as_uuid=True), primary_key=True),
-        sa.Column('index_pattern_id', UUID(as_uuid=True), sa.ForeignKey('index_patterns.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('index_pattern_id', UUID(as_uuid=True), sa.ForeignKey('index_patterns.id', ondelete='CASCADE'), nullable=False),  # noqa: E501
         sa.Column('alert_type', sa.String(50), nullable=False),
         sa.Column('last_alert_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('suppression_level', sa.Integer(), nullable=False, server_default='0'),

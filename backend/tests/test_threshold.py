@@ -67,7 +67,7 @@ class TestThresholdLogic:
             id=uuid.uuid4(),
             title="Threshold Test Rule",
             description="A rule with threshold alerting",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 4625\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 4625\n  condition: selection",  # noqa: E501
             severity="medium",
             status=RuleStatus.DEPLOYED,
             index_pattern_id=index_pattern.id,
@@ -91,7 +91,7 @@ class TestThresholdLogic:
             id=uuid.uuid4(),
             title="Non-Threshold Test Rule",
             description="A rule without threshold alerting",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 4625\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 4625\n  condition: selection",  # noqa: E501
             severity="medium",
             status=RuleStatus.DEPLOYED,
             index_pattern_id=index_pattern.id,
@@ -135,7 +135,7 @@ class TestThresholdLogic:
             id=uuid.uuid4(),
             title="Threshold Default Test Rule",
             description="A rule with threshold enabled but no count/window",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 4625\n  condition: selection",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 4625\n  condition: selection",  # noqa: E501
             severity="medium",
             status=RuleStatus.DEPLOYED,
             index_pattern_id=index_pattern.id,

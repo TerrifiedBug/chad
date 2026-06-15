@@ -19,7 +19,6 @@ import { RefreshCw, ExternalLink, X, ChevronRight, Shield, Target, Download, Loa
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
 import { SeverityPills } from '@/components/filters/SeverityPills'
-import { CoverageRecommendations } from '@/components/attack/CoverageRecommendations'
 
 type CoverageLevel = 'none' | 'low' | 'medium' | 'high'
 
@@ -533,9 +532,6 @@ export default function AttackMatrixPage() {
             </CardContent>
           </Card>
         )}
-        {/* Coverage-gap "deploy these next" recommendations (F6) — shown when no
-            technique is selected so it shares the right column with the detail panel. */}
-        {!selectedTechnique && <CoverageRecommendations limit={8} />}
       </div>
     </div>
   )
