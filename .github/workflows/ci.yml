@@ -32,9 +32,14 @@ jobs:
       # No --cov: pytest-cov is not in the backend image (requirements.txt ships
       # pytest + pytest-asyncio only). Coverage upload was best-effort/non-gating
       # anyway; the gating signal is pass/fail.
+      # Override ALLOW_INTERNAL_WEBHOOK_IPS=false: the dev compose sets it true (a
+      # convenience for the mock-webhook service) which disables the SSRF guard that
+      # the SSRF tests assert. The webhook CRUD happy-path tests patch it True
+      # themselves, so they still pass with the ambient default off.
       - name: Run backend tests (in container)
         run: |
-          docker compose -f docker-compose.dev.yml run --rm backend \
+          docker compose -f docker-compose.dev.yml run --rm \
+            -e ALLOW_INTERNAL_WEBHOOK_IPS=false backend \
             pytest --ignore=tests/integration
 
       - name: Lint (ruff)
