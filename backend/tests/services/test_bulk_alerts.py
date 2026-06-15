@@ -48,7 +48,7 @@ class TestBulkAlertWriter:
         service = AlertService(mock_client)
 
         alerts = [
-            {"rule_id": "1", "rule_title": "Test", "severity": "high", "log_document": {"@timestamp": "2026-01-30T00:00:00Z"}},
+            {"rule_id": "1", "rule_title": "Test", "severity": "high", "log_document": {"@timestamp": "2026-01-30T00:00:00Z"}},  # noqa: E501
         ]
 
         result = service.bulk_create_alerts("chad-alerts-test", alerts)

@@ -28,7 +28,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['rule_id'], ['rules.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('ix_threshold_matches_rule_group_time', 'threshold_matches', ['rule_id', 'group_value', 'matched_at'], unique=False)
+    op.create_index('ix_threshold_matches_rule_group_time', 'threshold_matches', ['rule_id', 'group_value', 'matched_at'], unique=False)  # noqa: E501
 
 
 def downgrade() -> None:

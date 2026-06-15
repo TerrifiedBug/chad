@@ -95,7 +95,7 @@ async def test_scheduler_job_persistence(db_session: AsyncSession):
         scheduler_service.stop()
 
 
-@pytest.mark.skip(reason="Tests use API (register_job, unregister_job, is_running) that was planned but never implemented")
+@pytest.mark.skip(reason="Tests use API (register_job, unregister_job, is_running) that was planned but never implemented")  # noqa: E501
 @pytest.mark.asyncio
 async def test_scheduler_error_handling(db_session: AsyncSession):
     """Test that scheduler handles job errors gracefully."""

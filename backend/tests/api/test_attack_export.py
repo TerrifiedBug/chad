@@ -84,7 +84,7 @@ class TestAttackCoverageExport:
         rule = Rule(
             id=uuid.uuid4(),
             title="PowerShell Execution",
-            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  sel:\n    EventID: 1\n  condition: sel",
+            yaml_content="title: Test\nlogsource:\n  product: windows\ndetection:\n  sel:\n    EventID: 1\n  condition: sel",  # noqa: E501
             severity="high",
             status=RuleStatus.DEPLOYED,
             source=RuleSource.USER,

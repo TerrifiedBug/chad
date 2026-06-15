@@ -87,7 +87,7 @@ class TestLogProcessorDuplicateAlertPrevention:
             mock_get_ip.return_value = mock_index_pattern
             # Simulate log 0 matching a Sigma rule
             mock_percolate.return_value = {
-                0: [{"rule_id": str(uuid4()), "rule_title": "Test Sigma Rule", "severity": "high", "tags": [], "enabled": True}]
+                0: [{"rule_id": str(uuid4()), "rule_title": "Test Sigma Rule", "severity": "high", "tags": [], "enabled": True}]  # noqa: E501
             }
             mock_url.return_value = None
             mock_enrich.side_effect = lambda db, doc, ip: doc
@@ -140,7 +140,7 @@ class TestLogProcessorDuplicateAlertPrevention:
             mock_get_ip.return_value = mock_index_pattern
             mock_get_rule.return_value = threshold_rule
             mock_percolate.return_value = {
-                0: [{"rule_id": str(uuid4()), "rule_title": "Failed Logins", "severity": "high", "tags": [], "enabled": True}]
+                0: [{"rule_id": str(uuid4()), "rule_title": "Failed Logins", "severity": "high", "tags": [], "enabled": True}]  # noqa: E501
             }
             mock_url.return_value = None
             mock_enrich.side_effect = lambda db, doc, ip: doc
@@ -273,7 +273,7 @@ class TestLogProcessorDuplicateAlertPrevention:
             mock_get_ip.return_value = mock_index_pattern
             # Sigma rule matches but will be suppressed
             mock_percolate.return_value = {
-                0: [{"rule_id": str(uuid4()), "rule_title": "Test Sigma Rule", "severity": "high", "tags": [], "enabled": True}]
+                0: [{"rule_id": str(uuid4()), "rule_title": "Test Sigma Rule", "severity": "high", "tags": [], "enabled": True}]  # noqa: E501
             }
             mock_url.return_value = None
             mock_enrich.side_effect = lambda db, doc, ip: doc

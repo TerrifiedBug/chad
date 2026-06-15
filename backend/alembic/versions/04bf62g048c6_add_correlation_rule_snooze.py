@@ -21,7 +21,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Add snooze fields to correlation_rules table
     op.add_column('correlation_rules', sa.Column('snooze_until', sa.DateTime(timezone=True), nullable=True))
-    op.add_column('correlation_rules', sa.Column('snooze_indefinite', sa.Boolean(), nullable=False, server_default='false'))
+    op.add_column('correlation_rules', sa.Column('snooze_indefinite', sa.Boolean(), nullable=False, server_default='false'))  # noqa: E501
 
 
 def downgrade() -> None:

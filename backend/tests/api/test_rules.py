@@ -29,7 +29,7 @@ class TestStatusModelSimplification:
             "/api/rules",
             json={
                 "title": "Test Snooze Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "severity": "medium",
                 "index_pattern_id": str(pattern.id)
             }
@@ -271,14 +271,14 @@ detection:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
             },
         )
         rule_id = create_response.json()["id"]
 
         # Update rule with change_reason
-        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"  # noqa: E501
         response = await authenticated_client.patch(
             f"/api/rules/{rule_id}",
             json={
@@ -317,14 +317,14 @@ detection:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
             },
         )
         rule_id = create_response.json()["id"]
 
         # Update rule WITHOUT change_reason
-        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"  # noqa: E501
         response = await authenticated_client.patch(
             f"/api/rules/{rule_id}",
             json={
@@ -373,14 +373,14 @@ class TestMandatoryComments:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
             },
         )
         rule_id = create_response.json()["id"]
 
         # Try to update rule WITHOUT change_reason - should fail
-        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"  # noqa: E501
         response = await authenticated_client.patch(
             f"/api/rules/{rule_id}",
             json={
@@ -415,7 +415,7 @@ class TestMandatoryComments:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
                 "status": "undeployed",  # Explicitly undeployed
             },
@@ -423,7 +423,7 @@ class TestMandatoryComments:
         rule_id = create_response.json()["id"]
 
         # Try to update undeployed rule WITHOUT change_reason - should succeed
-        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"  # noqa: E501
         response = await authenticated_client.patch(
             f"/api/rules/{rule_id}",
             json={
@@ -457,7 +457,7 @@ class TestMandatoryComments:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
                 "status": "deployed",  # Deployed rule
             },
@@ -465,7 +465,7 @@ class TestMandatoryComments:
         rule_id = create_response.json()["id"]
 
         # Try to update deployed rule WITHOUT change_reason - should fail
-        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"  # noqa: E501
         response = await authenticated_client.patch(
             f"/api/rules/{rule_id}",
             json={
@@ -500,14 +500,14 @@ class TestMandatoryComments:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
             },
         )
         rule_id = create_response.json()["id"]
 
         # Update rule WITH change_reason - should succeed
-        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"  # noqa: E501
         response = await authenticated_client.patch(
             f"/api/rules/{rule_id}",
             json={
@@ -542,14 +542,14 @@ class TestMandatoryComments:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
             },
         )
         rule_id = create_response.json()["id"]
 
         # Update rule WITHOUT change_reason - should succeed
-        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"  # noqa: E501
         response = await authenticated_client.patch(
             f"/api/rules/{rule_id}",
             json={
@@ -583,14 +583,14 @@ class TestMandatoryComments:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
             },
         )
         rule_id = create_response.json()["id"]
 
         # Try to update rule with empty change_reason - should fail
-        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"
+        new_yaml = "title: Updated Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 2\n  condition: selection"  # noqa: E501
         response = await authenticated_client.patch(
             f"/api/rules/{rule_id}",
             json={
@@ -626,7 +626,7 @@ class TestMandatoryComments:
             "/api/rules",
             json={
                 "title": "Test Rule",
-                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",
+                "yaml_content": "title: Test\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 1\n  condition: selection",  # noqa: E501
                 "index_pattern_id": pattern_id,
             },
         )

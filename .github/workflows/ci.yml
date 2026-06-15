@@ -68,7 +68,7 @@ jobs:
       - name: Lint (ruff)
         run: |
           cd backend
-          ruff check app/
+          ruff check .
 
       - name: Typecheck (mypy, non-blocking)
         continue-on-error: true

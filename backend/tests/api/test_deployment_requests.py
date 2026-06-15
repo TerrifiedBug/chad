@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.core.security import create_access_token
 from app.models.audit_log import AuditLog
-from app.models.deployment_request import DeploymentRequest, DeploymentRequestStatus
+from app.models.deployment_request import DeploymentRequestStatus
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.user import User, UserRole
 

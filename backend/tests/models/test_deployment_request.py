@@ -1,6 +1,5 @@
 """Tests for the DeploymentRequest / DeploymentRequestItem models."""
 
-import uuid
 
 import pytest
 from sqlalchemy import select

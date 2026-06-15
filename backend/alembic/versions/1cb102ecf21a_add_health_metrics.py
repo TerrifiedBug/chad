@@ -33,7 +33,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['index_pattern_id'], ['index_patterns.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('ix_health_metrics_pattern_time', 'index_health_metrics', ['index_pattern_id', 'timestamp'], unique=False)
+    op.create_index('ix_health_metrics_pattern_time', 'index_health_metrics', ['index_pattern_id', 'timestamp'], unique=False)  # noqa: E501
 
 
 def downgrade() -> None:

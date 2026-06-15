@@ -43,7 +43,7 @@ def upgrade() -> None:
         'rule_attack_mappings',
         sa.Column('id', postgresql.UUID(), server_default=sa.text('gen_random_uuid()'), primary_key=True),
         sa.Column('rule_id', postgresql.UUID(), sa.ForeignKey('rules.id', ondelete='CASCADE'), nullable=False),
-        sa.Column('technique_id', sa.String(20), sa.ForeignKey('attack_techniques.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('technique_id', sa.String(20), sa.ForeignKey('attack_techniques.id', ondelete='CASCADE'), nullable=False),  # noqa: E501
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
     op.create_index('ix_rule_attack_mappings_rule_id', 'rule_attack_mappings', ['rule_id'])
