@@ -27,6 +27,7 @@ from app.api.environments import router as environments_router
 from app.api.export import router as export_router
 from app.api.external import router as external_router
 from app.api.field_mappings import router as field_mappings_router
+from app.api.git_import import router as git_import_router
 from app.api.health import router as health_router
 from app.api.index_patterns import router as index_patterns_router
 from app.api.jira import router as jira_router
@@ -412,6 +413,7 @@ app.include_router(recommendations_router, prefix="/api")
 app.include_router(rule_ci_router, prefix="/api")
 app.include_router(organizations_router, prefix="/api")
 app.include_router(report_schedules_router, prefix="/api")
+app.include_router(git_import_router, prefix="/api")
 app.include_router(environments_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
 app.include_router(sso_router, prefix="/api")

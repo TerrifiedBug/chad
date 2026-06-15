@@ -1458,6 +1458,27 @@ export const teamsApi = {
     api.get<Team[]>('/teams'),
 }
 
+// --- Gated bidirectional GitOps inbound import (I6) ---
+export type GitImportItem = {
+  path: string
+  title: string | null
+  status: 'new' | 'modified' | 'unchanged'
+  rule_id: string | null
+}
+export type GitImportPreview = { items: GitImportItem[]; total: number }
+export type GitImportResult = {
+  updated: { path: string; rule_id: string; version: number }[]
+  skipped: { path: string; reason: string }[]
+}
+export const gitopsApi = {
+  getInbound: () => api.get<{ enabled: boolean }>('/gitops/inbound'),
+  setInbound: (enabled: boolean) => api.put<{ enabled: boolean }>('/gitops/inbound', { enabled }),
+  importPreview: (envId: string) =>
+    api.post<GitImportPreview>(`/gitops/environments/${envId}/import-preview`, {}),
+  importApply: (envId: string, paths: string[]) =>
+    api.post<GitImportResult>(`/gitops/environments/${envId}/import`, { paths }),
+}
+
 // --- Scheduled reporting + compliance (F5) ---
 export type ReportSchedule = {
   id: string
