@@ -281,6 +281,9 @@ class SchedulerService:
             # Add SLA breach scan job (runs every 5 minutes)
             self._schedule_sla_scan()
 
+            # Add audit maintenance jobs (retention purge + SIEM forward)
+            self._schedule_audit_maintenance()
+
             # Add health-metrics retention cleanup job (runs daily)
             self._schedule_health_metrics_cleanup()
 
@@ -420,6 +423,77 @@ class SchedulerService:
                 category=LogCategory.BACKGROUND,
                 service="sla_scan",
                 message=f"Scheduled SLA scan failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    def _schedule_audit_maintenance(self):
+        """Schedule audit retention purge (daily) + SIEM forward (every 5 min).
+
+        Both no-op while their respective settings are disabled.
+        """
+        scheduler.add_job(
+            self._run_audit_retention,
+            trigger=CronTrigger(hour=4, minute=15),
+            id="audit_retention",
+            name="audit log retention purge",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        scheduler.add_job(
+            self._run_audit_forward,
+            trigger=IntervalTrigger(minutes=5),
+            id="audit_forward",
+            name="audit SIEM forward",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=300,
+        )
+        logger.info("Scheduled audit maintenance jobs (retention daily 4:15 AM, forward every 5 min)")
+
+    async def _run_audit_retention(self):
+        await self._run_with_lock(
+            "scheduler:audit_retention", timeout=600, job_func=self._execute_audit_retention
+        )
+
+    async def _execute_audit_retention(self):
+        from app.services.audit_export import purge_old_audit_logs
+
+        session = await self._get_session()
+        try:
+            purged = await purge_old_audit_logs(session)
+            if purged:
+                logger.info("Audit retention: purged %s rows", purged)
+        except Exception as e:
+            logger.error("Audit retention failed: %s", e)
+            await system_log_service.log_error(
+                session, category=LogCategory.BACKGROUND, service="audit_retention",
+                message=f"Audit retention failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    async def _run_audit_forward(self):
+        await self._run_with_lock(
+            "scheduler:audit_forward", timeout=300, job_func=self._execute_audit_forward
+        )
+
+    async def _execute_audit_forward(self):
+        from app.core.encryption import decrypt
+        from app.services.audit_export import forward_new_audit_events
+
+        session = await self._get_session()
+        try:
+            forwarded = await forward_new_audit_events(session, decrypt_header=decrypt)
+            if forwarded:
+                logger.info("Audit forward: shipped %s event(s)", forwarded)
+        except Exception as e:
+            logger.error("Audit forward failed: %s", e)
+            await system_log_service.log_error(
+                session, category=LogCategory.BACKGROUND, service="audit_forward",
+                message=f"Audit forward failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
         finally:

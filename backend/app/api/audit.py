@@ -207,6 +207,18 @@ async def export_audit_logs(
             email = log.details.get("user_email") or log.details.get("email")
         return email
 
+    # PII redaction on export (admin-configured). Redacts configured field names
+    # inside each event's details payload before it leaves CHAD; the actor email
+    # column is preserved (it's the canonical audit identity).
+    from app.services.audit_export import get_audit_settings, redact_pii
+
+    audit_settings = await get_audit_settings(db)
+    _redaction = audit_settings["redaction"]
+    _redact_fields = _redaction["fields"] if _redaction["enabled"] else []
+
+    def _details(log: AuditLog):
+        return redact_pii(log.details, _redact_fields) if _redact_fields else log.details
+
     if format == "json":
         data = []
         for log in logs:
@@ -217,7 +229,7 @@ async def export_audit_logs(
                 "resource_id": str(log.resource_id) if log.resource_id else None,
                 "user_email": _user_email(log),
                 "ip_address": log.ip_address,
-                "details": log.details,
+                "details": _details(log),
                 "created_at": log.created_at.isoformat(),
             })
         headers = {"Content-Disposition": "attachment; filename=audit_logs.json"}
@@ -242,7 +254,7 @@ async def export_audit_logs(
                 _csv_safe(log.resource_id) if log.resource_id else "",
                 _csv_safe(_user_email(log)) if _user_email(log) else "",
                 _csv_safe(log.ip_address) if log.ip_address else "",
-                _csv_safe(json.dumps(log.details)) if log.details else "",
+                _csv_safe(json.dumps(_details(log))) if log.details else "",
                 _csv_safe(log.created_at.isoformat()),
             ])
         output.seek(0)

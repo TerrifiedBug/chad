@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.api.ai_copilot import router as ai_copilot_router
 from app.api.alerts import router as alerts_router
 from app.api.api_keys import router as api_keys_router
 from app.api.attack import router as attack_router
 from app.api.audit import router as audit_router
+from app.api.audit_settings import router as audit_settings_router
 from app.api.auth import router as auth_router
 from app.api.cases import router as cases_router
 from app.api.circuit_breakers import router as circuit_breakers_router
@@ -37,7 +39,9 @@ from app.api.mode import router as mode_router
 from app.api.notifications import router as notifications_router
 from app.api.permissions import router as permissions_router
 from app.api.queue import router as queue_router
+from app.api.recommendations import router as recommendations_router
 from app.api.reports import router as reports_router
+from app.api.rule_ci import router as rule_ci_router
 from app.api.rules import router as rules_router
 from app.api.saved_views import router as saved_views_router
 from app.api.scim import router as scim_router
@@ -400,6 +404,10 @@ app.include_router(teams_router, prefix="/api")
 app.include_router(saved_views_router, prefix="/api")
 app.include_router(sla_router, prefix="/api")
 app.include_router(cases_router, prefix="/api")
+app.include_router(audit_settings_router, prefix="/api")
+app.include_router(ai_copilot_router, prefix="/api")
+app.include_router(recommendations_router, prefix="/api")
+app.include_router(rule_ci_router, prefix="/api")
 app.include_router(environments_router, prefix="/api")
 app.include_router(deployment_requests_router, prefix="/api")
 app.include_router(sso_router, prefix="/api")

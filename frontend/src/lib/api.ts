@@ -1582,6 +1582,153 @@ export const slaApi = {
   update: (policy: SlaPolicy) => api.put<SlaPolicy>('/sla-policy', policy),
 }
 
+// ============================================================================
+// AI Detection Copilot API (F3)
+// ============================================================================
+
+export type GenerateRuleRequest = {
+  description: string
+  logsource_hint?: string | null
+}
+
+export type GenerateRuleResponse = {
+  yaml: string
+  explanation: string
+}
+
+export type SummarizeAlertResponse = {
+  summary: string
+  recommended_actions: string[]
+}
+
+export type ExceptionSuggestion = {
+  field: string
+  operator: string
+  value: unknown
+  rationale: string
+  risk: string
+}
+
+export type SuggestExceptionsResponse = {
+  suggestions: ExceptionSuggestion[]
+}
+
+export const aiCopilotApi = {
+  generateRule: (data: GenerateRuleRequest) =>
+    api.post<GenerateRuleResponse>('/ai/copilot/generate-rule', data),
+  summarizeAlert: (alertDocument: Record<string, unknown>) =>
+    api.post<SummarizeAlertResponse>('/ai/copilot/summarize-alert', {
+      alert_document: alertDocument,
+    }),
+  suggestExceptions: (data: {
+    rule_yaml: string
+    false_positive_examples: Record<string, unknown>[]
+  }) => api.post<SuggestExceptionsResponse>('/ai/copilot/suggest-exceptions', data),
+}
+
+// ── Coverage-gap rule recommendations (F6) ──────────────────────────────────
+export type SuggestedRule = {
+  title: string
+  path: string
+  severity: string
+  rule_type: string // "detection" | "threat_hunting" | "emerging_threats"
+  compatible: boolean
+}
+
+export type CoverageRecommendation = {
+  technique_id: string
+  technique_name: string
+  tactic: string
+  current_coverage: number
+  reason: string
+  suggested_rule_titles: string[]
+  suggested_rules: SuggestedRule[]
+  priority: number
+}
+
+export type CoverageRecommendationsResponse = {
+  recommendations: CoverageRecommendation[]
+  total: number
+}
+
+export const recommendationsApi = {
+  coverage: (params?: { limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.limit != null) searchParams.set('limit', String(params.limit))
+    const query = searchParams.toString()
+    return api.get<CoverageRecommendationsResponse>(
+      `/recommendations/coverage${query ? `?${query}` : ''}`
+    )
+  },
+}
+
+// --- Detection-as-Code CI (rule lint + FP backtest + coverage gate) ---
+
+export interface RuleCICheck {
+  name: string // lint | field_validation | fp_backtest | coverage
+  status: 'pass' | 'warn' | 'fail' | 'skipped'
+  detail: string
+  data: Record<string, unknown>
+}
+
+export interface RuleCIReport {
+  passed: boolean
+  checks: RuleCICheck[]
+  summary: string
+}
+
+export interface RuleCICheckOptions {
+  index_pattern_id?: string
+  fp_threshold?: number
+  backtest_days?: number
+  run_backtest?: boolean
+}
+
+export const ruleCiApi = {
+  // Run CI over an arbitrary (possibly unsaved) rule YAML.
+  check: (params: { yaml_content: string } & RuleCICheckOptions) =>
+    api.post<RuleCIReport>('/rule-ci/check', {
+      yaml_content: params.yaml_content,
+      index_pattern_id: params.index_pattern_id || null,
+      fp_threshold: params.fp_threshold ?? null,
+      backtest_days: params.backtest_days ?? null,
+      run_backtest: params.run_backtest ?? true,
+    }),
+  // Run CI over a stored rule (loads its YAML + index pattern server-side).
+  checkStored: (ruleId: string, options?: RuleCICheckOptions) =>
+    api.post<RuleCIReport>(`/rule-ci/${ruleId}/check`, {
+      yaml_content: ' ',
+      index_pattern_id: options?.index_pattern_id || null,
+      fp_threshold: options?.fp_threshold ?? null,
+      backtest_days: options?.backtest_days ?? null,
+      run_backtest: options?.run_backtest ?? true,
+    }),
+}
+
+// --- Audit hardening settings (I5: retention, SIEM forward, PII redaction) ---
+export type AuditForwardConfig = {
+  enabled: boolean
+  format: string
+  url: string | null
+  header_name: string | null
+  has_header_value: boolean
+}
+export type AuditSettings = {
+  retention_days: number
+  forward: AuditForwardConfig
+  redaction: { enabled: boolean; fields: string[] }
+}
+export type AuditSettingsUpdate = {
+  retention_days: number
+  forward: { enabled: boolean; format: string; url?: string | null; header_name?: string | null; header_value?: string | null }
+  redaction: { enabled: boolean; fields: string[] }
+}
+export const auditSettingsApi = {
+  get: () => api.get<AuditSettings>('/audit-settings'),
+  update: (data: AuditSettingsUpdate) => api.put<AuditSettings>('/audit-settings', data),
+  testForward: () => api.post<{ forwarded: number }>('/audit-settings/test-forward', {}),
+}
+
 // --- Environment types (Model B: one rule identity, per-env deployment state) ---
 // An Environment is a team-owned scope for rule *deployments* (separate
 // percolator namespace + pinned version/status per env). The active env is sent
