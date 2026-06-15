@@ -295,6 +295,9 @@ async def list_deployment_requests(
         selectinload(DeploymentRequest.items),
         selectinload(DeploymentRequest.requester),
         selectinload(DeploymentRequest.reviewer),
+        # _build_summary reads len(req.approvals); eager-load it or the async
+        # session lazy-loads in the response builder and 500s.
+        selectinload(DeploymentRequest.approvals),
     )
     stmt = apply_team_scope(stmt, DeploymentRequest, current_user)
     if status_filter:
