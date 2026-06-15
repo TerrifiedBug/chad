@@ -1,6 +1,5 @@
-"""Transitional module: rules routes not yet extracted into a dedicated
-sub-router (plan 010 step 3). Migrated out one group at a time; removed when
-empty.
+"""Rule CRUD sub-router: list, index-fields, check-title, settings, create,
+get, update, and delete rules.
 """
 from datetime import UTC, datetime
 from typing import Annotated
@@ -576,11 +575,5 @@ async def delete_rule(
 
     await db.delete(rule)
     await db.commit()
-
-
-
-
-
-# Bulk Operations Endpoints (must be before single-rule endpoints to avoid route conflicts)
 
 

@@ -14,14 +14,15 @@ moved into their dedicated group module.
 
 from fastapi import APIRouter
 
-from app.api.rules import _pending, deploy, exceptions, metadata, snooze, testing
+from app.api.rules import crud, deploy, exceptions, metadata, snooze, testing
 
 router = APIRouter()
 
 # Included in original route-declaration order so effective FastAPI matching
-# (static paths before /{rule_id}) is preserved. _pending still holds the
-# not-yet-extracted groups in their original relative order.
-router.include_router(_pending.router)
+# (static paths before /{rule_id}) is preserved: CRUD owns the bare "" and
+# /settings static paths plus the /{rule_id} CRUD ops; the later groups add
+# /{rule_id}/... sub-paths and /bulk/* statics that never collide across groups.
+router.include_router(crud.router)
 router.include_router(testing.router)
 router.include_router(deploy.router)
 router.include_router(snooze.router)
