@@ -17,6 +17,7 @@ from app.core.circuit_breaker import CircuitBreakerError, get_circuit_breaker
 from app.core.errors import not_found
 from app.core.exceptions import OpenSearchUnavailableError
 from app.core.redis import get_redis
+from app.core.sanitization import sanitize_log
 from app.db.session import get_db
 from app.models.alert_comment import AlertComment
 from app.models.user import User
@@ -681,7 +682,7 @@ async def bulk_delete_alerts(
             )
             success.append(alert_id_str)
         except Exception as e:
-            logger.warning("Failed to delete alert %s: %s", alert_id_str, e)
+            logger.warning("Failed to delete alert %s: %s", sanitize_log(alert_id_str), e)
             failed.append({"id": alert_id_str, "error": "Failed to delete alert"})
 
     await db.commit()

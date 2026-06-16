@@ -110,7 +110,9 @@ def _parse_json_object(response: str) -> dict:
             if isinstance(data, dict):
                 return data
         except (json.JSONDecodeError, ValueError):
-            pass
+            # Model returned malformed JSON; return the empty-dict sentinel so
+            # callers can surface a clean "could not parse" result.
+            return {}
 
     return {}
 

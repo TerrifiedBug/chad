@@ -138,8 +138,9 @@ async def record_sightings_for_alerts(db: AsyncSession, alerts: list[dict]) -> i
         if client is not None:
             try:
                 await client.aclose()
-            except Exception:
-                pass
+            except Exception as e:
+                # Best-effort cleanup of the dedicated httpx client.
+                logger.debug("Failed to close MISP auto-sighting httpx client: %s", e)
 
     if recorded:
         logger.info(
