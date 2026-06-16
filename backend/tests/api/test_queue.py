@@ -76,3 +76,26 @@ class TestDeadLetterAPI:
         response = DeadLetterResponse(count=1, messages=[msg])
         assert response.count == 1
         assert len(response.messages) == 1
+
+
+class TestDeadLetterRetryRouting:
+    """Tests for resolving which stream a retried DLQ message re-enters."""
+
+    def test_prefers_explicit_index_suffix(self):
+        from app.api.queue import _index_suffix_for_retry
+
+        fields = {"index_suffix": "windows", "original_stream": "chad:logs:linux"}
+        assert _index_suffix_for_retry(fields) == "windows"
+
+    def test_falls_back_to_stream_suffix(self):
+        """Older DLQ entries lack index_suffix; derive it from the stream name
+        (streams are keyed chad:logs:{index_suffix})."""
+        from app.api.queue import _index_suffix_for_retry
+
+        fields = {"original_stream": "chad:logs:vector-auditbeat"}
+        assert _index_suffix_for_retry(fields) == "vector-auditbeat"
+
+    def test_defaults_to_unknown_when_nothing_resolvable(self):
+        from app.api.queue import _index_suffix_for_retry
+
+        assert _index_suffix_for_retry({}) == "unknown"

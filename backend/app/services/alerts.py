@@ -514,9 +514,11 @@ class AlertService:
         limit: int = 100,
         offset: int = 0,
         exclude_ioc: bool = False,
+        exclude_status: list[str] | None = None,
     ) -> dict[str, Any]:
         """Query alerts with filters."""
         must = []
+        must_not = []
 
         if status:
             must.append({"term": {"status": status}})
@@ -528,13 +530,28 @@ class AlertService:
             # Use .keyword suffix for exact matching (dynamic mapping creates text + keyword multifield)
             must.append({"term": {"owner_id.keyword": owner_id}})
         if exclude_ioc:
-            must.append({"bool": {"must_not": [{"term": {"rule_id": "ioc-detection"}}]}})
+            must_not.append({"term": {"rule_id": "ioc-detection"}})
+        if exclude_status:
+            must_not.extend({"term": {"status": s}} for s in exclude_status)
+
+        if must or must_not:
+            bool_query: dict[str, Any] = {}
+            if must:
+                bool_query["must"] = must
+            if must_not:
+                bool_query["must_not"] = must_not
+            query_clause = {"bool": bool_query}
+        else:
+            query_clause = {"match_all": {}}
 
         query = {
-            "query": {"bool": {"must": must}} if must else {"match_all": {}},
+            "query": query_clause,
             "sort": [{"created_at": {"order": "desc"}}],
             "from": offset,
             "size": limit,
+            # Return the exact hit count instead of OpenSearch's default 10k cap,
+            # so totals stay accurate once an index grows past 10,000 alerts.
+            "track_total_hits": True,
         }
 
         try:
@@ -572,6 +589,7 @@ class AlertService:
         limit: int = 100,
         offset: int = 0,
         exclude_ioc: bool = False,
+        exclude_status: list[str] | None = None,
     ) -> dict[str, Any]:
         """Query alerts with Redis cache fallback.
 
@@ -584,6 +602,7 @@ class AlertService:
             status=status, severity=severity, rule_id=rule_id,
             owner_id=owner_id, index_pattern=index_pattern,
             limit=limit, offset=offset, exclude_ioc=exclude_ioc,
+            exclude_status=exclude_status,
         )
 
         try:
@@ -593,6 +612,7 @@ class AlertService:
                 rule_id=rule_id, owner_id=owner_id,
                 limit=limit, offset=offset,
                 exclude_ioc=exclude_ioc,
+                exclude_status=exclude_status,
             )
             # Cache the fresh result
             await cache.set_alerts(result, **cache_kwargs)
@@ -739,6 +759,7 @@ class AlertService:
         filter_severity: str | None = None,
         rule_id: str | None = None,
         exclude_ioc: bool = False,
+        exclude_status: list[str] | None = None,
         index_pattern: str = "chad-alerts-*",
     ) -> int:
         """Set ``status`` on every alert matching the filter, in one OpenSearch
@@ -749,6 +770,7 @@ class AlertService:
         the number of documents updated.
         """
         must: list[dict[str, Any]] = []
+        must_not: list[dict[str, Any]] = []
         if filter_status:
             must.append({"term": {"status": filter_status}})
         if filter_severity:
@@ -756,8 +778,18 @@ class AlertService:
         if rule_id:
             must.append({"term": {"rule_id": rule_id}})
         if exclude_ioc:
-            must.append({"bool": {"must_not": [{"term": {"rule_id": "ioc-detection"}}]}})
-        query = {"bool": {"must": must}} if must else {"match_all": {}}
+            must_not.append({"term": {"rule_id": "ioc-detection"}})
+        if exclude_status:
+            must_not.extend({"term": {"status": s}} for s in exclude_status)
+        if must or must_not:
+            bool_query: dict[str, Any] = {}
+            if must:
+                bool_query["must"] = must
+            if must_not:
+                bool_query["must_not"] = must_not
+            query = {"bool": bool_query}
+        else:
+            query = {"match_all": {}}
 
         now = datetime.now(UTC).isoformat()
         source = "ctx._source.status = params.s; ctx._source.updated_at = params.u;"
@@ -809,10 +841,12 @@ class AlertService:
         self,
         index_pattern: str = "chad-alerts-*",
         exclude_ioc: bool = False,
+        exclude_status: list[str] | None = None,
     ) -> dict[str, Any]:
         """Get alert counts by status and severity for dashboard."""
         query: dict[str, Any] = {
             "size": 0,
+            "track_total_hits": True,
             "aggs": {
                 "by_status": {
                     "terms": {"field": "status", "size": 10}
@@ -830,14 +864,13 @@ class AlertService:
             }
         }
 
+        must_not: list[dict[str, Any]] = []
         if exclude_ioc:
-            query["query"] = {
-                "bool": {
-                    "must_not": [
-                        {"term": {"rule_id": "ioc-detection"}}
-                    ]
-                }
-            }
+            must_not.append({"term": {"rule_id": "ioc-detection"}})
+        if exclude_status:
+            must_not.extend({"term": {"status": s}} for s in exclude_status)
+        if must_not:
+            query["query"] = {"bool": {"must_not": must_not}}
 
         try:
             result = self.client.search(index=index_pattern, body=query)

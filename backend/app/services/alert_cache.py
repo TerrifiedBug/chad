@@ -28,9 +28,14 @@ class AlertCache:
         limit: int = 100,
         offset: int = 0,
         exclude_ioc: bool = False,
+        exclude_status: list[str] | None = None,
     ) -> str:
         """Build deterministic cache key from query params."""
-        params = f"{status}:{severity}:{rule_id}:{owner_id}:{index_pattern}:{limit}:{offset}:{exclude_ioc}"
+        exclude_status_key = ",".join(sorted(exclude_status)) if exclude_status else ""
+        params = (
+            f"{status}:{severity}:{rule_id}:{owner_id}:{index_pattern}:"
+            f"{limit}:{offset}:{exclude_ioc}:{exclude_status_key}"
+        )
         key_hash = hashlib.md5(params.encode()).hexdigest()[:12]
         return f"{CACHE_KEY_PREFIX}{key_hash}"
 

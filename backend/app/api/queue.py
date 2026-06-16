@@ -163,6 +163,108 @@ async def get_dead_letter_messages(
         raise HTTPException(status_code=503, detail="Redis unavailable")
 
 
+def _index_suffix_for_retry(fields: dict) -> str:
+    """Resolve the index_suffix for re-injecting a dead-letter message.
+
+    Newer DLQ entries carry index_suffix explicitly. Older ones (written before
+    that field was added) fall back to the original stream suffix, since streams
+    are keyed chad:logs:{index_suffix}.
+    """
+    suffix = fields.get("index_suffix")
+    if suffix:
+        return suffix
+    return fields.get("original_stream", "").replace("chad:logs:", "") or "unknown"
+
+
+@router.post("/dead-letter/retry")
+async def retry_dead_letter(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    """
+    Retry all messages in the dead letter queue.
+
+    Re-injects each message into its original stream with a fresh ID (so the age
+    check restarts), then removes it from the dead letter stream. Requires admin
+    role.
+    """
+    try:
+        redis = await get_redis_queue()
+
+        messages = await redis.xrange("chad:logs:dead-letter")
+        retried = 0
+        for msg_id, fields in messages:
+            original_stream = fields.get("original_stream")
+            if not original_stream:
+                continue
+            await redis.xadd(
+                original_stream,
+                {
+                    "data": fields.get("data", "{}"),
+                    "index_suffix": _index_suffix_for_retry(fields),
+                },
+            )
+            await redis.xdel("chad:logs:dead-letter", msg_id)
+            retried += 1
+
+        logger.info(
+            "Dead letter queue retried (%d messages) by user %s",
+            retried,
+            current_user.email,
+        )
+
+        return {"status": "retried", "count": retried}
+
+    except Exception as e:
+        logger.error("Failed to retry dead letter queue: %s", e)
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+
+@router.post("/dead-letter/{message_id}/retry")
+async def retry_dead_letter_message(
+    message_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    """
+    Retry a specific message from the dead letter queue.
+
+    Requires admin role.
+    """
+    try:
+        redis = await get_redis_queue()
+
+        messages = await redis.xrange(
+            "chad:logs:dead-letter", min=message_id, max=message_id
+        )
+        if not messages:
+            raise HTTPException(status_code=404, detail="Message not found")
+
+        _, fields = messages[0]
+        original_stream = fields.get("original_stream")
+        if not original_stream:
+            raise HTTPException(
+                status_code=422, detail="Message has no original stream to retry to"
+            )
+
+        await redis.xadd(
+            original_stream,
+            {
+                "data": fields.get("data", "{}"),
+                "index_suffix": _index_suffix_for_retry(fields),
+            },
+        )
+        await redis.xdel("chad:logs:dead-letter", message_id)
+
+        return {"status": "retried", "message_id": message_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to retry dead letter message: %s", e)
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+
 @router.delete("/dead-letter")
 async def clear_dead_letter(
     db: Annotated[AsyncSession, Depends(get_db)],

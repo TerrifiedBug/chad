@@ -95,6 +95,19 @@ class BulkAlertDelete(BaseModel):
 _ALERT_STATUSES = {"new", "acknowledged", "resolved", "false_positive"}
 
 
+def _parse_exclude_status(raw: str | None) -> list[str] | None:
+    """Parse a comma-separated exclude_status param into a validated list."""
+    if not raw:
+        return None
+    statuses = [s.strip() for s in raw.split(",") if s.strip()]
+    invalid = [s for s in statuses if s not in _ALERT_STATUSES]
+    if invalid:
+        raise HTTPException(
+            status_code=422, detail=f"Invalid status(es): {', '.join(invalid)}"
+        )
+    return statuses or None
+
+
 class AlertQueryFilters(BaseModel):
     """Filter selecting which alerts a by-query bulk op targets (mirrors the
     list view's filters)."""
@@ -103,6 +116,16 @@ class AlertQueryFilters(BaseModel):
     severity: str | None = None
     rule_id: str | None = None
     exclude_ioc: bool = False
+    exclude_status: list[str] | None = None
+
+    @field_validator("exclude_status")
+    @classmethod
+    def _valid_exclude_status(cls, v):
+        if v:
+            invalid = [s for s in v if s not in _ALERT_STATUSES]
+            if invalid:
+                raise ValueError(f"Invalid status(es): {', '.join(invalid)}")
+        return v or None
 
 
 class BulkAlertStatusByQuery(BaseModel):
@@ -132,8 +155,14 @@ async def list_alerts(
     offset: int = Query(0, ge=0),
     cluster: bool = Query(True, description="Apply alert clustering when enabled globally"),
     exclude_ioc: bool = Query(False, description="Exclude IOC detection alerts"),
+    exclude_status: str | None = Query(
+        None,
+        description="Comma-separated statuses to exclude (e.g. 'false_positive,resolved')",
+    ),
 ):
     """List alerts with optional filters and clustering."""
+    exclude_status_list = _parse_exclude_status(exclude_status)
+
     owner_id = None
     if owner == "me":
         owner_id = str(current_user.id)
@@ -183,6 +212,7 @@ async def list_alerts(
                 limit=fetch_limit,
                 offset=fetch_offset,
                 exclude_ioc=exclude_ioc,
+                exclude_status=exclude_status_list,
             )
         else:
             # No Redis available - call OpenSearch directly through circuit breaker
@@ -196,6 +226,7 @@ async def list_alerts(
                 limit=fetch_limit,
                 offset=fetch_offset,
                 exclude_ioc=exclude_ioc,
+                exclude_status=exclude_status_list,
             )
             result["cached"] = False
             result["opensearch_available"] = True
@@ -576,6 +607,7 @@ async def bulk_update_alert_status_by_query(
             filter_severity=data.filters.severity,
             rule_id=data.filters.rule_id,
             exclude_ioc=data.filters.exclude_ioc,
+            exclude_status=data.filters.exclude_status,
         )
     except Exception as e:
         logger.error("Bulk status-by-query failed: %s", type(e).__name__)
