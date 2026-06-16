@@ -161,6 +161,20 @@ def check_for_xss(content: str | None) -> list[str]:
     return detected
 
 
+def sanitize_log(value: object) -> str:
+    """Sanitize an untrusted value before it is written to a log statement.
+
+    Strips CR/LF (and other ASCII control characters) so user-controlled data
+    cannot forge or inject extra log entries. Returns a plain string safe to
+    interpolate into a log message.
+    """
+    text = str(value)
+    # Escape CR/LF explicitly so they remain visible in the log line.
+    text = text.replace("\r", "\\r").replace("\n", "\\n")
+    # Drop any remaining non-printable control characters.
+    return "".join(ch if ch.isprintable() or ch == " " else "" for ch in text)
+
+
 def sanitize_user_input(
     value: str | None,
     field_type: str = "text"

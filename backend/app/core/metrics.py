@@ -57,4 +57,5 @@ def record_batch_failure(index_pattern: str) -> None:
     try:
         ingest_batch_failures_total.labels(index_pattern or "unknown").inc()
     except Exception:
-        pass
+        # Metrics recording must never break ingestion; ignore any registry error.
+        return

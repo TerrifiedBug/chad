@@ -1,13 +1,17 @@
 import secrets
 import uuid
-from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-if TYPE_CHECKING:
-    from app.models.enrichment_webhook import IndexPatternEnrichmentWebhook
+# NOTE: app.models.enrichment_webhook imports IndexPattern (for its own type
+# hints), so importing IndexPatternEnrichmentWebhook here — even under
+# TYPE_CHECKING — forms an unsafe import cycle (py/unsafe-cyclic-import). The
+# enrichment_webhook_configs relationship below instead targets the related
+# class by its registered string name ("IndexPatternEnrichmentWebhook"), which
+# SQLAlchemy resolves from its class registry at mapper-configuration time, so
+# no import of the symbol is needed in this module.
 
 from app.core.encryption import decrypt_with_fallback, encrypt
 from app.db.base import Base, TimestampMixin, UUIDMixin
@@ -140,7 +144,7 @@ class IndexPattern(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
     )
     updated_by = relationship("User", foreign_keys=[updated_by_id])
-    enrichment_webhook_configs: Mapped[list["IndexPatternEnrichmentWebhook"]] = relationship(
+    enrichment_webhook_configs = relationship(
         "IndexPatternEnrichmentWebhook",
         back_populates="index_pattern",
         cascade="all, delete-orphan",

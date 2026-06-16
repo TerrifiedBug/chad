@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_opensearch_client_optional
+from app.core.sanitization import sanitize_log
 from app.models.index_pattern import IndexPattern
 from app.models.user import User
 from app.schemas.field_mapping import (
@@ -388,7 +389,7 @@ async def update_field_mapping(
         logging.getLogger(__name__).info(
             "Field mapping %s changed but dual-control is on; skipping auto-redeploy of "
             "%d affected rule(s). Re-deploy them via the approval flow to apply the mapping.",
-            mapping_id,
+            sanitize_log(mapping_id),
             len(affected_rules),
         )
     if affected_rules and os_client and mapping.index_pattern_id and not gate_on:
@@ -410,7 +411,7 @@ async def update_field_mapping(
                 import logging
                 logging.getLogger(__name__).warning(
                     "Field mapping %s: %d of %d affected rules failed to redeploy",
-                    mapping_id,
+                    sanitize_log(mapping_id),
                     len(redeploy_failures),
                     len(affected_rules),
                 )

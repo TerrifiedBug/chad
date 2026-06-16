@@ -39,6 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_opensearch_client_optional
+from app.core.sanitization import sanitize_log
 from app.db.session import get_db
 from app.models.health_metrics import IndexHealthMetrics
 from app.models.index_pattern import IndexPattern
@@ -394,7 +395,7 @@ async def receive_logs(
             batch_percolate_logs, os_client, percolator_index, logs
         )
     except Exception as e:
-        logger.error("Batch percolate failed for %s: %s", index_suffix, e)
+        logger.error("Batch percolate failed for %s: %s", sanitize_log(index_suffix), e)
         raise HTTPException(503, "Percolation failed") from e
 
     for log_idx, log in enumerate(logs):
@@ -424,8 +425,9 @@ async def receive_logs(
             try:
                 lag_ms = int((datetime.now(UTC) - log_time).total_seconds() * 1000)
                 ingest_lags.append(max(0, lag_ms))
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as e:
+                # Naive/garbage timestamp; skip this log's lag sample.
+                logger.debug("Skipping ingest-lag sample for invalid timestamp: %s", e)
 
         # Matches for this log from the single batch percolate above.
         matches = matches_by_log.get(log_idx, [])

@@ -147,15 +147,18 @@ class SchedulerService:
                     self._leadership_stop.wait(), timeout=self.LEADER_TTL / 3
                 )
             except TimeoutError:
-                pass
+                # Expected: the wait timed out before a stop was signalled, so
+                # loop again to renew/recheck leadership on the next interval.
+                continue
 
         # Release leadership on shutdown so a survivor takes over immediately.
         try:
             redis = await get_redis()
             if await redis.get(self.LEADER_KEY) == self._instance_id:
                 await redis.delete(self.LEADER_KEY)
-        except Exception:
-            pass
+        except Exception as e:
+            # Best-effort cleanup; the leader key has a TTL so it expires anyway.
+            logger.debug("Failed to release scheduler leadership on shutdown: %s", e)
 
     async def _run_with_lock(self, lock_name: str, timeout: int, job_func):
         """

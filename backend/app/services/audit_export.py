@@ -65,8 +65,9 @@ def merge_audit_settings(stored: dict | None) -> dict[str, Any]:
     if "retention_days" in stored:
         try:
             out["retention_days"] = max(0, int(stored["retention_days"]))
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as e:
+            # Non-numeric stored value; keep the default retention_days.
+            logger.debug("Ignoring non-numeric retention_days override: %s", e)
     if isinstance(stored.get("forward"), dict):
         out["forward"].update({k: stored["forward"][k] for k in stored["forward"]})
     if isinstance(stored.get("redaction"), dict):
@@ -198,8 +199,9 @@ async def forward_new_audit_events(
         if decrypt_header is not None:
             try:
                 value = decrypt_header(value)
-            except Exception:
-                pass
+            except Exception as e:
+                # Fall back to the stored value (may be plaintext / legacy).
+                logger.debug("Failed to decrypt audit forward header; using raw value: %s", e)
         headers[fwd["header_name"]] = value
 
     forwarded = 0
