@@ -202,8 +202,9 @@ async def deliver_report(
         if decrypt_header is not None:
             try:
                 value = decrypt_header(value)
-            except Exception:
-                pass
+            except Exception as e:
+                # Fall back to the stored value (may be plaintext / legacy).
+                logger.debug("Failed to decrypt webhook delivery header; using raw value: %s", e)
         headers[schedule.delivery_header_name] = value
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
