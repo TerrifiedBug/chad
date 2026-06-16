@@ -96,6 +96,13 @@ class Worker:
                             "original_stream": stream,
                             "original_id": msg_id,
                             "data": fields.get("data", "{}"),
+                            # Preserve index_suffix so a retry can route the log
+                            # back to the right index. Fall back to the stream
+                            # suffix (streams are keyed chad:logs:{index_suffix}).
+                            "index_suffix": fields.get(
+                                "index_suffix",
+                                stream.replace("chad:logs:", ""),
+                            ),
                             "reason": f"TTL exceeded ({age_seconds:.0f}s > {queue_settings.message_ttl_seconds}s)",
                         },
                     )
