@@ -1147,6 +1147,7 @@ export const alertsApi = {
     limit?: number
     offset?: number
     exclude_ioc?: boolean
+    exclude_status?: AlertStatus[]
     cluster?: boolean
   }) => {
     const searchParams = new URLSearchParams()
@@ -1157,6 +1158,8 @@ export const alertsApi = {
     if (params?.limit) searchParams.set('limit', params.limit.toString())
     if (params?.offset) searchParams.set('offset', params.offset.toString())
     if (params?.exclude_ioc) searchParams.set('exclude_ioc', 'true')
+    if (params?.exclude_status?.length)
+      searchParams.set('exclude_status', params.exclude_status.join(','))
     if (params?.cluster === false) searchParams.set('cluster', 'false')
     const query = searchParams.toString()
     return api.get<AlertListResponse>(`/alerts${query ? `?${query}` : ''}`)
@@ -1186,7 +1189,7 @@ export const alertsApi = {
   bulkUpdateStatusByQuery: (data: {
     new_status: AlertStatus
     change_reason?: string
-    filters: { status?: string; severity?: string; rule_id?: string; exclude_ioc?: boolean }
+    filters: { status?: string; severity?: string; rule_id?: string; exclude_ioc?: boolean; exclude_status?: AlertStatus[] }
   }) =>
     api.post<{ updated: number }>('/alerts/bulk/status-by-query', data).then((r) => {
       queryClient.invalidateQueries({ queryKey: [ALERTS_QUERY_KEY] })
@@ -3522,6 +3525,12 @@ export const queueApi = {
     api.delete('/queue/dead-letter'),
   deleteDeadLetterMessage: (messageId: string) =>
     api.delete(`/queue/dead-letter/${messageId}`),
+  retryDeadLetter: () =>
+    api.post<{ status: string; count: number }>('/queue/dead-letter/retry'),
+  retryDeadLetterMessage: (messageId: string) =>
+    api.post<{ status: string; message_id: string }>(
+      `/queue/dead-letter/${messageId}/retry`,
+    ),
 }
 
 // Enrichment Webhook types

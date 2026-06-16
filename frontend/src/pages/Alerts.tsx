@@ -63,6 +63,10 @@ const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as con
 const ALERT_TYPES = ['sigma', 'correlation'] as const
 type AlertType = typeof ALERT_TYPES[number]
 
+// The "Active" status view hides triaged alerts (resolved + false positives) so
+// the list surfaces alerts that still need attention.
+const ACTIVE_EXCLUDED_STATUSES: AlertStatus[] = ['resolved', 'false_positive']
+
 // Type guard to check if response is clustered
 function isClusteredResponse(response: AlertListResponse | ClusteredAlertListResponse): response is ClusteredAlertListResponse {
   return 'clusters' in response
@@ -85,12 +89,17 @@ export default function AlertsPage() {
 
   // Initialize filters from URL params
   const [search, setSearch] = useState(() => searchParams.get('search') || '')
-  const [statusFilter, setStatusFilter] = useState<AlertStatus | 'all'>(() => {
+  const [statusFilter, setStatusFilter] = useState<AlertStatus | 'all' | 'active'>(() => {
     const status = searchParams.get('status')
-    if (status === 'new' || status === 'acknowledged' || status === 'resolved' || status === 'false_positive') {
+    if (
+      status === 'new' || status === 'acknowledged' || status === 'resolved' ||
+      status === 'false_positive' || status === 'all'
+    ) {
       return status
     }
-    return 'all'
+    // Default to the "Active" view (hides resolved + false positives) so the
+    // list isn't dominated by triaged noise.
+    return 'active'
   })
   const [severityFilter, setSeverityFilter] = useState<string[]>(() => {
     const severities = searchParams.get('severity')
@@ -141,9 +150,10 @@ export default function AlertsPage() {
     setSearch(typeof filters.search === 'string' ? filters.search : '')
     const status = filters.status
     setStatusFilter(
-      status === 'new' || status === 'acknowledged' || status === 'resolved' || status === 'false_positive'
+      status === 'new' || status === 'acknowledged' || status === 'resolved' ||
+      status === 'false_positive' || status === 'all'
         ? status
-        : 'all'
+        : 'active'
     )
     setSeverityFilter(
       Array.isArray(filters.severity)
@@ -216,7 +226,8 @@ export default function AlertsPage() {
       const offset = (page - 1) * pageSize
       const [alertsResponse, countsResponse] = await Promise.all([
         alertsApi.list({
-          status: statusFilter === 'all' ? undefined : statusFilter,
+          status: statusFilter === 'all' || statusFilter === 'active' ? undefined : statusFilter,
+          exclude_status: statusFilter === 'active' ? ACTIVE_EXCLUDED_STATUSES : undefined,
           // Pass single severity if exactly one selected, otherwise filter client-side
           severity: severityFilter.length === 1 ? severityFilter[0] : undefined,
           owner: ownerFilter,
@@ -259,7 +270,8 @@ export default function AlertsPage() {
     const newParams = new URLSearchParams()
 
     if (search) newParams.set('search', search)
-    if (statusFilter !== 'all') newParams.set('status', statusFilter)
+    // 'active' is the default view, so omit it from the URL to keep links clean.
+    if (statusFilter !== 'active') newParams.set('status', statusFilter)
     if (severityFilter.length > 0) newParams.set('severity', severityFilter.join(','))
     if (alertTypeFilter.length > 0) newParams.set('type', alertTypeFilter.join(','))
     if (ownerFilter) newParams.set('owner', ownerFilter)
@@ -391,7 +403,8 @@ export default function AlertsPage() {
       await alertsApi.bulkUpdateStatusByQuery({
         new_status: newStatus,
         filters: {
-          status: statusFilter === 'all' ? undefined : statusFilter,
+          status: statusFilter === 'all' || statusFilter === 'active' ? undefined : statusFilter,
+          exclude_status: statusFilter === 'active' ? ACTIVE_EXCLUDED_STATUSES : undefined,
           severity: severityFilter.length === 1 ? severityFilter[0] : undefined,
           exclude_ioc: true,
         },
@@ -649,12 +662,13 @@ export default function AlertsPage() {
           </div>
           <Select
             value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value as AlertStatus | 'all')}
+            onValueChange={(value) => setStatusFilter(value as AlertStatus | 'all' | 'active')}
           >
             <SelectTrigger className="w-40">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent className="z-50 bg-popover">
+              <SelectItem value="active">Active</SelectItem>
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="new">New</SelectItem>
               <SelectItem value="acknowledged">Acknowledged</SelectItem>
@@ -715,13 +729,13 @@ export default function AlertsPage() {
           />
 
           {/* Clear All Filters */}
-          {(search || statusFilter !== 'all' || severityFilter.length > 0 || alertTypeFilter.length > 0 || ownerFilter) && (
+          {(search || statusFilter !== 'active' || severityFilter.length > 0 || alertTypeFilter.length > 0 || ownerFilter) && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setSearch('')
-                setStatusFilter('all')
+                setStatusFilter('active')
                 setSeverityFilter([])
                 setAlertTypeFilter([])
                 setOwnerFilter(null)

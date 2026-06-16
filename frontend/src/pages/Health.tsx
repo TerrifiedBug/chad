@@ -95,6 +95,7 @@ export default function HealthPage() {
   const [deadLetterMessages, setDeadLetterMessages] = useState<DeadLetterMessage[]>([])
   const [deadLetterCount, setDeadLetterCount] = useState(0)
   const [isClearingDeadLetter, setIsClearingDeadLetter] = useState(false)
+  const [isRetryingDeadLetter, setIsRetryingDeadLetter] = useState(false)
 
   // Pull mode health state
   const [pullModeHealth, setPullModeHealth] = useState<PullModeHealth | null>(null)
@@ -263,6 +264,26 @@ export default function HealthPage() {
       showToast(err instanceof Error ? err.message : 'Failed to clear dead letter queue', 'error')
     } finally {
       setIsClearingDeadLetter(false)
+    }
+  }
+
+  const retryDeadLetterQueue = async () => {
+    if (!confirm('Re-queue all dead letter messages for processing? Each will be re-injected into its original stream with a fresh timestamp.')) {
+      return
+    }
+    setIsRetryingDeadLetter(true)
+    try {
+      const res = await queueApi.retryDeadLetter()
+      setDeadLetterMessages([])
+      setDeadLetterCount(0)
+      if (queueStats) {
+        setQueueStats({ ...queueStats, dead_letter_count: 0 })
+      }
+      showToast(`Re-queued ${res.count} dead letter message${res.count === 1 ? '' : 's'}`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to retry dead letter queue', 'error')
+    } finally {
+      setIsRetryingDeadLetter(false)
     }
   }
 
@@ -714,12 +735,30 @@ export default function HealthPage() {
                   {deadLetterMessages.length > 0 ? (
                     <div className="space-y-4">
                       {hasPermission('manage_health') && (
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={retryDeadLetterQueue}
+                            disabled={isRetryingDeadLetter || isClearingDeadLetter}
+                          >
+                            {isRetryingDeadLetter ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Retrying...
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="h-4 w-4 mr-2" />
+                                Retry All
+                              </>
+                            )}
+                          </Button>
                           <Button
                             variant="destructive"
                             size="sm"
                             onClick={clearDeadLetterQueue}
-                            disabled={isClearingDeadLetter}
+                            disabled={isClearingDeadLetter || isRetryingDeadLetter}
                           >
                             {isClearingDeadLetter ? (
                               <>

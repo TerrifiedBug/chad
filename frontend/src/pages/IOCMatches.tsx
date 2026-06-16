@@ -60,6 +60,9 @@ import { cn } from '@/lib/utils'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'] as const
 
+// The "Active" status view hides triaged matches (resolved + false positives).
+const ACTIVE_EXCLUDED_STATUSES: AlertStatus[] = ['resolved', 'false_positive']
+
 // Type guard to check if response is clustered
 function isClusteredResponse(response: AlertListResponse | ClusteredAlertListResponse): response is ClusteredAlertListResponse {
   return 'clusters' in response
@@ -87,8 +90,10 @@ export default function IOCMatchesPage() {
   const [search, setSearch] = useState(() => searchParams.get('search') || '')
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set())
 
-  // Filters from URL
-  const statusFilter = searchParams.get('status') as AlertStatus | null
+  // Filters from URL. Absent 'status' param => default "Active" view, which
+  // hides resolved + false-positive matches. Explicit 'all' shows every status.
+  const statusFilter = searchParams.get('status') as AlertStatus | 'all' | null
+  const isActiveView = statusFilter === null
   const [severityFilter, setSeverityFilter] = useState<string[]>(() => {
     const severities = searchParams.get('severity')
     return severities ? severities.split(',').filter(s => SEVERITIES.includes(s as typeof SEVERITIES[number])) : []
@@ -142,7 +147,8 @@ export default function IOCMatchesPage() {
     try {
       const result = await alertsApi.list({
         rule_id: 'ioc-detection',
-        status: statusFilter || undefined,
+        status: statusFilter && statusFilter !== 'all' ? statusFilter : undefined,
+        exclude_status: isActiveView ? ACTIVE_EXCLUDED_STATUSES : undefined,
         severity: severityFilter.length === 1 ? severityFilter[0] : undefined,
         owner: ownerFilter,
         limit: pageSize,
@@ -167,7 +173,7 @@ export default function IOCMatchesPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load IOC matches')
     }
-  }, [statusFilter, severityFilter, ownerFilter, pageSize, offset])
+  }, [statusFilter, isActiveView, severityFilter, ownerFilter, pageSize, offset])
 
   const loadStats = useCallback(async () => {
     try {
@@ -475,13 +481,14 @@ export default function IOCMatchesPage() {
             )}
           </div>
           <Select
-            value={statusFilter || 'all'}
-            onValueChange={(v) => setFilter('status', v === 'all' ? null : v)}
+            value={statusFilter || 'active'}
+            onValueChange={(v) => setFilter('status', v === 'active' ? null : v)}
           >
             <SelectTrigger className="w-40">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent className="z-50 bg-popover">
+              <SelectItem value="active">Active</SelectItem>
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="new">New</SelectItem>
               <SelectItem value="acknowledged">Acknowledged</SelectItem>
