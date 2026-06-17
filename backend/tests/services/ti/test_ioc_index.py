@@ -51,7 +51,7 @@ async def test_ensure_index_creates_if_not_exists():
     service = IOCIndexService(mock_client)
     await service.ensure_index()
 
-    mock_client.indices.exists.assert_called_with(INDICATOR_INDEX_NAME)
+    mock_client.indices.exists.assert_called_with(index=INDICATOR_INDEX_NAME)
     mock_client.indices.create.assert_called_once()
 
 
@@ -64,7 +64,7 @@ async def test_ensure_index_skips_if_exists():
     service = IOCIndexService(mock_client)
     await service.ensure_index()
 
-    mock_client.indices.exists.assert_called_with(INDICATOR_INDEX_NAME)
+    mock_client.indices.exists.assert_called_with(index=INDICATOR_INDEX_NAME)
     mock_client.indices.create.assert_not_called()
 
 

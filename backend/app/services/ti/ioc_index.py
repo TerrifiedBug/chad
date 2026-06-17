@@ -47,7 +47,7 @@ class IOCIndexService:
 
     async def ensure_index(self) -> None:
         """Ensure the indicator index exists, create if not."""
-        if self.client.indices.exists(self.index_name):
+        if self.client.indices.exists(index=self.index_name):
             logger.debug("Indicator index %s already exists", self.index_name)
             return
 
