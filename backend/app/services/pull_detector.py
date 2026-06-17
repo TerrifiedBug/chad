@@ -456,7 +456,7 @@ class PullDetector:
 
         try:
             # Check if indicator index exists
-            if not self.client.indices.exists(INDICATOR_INDEX_NAME):
+            if not self.client.indices.exists(index=INDICATOR_INDEX_NAME):
                 logger.debug("Indicator index %s does not exist, skipping IOC detection", INDICATOR_INDEX_NAME)
                 return {"ioc_matches": 0, "ioc_alerts": 0, "ioc_errors": []}
 
