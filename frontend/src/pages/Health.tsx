@@ -947,6 +947,20 @@ export default function HealthPage() {
                               {pattern.status}
                             </span>
                           </div>
+                          {pattern.issues.length > 0 && (
+                            <ul className={`mt-1 text-xs text-right space-y-0.5 ${statusColors[pattern.status]}`}>
+                              {pattern.issues.map((issue, i) => (
+                                <li key={i}>{issue}</li>
+                              ))}
+                            </ul>
+                          )}
+                          {pattern.notes.length > 0 && (
+                            <ul className="mt-1 text-xs text-right space-y-0.5 text-muted-foreground">
+                              {pattern.notes.map((note, i) => (
+                                <li key={i}>{note}</li>
+                              ))}
+                            </ul>
+                          )}
                         </td>
                       </tr>
                     ))}

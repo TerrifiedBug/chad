@@ -160,6 +160,22 @@ async def get_index_health(
                 status = HealthStatus.HEALTHY
                 issues = []
 
+            # Stalled poller: a pull index that hasn't polled in over 2x its
+            # interval is unhealthy even with zero failures (the scheduler may
+            # have stopped polling it). Mirrors the Pull Mode Detection view so
+            # the index card and that table no longer disagree.
+            if ps.last_poll_at:
+                stale_after_s = index_pattern.poll_interval_minutes * 60 * 2
+                age_s = (
+                    datetime.now(UTC) - ps.last_poll_at.replace(tzinfo=UTC)
+                ).total_seconds()
+                if age_s > stale_after_s:
+                    status = _max_status(status, HealthStatus.WARNING)
+                    issues.append(
+                        f"No poll in {int(age_s / 60)} minutes "
+                        f"(expected every {index_pattern.poll_interval_minutes})"
+                    )
+
             # Use real detection latency from poll_state if available
             # This is calculated from actual event timestamps vs alert creation time
             # Fallback to poll_interval / 2 estimate if no real data yet
