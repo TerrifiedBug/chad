@@ -678,7 +678,7 @@ export default function AlertsPage() {
           </Select>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="w-40 justify-between">
+              <Button variant="outline" className="w-40 h-10 justify-between rounded-md text-sm font-normal">
                 Type
                 {alertTypeFilter.length > 0 && (
                   <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">

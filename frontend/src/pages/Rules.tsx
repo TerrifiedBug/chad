@@ -792,7 +792,7 @@ export default function RulesPage() {
         {/* Index Pattern multi-select */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="w-40 justify-between">
+            <Button variant="outline" className="w-40 h-10 justify-between rounded-md text-sm font-normal">
               Index Pattern
               {filters.indexPattern.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
@@ -827,7 +827,7 @@ export default function RulesPage() {
         {/* Status multi-select */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="w-40 justify-between">
+            <Button variant="outline" className="w-40 h-10 justify-between rounded-md text-sm font-normal">
               Status
               {filters.status.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
@@ -856,7 +856,7 @@ export default function RulesPage() {
         {/* Source dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="w-40 justify-between">
+            <Button variant="outline" className="w-40 h-10 justify-between rounded-md text-sm font-normal">
               Source
               {filters.source !== 'all' && (
                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
@@ -1282,7 +1282,7 @@ export default function RulesPage() {
             {/* Severity multi-select */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-40 justify-between">
+                <Button variant="outline" className="w-40 h-10 justify-between rounded-md text-sm font-normal">
                   Severity
                   {filters.severity.length > 0 && (
                     <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
@@ -1321,7 +1321,7 @@ export default function RulesPage() {
             {/* Status multi-select */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-40 justify-between">
+                <Button variant="outline" className="w-40 h-10 justify-between rounded-md text-sm font-normal">
                   Status
                   {filters.status.length > 0 && (
                     <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
