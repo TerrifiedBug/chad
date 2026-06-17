@@ -76,7 +76,7 @@ function formatNumber(n: number): string {
 }
 
 export default function HealthPage() {
-  const { hasPermission } = useAuth()
+  const { isAdmin } = useAuth()
   const { showToast } = useToast()
   const [health, setHealth] = useState<IndexHealth[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -734,7 +734,9 @@ export default function HealthPage() {
                 <div className="mt-4">
                   {deadLetterMessages.length > 0 ? (
                     <div className="space-y-4">
-                      {hasPermission('manage_health') && (
+                      {/* DLQ retry/clear are admin-only — the backend endpoints
+                          require_admin, and there is no manage_health permission. */}
+                      {isAdmin && (
                         <div className="flex justify-end gap-2">
                           <Button
                             variant="outline"
