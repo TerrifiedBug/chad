@@ -313,26 +313,46 @@ class SchedulerService:
         finally:
             await session.close()
 
+    @staticmethod
+    def _add_interval_job(func, *, trigger: IntervalTrigger, id: str, **kwargs):
+        """Register an interval job idempotently.
+
+        The leader re-runs ``sync_jobs_from_settings`` every ``RESYNC_INTERVAL``
+        (60s). Calling ``scheduler.add_job(replace_existing=True)`` there resets
+        an IntervalTrigger job's ``next_run_time`` to ``now + interval`` on every
+        sync — so any job whose period exceeds the resync interval (5-min pull
+        polls, SLA scans, report delivery, etc.) never reaches its fire time and
+        silently never runs. Skip the re-add when an equivalent interval job is
+        already registered so its countdown is preserved; only (re)add when the
+        job is new or its interval changed.
+        """
+        existing = scheduler.get_job(id)
+        if (
+            existing is not None
+            and isinstance(existing.trigger, IntervalTrigger)
+            and existing.trigger.interval == trigger.interval
+        ):
+            return
+        scheduler.add_job(func, trigger=trigger, id=id, replace_existing=True, **kwargs)
+
     def _schedule_health_check(self):
         """Schedule the health monitoring job."""
-        scheduler.add_job(
+        self._add_interval_job(
             self._run_health_check,
             trigger=IntervalTrigger(minutes=1),
             id="health_check",
             name="health_check monitoring",
-            replace_existing=True,
             misfire_grace_time=60,  # 1 minute grace period
         )
         logger.info("Scheduled health_check job (every 1 minute)")
 
     def _schedule_correlation_cleanup(self):
         """Schedule the correlation state cleanup job."""
-        scheduler.add_job(
+        self._add_interval_job(
             self._run_correlation_cleanup,
             trigger=IntervalTrigger(minutes=5),
             id="correlation_cleanup",
             name="correlation state cleanup",
-            replace_existing=True,
             misfire_grace_time=300,  # 5 minute grace period
         )
         logger.info("Scheduled correlation_cleanup job (every 5 minutes)")
@@ -343,12 +363,11 @@ class SchedulerService:
         Drains the ``git_sync_jobs`` queue produced on rule deploys, pushing
         each deployed rule's YAML to its environment's repo with bounded retry.
         """
-        scheduler.add_job(
+        self._add_interval_job(
             self._run_git_sync,
             trigger=IntervalTrigger(seconds=30),
             id="git_sync",
             name="git config-as-code sync",
-            replace_existing=True,
             max_instances=1,
             misfire_grace_time=30,
         )
@@ -390,12 +409,11 @@ class SchedulerService:
         ``sla_breached`` onto open alerts whose target time has elapsed and
         raises one operational warning per batch.
         """
-        scheduler.add_job(
+        self._add_interval_job(
             self._run_sla_scan,
             trigger=IntervalTrigger(minutes=5),
             id="sla_scan",
             name="alert SLA breach scan",
-            replace_existing=True,
             max_instances=1,
             misfire_grace_time=300,
         )
@@ -447,12 +465,11 @@ class SchedulerService:
             replace_existing=True,
             misfire_grace_time=3600,
         )
-        scheduler.add_job(
+        self._add_interval_job(
             self._run_audit_forward,
             trigger=IntervalTrigger(minutes=5),
             id="audit_forward",
             name="audit SIEM forward",
-            replace_existing=True,
             max_instances=1,
             misfire_grace_time=300,
         )
@@ -511,12 +528,11 @@ class SchedulerService:
         No-op when no schedule is due; builds + delivers each due report and
         advances its next_run_at.
         """
-        scheduler.add_job(
+        self._add_interval_job(
             self._run_report_delivery,
             trigger=IntervalTrigger(minutes=15),
             id="report_delivery",
             name="scheduled report delivery",
-            replace_existing=True,
             max_instances=1,
             misfire_grace_time=900,
         )
@@ -582,12 +598,11 @@ class SchedulerService:
         Threshold matches that never reach their count would otherwise accumulate
         forever, since check_threshold only clears a group's matches when it fires.
         """
-        scheduler.add_job(
+        self._add_interval_job(
             self._run_threshold_cleanup,
             trigger=IntervalTrigger(hours=1),
             id="threshold_cleanup",
             name="threshold matches cleanup",
-            replace_existing=True,
             misfire_grace_time=600,  # 10 minute grace period
         )
         logger.info("Scheduled threshold_cleanup job (hourly)")
@@ -649,20 +664,15 @@ class SchedulerService:
 
             job_id = f"pull_poll_{pattern.id}"
 
-            # Remove existing job if any
-            try:
-                scheduler.remove_job(job_id)
-            except Exception:
-                logger.debug("Job %s not found during removal, may not exist", job_id)
-
-            # Add new job with pattern's poll interval
-            scheduler.add_job(
+            # Idempotent: only (re)adds when new or the interval changed, so the
+            # every-60s resync doesn't reset the poll timer (which previously
+            # starved any pull pattern with an interval > the resync interval).
+            self._add_interval_job(
                 run_poll_job,
                 trigger=IntervalTrigger(minutes=pattern.poll_interval_minutes),
                 id=job_id,
                 name=f"pull_poll for {pattern.pattern}",
                 args=[str(pattern.id)],
-                replace_existing=True,
                 misfire_grace_time=pattern.poll_interval_minutes * 60,
             )
             logger.info(
@@ -1779,18 +1789,16 @@ class SchedulerService:
         """Add MISP sync job to scheduler."""
         job_id = "misp_ioc_sync"
 
-        # Remove existing job if present
-        if scheduler.get_job(job_id):
-            scheduler.remove_job(job_id)
-
-        scheduler.add_job(
+        # Idempotent (see _add_interval_job): preserves the existing schedule on
+        # the every-60s resync instead of re-adding with next_run_time=now, which
+        # both reset the interval timer and forced an immediate run each sync.
+        self._add_interval_job(
             self._run_misp_sync_with_lock,
             trigger=IntervalTrigger(minutes=interval_minutes),
             id=job_id,
             name="MISP IOC Sync",
-            replace_existing=True,
             misfire_grace_time=interval_minutes * 60,  # Grace period matching interval
-            next_run_time=datetime.now(UTC),  # Run immediately on startup
+            next_run_time=datetime.now(UTC),  # Run immediately when (re)scheduled
         )
         logger.info("Added MISP sync job with %d minute interval", interval_minutes)
 
