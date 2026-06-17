@@ -298,7 +298,16 @@ async def update_index_pattern(
         # Scheduler may not be available during tests
         logger.debug("Could not update scheduler: %s", e)
 
-    return pattern
+    # Re-query with updated_by eager-loaded. The response serializes
+    # last_edited_by (-> updated_by.email); without this the relationship
+    # lazy-loads during async serialization and raises MissingGreenlet (HTTP
+    # 500), which made every index-pattern save appear to fail.
+    result = await db.execute(
+        select(IndexPattern)
+        .options(selectinload(IndexPattern.updated_by))
+        .where(IndexPattern.id == pattern.id)
+    )
+    return result.scalar_one()
 
 
 @router.delete("/{pattern_id}", status_code=status.HTTP_204_NO_CONTENT)
