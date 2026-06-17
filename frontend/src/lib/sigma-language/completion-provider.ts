@@ -254,7 +254,7 @@ export class SigmaCompletionProvider implements Monaco.languages.CompletionItemP
     const context = getContext(model, position)
     const range = getWordRange(model, position, this.monaco)
 
-    let suggestions: Monaco.languages.CompletionItem[] = []
+    let suggestions: Monaco.languages.CompletionItem[]
 
     switch (context.type) {
       case 'root':
