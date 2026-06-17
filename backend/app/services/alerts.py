@@ -639,8 +639,16 @@ class AlertService:
                 index=index_pattern,
                 body={
                     "size": 0,
+                    # Active IOC matches only — exclude triaged (resolved /
+                    # false-positive) so the widget reflects live threats.
                     "query": {
-                        "term": {"rule_id": "ioc-detection"}
+                        "bool": {
+                            "must": [{"term": {"rule_id": "ioc-detection"}}],
+                            "must_not": [
+                                {"term": {"status": "resolved"}},
+                                {"term": {"status": "false_positive"}},
+                            ],
+                        }
                     },
                     "aggs": {
                         "today_count": {

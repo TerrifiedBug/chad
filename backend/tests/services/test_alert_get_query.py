@@ -64,3 +64,22 @@ def test_get_alert_counts_exclude_status():
     svc.get_alert_counts(exclude_status=["false_positive"])
     body = client.search.call_args.kwargs["body"]
     assert {"term": {"status": "false_positive"}} in body["query"]["bool"]["must_not"]
+
+
+def test_get_ioc_stats_excludes_triaged():
+    """IOC stats widget should count active matches only (no resolved / FP)."""
+    svc, client = _service()
+    client.search.return_value = {
+        "hits": {"total": {"value": 0}},
+        "aggregations": {
+            "today_count": {"doc_count": 0},
+            "by_threat_level": {"buckets": []},
+            "by_ioc_type": {"buckets": []},
+            "top_iocs": {"buckets": []},
+        },
+    }
+    svc.get_ioc_stats()
+    bool_q = client.search.call_args.kwargs["body"]["query"]["bool"]
+    assert {"term": {"rule_id": "ioc-detection"}} in bool_q["must"]
+    assert {"term": {"status": "resolved"}} in bool_q["must_not"]
+    assert {"term": {"status": "false_positive"}} in bool_q["must_not"]
