@@ -466,6 +466,7 @@ async def receive_logs(
                                 "operator": e.operator.value,
                                 "value": e.value,
                                 "is_active": e.is_active,
+                                "group_id": str(e.group_id) if e.group_id else str(e.id),
                             }
                             for e in exceptions
                         ]
