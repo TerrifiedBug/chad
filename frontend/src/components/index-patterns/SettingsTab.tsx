@@ -92,6 +92,14 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
     setSaveError('')
   }, [pattern, isPullOnly])
 
+  // Radix Select can momentarily clear its controlled value to "" when the
+  // selected item remounts (observed editing existing pull patterns), which
+  // left the Detection Mode dropdown blank and blocked saving. Fall back to the
+  // pattern's saved mode so the form always resolves a valid mode for display,
+  // dirty-tracking, and save.
+  const resolvedMode: IndexPatternMode =
+    detectionMode || pattern?.mode || (isPullOnly ? 'pull' : 'push')
+
   // Track dirty state
   const isDirty = useMemo(() => {
     if (isNew) {
@@ -106,11 +114,11 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
       formData.pattern !== pattern.pattern ||
       formData.percolator_index !== pattern.percolator_index ||
       formData.description !== (pattern.description || '') ||
-      detectionMode !== pattern.mode ||
-      (detectionMode === 'pull' && pollIntervalMinutes !== (pattern.poll_interval_minutes || 5)) ||
-      (detectionMode === 'pull' && timestampField !== (pattern.timestamp_field || '@timestamp'))
+      resolvedMode !== pattern.mode ||
+      (resolvedMode === 'pull' && pollIntervalMinutes !== (pattern.poll_interval_minutes || 5)) ||
+      (resolvedMode === 'pull' && timestampField !== (pattern.timestamp_field || '@timestamp'))
     )
-  }, [isNew, pattern, formData, detectionMode, pollIntervalMinutes, timestampField])
+  }, [isNew, pattern, formData, resolvedMode, pollIntervalMinutes, timestampField])
 
   // Notify parent of dirty state changes
   useEffect(() => {
@@ -186,7 +194,7 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
     setSaveError('')
 
     // Validate mode before saving
-    if (!detectionMode || !['push', 'pull'].includes(detectionMode)) {
+    if (!resolvedMode || !['push', 'pull'].includes(resolvedMode)) {
       setSaveError('Invalid detection mode. Please select Push or Pull.')
       return
     }
@@ -194,11 +202,11 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
     const data: Partial<IndexPattern> = {
       name: formData.name,
       pattern: formData.pattern,
-      percolator_index: detectionMode === 'push' ? formData.percolator_index : `chad-percolator-${formData.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      percolator_index: resolvedMode === 'push' ? formData.percolator_index : `chad-percolator-${formData.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
       description: formData.description || undefined,
-      mode: detectionMode,
-      poll_interval_minutes: detectionMode === 'pull' ? pollIntervalMinutes : undefined,
-      timestamp_field: detectionMode === 'pull' ? timestampField : undefined,
+      mode: resolvedMode,
+      poll_interval_minutes: resolvedMode === 'pull' ? pollIntervalMinutes : undefined,
+      timestamp_field: resolvedMode === 'pull' ? timestampField : undefined,
     }
 
     try {
@@ -271,7 +279,7 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
           )}
         </div>
 
-        {detectionMode === 'push' && (
+        {resolvedMode === 'push' && (
           <div className="space-y-2">
             <Label htmlFor="percolator">Percolator Index</Label>
             <Input
@@ -309,8 +317,11 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
         </div>
         <div className="space-y-2">
           <Select
-            value={detectionMode}
-            onValueChange={(value) => setDetectionMode(value as IndexPatternMode)}
+            value={resolvedMode}
+            onValueChange={(value) => {
+              // Ignore Radix's spurious empty-value clears; only accept a real mode.
+              if (value === 'push' || value === 'pull') setDetectionMode(value)
+            }}
             disabled={isPullOnly}
           >
             <SelectTrigger>
@@ -324,7 +335,7 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            {detectionMode === 'push'
+            {resolvedMode === 'push'
               ? 'Logs are pushed to CHAD via the /logs endpoint for real-time detection.'
               : 'CHAD periodically queries OpenSearch for new logs matching deployed rules.'}
           </p>
@@ -333,7 +344,7 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
           )}
         </div>
 
-        {detectionMode === 'pull' && (
+        {resolvedMode === 'pull' && (
           <div className="space-y-4 pt-2 border-t">
             <div className="space-y-2">
               <Label htmlFor="poll-interval">Poll Interval (minutes)</Label>
@@ -398,7 +409,7 @@ export function SettingsTab({ pattern, isNew, onSave, onDirtyChange }: SettingsT
       </div>
 
       {/* Endpoint Preview for Push Mode */}
-      {detectionMode === 'push' && formData.percolator_index?.startsWith('chad-percolator-') && (
+      {resolvedMode === 'push' && formData.percolator_index?.startsWith('chad-percolator-') && (
         <div className="space-y-3 p-3 bg-muted rounded-md">
           <Label className="text-sm font-medium">Log Shipper Endpoints (Preview)</Label>
           <div className="space-y-2">
