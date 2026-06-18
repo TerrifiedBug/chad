@@ -78,6 +78,68 @@ async def test_must_not_clause_injected_into_query():
 
 
 @pytest.mark.asyncio
+async def test_multi_condition_clauses_are_anded_within_one_group():
+    """Multiple candidate clauses form ONE AND-group, mirroring runtime.
+
+    alerts.should_suppress_alert ANDs conditions within a group: an event is
+    only suppressed when it matches ALL of them. The preview must therefore
+    exclude only events matching every clause, i.e. a single must_not entry that
+    is a nested bool.must of all clause filters -- NOT a flat must_not list,
+    which OpenSearch treats as an OR and would over-count suppression.
+    """
+    rule = _rule()
+    db = _db_returning_rule(rule)
+    os_client = _os_client(matches=2)
+    translation = SimpleNamespace(
+        success=True,
+        errors=None,
+        fields=set(),
+        query={"query": {"query_string": {"query": "a:1"}}},
+    )
+    with patch(
+        "app.services.rule_testing.sigma_service.translate_and_validate",
+        return_value=translation,
+    ):
+        result = await run_historical_test(
+            db=db,
+            os_client=os_client,
+            rule_id=rule.id,
+            start_date=datetime(2026, 1, 1, tzinfo=UTC),
+            end_date=datetime(2026, 1, 2, tzinfo=UTC),
+            must_not_clauses=[
+                ExceptionClause(
+                    field="user.name",
+                    operator=ExceptionOperator.EQUALS,
+                    value="admin",
+                ),
+                ExceptionClause(
+                    field="host.name",
+                    operator=ExceptionOperator.EQUALS,
+                    value="prod-01",
+                ),
+            ],
+        )
+
+    assert result.error is None
+    must_not = result.query_executed["query"]["bool"]["must_not"]
+    # Exactly one must_not entry: a nested bool.must (AND) of both clauses.
+    assert must_not == [
+        {
+            "bool": {
+                "must": [
+                    {"match_phrase": {"user.name": "admin"}},
+                    {"match_phrase": {"host.name": "prod-01"}},
+                ]
+            }
+        }
+    ]
+    # Both clauses must be ANDed inside that single group -- not separate
+    # must_not entries (which would be an OR / over-count).
+    assert len(must_not) == 1
+    assert {"match_phrase": {"user.name": "admin"}} not in must_not
+
+
+@pytest.mark.asyncio
 async def test_no_clauses_omits_must_not_key():
     rule = _rule()
     db = _db_returning_rule(rule)
