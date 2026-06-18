@@ -5,10 +5,9 @@ Provides coverage metrics for the matrix visualization.
 """
 from uuid import UUID
 
+from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from opensearchpy import OpenSearch
 
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.index_pattern import IndexPattern
