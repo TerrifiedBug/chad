@@ -68,30 +68,30 @@ const SYSTEM_EVENT_GROUPS = [
     events: [
       { id: 'health_warning', label: 'Health Warning' },
       { id: 'health_critical', label: 'Health Critical' },
-      { id: 'opensearch_connection_lost', label: 'OpenSearch Connection Lost' },
-      { id: 'opensearch_connection_restored', label: 'OpenSearch Connection Restored' },
+      { id: 'opensearch_connection_lost', label: 'OpenSearch Connection Lost', comingSoon: true },
+      { id: 'opensearch_connection_restored', label: 'OpenSearch Connection Restored', comingSoon: true },
     ],
   },
   {
     name: 'Data Freshness',
     events: [
-      { id: 'data_freshness_warning', label: 'Data Freshness Warning', description: 'Index data is older than warning threshold' },
-      { id: 'data_freshness_critical', label: 'Data Freshness Critical', description: 'Index data is older than critical threshold' },
+      { id: 'data_freshness_warning', label: 'Data Freshness Warning', description: 'Index data is older than warning threshold', comingSoon: true },
+      { id: 'data_freshness_critical', label: 'Data Freshness Critical', description: 'Index data is older than critical threshold', comingSoon: true },
     ],
   },
   {
     name: 'Rule Operations',
     events: [
-      { id: 'rule_deployment_failed', label: 'Rule Deployment Failed' },
-      { id: 'percolator_query_error', label: 'Percolator Query Error' },
+      { id: 'rule_deployment_failed', label: 'Rule Deployment Failed', comingSoon: true },
+      { id: 'percolator_query_error', label: 'Percolator Query Error', comingSoon: true },
     ],
   },
   {
     name: 'Integration Failures',
     events: [
       { id: 'maxmind_update_failed', label: 'MaxMind Update Failed' },
-      { id: 'ai_mapping_failed', label: 'AI Mapping Failed' },
-      { id: 'webhook_delivery_failed', label: 'Webhook Delivery Failed' },
+      { id: 'ai_mapping_failed', label: 'AI Mapping Failed', comingSoon: true },
+      { id: 'webhook_delivery_failed', label: 'Webhook Delivery Failed', comingSoon: true },
     ],
   },
 ]
@@ -509,12 +509,16 @@ export default function Notifications() {
               {group.events.map(event => {
                 const isEnabled = isSystemEventEnabled(event.id, webhookId)
                 const isSaving = savingSystem === `${event.id}-${webhookId}`
+                const comingSoon = 'comingSoon' in event && event.comingSoon
+                const tooltip = comingSoon
+                  ? 'This event is not emitted yet; toggling it has no effect.'
+                  : ('description' in event ? event.description : undefined)
                 return (
                   <button
                     key={event.id}
                     onClick={() => toggleSystemEvent(event.id, webhookId)}
                     disabled={isSaving}
-                    title={'description' in event ? event.description : undefined}
+                    title={tooltip}
                     className={`
                       inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs transition-colors
                       ${isEnabled
@@ -525,6 +529,11 @@ export default function Notifications() {
                     `}
                   >
                     {event.label}
+                    {comingSoon && (
+                      <span className="ml-0.5 rounded bg-muted px-1 py-0.5 text-[10px] uppercase text-muted-foreground">
+                        Soon
+                      </span>
+                    )}
                     {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                   </button>
                 )
