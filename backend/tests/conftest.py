@@ -121,7 +121,10 @@ async def test_engine():
         await conn.execute(text("CREATE TYPE rulestatus AS ENUM ('deployed', 'undeployed', 'snoozed')"))
         # RuleSource and SigmaHQType use plain String columns, not actual enums
         # MappingOrigin uses enum member names (uppercase)
-        await conn.execute(text("CREATE TYPE mappingorigin AS ENUM ('MANUAL', 'AI_SUGGESTED')"))
+        # Must match model + migration 20260618j (includes PRESET)
+        await conn.execute(
+            text("CREATE TYPE mappingorigin AS ENUM ('MANUAL', 'AI_SUGGESTED', 'PRESET')")
+        )
         # ExceptionOperator uses enum member names (uppercase) per migration
         await conn.execute(text(
             "CREATE TYPE exceptionoperator AS ENUM "
