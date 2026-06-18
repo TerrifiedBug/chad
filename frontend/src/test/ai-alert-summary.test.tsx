@@ -61,9 +61,10 @@ describe('AiAlertSummaryCard', () => {
     renderCard()
     fireEvent.click(screen.getByRole('button', { name: /summarize with ai/i }))
 
-    expect(
-      await screen.findByText('AI provider not configured')
-    ).toBeInTheDocument()
+    // The message surfaces in both the inline error region and the toast,
+    // so there can be more than one matching node.
+    const matches = await screen.findAllByText('AI provider not configured')
+    expect(matches.length).toBeGreaterThan(0)
   })
 
   it('disables the trigger button when disabled prop is set', () => {
