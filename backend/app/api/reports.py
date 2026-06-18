@@ -9,6 +9,7 @@ Provides:
 
 import csv
 import io
+import json
 import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -29,6 +30,8 @@ from app.models.attack_technique import AttackTechnique, RuleAttackMapping
 from app.models.correlation_rule import CorrelationRule
 from app.models.rule import Rule, RuleStatus
 from app.models.user import User
+from app.schemas.attack import NavigatorExportRequest
+from app.services.attack_coverage import attack_coverage_service
 
 logger = logging.getLogger(__name__)
 
@@ -985,5 +988,40 @@ async def export_attack_coverage(
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="attack-coverage-{today}.pdf"'
+        },
+    )
+
+
+@router.post("/attack-coverage/navigator")
+async def export_attack_navigator(
+    request: NavigatorExportRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    os_client: OpenSearch | None = Depends(get_opensearch_client_optional),
+):
+    """
+    Export ATT&CK coverage as a MITRE ATT&CK Navigator layer (JSON).
+
+    The returned file imports directly into the official ATT&CK Navigator and
+    colours each technique by the telemetry-aware 4-state grade.
+    """
+    layer = await attack_coverage_service.get_navigator_layer(
+        db,
+        deployed_only=request.deployed_only,
+        severity=request.severity,
+        index_pattern_id=request.index_pattern_id,
+        telemetry=request.telemetry,
+        os_client=os_client if request.telemetry else None,
+    )
+
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    payload = json.dumps(layer, indent=2)
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="chad-navigator-{today}.json"'
+            )
         },
     )

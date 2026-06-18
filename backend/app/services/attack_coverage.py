@@ -332,6 +332,71 @@ class AttackCoverageService:
         result = await db.execute(select(func.count(AttackTechnique.id)))
         return result.scalar() or 0
 
+    async def get_navigator_layer(
+        self,
+        db: AsyncSession,
+        deployed_only: bool = False,
+        severity: list[str] | None = None,
+        index_pattern_id: UUID | None = None,
+        telemetry: bool = False,
+        os_client: OpenSearch | None = None,
+    ) -> dict:
+        """Build a MITRE ATT&CK Navigator (layer schema 4.5) dict.
+
+        Reuses the 4-state coverage grading and maps each state to a Navigator
+        colour + score so the layer renders directly in the official Navigator.
+        """
+        coverage = await self.get_coverage(
+            db,
+            deployed_only=deployed_only,
+            severity=severity,
+            index_pattern_id=index_pattern_id,
+            telemetry=telemetry,
+            os_client=os_client,
+        )
+
+        techniques: list[dict] = []
+        for tech_id, stats in coverage.coverage.items():
+            color, score = NAVIGATOR_STATE_STYLE.get(
+                stats.state, NAVIGATOR_STATE_STYLE[CoverageState.NO_RULE]
+            )
+            techniques.append(
+                {
+                    "techniqueID": tech_id,
+                    "score": score,
+                    "color": color,
+                    "comment": (
+                        f"{stats.state} | rules={stats.total} "
+                        f"deployed={stats.deployed} telemetry={stats.has_telemetry}"
+                    ),
+                    "enabled": True,
+                }
+            )
+        techniques.sort(key=lambda t: t["techniqueID"])
+
+        return {
+            "name": "CHAD Detection Coverage",
+            "versions": {"attack": "14", "navigator": "4.9.0", "layer": "4.5"},
+            "domain": "enterprise-attack",
+            "description": (
+                "Telemetry-aware ATT&CK coverage exported from CHAD. "
+                "Colours: covered (green), partial (amber), "
+                "no_rule (grey), no_telemetry (red)."
+            ),
+            "techniques": techniques,
+            "gradient": {
+                "colors": ["#c62828", "#f9a825", "#2e7d32"],
+                "minValue": 0,
+                "maxValue": 100,
+            },
+            "legendItems": [
+                {"label": "Covered (deployed + telemetry)", "color": "#2e7d32"},
+                {"label": "Partial (rule undeployed)", "color": "#f9a825"},
+                {"label": "No rule (telemetry only)", "color": "#9e9e9e"},
+                {"label": "No telemetry", "color": "#c62828"},
+            ],
+        }
+
 
 # Singleton instance
 attack_coverage_service = AttackCoverageService()
