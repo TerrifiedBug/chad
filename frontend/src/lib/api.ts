@@ -2402,6 +2402,25 @@ export type AISuggestion = {
   reason: string
 }
 
+export type AutoMapResultItem = {
+  sigma_field: string
+  target_field: string | null
+  method: string
+  created: boolean
+}
+
+export type AutoMapResponse = {
+  mapped: number
+  skipped: number
+  results: AutoMapResultItem[]
+}
+
+export type ScorecardResponse = {
+  resolvable: number
+  total: number
+  family: string
+}
+
 // Field Mappings API
 export const fieldMappingsApi = {
   list: (indexPatternId?: string | null) =>
@@ -2421,6 +2440,16 @@ export const fieldMappingsApi = {
     sigma_fields: string[]
     logsource?: Record<string, string>
   }) => api.post<AISuggestion[]>('/field-mappings/suggest', data),
+  autoMap: (data: {
+    index_pattern_id: string
+    sigma_fields: string[]
+    family?: string
+  }) => api.post<AutoMapResponse>('/field-mappings/auto-map', data),
+  scorecard: (data: {
+    index_pattern_id: string
+    sigma_fields: string[]
+    family?: string
+  }) => api.post<ScorecardResponse>('/field-mappings/scorecard', data),
 }
 
 // Webhook types (notification webhooks, not settings webhooks)
