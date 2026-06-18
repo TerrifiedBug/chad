@@ -1278,12 +1278,31 @@ export type DashboardStats = {
   ioc_matches?: IOCMatchStats
 }
 
+export type RulePrecisionRow = {
+  rule_id: string
+  rule_title: string
+  total: number
+  resolved: number
+  false_positive: number
+  open: number
+  precision_pct: number
+  fp_rate_pct: number
+  alerts_per_day: number
+}
+export type RulePrecisionResponse = {
+  rules: RulePrecisionRow[]
+  window_days: number
+  opensearch_available: boolean
+}
+
 // Stats API
 export const statsApi = {
   getDashboard: () =>
     api.get<DashboardStats>('/stats/dashboard'),
   getHealth: () =>
     api.get<{ status: string; opensearch?: unknown; error?: string }>('/stats/health'),
+  getRulePrecision: (days = 30) =>
+    api.get<RulePrecisionResponse>(`/stats/rule-precision?days=${days}`),
 }
 
 // IOC Stats API
