@@ -7,12 +7,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.api.deps import get_opensearch_client_optional
-from app.core.security import create_access_token, get_password_hash
+from app.core.security import create_access_token
 from app.main import app
 from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleSource, RuleStatus, RuleVersion
 from app.models.setting import Setting
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.services.rule_testing import HistoricalTestResult
 
 # Minimal Sigma rule that translates cleanly (one field: fieldA).
