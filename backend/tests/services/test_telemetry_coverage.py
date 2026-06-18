@@ -60,3 +60,21 @@ class TestGradeCell:
 
     def test_no_rule_no_telemetry_is_no_telemetry(self):
         assert grade_cell(False, False, self.DS, set()) == CoverageState.NO_TELEMETRY
+
+
+class TestSchemaDefaults:
+    def test_coverage_stats_defaults(self):
+        from app.schemas.attack import TechniqueCoverageStats
+
+        stats = TechniqueCoverageStats(total=0, deployed=0)
+        assert stats.state == "no_rule"
+        assert stats.has_telemetry is False
+
+    def test_navigator_request_defaults(self):
+        from app.schemas.attack import NavigatorExportRequest
+
+        req = NavigatorExportRequest()
+        assert req.deployed_only is False
+        assert req.telemetry is False
+        assert req.severity is None
+        assert req.index_pattern_id is None
