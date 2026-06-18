@@ -153,12 +153,25 @@ async def test_engine():
 
 
 @pytest_asyncio.fixture(scope="function")
-async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
-    """Create a test database session."""
-    async_session = async_sessionmaker(
+async def test_session(test_engine, monkeypatch) -> AsyncGenerator[AsyncSession, None]:
+    """Create a test database session.
+
+    Also rebinds the application's global ``async_session_maker`` to the test
+    engine for the duration of the test. OrgScopeMiddleware resolves the Host
+    header to an org by opening its own session from this global maker (not
+    through the ``get_db`` dependency override), so without this rebind the
+    middleware would query the PRODUCTION database and never see orgs seeded into
+    the test DB. Rebinding here makes the full Host -> DB lookup -> org_context
+    path run against ``chad_test`` for every DB-backed test.
+    """
+    test_maker = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False
     )
-    async with async_session() as session:
+    import app.db.session as db_session
+
+    monkeypatch.setattr(db_session, "async_session_maker", test_maker)
+
+    async with test_maker() as session:
         yield session
 
 

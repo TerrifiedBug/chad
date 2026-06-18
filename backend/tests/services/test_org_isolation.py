@@ -89,27 +89,16 @@ async def test_apply_org_scope_default_sees_legacy_null_rows(test_session):
     set_org_id(None)
 
 
-def _bind_middleware_to_test_engine(monkeypatch, test_session):
-    """Point OrgScopeMiddleware's session maker at the test engine.
-
-    The middleware resolves Host->org through its own ``async_session_maker``
-    (bound to the production engine). In tests that engine has no seeded org, so
-    we rebind it to the test engine. This exercises the FULL path end-to-end:
-    Host header -> middleware DB lookup -> org_context -> apply_org_scope.
-    """
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-    import app.core.org_middleware as mw
-
-    test_maker = async_sessionmaker(
-        test_session.bind, class_=AsyncSession, expire_on_commit=False
-    )
-    monkeypatch.setattr(mw, "async_session_maker", test_maker)
-
-
 @pytest.mark.asyncio
-async def test_list_rules_endpoint_fences_other_org(test_session, monkeypatch):
-    """Through the endpoint: a request scoped to org A must not see B's rule."""
+async def test_list_rules_endpoint_fences_other_org(test_session):
+    """Through the endpoint: a request scoped to org A must not see B's rule.
+
+    Exercises the FULL fence end-to-end with NO manual ``set_org_id``: the
+    OrgScopeMiddleware resolves ``orgaaa.chad.example.com`` -> org A against the
+    test DB (the ``test_session`` fixture rebinds the global session maker to the
+    test engine), pins org A into the contextvar, and the rules endpoint reads it
+    via ``apply_org_scope`` so org B's rule must never appear.
+    """
     from httpx import ASGITransport, AsyncClient
 
     from app.core.security import create_access_token
@@ -131,8 +120,6 @@ async def test_list_rules_endpoint_fences_other_org(test_session, monkeypatch):
         yield test_session
 
     app.dependency_overrides[get_db] = override
-    # The middleware resolves orgaaa.chad.example.com -> org A against the test DB.
-    _bind_middleware_to_test_engine(monkeypatch, test_session)
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -141,7 +128,6 @@ async def test_list_rules_endpoint_fences_other_org(test_session, monkeypatch):
         ) as ac:
             resp = await ac.get("/api/rules")
     finally:
-        set_org_id(None)
         app.dependency_overrides.clear()
 
     assert resp.status_code == 200
