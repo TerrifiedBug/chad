@@ -1,6 +1,7 @@
 """Dashboard statistics API."""
 
 import json
+import uuid
 import logging
 from datetime import datetime
 from typing import Annotated
@@ -18,6 +19,7 @@ from app.core.redis import get_redis
 from app.models.rule import Rule
 from app.models.user import User
 from app.services.alerts import AlertService
+from app.services.rule_precision import get_rule_precision
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -294,3 +296,47 @@ async def get_system_health(
             "status": "unhealthy",
             "error": "Failed to connect to OpenSearch",
         }
+
+
+@router.get("/rule-precision")
+async def get_rule_precision_stats(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)],
+    days: int = 30,
+    top_n: int = 50,
+):
+    """Per-rule precision leaderboard.
+
+    Derives precision / false-positive rate / alerts-per-day per rule from a
+    single OpenSearch ``terms(rule_id) -> by_status`` aggregation, then attaches
+    human-readable rule titles from PostgreSQL. Pure aggregation — no schema
+    change. Returns an empty list (opensearch_available=False) when OS is down.
+    """
+    days = max(1, min(days, 365))
+    top_n = max(1, min(top_n, 200))
+
+    if os_client is None:
+        return {"rules": [], "window_days": days, "opensearch_available": False}
+
+    rows = get_rule_precision(os_client, days=days, top_n=top_n)
+
+    # Attach titles: alert rule_id may be a stored Rule UUID or a synthetic id
+    # like "ioc-detection". Resolve only the values that parse as UUIDs.
+    titles: dict[str, str] = {}
+    rule_uuids: list[uuid.UUID] = []
+    for r in rows:
+        try:
+            rule_uuids.append(uuid.UUID(str(r["rule_id"])))
+        except (ValueError, AttributeError, TypeError):
+            continue
+    if rule_uuids:
+        result = await db.execute(
+            select(Rule.id, Rule.title).where(Rule.id.in_(rule_uuids))
+        )
+        titles = {str(rid): title for rid, title in result.all()}
+
+    for r in rows:
+        r["rule_title"] = titles.get(str(r["rule_id"]), str(r["rule_id"]))
+
+    return {"rules": rows, "window_days": days, "opensearch_available": True}
