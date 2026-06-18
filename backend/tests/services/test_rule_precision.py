@@ -88,3 +88,34 @@ def test_derive_rule_rows_sorted_noisiest_first():
 def test_derive_rule_rows_empty():
     assert derive_rule_rows({"by_rule": {"buckets": []}}, days=30) == []
     assert derive_rule_rows({}, days=30) == []
+
+
+from unittest.mock import MagicMock
+
+from app.services.rule_precision import get_rule_precision
+
+
+def test_get_rule_precision_runs_query_and_derives():
+    os_client = MagicMock()
+    os_client.search.return_value = {
+        "aggregations": {
+            "by_rule": {"buckets": [
+                {"key": "rule-x", "doc_count": 10, "by_status": {"buckets": [
+                    {"key": "resolved", "doc_count": 4},
+                    {"key": "false_positive", "doc_count": 6},
+                ]}},
+            ]}
+        }
+    }
+    rows = get_rule_precision(os_client, days=30, top_n=10)
+    assert rows[0]["rule_id"] == "rule-x"
+    assert rows[0]["fp_rate_pct"] == 60.0
+    # search() was called once with our index + a size-0 body.
+    _, kwargs = os_client.search.call_args
+    assert kwargs["body"]["size"] == 0
+
+
+def test_get_rule_precision_degrades_on_error():
+    os_client = MagicMock()
+    os_client.search.side_effect = RuntimeError("boom")
+    assert get_rule_precision(os_client, days=30) == []

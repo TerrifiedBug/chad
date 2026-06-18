@@ -96,3 +96,23 @@ def derive_rule_rows(
 
     rows.sort(key=lambda r: (-r["fp_rate_pct"], -r["total"]))
     return rows
+
+
+def get_rule_precision(
+    os_client: OpenSearch,
+    index_pattern: str = "chad-alerts-*",
+    days: int = DEFAULT_WINDOW_DAYS,
+    top_n: int = DEFAULT_TOP_N,
+) -> list[dict[str, Any]]:
+    """Execute the precision aggregation and return derived per-rule rows.
+
+    Degrades to an empty list on any OpenSearch failure (mirrors
+    ``AlertService.get_alert_counts``); callers treat that as "no data".
+    """
+    body = build_precision_query(index_pattern=index_pattern, days=days, top_n=top_n)
+    try:
+        result = os_client.search(index=index_pattern, body=body)
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully on OS errors
+        logger.warning("rule precision aggregation failed: %s", exc)
+        return []
+    return derive_rule_rows(result.get("aggregations", {}), days=days)
