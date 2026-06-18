@@ -284,6 +284,9 @@ class SchedulerService:
             # Add SLA breach scan job (runs every 5 minutes)
             self._schedule_sla_scan()
 
+            # Add case SLA breach scan job (runs every 5 minutes)
+            self._schedule_case_sla_scan()
+
             # Add audit maintenance jobs (retention purge + SIEM forward)
             self._schedule_audit_maintenance()
 
@@ -447,6 +450,52 @@ class SchedulerService:
                 category=LogCategory.BACKGROUND,
                 service="sla_scan",
                 message=f"Scheduled SLA scan failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+        finally:
+            await session.close()
+
+    def _schedule_case_sla_scan(self):
+        """Schedule the case-SLA breach scan (every 5 minutes).
+
+        Mirrors the alert SLA scan: no-op while the SLA policy is disabled; when
+        enabled it stamps ``sla_due_at``/``sla_breached`` onto open cases whose
+        target time has elapsed and raises one operational warning per batch.
+        """
+        self._add_interval_job(
+            self._run_case_sla_scan,
+            trigger=IntervalTrigger(minutes=5),
+            id="case_sla_scan",
+            name="case SLA breach scan",
+            max_instances=1,
+            misfire_grace_time=300,
+        )
+        logger.info("Scheduled case_sla_scan job (every 5 minutes)")
+
+    async def _run_case_sla_scan(self):
+        """Execute the case SLA breach scan with distributed lock."""
+        await self._run_with_lock(
+            "scheduler:case_sla_scan",
+            timeout=300,
+            job_func=self._execute_case_sla_scan,
+        )
+
+    async def _execute_case_sla_scan(self):
+        """Flag any newly-breached SLAs across open cases."""
+        from app.services.sla import scan_case_sla_breaches
+
+        session = await self._get_session()
+        try:
+            flagged = await scan_case_sla_breaches(session)
+            if flagged:
+                logger.info("Case SLA scan: flagged %s breached case(s)", flagged)
+        except Exception as e:
+            logger.error("Scheduled case SLA scan failed: %s", e)
+            await system_log_service.log_error(
+                session,
+                category=LogCategory.BACKGROUND,
+                service="case_sla_scan",
+                message=f"Scheduled case SLA scan failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
         finally:
