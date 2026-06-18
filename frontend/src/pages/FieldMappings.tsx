@@ -38,7 +38,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
-import { formatScorecard } from '@/lib/scorecard'
+import { formatScorecard, REQUIRED_SIGMA_FIELDS, unmappedRequiredFields } from '@/lib/scorecard'
 
 export default function FieldMappingsPage() {
   const { showToast } = useToast()
@@ -104,15 +104,12 @@ export default function FieldMappingsPage() {
       return
     }
     try {
-      const current = await fieldMappingsApi.list(activeTab)
-      const sigmaFields = current.map((m) => m.sigma_field)
-      if (sigmaFields.length === 0) {
-        setScorecard(null)
-        return
-      }
+      // Score the rule's required Sigma fields (the preset table keys), not the
+      // already-mapped subset, so the scorecard reflects how many required
+      // fields are resolvable against this index.
       const result = await fieldMappingsApi.scorecard({
         index_pattern_id: activeTab,
-        sigma_fields: sigmaFields,
+        sigma_fields: REQUIRED_SIGMA_FIELDS,
         family: 'ecs',
       })
       setScorecard({ resolvable: result.resolvable, total: result.total })
@@ -126,8 +123,16 @@ export default function FieldMappingsPage() {
     if (!activeTab) return
     setIsAutoMapping(true)
     try {
+      // Send the UNMAPPED required Sigma fields (required preset keys minus the
+      // ones already mapped). Sending already-mapped fields would make the
+      // backend skip every field and map nothing.
       const current = await fieldMappingsApi.list(activeTab)
-      const sigmaFields = current.map((m) => m.sigma_field)
+      const mappedSigmaFields = current.map((m) => m.sigma_field)
+      const sigmaFields = unmappedRequiredFields(mappedSigmaFields)
+      if (sigmaFields.length === 0) {
+        showToast('All required fields are already mapped', 'info')
+        return
+      }
       const result = await fieldMappingsApi.autoMap({
         index_pattern_id: activeTab,
         sigma_fields: sigmaFields,
