@@ -98,3 +98,33 @@ class TestScoreMatchability:
             {"source.ip", "destination.ip"},
         )
         assert (resolvable, total) == (2, 2)
+
+
+class TestAutoMapSchemas:
+    def test_schemas_import_and_validate(self):
+        import uuid
+
+        from app.schemas.field_mapping import (
+            AutoMapRequest,
+            AutoMapResponse,
+            AutoMapResultItem,
+            ScorecardResponse,
+        )
+
+        req = AutoMapRequest(
+            index_pattern_id=uuid.uuid4(),
+            sigma_fields=["SourceIp"],
+        )
+        assert req.family == "ecs"
+
+        item = AutoMapResultItem(
+            sigma_field="SourceIp",
+            target_field="source.ip",
+            method="preset",
+            created=True,
+        )
+        resp = AutoMapResponse(mapped=1, skipped=0, results=[item])
+        assert resp.mapped == 1
+
+        score = ScorecardResponse(resolvable=1, total=2, family="ecs")
+        assert score.total == 2
