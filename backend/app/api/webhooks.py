@@ -26,6 +26,7 @@ from app.schemas.webhook import (
     WebhookUpdate,
 )
 from app.services.audit import audit_log
+from app.services.webhooks import sanitize_webhook_url
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -332,10 +333,21 @@ async def test_webhook(
 
     payload = _format_test_payload(webhook.provider, webhook.name)
 
+    # SSRF protection at egress: re-validate + rebuild the URL immediately before
+    # sending. A hostname that resolved to a public IP at config time can be
+    # repointed at an internal/metadata address (e.g. 169.254.169.254) afterwards
+    # (DNS rebinding). Mirrors send_webhook() and _send_to_webhook().
+    sanitized_url, url_error = sanitize_webhook_url(webhook.url)
+    if sanitized_url is None:
+        return WebhookTestResponse(
+            success=False,
+            error=f"URL blocked by SSRF protection: {url_error}",
+        )
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                webhook.url,
+                sanitized_url,
                 json=payload,
                 headers=headers,
                 timeout=10.0,
