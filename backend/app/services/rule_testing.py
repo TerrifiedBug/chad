@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.rule import Rule
+from app.models.rule_exception import ExceptionOperator
+from app.services.exception_query import exception_clause_to_os_filter
 from app.services.field_mapping import resolve_mappings
 from app.services.sigma import sigma_service
 
@@ -32,6 +34,15 @@ class HistoricalTestResult:
     error: str | None = None
 
 
+@dataclass
+class ExceptionClause:
+    """A single candidate exception condition to preview against past data."""
+
+    field: str
+    operator: ExceptionOperator
+    value: str
+
+
 async def run_historical_test(
     db: AsyncSession,
     os_client: OpenSearch,
@@ -39,6 +50,7 @@ async def run_historical_test(
     start_date: datetime,
     end_date: datetime,
     limit: int = 500,
+    must_not_clauses: list[ExceptionClause] | None = None,
 ) -> HistoricalTestResult:
     """
     Run a historical test for a rule against past log data.
@@ -135,23 +147,29 @@ async def run_historical_test(
 
     # Create a bool query that combines Sigma query with time range
     # Use @timestamp as the default time field (common in OpenSearch/Elastic logs)
-    combined_query = {
-        "query": {
-            "bool": {
-                "must": [inner_query],
-                "filter": [
-                    {
-                        "range": {
-                            "@timestamp": {
-                                "gte": start_date.isoformat(),
-                                "lte": end_date.isoformat(),
-                            }
-                        }
+    bool_query: dict[str, Any] = {
+        "must": [inner_query],
+        "filter": [
+            {
+                "range": {
+                    "@timestamp": {
+                        "gte": start_date.isoformat(),
+                        "lte": end_date.isoformat(),
                     }
-                ],
+                }
             }
-        }
+        ],
     }
+
+    # Candidate exception preview: events matching any clause would be suppressed,
+    # so exclude them here. The resulting total_matches is what would STILL fire.
+    if must_not_clauses:
+        bool_query["must_not"] = [
+            exception_clause_to_os_filter(c.field, c.operator, c.value)
+            for c in must_not_clauses
+        ]
+
+    combined_query = {"query": {"bool": bool_query}}
 
     index_pattern = rule.index_pattern.pattern
 
