@@ -355,10 +355,29 @@ class AttackCoverageService:
             os_client=os_client,
         )
 
+        # get_coverage only emits techniques that have at least one rule
+        # mapping. A valid Navigator layer must enumerate *every* technique in
+        # the matrix so un-ruled techniques still render (in their NO_RULE
+        # colour) rather than being dropped. Load all techniques and fall back
+        # to a NO_RULE grade for any not present in the coverage dict.
+        tech_result = await db.execute(select(AttackTechnique.id))
+        all_technique_ids = tech_result.scalars().all()
+
         techniques: list[dict] = []
-        for tech_id, stats in coverage.coverage.items():
+        for tech_id in all_technique_ids:
+            stats = coverage.coverage.get(tech_id)
+            if stats is not None:
+                state = stats.state
+                total = stats.total
+                deployed = stats.deployed
+                has_telemetry = stats.has_telemetry
+            else:
+                state = CoverageState.NO_RULE
+                total = 0
+                deployed = 0
+                has_telemetry = False
             color, score = NAVIGATOR_STATE_STYLE.get(
-                stats.state, NAVIGATOR_STATE_STYLE[CoverageState.NO_RULE]
+                state, NAVIGATOR_STATE_STYLE[CoverageState.NO_RULE]
             )
             techniques.append(
                 {
@@ -366,8 +385,8 @@ class AttackCoverageService:
                     "score": score,
                     "color": color,
                     "comment": (
-                        f"{stats.state} | rules={stats.total} "
-                        f"deployed={stats.deployed} telemetry={stats.has_telemetry}"
+                        f"{state} | rules={total} "
+                        f"deployed={deployed} telemetry={has_telemetry}"
                     ),
                     "enabled": True,
                 }
