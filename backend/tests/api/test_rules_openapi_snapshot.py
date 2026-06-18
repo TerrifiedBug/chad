@@ -43,6 +43,7 @@ EXPECTED_RULE_ROUTES = sorted(
         "POST /api/rules/{rule_id}/comments",
         "POST /api/rules/{rule_id}/deploy",
         "POST /api/rules/{rule_id}/exceptions",
+        "POST /api/rules/{rule_id}/exceptions/preview",
         "POST /api/rules/{rule_id}/rollback-redeploy/{version_number}",
         "POST /api/rules/{rule_id}/rollback/{version_number}",
         "POST /api/rules/{rule_id}/snooze",
@@ -70,5 +71,5 @@ def test_rules_openapi_path_snapshot():
 
 
 def test_rules_route_count():
-    """Exactly 36 rule routes (guards against silent additions/removals)."""
-    assert len(_actual_rule_routes()) == 36
+    """Exactly 37 rule routes (guards against silent additions/removals)."""
+    assert len(_actual_rule_routes()) == 37

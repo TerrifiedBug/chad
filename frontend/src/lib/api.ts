@@ -354,6 +354,19 @@ export type RuleExceptionUpdate = {
   change_reason: string
 }
 
+export type ExceptionPreviewClause = {
+  field: string
+  operator?: ExceptionOperator
+  value: string
+}
+
+export type ExceptionPreviewResult = {
+  total_matches: number
+  suppressed: number
+  remaining: number
+  error?: string
+}
+
 // Activity types
 export type ActivityItem = {
   type: 'version' | 'deploy' | 'undeploy' | 'comment' | 'exception' | 'threshold'
@@ -761,6 +774,24 @@ export const rulesApi = {
       limit: limit || 500,
     })
   },
+  // Exception suppression preview: how many past events a candidate would suppress
+  previewException: (
+    ruleId: string,
+    startDate: Date,
+    endDate: Date,
+    clauses: ExceptionPreviewClause[],
+    limit?: number,
+  ) =>
+    api.post<ExceptionPreviewResult>(`/rules/${ruleId}/exceptions/preview`, {
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
+      limit: limit ?? 500,
+      clauses: clauses.map((c) => ({
+        field: c.field,
+        operator: c.operator ?? 'equals',
+        value: c.value,
+      })),
+    }),
   // Get available fields for correlation
   getFields: (ruleId: string) =>
     api.get<{ fields: string[] }>(`/rules/${ruleId}/fields`),

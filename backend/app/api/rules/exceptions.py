@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     get_current_user,
+    get_opensearch_client,
     get_opensearch_client_optional,
     require_permission_dep,
 )
@@ -18,11 +19,14 @@ from app.models.rule import Rule
 from app.models.rule_exception import ExceptionOperator, RuleException
 from app.models.user import User
 from app.schemas.rule_exception import (
+    ExceptionPreviewRequest,
+    ExceptionPreviewResponse,
     RuleExceptionCreate,
     RuleExceptionResponse,
     RuleExceptionUpdate,
 )
 from app.services.audit import audit_log
+from app.services.rule_testing import ExceptionClause, run_historical_test
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/rules", tags=["rules"])
@@ -46,6 +50,71 @@ async def list_rule_exceptions(
         .order_by(RuleException.created_at.desc())
     )
     return result.scalars().all()
+
+
+@router.post(
+    "/{rule_id}/exceptions/preview",
+    response_model=ExceptionPreviewResponse,
+)
+async def preview_rule_exception(
+    rule_id: UUID,
+    preview_data: ExceptionPreviewRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    os_client: Annotated[OpenSearch, Depends(get_opensearch_client)],
+    _: Annotated[User, Depends(get_current_user)],
+):
+    """Preview how many past events a candidate exception would suppress.
+
+    Runs the rule's historical test twice over the selected window: once as a
+    baseline and once with the candidate exception clauses applied as
+    ``must_not`` filters. The difference is the suppression count.
+    """
+    if preview_data.end_date <= preview_data.start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="end_date must be greater than start_date",
+        )
+
+    baseline = await run_historical_test(
+        db=db,
+        os_client=os_client,
+        rule_id=rule_id,
+        start_date=preview_data.start_date,
+        end_date=preview_data.end_date,
+        limit=preview_data.limit,
+    )
+    if baseline.error:
+        if "not found" in baseline.error.lower():
+            raise HTTPException(status_code=404, detail=baseline.error)
+        if (
+            "translate" in baseline.error.lower()
+            or "no query" in baseline.error.lower()
+        ):
+            raise HTTPException(status_code=400, detail=baseline.error)
+        raise HTTPException(status_code=500, detail=baseline.error)
+
+    candidate = await run_historical_test(
+        db=db,
+        os_client=os_client,
+        rule_id=rule_id,
+        start_date=preview_data.start_date,
+        end_date=preview_data.end_date,
+        limit=preview_data.limit,
+        must_not_clauses=[
+            ExceptionClause(field=c.field, operator=c.operator, value=c.value)
+            for c in preview_data.clauses
+        ],
+    )
+    if candidate.error:
+        raise HTTPException(status_code=500, detail=candidate.error)
+
+    remaining = candidate.total_matches
+    suppressed = baseline.total_matches - remaining
+    return ExceptionPreviewResponse(
+        total_matches=baseline.total_matches,
+        suppressed=suppressed,
+        remaining=remaining,
+    )
 
 
 @router.post(
