@@ -907,10 +907,19 @@ class SchedulerService:
                         },
                     )
             else:
-                # Send sync failure notification
+                # Send sync failure notification (generic, sync_type-discriminated)
                 await send_system_notification(
                     session,
                     "sync_failed",
+                    {
+                        "sync_type": "sigmahq",
+                        "error": result.error if hasattr(result, "error") else result.message,
+                    },
+                )
+                # Also fire the dedicated SigmaHQ failure event.
+                await send_system_notification(
+                    session,
+                    "sigmahq_sync_failed",
                     {
                         "sync_type": "sigmahq",
                         "error": result.error if hasattr(result, "error") else result.message,
@@ -934,6 +943,11 @@ class SchedulerService:
                 await send_system_notification(
                     session,
                     "sync_failed",
+                    {"sync_type": "sigmahq", "error": str(e)},
+                )
+                await send_system_notification(
+                    session,
+                    "sigmahq_sync_failed",
                     {"sync_type": "sigmahq", "error": str(e)},
                 )
             except Exception:
