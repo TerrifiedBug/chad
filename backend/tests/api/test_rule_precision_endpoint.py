@@ -1,11 +1,13 @@
 """Endpoint test for GET /stats/rule-precision."""
 
 import uuid
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.api.deps import get_opensearch_client_optional
 from app.core.security import create_access_token, get_password_hash
+from app.main import app
 from app.models.user import User, UserRole
 
 
@@ -35,11 +37,27 @@ async def test_rule_precision_returns_rows(client, test_session):
         "rule_id": "ioc-detection", "total": 5, "resolved": 1, "false_positive": 4,
         "open": 0, "precision_pct": 20.0, "fp_rate_pct": 80.0, "alerts_per_day": 0.2,
     }]
-    with patch("app.api.stats.get_rule_precision", return_value=rows):
-        resp = await client.get("/api/stats/rule-precision?days=14", headers=_auth(user))
+    # The endpoint short-circuits to an empty list when OpenSearch is
+    # unavailable (os_client is None), so override the optional-OS dependency
+    # with a stub client. That lets the request reach the (patched) aggregation.
+    app.dependency_overrides[get_opensearch_client_optional] = lambda: MagicMock()
+    try:
+        with patch("app.api.stats.get_rule_precision", return_value=rows):
+            resp = await client.get(
+                "/api/stats/rule-precision?days=14", headers=_auth(user)
+            )
+    finally:
+        app.dependency_overrides.pop(get_opensearch_client_optional, None)
     assert resp.status_code == 200
     body = resp.json()
     assert body["window_days"] == 14
-    assert body["rules"][0]["rule_id"] == "ioc-detection"
+    assert body["opensearch_available"] is True
+    assert len(body["rules"]) == 1
+    row = body["rules"][0]
+    assert row["rule_id"] == "ioc-detection"
+    assert row["total"] == 5
+    assert row["false_positive"] == 4
+    assert row["precision_pct"] == 20.0
+    assert row["fp_rate_pct"] == 80.0
     # Non-UUID rule_id falls back to the raw id as the title.
-    assert body["rules"][0]["rule_title"] == "ioc-detection"
+    assert row["rule_title"] == "ioc-detection"

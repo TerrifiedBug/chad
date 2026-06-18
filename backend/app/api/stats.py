@@ -1,8 +1,8 @@
 """Dashboard statistics API."""
 
 import json
-import uuid
 import logging
+import uuid
 from datetime import datetime
 from typing import Annotated
 
