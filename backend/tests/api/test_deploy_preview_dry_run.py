@@ -146,3 +146,35 @@ async def test_dry_run_passes_through_service_error(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["dry_run"] == {"error": "OpenSearch query failed: boom"}
+
+
+@pytest.mark.asyncio
+async def test_dry_run_null_when_no_opensearch(
+    client, test_session, admin_user, monkeypatch
+):
+    """No OpenSearch configured -> dry_run is null and the service is not called."""
+    monkeypatch.setattr(
+        "app.api.rules._shared.get_index_fields", lambda *a, **k: ["fieldA"]
+    )
+
+    called = {"hit": False}
+
+    async def _should_not_run(*args, **kwargs):
+        called["hit"] = True
+        raise AssertionError("run_historical_test must not be called without OpenSearch")
+
+    monkeypatch.setattr(
+        "app.api.rules.testing.run_historical_test", _should_not_run
+    )
+
+    ip = await _make_pull_pattern(test_session)
+    rule = await _make_rule(test_session, ip, admin_user)
+
+    # No _seed_opensearch and no dependency override -> optional client is None.
+    resp = await client.get(
+        f"/api/rules/{rule.id}/deploy-preview", headers=_auth(admin_user)
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["dry_run"] is None
+    assert called["hit"] is False
