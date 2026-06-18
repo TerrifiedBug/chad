@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ApiClient } from '@/lib/api';
+import { ApiClient, rulesApi } from '@/lib/api';
 import { createMockResponse, createSuccessResponse, createErrorResponse, createLegacyErrorResponse } from './mocks';
 
 // Mock fetch
@@ -137,5 +137,36 @@ describe('API Client Error Handling', () => {
     );
 
     await expect(apiClient.get('/test')).rejects.toThrow('Request failed');
+  });
+});
+
+describe('rulesApi.previewException', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('POSTs clauses to the preview endpoint and parses the delta', async () => {
+    vi.mocked(global.fetch).mockResolvedValueOnce(
+      createSuccessResponse({ total_matches: 10, suppressed: 4, remaining: 6 })
+    );
+
+    const start = new Date('2026-01-01T00:00:00.000Z');
+    const end = new Date('2026-01-02T00:00:00.000Z');
+    const result = await rulesApi.previewException('rule-1', start, end, [
+      { field: 'user.name', value: 'svc_backup' },
+    ]);
+
+    expect(result).toEqual({ total_matches: 10, suppressed: 4, remaining: 6 });
+
+    const call = vi.mocked(global.fetch).mock.calls[0];
+    expect(call[0]).toContain('/rules/rule-1/exceptions/preview');
+    expect(call[1]?.method).toBe('POST');
+    const body = JSON.parse(call[1]?.body as string);
+    expect(body.start_date).toBe(start.toISOString());
+    expect(body.end_date).toBe(end.toISOString());
+    expect(body.clauses).toEqual([
+      { field: 'user.name', operator: 'equals', value: 'svc_backup' },
+    ]);
   });
 });
