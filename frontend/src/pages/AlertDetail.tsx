@@ -45,6 +45,7 @@ import { TimestampTooltip } from '../components/timestamp-tooltip'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { IOCMatchesCard } from '@/components/alerts/IOCMatchesCard'
 import { CreateMISPEventDialog } from '@/components/alerts/CreateMISPEventDialog'
+import { AiAlertSummaryCard } from '@/components/ai/AiAlertSummaryCard'
 import { SEVERITY_COLORS, ALERT_STATUS_COLORS, ALERT_STATUS_LABELS, capitalize } from '@/lib/constants'
 import { useOpenSearchStatus } from '@/contexts/OpenSearchStatus'
 
@@ -1378,6 +1379,12 @@ export default function AlertDetailPage() {
           {alert.ioc_matches && alert.ioc_matches.length > 0 && (
             <IOCMatchesCard matches={alert.ioc_matches} />
           )}
+
+          {/* AI Copilot — analyst summary + recommended actions */}
+          <AiAlertSummaryCard
+            logDocument={alert.log_document as Record<string, unknown>}
+            disabled={!hasPermission('manage_alerts') || !osAvailable}
+          />
 
           {/* Custom Enrichment from webhooks - shown if enrichment_status exists */}
           <CustomEnrichmentCard logDocument={alert.log_document as Record<string, unknown>} />
