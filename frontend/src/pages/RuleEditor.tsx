@@ -56,6 +56,7 @@ import { ActivityPanel } from '@/components/ActivityPanel'
 import { MapFieldsModal } from '@/components/MapFieldsModal'
 import { HistoricalTestPanel } from '@/components/HistoricalTestPanel'
 import { AiCopilotDialog } from '@/components/ai/AiCopilotDialog'
+import { ExceptionSuggestPanel } from '@/components/rules/ExceptionSuggestPanel'
 import { RuleCiPanel } from '@/components/rules/RuleCiPanel'
 import { SearchableFieldSelector } from '@/components/SearchableFieldSelector'
 import { MISPOriginPanel } from '@/components/MISPOriginPanel'
@@ -167,6 +168,15 @@ export default function RuleEditorPage() {
   const [newExceptionValue, setNewExceptionValue] = useState('')
   const [newExceptionReason, setNewExceptionReason] = useState('')
   const [isAddingException, setIsAddingException] = useState(false)
+
+  // Exception suppression preview state
+  const [previewResult, setPreviewResult] = useState<{
+    total_matches: number
+    suppressed: number
+    remaining: number
+  } | null>(null)
+  const [isPreviewing, setIsPreviewing] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   // Multi-condition exception state (for AND logic)
   type ExceptionCondition = {
@@ -848,6 +858,46 @@ export default function RuleEditorPage() {
   // Remove a condition from the list
   const handleRemoveCondition = (conditionId: string) => {
     setExceptionConditions((prev) => prev.filter((c) => c.id !== conditionId))
+  }
+
+  const handlePreviewException = async () => {
+    if (!id) return
+    // Build candidate clauses from the staged AND-group, falling back to the
+    // single in-progress field/operator/value the user is typing.
+    const clauses =
+      exceptionConditions.length > 0
+        ? exceptionConditions.map((c) => ({
+            field: c.field,
+            operator: c.operator,
+            value: c.value,
+          }))
+        : [
+            {
+              field: newExceptionField,
+              operator: newExceptionOperator,
+              value: newExceptionValue,
+            },
+          ]
+    if (!clauses[0].field.trim() || !clauses[0].value.trim()) return
+
+    setIsPreviewing(true)
+    setPreviewError(null)
+    try {
+      const end = new Date()
+      const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000) // last 30 days
+      const result = await rulesApi.previewException(id, start, end, clauses)
+      if (result.error) {
+        setPreviewError(result.error)
+        setPreviewResult(null)
+      } else {
+        setPreviewResult(result)
+      }
+    } catch (e) {
+      setPreviewError(e instanceof Error ? e.message : 'Preview failed')
+      setPreviewResult(null)
+    } finally {
+      setIsPreviewing(false)
+    }
   }
 
   const handleAddException = () => {
@@ -2138,6 +2188,42 @@ export default function RuleEditorPage() {
                         <Plus className="h-3 w-3 mr-2" />
                         {isAddingException ? 'Adding...' : `Create Exception${exceptionConditions.length > 0 ? ` (${exceptionConditions.length + (newExceptionField.trim() && newExceptionValue.trim() ? 1 : 0)} conditions)` : ''}`}
                       </Button>
+
+                      <div className="mt-3 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handlePreviewException}
+                            disabled={isPreviewing}
+                          >
+                            {isPreviewing ? 'Previewing...' : 'Preview impact (30d)'}
+                          </Button>
+                          {previewResult && (
+                            <span className="text-sm text-muted-foreground">
+                              Would suppress{' '}
+                              <span className="font-semibold text-foreground">
+                                {previewResult.suppressed}
+                              </span>{' '}
+                              of {previewResult.total_matches} past alerts
+                            </span>
+                          )}
+                          {previewError && (
+                            <span className="text-sm text-destructive">{previewError}</span>
+                          )}
+                        </div>
+
+                        <ExceptionSuggestPanel
+                          ruleYaml={yamlContent}
+                          falsePositiveExamples={[]}
+                          onUse={(s) => {
+                            setNewExceptionField(s.field)
+                            setNewExceptionOperator(s.operator)
+                            setNewExceptionValue(s.value)
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </CardContent>
