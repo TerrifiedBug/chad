@@ -148,3 +148,46 @@ async def test_list_rules_endpoint_fences_other_org(test_session, monkeypatch):
     titles = {r["title"] for r in resp.json()}
     assert "a-rule" in titles
     assert "b-rule" not in titles  # SECURITY: no cross-org leak
+
+
+@pytest.mark.asyncio
+async def test_list_rules_oss_default_sees_legacy_rules(test_session):
+    """OSS path: default-org scope still returns NULL-org legacy rules."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.core.security import create_access_token
+    from app.db.session import get_db
+    from app.main import app
+
+    await _seed_orgs_and_rules(test_session)
+    user = User(
+        id=uuid.uuid4(), email="oss-admin@example.com", password_hash="x",
+        role=UserRole.ADMIN, is_active=True, organization_id=DEFAULT_ORG_ID,
+    )
+    test_session.add(user)
+    await test_session.commit()
+    token = create_access_token(data={"sub": str(user.id)})
+
+    async def override():
+        yield test_session
+
+    app.dependency_overrides[get_db] = override
+    # localhost is a single-label host: the middleware resolves it to the default
+    # org without a DB lookup, exactly like an OSS single-tenant deployment.
+    set_org_id(DEFAULT_ORG_ID)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://localhost",
+            headers={"Authorization": f"Bearer {token}"},
+        ) as ac:
+            resp = await ac.get("/api/rules")
+    finally:
+        set_org_id(None)
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    titles = {r["title"] for r in resp.json()}
+    assert "legacy-rule" in titles   # OSS: legacy NULL rows stay visible
+    assert "a-rule" not in titles    # other real orgs still fenced out
+    assert "b-rule" not in titles
