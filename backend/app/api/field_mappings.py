@@ -16,9 +16,13 @@ from app.models.user import User
 from app.schemas.field_mapping import (
     AISuggestionResponse,
     AISuggestRequest,
+    AutoMapRequest,
+    AutoMapResponse,
+    AutoMapResultItem,
     FieldMappingCreate,
     FieldMappingResponse,
     FieldMappingUpdate,
+    ScorecardResponse,
 )
 from app.services.ai_mapping import suggest_mappings
 from app.services.audit import audit_log
@@ -524,3 +528,133 @@ async def suggest_field_mappings(
         return corrected_suggestions
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/scorecard", response_model=ScorecardResponse)
+async def field_mapping_scorecard(
+    data: AutoMapRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    os_client=Depends(get_opensearch_client_optional),
+):
+    """Compute a deterministic matchability scorecard (X of Y resolvable).
+
+    No LLM. Resolves each Sigma field against the schema preset table, falling
+    back to fuzzy field matching.
+    """
+    if os_client is None:
+        raise HTTPException(status_code=503, detail="OpenSearch not configured")
+
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == data.index_pattern_id)
+    )
+    index_pattern = result.scalar_one_or_none()
+    if index_pattern is None:
+        raise HTTPException(status_code=404, detail="Index pattern not found")
+
+    try:
+        available_fields = get_index_fields(
+            os_client, index_pattern.pattern, include_multi_fields=True
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Failed to get index fields: {e}")
+
+    from app.services.schema_presets import score_matchability
+
+    resolvable, total = score_matchability(
+        data.sigma_fields, data.family, available_fields
+    )
+    return ScorecardResponse(
+        resolvable=resolvable, total=total, family=data.family
+    )
+
+
+@router.post("/auto-map", response_model=AutoMapResponse)
+async def auto_map_field_mappings(
+    request: Request,
+    data: AutoMapRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    os_client=Depends(get_opensearch_client_optional),
+):
+    """Deterministically auto-map all currently-unmapped Sigma fields.
+
+    No LLM. For each unmapped Sigma field, resolves a target via the schema
+    preset table (falling back to fuzzy matching) and creates a PRESET-origin
+    mapping. Already-mapped fields are skipped.
+    """
+    if os_client is None:
+        raise HTTPException(status_code=503, detail="OpenSearch not configured")
+
+    result = await db.execute(
+        select(IndexPattern).where(IndexPattern.id == data.index_pattern_id)
+    )
+    index_pattern = result.scalar_one_or_none()
+    if index_pattern is None:
+        raise HTTPException(status_code=404, detail="Index pattern not found")
+
+    try:
+        available_fields = get_index_fields(
+            os_client, index_pattern.pattern, include_multi_fields=True
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Failed to get index fields: {e}")
+
+    from app.models.field_mapping import MappingOrigin
+    from app.services.field_mapping import resolve_mappings
+    from app.services.schema_presets import resolve_field
+
+    existing = await resolve_mappings(db, data.sigma_fields, data.index_pattern_id)
+
+    results: list[AutoMapResultItem] = []
+    mapped = 0
+    skipped = 0
+
+    for sigma_field in data.sigma_fields:
+        if existing.get(sigma_field) is not None:
+            skipped += 1
+            results.append(
+                AutoMapResultItem(
+                    sigma_field=sigma_field,
+                    target_field=existing[sigma_field],
+                    method="skipped",
+                    created=False,
+                )
+            )
+            continue
+
+        target, method = resolve_field(sigma_field, data.family, available_fields)
+        created = False
+        if target is not None and method != "none":
+            await create_mapping(
+                db,
+                sigma_field=sigma_field,
+                target_field=target,
+                index_pattern_id=data.index_pattern_id,
+                created_by=current_user.id,
+                origin=MappingOrigin.PRESET,
+            )
+            created = True
+            mapped += 1
+
+        results.append(
+            AutoMapResultItem(
+                sigma_field=sigma_field,
+                target_field=target,
+                method=method,
+                created=created,
+            )
+        )
+
+    await audit_log(
+        db,
+        current_user.id,
+        "field_mapping.auto_map",
+        "index_pattern",
+        str(data.index_pattern_id),
+        {"family": data.family, "mapped": mapped, "skipped": skipped},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    return AutoMapResponse(mapped=mapped, skipped=skipped, results=results)

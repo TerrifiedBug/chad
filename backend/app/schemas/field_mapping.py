@@ -48,3 +48,28 @@ class AISuggestionResponse(BaseModel):
     target_field: str | None
     confidence: float
     reason: str
+
+
+class AutoMapRequest(BaseModel):
+    index_pattern_id: UUID
+    sigma_fields: list[str]
+    family: str = "ecs"
+
+
+class AutoMapResultItem(BaseModel):
+    sigma_field: str
+    target_field: str | None
+    method: str  # "preset" | "fuzzy" | "none"
+    created: bool
+
+
+class AutoMapResponse(BaseModel):
+    mapped: int
+    skipped: int
+    results: list[AutoMapResultItem]
+
+
+class ScorecardResponse(BaseModel):
+    resolvable: int
+    total: int
+    family: str

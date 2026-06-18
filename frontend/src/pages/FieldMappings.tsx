@@ -38,6 +38,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
+import { formatScorecard, REQUIRED_SIGMA_FIELDS, unmappedRequiredFields } from '@/lib/scorecard'
 
 export default function FieldMappingsPage() {
   const { showToast } = useToast()
@@ -67,6 +68,10 @@ export default function FieldMappingsPage() {
   const [deleteMapping, setDeleteMapping] = useState<FieldMapping | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Scorecard + auto-map
+  const [scorecard, setScorecard] = useState<{ resolvable: number; total: number } | null>(null)
+  const [isAutoMapping, setIsAutoMapping] = useState(false)
+
 
   // Load functions - must be declared before useEffect that uses them
   const loadData = useCallback(async () => {
@@ -92,6 +97,59 @@ export default function FieldMappingsPage() {
       showToast('Failed to load field mappings', 'error')
     }
   }, [activeTab, showToast])
+
+  const loadScorecard = useCallback(async () => {
+    if (!activeTab) {
+      setScorecard(null)
+      return
+    }
+    try {
+      // Score the rule's required Sigma fields (the preset table keys), not the
+      // already-mapped subset, so the scorecard reflects how many required
+      // fields are resolvable against this index.
+      const result = await fieldMappingsApi.scorecard({
+        index_pattern_id: activeTab,
+        sigma_fields: REQUIRED_SIGMA_FIELDS,
+        family: 'ecs',
+      })
+      setScorecard({ resolvable: result.resolvable, total: result.total })
+    } catch {
+      // Scorecard requires OpenSearch; silently hide when unavailable.
+      setScorecard(null)
+    }
+  }, [activeTab])
+
+  const handleAutoMap = useCallback(async () => {
+    if (!activeTab) return
+    setIsAutoMapping(true)
+    try {
+      // Send the UNMAPPED required Sigma fields (required preset keys minus the
+      // ones already mapped). Sending already-mapped fields would make the
+      // backend skip every field and map nothing.
+      const current = await fieldMappingsApi.list(activeTab)
+      const mappedSigmaFields = current.map((m) => m.sigma_field)
+      const sigmaFields = unmappedRequiredFields(mappedSigmaFields)
+      if (sigmaFields.length === 0) {
+        showToast('All required fields are already mapped', 'info')
+        return
+      }
+      const result = await fieldMappingsApi.autoMap({
+        index_pattern_id: activeTab,
+        sigma_fields: sigmaFields,
+        family: 'ecs',
+      })
+      showToast(
+        `Auto-mapped ${result.mapped} field(s), skipped ${result.skipped}`,
+        'success'
+      )
+      loadMappings()
+      loadScorecard()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Auto-map failed', 'error')
+    } finally {
+      setIsAutoMapping(false)
+    }
+  }, [activeTab, showToast, loadMappings, loadScorecard])
 
   useEffect(() => {
     loadData()
@@ -142,7 +200,8 @@ export default function FieldMappingsPage() {
 
   useEffect(() => {
     loadMappings()
-  }, [activeTab, loadMappings])
+    loadScorecard()
+  }, [activeTab, loadMappings, loadScorecard])
 
   const loadAvailableFields = async (indexPatternId: string) => {
     setIsLoadingFields(true)
@@ -334,6 +393,33 @@ export default function FieldMappingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="flex items-center justify-between mb-4">
+                {scorecard ? (
+                  <Badge
+                    variant={
+                      formatScorecard(scorecard.resolvable, scorecard.total).tone === 'good'
+                        ? 'default'
+                        : 'secondary'
+                    }
+                  >
+                    {formatScorecard(scorecard.resolvable, scorecard.total).label}
+                  </Badge>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    Scorecard unavailable (OpenSearch required)
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAutoMap}
+                  disabled={isAutoMapping || !activeTab}
+                >
+                  {isAutoMapping && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Auto-map unmapped
+                </Button>
+              </div>
               {mappings.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   No mappings configured.{' '}
