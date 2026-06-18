@@ -63,6 +63,7 @@ from app.core.csrf import CSRFMiddleware
 from app.core.errors import HTTPError, http_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import ErrorResponseMiddleware, RequestValidationMiddleware
+from app.core.org_middleware import OrgScopeMiddleware
 from app.core.redis import close_redis
 from app.services.scheduler import scheduler_service
 from app.services.websocket import manager as websocket_manager
@@ -320,6 +321,11 @@ app.add_middleware(
 
 # Error response middleware (add last to catch all errors)
 app.add_middleware(ErrorResponseMiddleware)
+
+
+# Org tenancy scope middleware (outermost): resolve Host -> org into the
+# request-scoped contextvar so query sites can enforce tenant isolation.
+app.add_middleware(OrgScopeMiddleware)
 
 
 @app.get("/health")

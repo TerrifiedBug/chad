@@ -59,3 +59,10 @@ async def test_scope_is_cleared_after_request(test_session):
         await ac.get("/whoami")
     # Outside the request, the contextvar must be back to None (no leak).
     assert get_org_id() is None
+
+
+def test_org_scope_middleware_registered_on_app():
+    from app.main import app
+
+    names = [m.cls.__name__ for m in app.user_middleware]
+    assert "OrgScopeMiddleware" in names
