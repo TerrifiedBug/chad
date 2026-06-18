@@ -796,10 +796,20 @@ class SchedulerService:
                     },
                 )
             else:
-                # Send sync failure notification
+                # Send sync failure notification (generic, sync_type-discriminated)
                 await send_system_notification(
                     session,
                     "sync_failed",
+                    {
+                        "sync_type": "attack",
+                        "error": result.error or result.message,
+                    },
+                )
+                # Also fire the dedicated ATT&CK failure event so admins who only
+                # subscribed to attack_sync_failed are notified.
+                await send_system_notification(
+                    session,
+                    "attack_sync_failed",
                     {
                         "sync_type": "attack",
                         "error": result.error or result.message,
@@ -823,6 +833,11 @@ class SchedulerService:
                 await send_system_notification(
                     session,
                     "sync_failed",
+                    {"sync_type": "attack", "error": str(e)},
+                )
+                await send_system_notification(
+                    session,
+                    "attack_sync_failed",
                     {"sync_type": "attack", "error": str(e)},
                 )
             except Exception:
@@ -892,10 +907,19 @@ class SchedulerService:
                         },
                     )
             else:
-                # Send sync failure notification
+                # Send sync failure notification (generic, sync_type-discriminated)
                 await send_system_notification(
                     session,
                     "sync_failed",
+                    {
+                        "sync_type": "sigmahq",
+                        "error": result.error if hasattr(result, "error") else result.message,
+                    },
+                )
+                # Also fire the dedicated SigmaHQ failure event.
+                await send_system_notification(
+                    session,
+                    "sigmahq_sync_failed",
                     {
                         "sync_type": "sigmahq",
                         "error": result.error if hasattr(result, "error") else result.message,
@@ -919,6 +943,11 @@ class SchedulerService:
                 await send_system_notification(
                     session,
                     "sync_failed",
+                    {"sync_type": "sigmahq", "error": str(e)},
+                )
+                await send_system_notification(
+                    session,
+                    "sigmahq_sync_failed",
                     {"sync_type": "sigmahq", "error": str(e)},
                 )
             except Exception:
@@ -1117,6 +1146,7 @@ class SchedulerService:
     async def _execute_geoip_update(self):
         """Actual GeoIP database update execution."""
         from app.services.geoip import geoip_service
+        from app.services.notification import send_system_notification
 
         logger.info("Running scheduled GeoIP database update")
         session = await self._get_session()
@@ -1154,6 +1184,11 @@ class SchedulerService:
                 logger.info("GeoIP database updated successfully")
             else:
                 logger.error("GeoIP database update failed: %s", result.get('error'))
+                await send_system_notification(
+                    session,
+                    "maxmind_update_failed",
+                    {"error": result.get("error") or "Unknown error"},
+                )
 
         except Exception as e:
             logger.error("Scheduled GeoIP update failed: %s", e)
@@ -1165,6 +1200,14 @@ class SchedulerService:
                 message=f"Scheduled GeoIP update failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__}
             )
+            try:
+                await send_system_notification(
+                    session,
+                    "maxmind_update_failed",
+                    {"error": str(e)},
+                )
+            except Exception:
+                pass  # Don't fail on notification errors
         finally:
             await session.close()
 
@@ -1747,11 +1790,16 @@ class SchedulerService:
             await redis.set(failure_key, failures)
 
             if failures >= consecutive_failures_threshold:
-                # Send notification
+                # Send notification using a LISTED event name. 'sync_failed' is in
+                # SYSTEM_EVENT_TYPES; the old 'misp_sync_failed' was not, so the
+                # WHERE filter in send_system_notification matched nothing and the
+                # alert was silently dropped. Mirror the attack/sigmahq convention
+                # of a generic sync_failed carrying a 'sync_type' discriminator.
                 await send_system_notification(
                     session,
-                    "misp_sync_failed",
+                    "sync_failed",
                     {
+                        "sync_type": "misp",
                         "consecutive_failures": failures,
                         "error": error,
                         "message": f"MISP IOC sync has failed {failures} consecutive times",

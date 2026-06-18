@@ -35,6 +35,20 @@ from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
+# Event names an admin can route to webhooks. send_system_notification() filters
+# SystemNotificationSetting rows by event_type, so an emitted name absent from this
+# list is silently dropped. Keep this list and the emit sites in sync.
+#
+# WIRED (an emit site exists):
+#   user_locked, sigmahq_sync_complete, sigmahq_new_rules, attack_sync_complete,
+#   sync_failed (attack/sigmahq/misp via sync_type), sigmahq_sync_failed,
+#   attack_sync_failed, health_warning, health_critical, maxmind_update_failed
+#
+# INTENTIONALLY UNWIRED (no clean failure site / needs state-transition tracking;
+# surfaced as "Coming soon" in the admin UI, see frontend SYSTEM_EVENT_GROUPS):
+#   opensearch_connection_lost, opensearch_connection_restored,
+#   data_freshness_warning, data_freshness_critical, rule_deployment_failed,
+#   percolator_query_error, ai_mapping_failed, webhook_delivery_failed
 SYSTEM_EVENT_TYPES = [
     # Security
     "user_locked",
