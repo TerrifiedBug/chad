@@ -80,3 +80,49 @@ class TestWebhookTestEndpointSSRF:
         body = response.json()
         assert body["success"] is False
         assert "SSRF" in (body["error"] or "")
+
+    @pytest.mark.asyncio
+    async def test_public_url_is_sent_sanitized(
+        self, authenticated_client: AsyncClient, test_session, monkeypatch
+    ):
+        """A public-resolving webhook URL passes the guard and is posted sanitized."""
+        import socket
+
+        import app.core.config as config_module
+
+        monkeypatch.setattr(
+            config_module.settings, "ALLOW_INTERNAL_WEBHOOK_IPS", False
+        )
+
+        # Resolve example.com to a fixed public IP, offline and deterministic.
+        monkeypatch.setattr(
+            "app.services.webhooks.socket.getaddrinfo",
+            lambda *a, **k: [
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))
+            ],
+        )
+
+        webhook = await _make_webhook(test_session, "https://example.com/webhook")
+
+        sent = {}
+
+        class _StubResponse:
+            is_success = True
+            status_code = 200
+
+        async def _fake_post(self, url, *args, **kwargs):
+            sent["url"] = url
+            return _StubResponse()
+
+        monkeypatch.setattr("httpx.AsyncClient.post", _fake_post)
+
+        response = await authenticated_client.post(
+            f"/api/webhooks/{webhook.id}/test"
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is True
+        assert body["status_code"] == 200
+        # The endpoint must post the sanitized URL, not bypass the guard.
+        assert sent["url"] == "https://example.com/webhook"
