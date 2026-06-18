@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, FileBarChart, Play } from 'lucide-react'
-import { reportSchedulesApi, type ReportPreview } from '@/lib/api'
+import { reportSchedulesApi, statsApi, type ReportPreview } from '@/lib/api'
 import { useToast } from '@/components/ui/toast-provider'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
@@ -46,6 +46,10 @@ export default function Reports() {
   const [preview, setPreview] = useState<ReportPreview | null>(null)
 
   const { data: schedules = [] } = useQuery({ queryKey: ['report-schedules'], queryFn: () => reportSchedulesApi.list() })
+  const { data: precision } = useQuery({
+    queryKey: ['rule-precision'],
+    queryFn: () => statsApi.getRulePrecision(30),
+  })
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['report-schedules'] })
   const onErr = (err: unknown) => showToast(err instanceof Error ? err.message : 'Action failed', 'error')
 
@@ -118,6 +122,50 @@ export default function Reports() {
           </TableBody>
         </Table>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            Rule precision leaderboard
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              last {precision?.window_days ?? 30} days · noisiest first
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Rule</TableHead>
+                <TableHead className="w-28 text-right">Precision</TableHead>
+                <TableHead className="w-28 text-right">FP rate</TableHead>
+                <TableHead className="w-28 text-right">Alerts/day</TableHead>
+                <TableHead className="w-24 text-right">Total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(precision?.rules ?? []).length === 0 && (
+                <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  No alert data in the selected window.
+                </TableCell></TableRow>
+              )}
+              {(precision?.rules ?? []).map((r) => (
+                <TableRow key={r.rule_id}>
+                  <TableCell className="font-medium">{r.rule_title}</TableCell>
+                  <TableCell className="text-right">{Math.round(r.precision_pct)}%</TableCell>
+                  <TableCell className="text-right">
+                    <Badge variant={r.fp_rate_pct >= 50 ? 'destructive' : 'secondary'}>
+                      {Math.round(r.fp_rate_pct)}%
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">{r.alerts_per_day}</TableCell>
+                  <TableCell className="text-right">{r.total}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {preview && (
         <Card>
