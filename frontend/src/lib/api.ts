@@ -2798,9 +2798,13 @@ export type AttackMatrixResponse = {
   tactics: TacticWithTechniques[]
 }
 
+export type CoverageState = 'covered' | 'partial' | 'no_rule' | 'no_telemetry'
+
 export type TechniqueCoverageStats = {
   total: number
   deployed: number
+  state: CoverageState
+  has_telemetry: boolean
 }
 
 export type AttackCoverageResponse = {
@@ -2858,6 +2862,7 @@ export const attackApi = {
     deployed_only?: boolean
     severity?: string[]
     index_pattern_id?: string
+    telemetry?: boolean
   }) => {
     const searchParams = new URLSearchParams()
     if (params?.deployed_only) searchParams.set('deployed_only', 'true')
@@ -2865,8 +2870,34 @@ export const attackApi = {
       params.severity.forEach((s) => searchParams.append('severity', s))
     }
     if (params?.index_pattern_id) searchParams.set('index_pattern_id', params.index_pattern_id)
+    if (params?.telemetry) searchParams.set('telemetry', 'true')
     const query = searchParams.toString()
     return api.get<AttackCoverageResponse>(`/attack/coverage${query ? `?${query}` : ''}`)
+  },
+  downloadNavigatorLayer: async (params?: {
+    deployed_only?: boolean
+    severity?: string[]
+    index_pattern_id?: string
+    telemetry?: boolean
+  }): Promise<Blob> => {
+    const token = localStorage.getItem('chad-token')
+    const response = await fetch(`${API_BASE}/reports/attack-coverage/navigator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        deployed_only: params?.deployed_only ?? false,
+        severity: params?.severity ?? null,
+        index_pattern_id: params?.index_pattern_id ?? null,
+        telemetry: params?.telemetry ?? false,
+      }),
+    })
+    if (!response.ok) {
+      throw new Error('Navigator export failed')
+    }
+    return response.blob()
   },
   getTechnique: (
     id: string,

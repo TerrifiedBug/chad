@@ -5,10 +5,12 @@ Provides coverage metrics for the matrix visualization.
 """
 from uuid import UUID
 
+from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
+from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleStatus
 from app.schemas.attack import (
     CoverageResponse,
@@ -20,6 +22,16 @@ from app.schemas.attack import (
     TechniqueResponse,
     TechniqueWithCoverage,
 )
+from app.services.opensearch import get_index_fields
+from app.services.telemetry_coverage import CoverageState, grade_cell
+
+# Navigator colour + score per 4-state CoverageState value.
+NAVIGATOR_STATE_STYLE: dict[str, tuple[str, int]] = {
+    CoverageState.COVERED: ("#2e7d32", 100),       # green
+    CoverageState.PARTIAL: ("#f9a825", 50),        # amber
+    CoverageState.NO_RULE: ("#9e9e9e", 0),         # grey
+    CoverageState.NO_TELEMETRY: ("#c62828", 0),    # red
+}
 
 
 class AttackCoverageService:
@@ -71,6 +83,8 @@ class AttackCoverageService:
         deployed_only: bool = False,
         severity: list[str] | None = None,
         index_pattern_id: UUID | None = None,
+        telemetry: bool = False,
+        os_client: OpenSearch | None = None,
     ) -> CoverageResponse:
         """
         Get coverage counts per technique with optional filters.
@@ -164,15 +178,57 @@ class AttackCoverageService:
                     aggregated_deployed[parent_id] = 0
                 aggregated_deployed[parent_id] += count
 
-        # Combine into coverage response
-        all_technique_ids = set(aggregated_total.keys()) | set(aggregated_deployed.keys())
-        coverage = {
-            tech_id: TechniqueCoverageStats(
-                total=aggregated_total.get(tech_id, 0),
-                deployed=aggregated_deployed.get(tech_id, 0),
-            )
-            for tech_id in all_technique_ids
+        # Compute the union of available fields across the relevant index
+        # patterns, but only when telemetry grading is requested AND a client is
+        # available. get_index_fields is a blocking opensearch-py call; it is
+        # invoked here inline (matching the existing reports.py pattern).
+        available_fields: set[str] = set()
+        if telemetry and os_client is not None:
+            pattern_query = select(IndexPattern.pattern)
+            if index_pattern_id is not None:
+                pattern_query = pattern_query.where(IndexPattern.id == index_pattern_id)
+            pattern_rows = await db.execute(pattern_query)
+            for pattern in pattern_rows.scalars().all():
+                try:
+                    available_fields |= get_index_fields(os_client, pattern)
+                except Exception:
+                    # A single bad/unreachable pattern must not fail the whole map.
+                    continue
+
+        # Build a technique_id -> data_sources lookup for grading.
+        data_sources_map: dict[str, list[str] | None] = {
+            tech.id: tech.data_sources for tech in all_techniques
         }
+
+        # Combine into coverage response with the 4-state grade.
+        all_technique_ids = set(aggregated_total.keys()) | set(aggregated_deployed.keys())
+        coverage: dict[str, TechniqueCoverageStats] = {}
+        for tech_id in all_technique_ids:
+            total = aggregated_total.get(tech_id, 0)
+            deployed = aggregated_deployed.get(tech_id, 0)
+            if telemetry and os_client is not None:
+                state = grade_cell(
+                    rule_deployed=deployed > 0,
+                    has_rule=total > 0,
+                    data_sources=data_sources_map.get(tech_id),
+                    available_fields=available_fields,
+                )
+                has_telemetry = state != CoverageState.NO_TELEMETRY
+            else:
+                # Rule-only fallback (telemetry not evaluated).
+                if deployed > 0:
+                    state = CoverageState.COVERED
+                elif total > 0:
+                    state = CoverageState.PARTIAL
+                else:
+                    state = CoverageState.NO_RULE
+                has_telemetry = False
+            coverage[tech_id] = TechniqueCoverageStats(
+                total=total,
+                deployed=deployed,
+                state=state,
+                has_telemetry=has_telemetry,
+            )
 
         return CoverageResponse(coverage=coverage)
 
@@ -273,6 +329,90 @@ class AttackCoverageService:
         """Get total count of cached techniques."""
         result = await db.execute(select(func.count(AttackTechnique.id)))
         return result.scalar() or 0
+
+    async def get_navigator_layer(
+        self,
+        db: AsyncSession,
+        deployed_only: bool = False,
+        severity: list[str] | None = None,
+        index_pattern_id: UUID | None = None,
+        telemetry: bool = False,
+        os_client: OpenSearch | None = None,
+    ) -> dict:
+        """Build a MITRE ATT&CK Navigator (layer schema 4.5) dict.
+
+        Reuses the 4-state coverage grading and maps each state to a Navigator
+        colour + score so the layer renders directly in the official Navigator.
+        """
+        coverage = await self.get_coverage(
+            db,
+            deployed_only=deployed_only,
+            severity=severity,
+            index_pattern_id=index_pattern_id,
+            telemetry=telemetry,
+            os_client=os_client,
+        )
+
+        # get_coverage only emits techniques that have at least one rule
+        # mapping. A valid Navigator layer must enumerate *every* technique in
+        # the matrix so un-ruled techniques still render (in their NO_RULE
+        # colour) rather than being dropped. Load all techniques and fall back
+        # to a NO_RULE grade for any not present in the coverage dict.
+        tech_result = await db.execute(select(AttackTechnique.id))
+        all_technique_ids = tech_result.scalars().all()
+
+        techniques: list[dict] = []
+        for tech_id in all_technique_ids:
+            stats = coverage.coverage.get(tech_id)
+            if stats is not None:
+                state = stats.state
+                total = stats.total
+                deployed = stats.deployed
+                has_telemetry = stats.has_telemetry
+            else:
+                state = CoverageState.NO_RULE
+                total = 0
+                deployed = 0
+                has_telemetry = False
+            color, score = NAVIGATOR_STATE_STYLE.get(
+                state, NAVIGATOR_STATE_STYLE[CoverageState.NO_RULE]
+            )
+            techniques.append(
+                {
+                    "techniqueID": tech_id,
+                    "score": score,
+                    "color": color,
+                    "comment": (
+                        f"{state} | rules={total} "
+                        f"deployed={deployed} telemetry={has_telemetry}"
+                    ),
+                    "enabled": True,
+                }
+            )
+        techniques.sort(key=lambda t: t["techniqueID"])
+
+        return {
+            "name": "CHAD Detection Coverage",
+            "versions": {"attack": "14", "navigator": "4.9.0", "layer": "4.5"},
+            "domain": "enterprise-attack",
+            "description": (
+                "Telemetry-aware ATT&CK coverage exported from CHAD. "
+                "Colours: covered (green), partial (amber), "
+                "no_rule (grey), no_telemetry (red)."
+            ),
+            "techniques": techniques,
+            "gradient": {
+                "colors": ["#c62828", "#f9a825", "#2e7d32"],
+                "minValue": 0,
+                "maxValue": 100,
+            },
+            "legendItems": [
+                {"label": "Covered (deployed + telemetry)", "color": "#2e7d32"},
+                {"label": "Partial (rule undeployed)", "color": "#f9a825"},
+                {"label": "No rule (telemetry only)", "color": "#9e9e9e"},
+                {"label": "No telemetry", "color": "#c62828"},
+            ],
+        }
 
 
 # Singleton instance

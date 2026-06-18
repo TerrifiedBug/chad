@@ -54,12 +54,23 @@ class TechniqueCoverageStats(BaseModel):
 
     total: int = 0
     deployed: int = 0
+    state: str = "no_rule"  # one of CoverageState: covered|partial|no_rule|no_telemetry
+    has_telemetry: bool = False
 
 
 class CoverageResponse(BaseModel):
     """Coverage counts per technique with total and deployed breakdown."""
 
     coverage: dict[str, TechniqueCoverageStats]  # {"T1059": {"total": 5, "deployed": 3}, ...}
+
+
+class NavigatorExportRequest(BaseModel):
+    """Request for the MITRE ATT&CK Navigator layer JSON export."""
+
+    deployed_only: bool = False
+    severity: list[str] | None = None
+    index_pattern_id: UUID | None = None
+    telemetry: bool = False
 
 
 class LinkedRuleResponse(BaseModel):

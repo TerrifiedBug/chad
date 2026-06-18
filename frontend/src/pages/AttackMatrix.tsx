@@ -8,6 +8,7 @@ import {
   TechniqueDetailResponse,
   TechniqueWithCoverage,
   IndexPattern,
+  CoverageState,
 } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,27 +21,25 @@ import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
 import { SeverityPills } from '@/components/filters/SeverityPills'
 
-type CoverageLevel = 'none' | 'low' | 'medium' | 'high'
-
-function getCoverageLevel(count: number): CoverageLevel {
-  if (count === 0) return 'none'
-  if (count <= 2) return 'low'
-  if (count <= 5) return 'medium'
-  return 'high'
+const stateColors: Record<CoverageState, string> = {
+  covered: 'bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 border-green-200 dark:border-green-800',
+  partial: 'bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 border-yellow-200 dark:border-yellow-800',
+  no_rule: 'bg-muted hover:bg-muted/70 border-border',
+  no_telemetry: 'bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 border-red-200 dark:border-red-800',
 }
 
-const coverageColors: Record<CoverageLevel, string> = {
-  none: 'bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 border-red-200 dark:border-red-800',
-  low: 'bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 border-yellow-200 dark:border-yellow-800',
-  medium: 'bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 border-blue-200 dark:border-blue-800',
-  high: 'bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 border-green-200 dark:border-green-800',
+const stateTextColors: Record<CoverageState, string> = {
+  covered: 'text-green-700 dark:text-green-300',
+  partial: 'text-yellow-700 dark:text-yellow-300',
+  no_rule: 'text-muted-foreground',
+  no_telemetry: 'text-red-700 dark:text-red-300',
 }
 
-const coverageTextColors: Record<CoverageLevel, string> = {
-  none: 'text-red-700 dark:text-red-300',
-  low: 'text-yellow-700 dark:text-yellow-300',
-  medium: 'text-blue-700 dark:text-blue-300',
-  high: 'text-green-700 dark:text-green-300',
+const stateLabels: Record<CoverageState, string> = {
+  covered: 'Covered',
+  partial: 'Partial',
+  no_rule: 'No rule',
+  no_telemetry: 'No telemetry',
 }
 
 export default function AttackMatrixPage() {
@@ -60,6 +59,7 @@ export default function AttackMatrixPage() {
   const [deployedOnly, setDeployedOnly] = useState(false)
   const [selectedSeverities, setSelectedSeverities] = useState<string[]>([])
   const [selectedIndexPattern, setSelectedIndexPattern] = useState<string>('')
+  const [telemetryMode, setTelemetryMode] = useState(false)
 
   // Load functions - must be declared before useEffect that uses them
   const loadData = useCallback(async () => {
@@ -79,16 +79,17 @@ export default function AttackMatrixPage() {
 
   const loadCoverage = useCallback(async () => {
     try {
-      const params: { deployed_only?: boolean; severity?: string[]; index_pattern_id?: string } = {}
+      const params: { deployed_only?: boolean; severity?: string[]; index_pattern_id?: string; telemetry?: boolean } = {}
       if (deployedOnly) params.deployed_only = true
       if (selectedSeverities.length > 0) params.severity = selectedSeverities
       if (selectedIndexPattern) params.index_pattern_id = selectedIndexPattern
+      if (telemetryMode) params.telemetry = true
       const coverageData = await attackApi.getCoverage(params)
       setCoverage(coverageData)
     } catch (err) {
       console.error('Failed to load coverage:', err)
     }
-  }, [deployedOnly, selectedSeverities, selectedIndexPattern])
+  }, [deployedOnly, selectedSeverities, selectedIndexPattern, telemetryMode])
 
   useEffect(() => {
     loadData()
@@ -99,7 +100,7 @@ export default function AttackMatrixPage() {
     if (matrix) {
       loadCoverage()
     }
-  }, [deployedOnly, selectedSeverities, selectedIndexPattern, matrix, loadCoverage])
+  }, [deployedOnly, selectedSeverities, selectedIndexPattern, telemetryMode, matrix, loadCoverage])
 
   const loadIndexPatterns = async () => {
     try {
@@ -172,6 +173,28 @@ export default function AttackMatrixPage() {
       showToast('Failed to export PDF', 'error')
     } finally {
       setIsExporting(false)
+    }
+  }
+
+  const handleDownloadNavigator = async () => {
+    try {
+      const blob = await attackApi.downloadNavigatorLayer({
+        deployed_only: deployedOnly,
+        severity: selectedSeverities.length > 0 ? selectedSeverities : undefined,
+        index_pattern_id: selectedIndexPattern || undefined,
+        telemetry: telemetryMode,
+      })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `chad-navigator-${new Date().toISOString().split('T')[0]}.json`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      showToast('Navigator layer downloaded', 'success')
+    } catch {
+      showToast('Failed to download Navigator layer', 'error')
     }
   }
 
@@ -258,6 +281,10 @@ export default function AttackMatrixPage() {
               </>
             )}
           </Button>
+          <Button onClick={handleDownloadNavigator} variant="outline">
+            <Download className="h-4 w-4 mr-2" />
+            Navigator Layer
+          </Button>
           <Button onClick={handleSync} disabled={isSyncing || !hasPermission('manage_settings')} variant="outline">
             <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
             Sync
@@ -307,6 +334,16 @@ export default function AttackMatrixPage() {
                 Deployed rules only
               </label>
             </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="telemetry-mode"
+                checked={telemetryMode}
+                onCheckedChange={(checked) => setTelemetryMode(checked === true)}
+              />
+              <label htmlFor="telemetry-mode" className="text-sm">
+                Telemetry-aware
+              </label>
+            </div>
             <SeverityPills
               selected={selectedSeverities}
               onChange={toggleSeverity}
@@ -332,20 +369,20 @@ export default function AttackMatrixPage() {
             <div className="flex items-center gap-3 ml-auto">
               <span className="text-sm text-muted-foreground">Coverage:</span>
               <div className="flex items-center gap-1">
-                <div className="w-4 h-4 bg-red-200 dark:bg-red-900/50 rounded" />
-                <span className="text-xs">None</span>
+                <div className="w-4 h-4 bg-green-200 dark:bg-green-900/50 rounded" />
+                <span className="text-xs">Covered</span>
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-4 h-4 bg-yellow-200 dark:bg-yellow-900/50 rounded" />
-                <span className="text-xs">1-2</span>
+                <span className="text-xs">Partial</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-4 h-4 bg-blue-200 dark:bg-blue-900/50 rounded" />
-                <span className="text-xs">3-5</span>
+                <div className="w-4 h-4 bg-muted rounded border" />
+                <span className="text-xs">No rule</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-4 h-4 bg-green-200 dark:bg-green-900/50 rounded" />
-                <span className="text-xs">6+</span>
+                <div className="w-4 h-4 bg-red-200 dark:bg-red-900/50 rounded" />
+                <span className="text-xs">No telemetry</span>
               </div>
             </div>
           </div>
@@ -371,12 +408,12 @@ export default function AttackMatrixPage() {
                       const stats = coverage?.coverage[technique.id]
                       const totalCount = stats?.total || 0
                       const deployedCount = stats?.deployed || 0
-                      const level = getCoverageLevel(totalCount)
+                      const state: CoverageState = stats?.state || 'no_rule'
                       return (
                         <button
                           key={technique.id}
                           onClick={() => handleTechniqueClick(technique)}
-                          className={`w-full text-left p-1.5 rounded border text-xs transition-colors ${coverageColors[level]} ${
+                          className={`w-full text-left p-1.5 rounded border text-xs transition-colors ${stateColors[state]} ${
                             selectedTechnique?.technique.id === technique.id ? 'ring-2 ring-primary' : ''
                           }`}
                         >
@@ -385,8 +422,8 @@ export default function AttackMatrixPage() {
                           </div>
                           <div className="flex items-center justify-between mt-0.5">
                             <span className="text-[10px] opacity-70">{technique.id}</span>
-                            <span className={`text-[10px] font-medium ${coverageTextColors[level]}`}>
-                              {totalCount} rule{totalCount !== 1 ? 's' : ''}{totalCount > 0 && ` (${deployedCount} deployed)`}
+                            <span className={`text-[10px] font-medium ${stateTextColors[state]}`}>
+                              {stateLabels[state]} ({totalCount}/{deployedCount})
                             </span>
                           </div>
                         </button>
@@ -459,16 +496,16 @@ export default function AttackMatrixPage() {
                       <h4 className="font-medium text-sm mb-1">Sub-techniques</h4>
                       <div className="space-y-1">
                         {selectedTechnique.sub_techniques.map((sub) => {
-                          const level = getCoverageLevel(sub.rule_count)
+                          const subState: CoverageState = sub.rule_count > 0 ? 'covered' : 'no_rule'
                           return (
                             <div
                               key={sub.id}
-                              className={`text-xs p-2 rounded ${coverageColors[level]} cursor-pointer`}
+                              className={`text-xs p-2 rounded ${stateColors[subState]} cursor-pointer`}
                               onClick={() => handleTechniqueClick(sub)}
                             >
                               <div className="flex items-center justify-between">
                                 <span className="font-medium">{sub.name}</span>
-                                <span className={coverageTextColors[level]}>{sub.rule_count} rules</span>
+                                <span className={stateTextColors[subState]}>{sub.rule_count} rules</span>
                               </div>
                               <span className="opacity-70">{sub.id}</span>
                             </div>

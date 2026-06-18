@@ -6,10 +6,15 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_permission_dep
+from app.api.deps import (
+    get_current_user,
+    get_opensearch_client_optional,
+    require_permission_dep,
+)
 from app.db.session import get_db
 from app.models.setting import Setting
 from app.models.user import User
@@ -49,17 +54,25 @@ async def get_coverage(
     deployed_only: bool = Query(False, description="Only count deployed rules"),
     severity: list[str] | None = Query(None, description="Filter by severity levels"),
     index_pattern_id: UUID | None = Query(None, description="Filter by index pattern"),
+    telemetry: bool = Query(
+        False, description="Cross rule-coverage with available telemetry (4-state grading)"
+    ),
+    os_client: OpenSearch | None = Depends(get_opensearch_client_optional),
 ):
     """
-    Get coverage counts per technique.
+    Get coverage counts per technique with a 4-state grade.
 
-    Returns a dict mapping technique IDs to rule counts.
+    When ``telemetry=true`` and OpenSearch is configured, each technique is
+    graded covered / partial / no_rule / no_telemetry by checking whether its
+    ATT&CK data sources map to fields present in the configured index patterns.
     """
     return await attack_coverage_service.get_coverage(
         db,
         deployed_only=deployed_only,
         severity=severity,
         index_pattern_id=index_pattern_id,
+        telemetry=telemetry,
+        os_client=os_client if telemetry else None,
     )
 
 
