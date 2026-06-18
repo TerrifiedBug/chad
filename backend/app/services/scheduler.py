@@ -1747,11 +1747,16 @@ class SchedulerService:
             await redis.set(failure_key, failures)
 
             if failures >= consecutive_failures_threshold:
-                # Send notification
+                # Send notification using a LISTED event name. 'sync_failed' is in
+                # SYSTEM_EVENT_TYPES; the old 'misp_sync_failed' was not, so the
+                # WHERE filter in send_system_notification matched nothing and the
+                # alert was silently dropped. Mirror the attack/sigmahq convention
+                # of a generic sync_failed carrying a 'sync_type' discriminator.
                 await send_system_notification(
                     session,
-                    "misp_sync_failed",
+                    "sync_failed",
                     {
+                        "sync_type": "misp",
                         "consecutive_failures": failures,
                         "error": error,
                         "message": f"MISP IOC sync has failed {failures} consecutive times",
