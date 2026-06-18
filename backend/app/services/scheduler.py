@@ -1146,6 +1146,7 @@ class SchedulerService:
     async def _execute_geoip_update(self):
         """Actual GeoIP database update execution."""
         from app.services.geoip import geoip_service
+        from app.services.notification import send_system_notification
 
         logger.info("Running scheduled GeoIP database update")
         session = await self._get_session()
@@ -1183,6 +1184,11 @@ class SchedulerService:
                 logger.info("GeoIP database updated successfully")
             else:
                 logger.error("GeoIP database update failed: %s", result.get('error'))
+                await send_system_notification(
+                    session,
+                    "maxmind_update_failed",
+                    {"error": result.get("error") or "Unknown error"},
+                )
 
         except Exception as e:
             logger.error("Scheduled GeoIP update failed: %s", e)
@@ -1194,6 +1200,14 @@ class SchedulerService:
                 message=f"Scheduled GeoIP update failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__}
             )
+            try:
+                await send_system_notification(
+                    session,
+                    "maxmind_update_failed",
+                    {"error": str(e)},
+                )
+            except Exception:
+                pass  # Don't fail on notification errors
         finally:
             await session.close()
 
