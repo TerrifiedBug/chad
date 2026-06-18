@@ -109,3 +109,40 @@ async def test_dry_run_populated_from_historical_test(
     window = captured["end_date"] - captured["start_date"]
     assert timedelta(days=6, hours=23) < window < timedelta(days=7, hours=1)
     assert captured["end_date"] <= datetime.now(UTC) + timedelta(minutes=1)
+
+
+@pytest.mark.asyncio
+async def test_dry_run_passes_through_service_error(
+    client, test_session, admin_user, monkeypatch
+):
+    """When run_historical_test returns an error, dry_run surfaces it as
+    {"error": ...} so the UI shows the amber warning tile (no counts)."""
+    await _seed_opensearch(test_session)
+    monkeypatch.setattr(
+        "app.api.rules._shared.get_index_fields", lambda *a, **k: ["fieldA"]
+    )
+
+    async def _err_historical(*, db, os_client, rule_id, start_date, end_date, limit):
+        return HistoricalTestResult(
+            total_scanned=0, total_matches=0, matches=[], truncated=False,
+            error="OpenSearch query failed: boom",
+        )
+
+    monkeypatch.setattr(
+        "app.api.rules.testing.run_historical_test", _err_historical
+    )
+
+    ip = await _make_pull_pattern(test_session)
+    rule = await _make_rule(test_session, ip, admin_user)
+
+    app.dependency_overrides[get_opensearch_client_optional] = lambda: MagicMock()
+    try:
+        resp = await client.get(
+            f"/api/rules/{rule.id}/deploy-preview", headers=_auth(admin_user)
+        )
+    finally:
+        app.dependency_overrides.pop(get_opensearch_client_optional, None)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["dry_run"] == {"error": "OpenSearch query failed: boom"}
