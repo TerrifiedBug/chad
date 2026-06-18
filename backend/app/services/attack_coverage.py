@@ -8,7 +8,10 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from opensearchpy import OpenSearch
+
 from app.models.attack_technique import AttackTechnique, RuleAttackMapping
+from app.models.index_pattern import IndexPattern
 from app.models.rule import Rule, RuleStatus
 from app.schemas.attack import (
     CoverageResponse,
@@ -20,6 +23,17 @@ from app.schemas.attack import (
     TechniqueResponse,
     TechniqueWithCoverage,
 )
+from app.services.opensearch import get_index_fields
+from app.services.telemetry_coverage import CoverageState, grade_cell
+
+
+# Navigator colour + score per 4-state CoverageState value.
+NAVIGATOR_STATE_STYLE: dict[str, tuple[str, int]] = {
+    CoverageState.COVERED: ("#2e7d32", 100),       # green
+    CoverageState.PARTIAL: ("#f9a825", 50),        # amber
+    CoverageState.NO_RULE: ("#9e9e9e", 0),         # grey
+    CoverageState.NO_TELEMETRY: ("#c62828", 0),    # red
+}
 
 
 class AttackCoverageService:
@@ -71,6 +85,8 @@ class AttackCoverageService:
         deployed_only: bool = False,
         severity: list[str] | None = None,
         index_pattern_id: UUID | None = None,
+        telemetry: bool = False,
+        os_client: OpenSearch | None = None,
     ) -> CoverageResponse:
         """
         Get coverage counts per technique with optional filters.
@@ -164,15 +180,57 @@ class AttackCoverageService:
                     aggregated_deployed[parent_id] = 0
                 aggregated_deployed[parent_id] += count
 
-        # Combine into coverage response
-        all_technique_ids = set(aggregated_total.keys()) | set(aggregated_deployed.keys())
-        coverage = {
-            tech_id: TechniqueCoverageStats(
-                total=aggregated_total.get(tech_id, 0),
-                deployed=aggregated_deployed.get(tech_id, 0),
-            )
-            for tech_id in all_technique_ids
+        # Compute the union of available fields across the relevant index
+        # patterns, but only when telemetry grading is requested AND a client is
+        # available. get_index_fields is a blocking opensearch-py call; it is
+        # invoked here inline (matching the existing reports.py pattern).
+        available_fields: set[str] = set()
+        if telemetry and os_client is not None:
+            pattern_query = select(IndexPattern.pattern)
+            if index_pattern_id is not None:
+                pattern_query = pattern_query.where(IndexPattern.id == index_pattern_id)
+            pattern_rows = await db.execute(pattern_query)
+            for pattern in pattern_rows.scalars().all():
+                try:
+                    available_fields |= get_index_fields(os_client, pattern)
+                except Exception:
+                    # A single bad/unreachable pattern must not fail the whole map.
+                    continue
+
+        # Build a technique_id -> data_sources lookup for grading.
+        data_sources_map: dict[str, list[str] | None] = {
+            tech.id: tech.data_sources for tech in all_techniques
         }
+
+        # Combine into coverage response with the 4-state grade.
+        all_technique_ids = set(aggregated_total.keys()) | set(aggregated_deployed.keys())
+        coverage: dict[str, TechniqueCoverageStats] = {}
+        for tech_id in all_technique_ids:
+            total = aggregated_total.get(tech_id, 0)
+            deployed = aggregated_deployed.get(tech_id, 0)
+            if telemetry and os_client is not None:
+                state = grade_cell(
+                    rule_deployed=deployed > 0,
+                    has_rule=total > 0,
+                    data_sources=data_sources_map.get(tech_id),
+                    available_fields=available_fields,
+                )
+                has_telemetry = state != CoverageState.NO_TELEMETRY
+            else:
+                # Rule-only fallback (telemetry not evaluated).
+                if deployed > 0:
+                    state = CoverageState.COVERED
+                elif total > 0:
+                    state = CoverageState.PARTIAL
+                else:
+                    state = CoverageState.NO_RULE
+                has_telemetry = False
+            coverage[tech_id] = TechniqueCoverageStats(
+                total=total,
+                deployed=deployed,
+                state=state,
+                has_telemetry=has_telemetry,
+            )
 
         return CoverageResponse(coverage=coverage)
 
