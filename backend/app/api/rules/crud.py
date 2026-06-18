@@ -72,6 +72,11 @@ async def list_rules(
     # Resource-scoped RBAC: non-admins see only their team's + global rules.
     from app.services.team_scope import apply_team_scope
     query = apply_team_scope(query, Rule, current_user)
+    # Tenant fence: a request scoped to org X must never read org Y's rules.
+    # get_org_id() is set by OrgScopeMiddleware; None falls back to default org.
+    from app.core.org_context import get_org_id
+    from app.services.org_scope import apply_org_scope
+    query = apply_org_scope(query, Rule, get_org_id())
     result = await db.execute(query)
     rules = result.scalars().all()
 

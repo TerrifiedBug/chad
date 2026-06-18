@@ -87,3 +87,64 @@ async def test_apply_org_scope_default_sees_legacy_null_rows(test_session):
     assert "a-rule" not in titles
     assert "b-rule" not in titles
     set_org_id(None)
+
+
+def _bind_middleware_to_test_engine(monkeypatch, test_session):
+    """Point OrgScopeMiddleware's session maker at the test engine.
+
+    The middleware resolves Host->org through its own ``async_session_maker``
+    (bound to the production engine). In tests that engine has no seeded org, so
+    we rebind it to the test engine. This exercises the FULL path end-to-end:
+    Host header -> middleware DB lookup -> org_context -> apply_org_scope.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    import app.core.org_middleware as mw
+
+    test_maker = async_sessionmaker(
+        test_session.bind, class_=AsyncSession, expire_on_commit=False
+    )
+    monkeypatch.setattr(mw, "async_session_maker", test_maker)
+
+
+@pytest.mark.asyncio
+async def test_list_rules_endpoint_fences_other_org(test_session, monkeypatch):
+    """Through the endpoint: a request scoped to org A must not see B's rule."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.core.security import create_access_token
+    from app.db.session import get_db
+    from app.main import app
+
+    org_a, org_b = await _seed_orgs_and_rules(test_session)
+
+    # An admin user belonging to org A (admins still get org-fenced).
+    user = User(
+        id=uuid.uuid4(), email="a-admin@example.com", password_hash="x",
+        role=UserRole.ADMIN, is_active=True, organization_id=org_a.id,
+    )
+    test_session.add(user)
+    await test_session.commit()
+    token = create_access_token(data={"sub": str(user.id)})
+
+    async def override():
+        yield test_session
+
+    app.dependency_overrides[get_db] = override
+    # The middleware resolves orgaaa.chad.example.com -> org A against the test DB.
+    _bind_middleware_to_test_engine(monkeypatch, test_session)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://orgaaa.chad.example.com",
+            headers={"Authorization": f"Bearer {token}"},
+        ) as ac:
+            resp = await ac.get("/api/rules")
+    finally:
+        set_org_id(None)
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    titles = {r["title"] for r in resp.json()}
+    assert "a-rule" in titles
+    assert "b-rule" not in titles  # SECURITY: no cross-org leak
