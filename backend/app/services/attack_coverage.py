@@ -25,7 +25,6 @@ from app.schemas.attack import (
 from app.services.opensearch import get_index_fields
 from app.services.telemetry_coverage import CoverageState, grade_cell
 
-
 # Navigator colour + score per 4-state CoverageState value.
 NAVIGATOR_STATE_STYLE: dict[str, tuple[str, int]] = {
     CoverageState.COVERED: ("#2e7d32", 100),       # green
