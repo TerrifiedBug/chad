@@ -56,6 +56,7 @@ from app.services.enrichment import enrich_alert
 from app.services.notification import send_alert_notification
 from app.services.redis_rate_limit import check_rate_limit_redis
 from app.services.settings import get_app_url
+from app.services.threshold import check_threshold
 from app.services.ti.ioc_detector import IOCDetector, IOCMatch
 from app.services.websocket import AlertBroadcast, manager
 from app.utils.request import get_client_ip
@@ -81,6 +82,25 @@ def get_settings():
     """Get application settings (for easier mocking in tests)."""
     from app.core.config import settings
     return settings
+
+
+async def _get_rule_cached(db: AsyncSession, rule_id: str, cache: dict):
+    """Load a rule (for its threshold config) by id, with per-batch caching.
+
+    Mirrors LogProcessor._get_rule so the sync ingest path applies the same
+    threshold gate as the async worker path.
+    """
+    if rule_id in cache:
+        return cache[rule_id]
+    rule = None
+    try:
+        result = await db.execute(select(Rule).where(Rule.id == UUID(rule_id)))
+        rule = result.scalar_one_or_none()
+    except (ValueError, Exception) as e:
+        logger.debug("Failed to load rule %s for threshold check: %s", rule_id, e)
+        rule = None
+    cache[rule_id] = rule
+    return rule
 
 
 def ip_matches_allowlist(client_ip: str, allowed_ips: list[str]) -> bool:
@@ -386,6 +406,9 @@ async def receive_logs(
     # Cache exceptions per rule to avoid repeated DB queries
     rule_exceptions_cache: dict[str, list[dict]] = {}
 
+    # Cache rule objects (threshold config) per batch, mirroring the async path.
+    rule_cache: dict = {}
+
     # Percolate ALL logs in a single OpenSearch call instead of one round trip
     # per log (the dominant cost at high throughput). Offloaded — sync client.
     # A batch failure is a cluster-level error, so fail the request rather than
@@ -476,6 +499,17 @@ async def receive_logs(
                 # Check if this match should be suppressed by an exception
                 if should_suppress_alert(log, rule_exceptions_cache[rule_id]):
                     continue
+
+                # Threshold gating for count-based rules — parity with the async
+                # worker path (log_processor.py). The percolator match doesn't
+                # carry threshold config, so load the rule (cached). Threshold
+                # rules only alert once the count is reached within the window;
+                # non-threshold rules pass through.
+                rule_obj = await _get_rule_cached(db, rule_id, rule_cache)
+                if rule_obj is not None and rule_obj.threshold_enabled:
+                    log_ref = generate_deterministic_alert_id(rule_id, log)
+                    if not await check_threshold(db, rule_obj, log, log_ref):
+                        continue
 
                 # Enrich log with GeoIP + IOC-cache data inline (fast, local).
                 # Slow external TI / custom-webhook enrichment is deferred to a
