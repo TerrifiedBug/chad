@@ -1,4 +1,5 @@
 """Rule testing sub-router: validate, deployment-eligibility, deploy-preview, test, and historical test."""
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -213,6 +214,53 @@ async def check_deployment_eligibility(
     return DeploymentEligibilityResponse(eligible=eligible, ineligible=ineligible)
 
 
+# Cap the historical dry-run hard: a deploy preview must stay cheap and never
+# block on a large scan. We sample a small number of matches over a short window.
+_DRY_RUN_LIMIT = 50
+_DRY_RUN_WINDOW_DAYS = 7
+
+
+async def _compute_dry_run(
+    db: AsyncSession,
+    os_client: OpenSearch | None,
+    rule: Rule,
+) -> dict | None:
+    """Run a capped last-7-day historical test for the deploy preview.
+
+    Returns a compact summary dict for ``DeployPreviewResponse.dry_run``:
+    ``{"total_scanned", "total_matches", "truncated"}`` on success, or
+    ``{"error": <message>}`` when the service reports an error. Degrades to
+    ``None`` (tile hidden) when there is no OpenSearch client or the rule has
+    no associated index pattern — a dry run is impossible in those cases.
+    """
+    if os_client is None or rule.index_pattern is None:
+        return None
+
+    end_date = datetime.now(UTC)
+    start_date = end_date - timedelta(days=_DRY_RUN_WINDOW_DAYS)
+
+    try:
+        result = await run_historical_test(
+            db=db,
+            os_client=os_client,
+            rule_id=rule.id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=_DRY_RUN_LIMIT,
+        )
+    except Exception as exc:  # noqa: BLE001 - read-only preview must never raise
+        return {"error": f"Dry run failed: {exc}"}
+
+    if result.error:
+        return {"error": result.error}
+
+    return {
+        "total_scanned": result.total_scanned,
+        "total_matches": result.total_matches,
+        "truncated": result.truncated,
+    }
+
+
 @router.get("/{rule_id}/deploy-preview", response_model=DeployPreviewResponse)
 async def deploy_preview(
     rule_id: UUID,
@@ -300,6 +348,8 @@ async def deploy_preview(
         and rule.deployed_version != current_version
     )
 
+    dry_run = await _compute_dry_run(db, os_client, rule)
+
     return DeployPreviewResponse(
         rule_id=rule.id,
         current_deployed_query=current_deployed_query,
@@ -309,7 +359,7 @@ async def deploy_preview(
         needs_redeploy=needs_redeploy,
         deployed_version=rule.deployed_version,
         current_version=current_version,
-        dry_run=None,
+        dry_run=dry_run,
     )
 
 
