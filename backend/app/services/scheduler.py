@@ -796,10 +796,20 @@ class SchedulerService:
                     },
                 )
             else:
-                # Send sync failure notification
+                # Send sync failure notification (generic, sync_type-discriminated)
                 await send_system_notification(
                     session,
                     "sync_failed",
+                    {
+                        "sync_type": "attack",
+                        "error": result.error or result.message,
+                    },
+                )
+                # Also fire the dedicated ATT&CK failure event so admins who only
+                # subscribed to attack_sync_failed are notified.
+                await send_system_notification(
+                    session,
+                    "attack_sync_failed",
                     {
                         "sync_type": "attack",
                         "error": result.error or result.message,
@@ -823,6 +833,11 @@ class SchedulerService:
                 await send_system_notification(
                     session,
                     "sync_failed",
+                    {"sync_type": "attack", "error": str(e)},
+                )
+                await send_system_notification(
+                    session,
+                    "attack_sync_failed",
                     {"sync_type": "attack", "error": str(e)},
                 )
             except Exception:
