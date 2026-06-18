@@ -45,3 +45,29 @@ class RuleExceptionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ExceptionPreviewClause(BaseModel):
+    """A single candidate exception condition to preview."""
+
+    field: str = Field(..., min_length=1)
+    operator: ExceptionOperator = ExceptionOperator.EQUALS
+    value: str
+
+
+class ExceptionPreviewRequest(BaseModel):
+    """Preview how many past events a candidate exception would suppress."""
+
+    start_date: datetime
+    end_date: datetime
+    limit: int = Field(default=500, ge=1, le=1000)
+    clauses: list[ExceptionPreviewClause] = Field(..., min_length=1)
+
+
+class ExceptionPreviewResponse(BaseModel):
+    """Suppression delta over the selected time range."""
+
+    total_matches: int
+    suppressed: int
+    remaining: int
+    error: str | None = None
