@@ -121,14 +121,40 @@ async def test_execute_case_sla_scan_flags_open_case(db_session, monkeypatch):
     case_id = case.id
 
     service = scheduler_mod.SchedulerService()
-    # Drive the scan with the test session instead of a real engine session.
-    monkeypatch.setattr(service, "_get_session", lambda: _yield_session(db_session))
+    # Drive the scan with the shared test session instead of a real engine
+    # session. The job's ``finally`` calls ``session.close()``; on the real
+    # engine that just returns the connection to the pool, but on the shared
+    # fixture session it would expunge every tracked object (detaching ``case``
+    # so the assertions below could no longer refresh it). Hand the job a proxy
+    # that delegates everything to ``db_session`` except ``close()``, which is a
+    # no-op — exercising the production session handling without tearing down the
+    # fixture session.
+    monkeypatch.setattr(
+        service, "_get_session", lambda: _yield_session(_NonClosingSession(db_session))
+    )
 
     await service._execute_case_sla_scan()
 
     await db_session.refresh(case)
     assert case.sla_breached is True
     assert case.id == case_id
+
+
+class _NonClosingSession:
+    """Proxy around an AsyncSession that swallows ``close()``.
+
+    Lets a scheduler job run against the shared test session without the job's
+    ``finally: await session.close()`` detaching the fixture's tracked objects.
+    """
+
+    def __init__(self, session):
+        self._session = session
+
+    async def close(self):  # no-op: keep the shared fixture session alive
+        return None
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
 
 
 async def _yield_session(session):
