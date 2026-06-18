@@ -19,8 +19,10 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from opensearchpy import OpenSearch
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.case import CLOSED_STATUSES, Case
 from app.services.settings import get_setting, set_setting
 from app.services.system_log import LogCategory, system_log_service
 
@@ -180,6 +182,77 @@ async def scan_sla_breaches(
             message=f"{flagged} alert(s) breached their SLA",
             details={"by_severity": by_severity},
         )
+        await db.commit()
+
+    return flagged
+
+
+async def scan_case_sla_breaches(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+    batch_size: int = 500,
+) -> int:
+    """Stamp ``sla_due_at``/``sla_breached`` onto open cases per the SLA policy.
+
+    Reuses the same policy as the alert SLA scan (severity → target minutes,
+    plus the shared ``enabled`` flag): an open case's due time is
+    ``created_at + target(severity)`` and it breaches once that passes. Closed
+    cases are skipped. Returns the number of cases newly flagged as breached.
+    No-op when the policy is disabled.
+
+    Unlike the alert scan (which writes OpenSearch docs), this writes the
+    ``cases`` Postgres rows directly, so the values the API already surfaces
+    (CaseResponse.sla_due_at / sla_breached) finally get populated.
+    """
+    policy = await get_sla_policy(db)
+    if not policy.get("enabled"):
+        return 0
+
+    now = now or datetime.now().astimezone()
+
+    result = await db.execute(
+        select(Case)
+        .where(Case.status.notin_(CLOSED_STATUSES))
+        .limit(batch_size)
+    )
+    cases = list(result.scalars().all())
+
+    flagged = 0
+    changed = False
+    by_severity: dict[str, int] = {}
+
+    for case in cases:
+        due = compute_due_at(case.created_at, case.severity, policy)
+        if due is None:
+            # Severity has no SLA (0/missing target): clear any stale stamp.
+            if case.sla_due_at is not None or case.sla_breached:
+                case.sla_due_at = None
+                case.sla_breached = False
+                changed = True
+            continue
+
+        if case.sla_due_at != due:
+            case.sla_due_at = due
+            changed = True
+
+        if now >= due and not case.sla_breached:
+            case.sla_breached = True
+            changed = True
+            flagged += 1
+            sev = (case.severity or "unknown").lower()
+            by_severity[sev] = by_severity.get(sev, 0) + 1
+
+    if flagged:
+        await system_log_service.log_warning(
+            db,
+            category=LogCategory.ALERTS,
+            service="sla_monitor",
+            message=f"{flagged} case(s) breached their SLA",
+            details={"by_severity": by_severity},
+        )
+
+    if changed:
         await db.commit()
 
     return flagged
