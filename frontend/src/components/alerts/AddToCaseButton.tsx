@@ -66,7 +66,7 @@ export function AddToCaseButton({ alertId, alertTitle, disabled }: AddToCaseButt
 
   return (
     <>
-      <Button variant="outline" size="sm" disabled={disabled} onClick={() => setOpen(true)} className="gap-1.5">
+      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)} className="gap-1.5 h-9">
         <FolderPlus className="h-4 w-4" /> Add to case
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>

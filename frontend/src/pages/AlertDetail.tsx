@@ -1098,7 +1098,7 @@ export default function AlertDetailPage() {
           )}
           <Button
             variant={alert.owner_id === user?.id ? 'destructive' : 'outline'}
-            size="sm"
+            className="h-9"
             onClick={handleToggleOwnership}
             disabled={isAssigning || !hasPermission('manage_alerts') || !osAvailable}
             title={!osAvailable ? 'Unavailable while OpenSearch is offline' : !hasPermission('manage_alerts') ? 'Permission required: manage_alerts' : undefined}
@@ -1113,7 +1113,7 @@ export default function AlertDetailPage() {
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" disabled={!canAssign} title={!canAssign ? 'Requires manage_alerts' : 'Assign to a teammate'}>
+              <Button variant="outline" className="h-9" disabled={!canAssign} title={!canAssign ? 'Requires manage_alerts' : 'Assign to a teammate'}>
                 Assign…
               </Button>
             </DropdownMenuTrigger>
@@ -1153,7 +1153,7 @@ export default function AlertDetailPage() {
           {hasPermission('manage_rules') && (
             <Button
               variant="outline"
-              size="sm"
+              className="h-9"
               onClick={() => handleOpenExceptionDialog()}
             >
               <ShieldAlert className="h-4 w-4 mr-1" />
@@ -1163,7 +1163,7 @@ export default function AlertDetailPage() {
           {mispStatus?.configured && mispStatus?.connected && (
             <Button
               variant="outline"
-              size="sm"
+              className="h-9"
               onClick={() => setShowMISPEventDialog(true)}
             >
               <Upload className="h-4 w-4 mr-2" />
@@ -1172,7 +1172,7 @@ export default function AlertDetailPage() {
           )}
           <Button
             variant="destructive"
-            size="sm"
+            className="h-9"
             onClick={handleDelete}
             disabled={isUpdating || !hasPermission('manage_alerts')}
           >
