@@ -166,3 +166,77 @@ async def test_viewer_cannot_create_case(client, test_session):
     viewer = await _make_user(test_session, "v@example.com", role=UserRole.VIEWER)
     resp = await client.post("/api/cases", headers=_auth(viewer), json={"title": "X"})
     assert resp.status_code == 403
+
+
+class _FakeOS:
+    """Minimal OpenSearch stub: .search() returns one alert hit by alert_id."""
+
+    def __init__(self, by_id: dict[str, dict]):
+        self._by_id = by_id
+
+    def search(self, index, body):
+        alert_id = body["query"]["term"]["alert_id"]
+        src = self._by_id.get(alert_id)
+        hits = [{"_source": src}] if src else []
+        return {"hits": {"hits": hits}}
+
+
+def _override_os(fake):
+    from app.api.deps import get_opensearch_client_optional
+    from app.main import app
+
+    async def _ov():
+        return fake
+
+    app.dependency_overrides[get_opensearch_client_optional] = _ov
+
+
+@pytest.mark.asyncio
+async def test_linked_alert_enriched_with_title_and_severity(client, test_session):
+    from app.api.deps import get_opensearch_client_optional
+    from app.main import app
+
+    user = await _make_user(test_session, "enrich@example.com")
+    fake = _FakeOS({"alert-xyz": {"rule_title": "Suspicious PowerShell", "severity": "high"}})
+    _override_os(fake)
+    try:
+        resp = await client.post(
+            "/api/cases", headers=_auth(user),
+            json={"title": "Beacon", "alert_ids": ["alert-xyz"]},
+        )
+        assert resp.status_code == 201, resp.text
+        case_id = resp.json()["id"]
+        detail = await client.get(f"/api/cases/{case_id}", headers=_auth(user))
+        alert = detail.json()["alerts"][0]
+        assert alert["alert_title"] == "Suspicious PowerShell"
+        assert alert["alert_severity"] == "high"
+    finally:
+        app.dependency_overrides.pop(get_opensearch_client_optional, None)
+
+
+@pytest.mark.asyncio
+async def test_get_case_backfills_null_alert_title(client, test_session):
+    from app.api.deps import get_opensearch_client_optional
+    from app.main import app
+    from app.models.case import Case, CaseAlert, CaseStatus
+
+    user = await _make_user(test_session, "legacy@example.com")
+    case = Case(
+        number=9001, title="Legacy", severity="medium",
+        status=CaseStatus.OPEN.value, created_by=user.id,
+    )
+    test_session.add(case)
+    await test_session.flush()
+    test_session.add(CaseAlert(case_id=case.id, alert_id="legacy-1", added_by=user.id))
+    await test_session.commit()
+
+    fake = _FakeOS({"legacy-1": {"rule_title": "Backfilled Name", "severity": "low"}})
+    _override_os(fake)
+    try:
+        detail = await client.get(f"/api/cases/{case.id}", headers=_auth(user))
+        assert detail.status_code == 200, detail.text
+        alert = detail.json()["alerts"][0]
+        assert alert["alert_title"] == "Backfilled Name"
+        assert alert["alert_severity"] == "low"
+    finally:
+        app.dependency_overrides.pop(get_opensearch_client_optional, None)

@@ -11,11 +11,16 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from opensearchpy import OpenSearch
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_permission_dep
+from app.api.deps import (
+    get_current_user,
+    get_opensearch_client_optional,
+    require_permission_dep,
+)
 from app.db.session import get_db
 from app.models.case import (
     Case,
@@ -42,6 +47,7 @@ from app.schemas.case import (
     CaseStatusUpdate,
     CaseUpdate,
 )
+from app.services.alerts import AlertService
 from app.services.audit import audit_log
 from app.services.cases import (
     alert_count,
@@ -54,6 +60,25 @@ from app.services.team_scope import apply_team_scope, can_access_resource
 from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/cases", tags=["cases"])
+
+ALERTS_INDEX = "chad-alerts-*"
+
+
+def _lookup_alert_meta(
+    os_client: OpenSearch | None, alert_id: str
+) -> tuple[str | None, str | None]:
+    """Best-effort fetch of an alert's name + severity from OpenSearch.
+
+    Returns ``(None, None)`` when OpenSearch is unavailable or the alert is
+    missing — callers fall back to displaying the raw alert_id.
+    """
+    if os_client is None:
+        return None, None
+    alert = AlertService(os_client).get_alert(ALERTS_INDEX, alert_id)
+    if not alert:
+        return None, None
+    title = alert.get("rule_title") or alert.get("title")
+    return title, alert.get("severity")
 
 
 def _case_to_response(case: Case, owner_email: str | None, count: int) -> CaseResponse:
@@ -152,6 +177,7 @@ async def create_case(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)] = None,
 ):
     if data.severity not in SEVERITIES:
         raise HTTPException(status_code=422, detail=f"severity must be one of {sorted(SEVERITIES)}")
@@ -182,7 +208,11 @@ async def create_case(
     # Seed alerts.
     seeded = {aid for aid in data.alert_ids if aid}
     for aid in seeded:
-        db.add(CaseAlert(case_id=case.id, alert_id=aid, added_by=user.id))
+        title, severity = _lookup_alert_meta(os_client, aid)
+        db.add(CaseAlert(
+            case_id=case.id, alert_id=aid,
+            alert_title=title, alert_severity=severity, added_by=user.id,
+        ))
         record_event(
             db, case.id, CaseEventType.ALERT_LINKED, user.id,
             f"Linked alert {aid}", {"alert_id": aid},
@@ -203,6 +233,7 @@ async def get_case(
     case_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)] = None,
 ):
     case = await _get_case_or_404(db, case_id, user)
 
@@ -231,10 +262,25 @@ async def get_case(
         | {c.user_id for c in comments},
     )
 
+    # Lazily backfill alert name/severity for legacy links saved before
+    # enrichment (or while OpenSearch was offline). Serialize before commit
+    # to respect expire_on_commit.
+    dirty = False
+    for link in links:
+        if link.alert_title is None:
+            title, severity = _lookup_alert_meta(os_client, link.alert_id)
+            if title is not None:
+                link.alert_title = title
+                link.alert_severity = severity
+                dirty = True
+    alert_responses = [CaseAlertResponse.model_validate(link) for link in links]
+    if dirty:
+        await db.commit()
+
     base = _case_to_response(case, emails.get(case.owner_id), len(links))
     return CaseDetailResponse(
         **base.model_dump(),
-        alerts=[CaseAlertResponse.model_validate(link) for link in links],
+        alerts=alert_responses,
         events=[
             CaseEventResponse(
                 id=e.id, event_type=e.event_type, actor_id=e.actor_id,
@@ -349,6 +395,7 @@ async def add_alerts(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(require_permission_dep("manage_alerts"))],
+    os_client: Annotated[OpenSearch | None, Depends(get_opensearch_client_optional)] = None,
 ):
     case = await _get_case_or_404(db, case_id, user)
     existing = set(
@@ -360,7 +407,11 @@ async def add_alerts(
     for aid in {a for a in data.alert_ids if a}:
         if aid in existing:
             continue
-        db.add(CaseAlert(case_id=case.id, alert_id=aid, added_by=user.id))
+        title, severity = _lookup_alert_meta(os_client, aid)
+        db.add(CaseAlert(
+            case_id=case.id, alert_id=aid,
+            alert_title=title, alert_severity=severity, added_by=user.id,
+        ))
         record_event(
             db, case.id, CaseEventType.ALERT_LINKED, user.id,
             f"Linked alert {aid}", {"alert_id": aid},
