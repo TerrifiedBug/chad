@@ -1273,12 +1273,12 @@ export default function RuleEditorPage() {
     <TooltipProvider>
       <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/rules')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">
                 {isNew ? 'Create Rule' : 'Edit Rule'}
@@ -1323,7 +1323,7 @@ export default function RuleEditorPage() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!isNew && (
             <div className="flex items-center gap-2">
               {status === 'snoozed' ? (
