@@ -89,7 +89,6 @@ export default function CaseDetail() {
           {c.description && <p className="text-sm text-muted-foreground max-w-2xl">{c.description}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <SeverityBadge severity={c.severity} />
           <Select
             value={c.status}
             onValueChange={(v) => statusMutation.mutate(v as CaseStatus)}
@@ -194,6 +193,10 @@ export default function CaseDetail() {
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Details</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Severity</span>
+                <SeverityBadge severity={c.severity} />
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Owner</span>
                 {canManage ? (
