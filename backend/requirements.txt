@@ -39,7 +39,7 @@ apscheduler>=3.10.0
 GitPython>=3.1.43
 
 # Metrics
-prometheus-client>=0.20.0  # Prometheus pipeline metrics (eps, alerts, latency)
+prometheus-client>=0.25.0  # Prometheus pipeline metrics (eps, alerts, latency)
 
 # OpenSearch client
 opensearch-py==3.2.0
