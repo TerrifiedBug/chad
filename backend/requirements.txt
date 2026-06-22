@@ -19,7 +19,7 @@ pyotp>=2.9.0
 
 # Validation
 pydantic>=2.9.0,<3.0  # fastapi 0.135.x requires pydantic>=2.9.0
-pydantic-settings==2.13.1
+pydantic-settings==2.14.2
 email-validator==2.3.0
 
 # Sigma (for future tasks)
