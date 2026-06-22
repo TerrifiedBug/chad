@@ -54,7 +54,7 @@ httpx==0.28.1
 aiosqlite==0.20.0
 
 # Dev tools
-ruff==0.15.8
+ruff==0.15.18
 
 # Security
 nh3>=0.3.5  # Fast HTML sanitization (binding to Rust ammonia)
