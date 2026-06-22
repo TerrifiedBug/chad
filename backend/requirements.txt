@@ -33,7 +33,7 @@ mitreattack-python>=3.0.0
 geoip2>=5.2.0
 
 # Background scheduling
-apscheduler>=3.10.0
+apscheduler>=3.11.2
 
 # Git config-as-code sync (one-way push of deployed rules to a repo)
 GitPython>=3.1.43
