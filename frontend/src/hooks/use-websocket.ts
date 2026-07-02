@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { WS_BASE } from '@/lib/api'
+import { WS_BASE, isDelegatedAuth } from '@/lib/api'
 
 interface WebSocketMessage {
   type: string
@@ -78,8 +78,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }
 
   const connect = useCallback(() => {
+    const delegated = isDelegatedAuth()
     const token = getToken()
-    if (!token) {
+    if (!delegated && !token) {
       setError('No authentication token available')
       return
     }
@@ -102,12 +103,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       wsUrl = `${protocol}//${window.location.host}${WS_BASE}/alerts`
     }
 
-    console.log('Connecting to WebSocket:', wsUrl.replace(token, 'REDACTED'))
+    console.log('Connecting to WebSocket:', token ? wsUrl.replace(token, 'REDACTED') : wsUrl)
 
     try {
-      // Use Sec-WebSocket-Protocol header with Bearer token for authentication
-      // This prevents token exposure in URL logs/history
-      const ws = new WebSocket(wsUrl, ['Bearer', token])
+      // Standalone: Sec-WebSocket-Protocol Bearer keeps the token out of URLs.
+      // Delegated (suite): the same-origin handshake carries the VF session
+      // cookie — no subprotocol needed.
+      const ws = token ? new WebSocket(wsUrl, ['Bearer', token]) : new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -139,7 +141,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           } else if (message.type === 'pong') {
             // Server responded to our ping with a refreshed token
             // This extends the session while actively viewing live alerts
-            if (message.token) {
+            if (message.token && !isDelegatedAuth()) {
               localStorage.setItem('chad-token', message.token as string)
               console.debug('Session extended via WebSocket ping')
             }
