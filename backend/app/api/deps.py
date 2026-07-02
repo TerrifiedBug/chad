@@ -1,20 +1,26 @@
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, WebSocket, status
+from fastapi import Depends, Header, HTTPException, Request, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.encryption import decrypt
 from app.core.security import decode_access_token
+from app.core.vf_session import VfSessionError, decode_vf_session
 from app.db.session import get_db
 from app.models.environment import Environment
 from app.models.setting import Setting
 from app.models.user import User
 from app.services.opensearch import get_cached_client
+from app.services.suite_auth import resolve_vf_user
 
-security = HTTPBearer()
+# auto_error=False (was True): lets delegated-cookie auth fall through to the VF-session
+# check below. Side effect: standalone GETs with NO credentials now return 401 instead of
+# 403 (401 is correct for missing creds) — intentional, not a regression.
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user_websocket(
@@ -30,6 +36,12 @@ async def get_current_user_websocket(
     Supports:
     - Sec-WebSocket-Protocol header: "Bearer, <jwt_token>"
     - Query parameter fallback: ?token=<jwt_token>
+
+    Bearer-first: an explicit Sec-WebSocket-Protocol (or legacy query-param)
+    token takes precedence over the VF session cookie, matching
+    get_current_user's HTTP precedence (an Authorization header always wins
+    over the delegated cookie fallback there). Only when no bearer token is
+    present at all do we fall back to the VF session cookie.
     """
     # Get token from Sec-WebSocket-Protocol header
     protocols = websocket.headers.get("sec-websocket-protocol", "")
@@ -45,36 +57,67 @@ async def get_current_user_websocket(
     if not token:
         token = websocket.query_params.get("token")
 
-    if not token:
-        return None
+    if token:
+        payload = decode_access_token(token)
+        if payload is None:
+            return None
 
-    payload = decode_access_token(token)
-    if payload is None:
-        return None
+        user_id = payload.get("sub")
+        token_version = payload.get("tv", 0)  # Get token version from JWT
 
-    user_id = payload.get("sub")
-    token_version = payload.get("tv", 0)  # Get token version from JWT
+        if user_id is None:
+            return None
 
-    if user_id is None:
-        return None
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
 
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+        if user is None or not user.is_active:
+            return None
 
-    if user is None or not user.is_active:
-        return None
+        # Validate token version
+        if user.token_version != token_version:
+            return None
 
-    # Validate token version
-    if user.token_version != token_version:
-        return None
+        return user
 
-    return user
+    # No bearer token: delegated mode falls back to the VF session cookie.
+    # Browser WebSockets cannot set an Authorization header; the shared
+    # suite cookie rides along instead.
+    if settings.CHAD_DELEGATED_AUTH and settings.VF_SESSION_SECRET:
+        try:
+            claims = decode_vf_session(websocket.cookies, settings.VF_SESSION_SECRET)
+        except VfSessionError:
+            claims = None
+        if claims is not None:
+            try:
+                return await resolve_vf_user(db, claims)
+            except HTTPException:
+                return None  # inactive user -> unauthenticated socket
+
+    return None
 
 
 async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
 ) -> User:
+    if credentials is None:
+        if settings.CHAD_DELEGATED_AUTH and settings.VF_SESSION_SECRET:
+            try:
+                claims = decode_vf_session(request.cookies, settings.VF_SESSION_SECRET)
+            except VfSessionError:
+                claims = None  # invalid/expired VF session -> 401 below
+            if claims is not None:
+                # NOTE: no CHAD token_version check for VF sessions — VF owns
+                # revocation (single logout invalidates the shared cookie).
+                return await resolve_vf_user(db, claims)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     token = credentials.credentials
     payload = decode_access_token(token)
     if payload is None:
@@ -115,6 +158,21 @@ async def get_current_user(
         )
 
     return user
+
+
+async def block_in_delegated_mode() -> None:
+    """404 CHAD-local auth surfaces when the suite delegates auth to VectorFlow.
+
+    Counterpart of the ``sso_only`` seam (config.py:62): in delegated mode the
+    capability is hidden, not merely forbidden, so local login/setup/2FA/SSO
+    CRUD read as nonexistent in suite deployments while standalone deploys
+    (CHAD_DELEGATED_AUTH=False, the default) are byte-for-byte unchanged.
+    """
+    if settings.CHAD_DELEGATED_AUTH:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        )
 
 
 async def require_admin(

@@ -15,7 +15,55 @@ export const queryClient = new QueryClient({
   },
 })
 
-const API_BASE = '/api'
+// Suite path prefix: the whole CHAD app (SPA, API, WS) lives under /chad —
+// behind suite-nginx and standalone alike. Keep in sync with Vite `base`,
+// BrowserRouter `basename`, frontend/nginx.conf and suite/nginx/suite.conf.
+export const API_BASE = '/chad/api'
+export const WS_BASE = '/chad/ws'
+
+// --- Delegated auth (suite mode) ---
+// Behind the suite proxy, browser auth is the VectorFlow session cookie: no
+// Bearer token is attached and dead-session 401s bounce to the VF login at the
+// origin root. Standalone keeps today's localStorage 'chad-token' Bearer flow.
+let delegatedAuth = false
+
+export function setDelegatedAuth(enabled: boolean): void {
+  delegatedAuth = enabled
+}
+
+export function isDelegatedAuth(): boolean {
+  return delegatedAuth
+}
+
+// The ONLY place api.ts reads the token. Returns {} in delegated mode.
+export function authHeader(): Record<string, string> {
+  if (delegatedAuth) return {}
+  const token = localStorage.getItem('chad-token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+// Indirection so vitest/jsdom can spy on full-page redirects.
+export const navigation = {
+  assign: (url: string) => window.location.assign(url),
+}
+
+// Pre-login endpoints where a 401 is an expected answer, not a dead session.
+const PRE_LOGIN_PATHS = [
+  '/auth/login',
+  '/auth/login/2fa',
+  '/auth/setup',
+  '/auth/setup-status',
+  '/auth/sso/exchange',
+  '/auth/sso/status',
+]
+
+function handleUnauthorized(path: string): void {
+  if (!delegatedAuth) return
+  if (PRE_LOGIN_PATHS.some((p) => path.startsWith(p))) return
+  if (window.location.pathname.endsWith('/login')) return
+  // Origin-root /login: VectorFlow's login in the suite; CHAD's own standalone.
+  navigation.assign('/login?callbackUrl=' + encodeURIComponent(window.location.pathname))
+}
 
 export class ApiClient {
   private csrfToken: string | null = null
@@ -31,12 +79,7 @@ export class ApiClient {
   private getHeaders(method: string = 'GET'): HeadersInit {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-    }
-
-    // Add JWT token if available
-    const token = localStorage.getItem('chad-token')
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
+      ...authHeader(),
     }
 
     // Add CSRF token for state-changing methods (POST, PATCH, PUT, DELETE)
@@ -58,7 +101,7 @@ export class ApiClient {
   async get<T>(path: string): Promise<T> {
     // Add cache-busting for rule detail requests
     const fetchPath = path
-    let fetchOptions: RequestInit = { headers: this.getHeaders('GET') }
+    let fetchOptions: RequestInit = { headers: this.getHeaders('GET'), credentials: 'same-origin' }
 
     // Add cache control headers for rules endpoint to prevent caching
     if (path.includes('/rules/') && !path.includes('/rules/validate') && !path.includes('/rules/test')) {
@@ -75,13 +118,19 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${fetchPath}`, fetchOptions)
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
         error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'GET ' + path)
-      throw new Error(getErrorMessage(error))
+      // Preserve the HTTP status on the thrown Error so callers (e.g. use-auth's
+      // checkAuth) can distinguish a 403 (inactive account) from other failures.
+      // The message is unchanged, so existing toThrow(message) assertions hold.
+      const httpError = new Error(getErrorMessage(error)) as Error & { status?: number }
+      httpError.status = response.status
+      throw httpError
     }
     return response.json()
   }
@@ -89,11 +138,13 @@ export class ApiClient {
   async post<T>(path: string, data?: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: this.getHeaders('POST'),
       body: data ? JSON.stringify(data) : undefined,
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
@@ -108,11 +159,13 @@ export class ApiClient {
   async patch<T>(path: string, data: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'PATCH',
+      credentials: 'same-origin',
       headers: this.getHeaders('PATCH'),
       body: JSON.stringify(data),
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
@@ -127,6 +180,7 @@ export class ApiClient {
   async delete(path: string, body?: unknown): Promise<void> {
     const options: RequestInit = {
       method: 'DELETE',
+      credentials: 'same-origin',
       headers: this.getHeaders('DELETE'),
     }
     if (body) {
@@ -135,6 +189,7 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${path}`, options)
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
@@ -148,11 +203,13 @@ export class ApiClient {
   async put<T>(path: string, data: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'PUT',
+      credentials: 'same-origin',
       headers: this.getHeaders('PUT'),
       body: JSON.stringify(data),
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
@@ -177,13 +234,13 @@ async function postRaw(
   data: unknown,
   context: string
 ): Promise<{ status: number; body: any }> {
-  const token = localStorage.getItem('chad-token')
   const envId = getActiveEnvironmentId()
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
+    credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...authHeader(),
       ...(envId ? { 'X-CHAD-Environment': envId } : {}),
     },
     body: JSON.stringify(data),
@@ -630,11 +687,10 @@ export const rulesApi = {
     const envId = getActiveEnvironmentId()
     const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        ...(localStorage.getItem('chad-token')
-          ? { Authorization: `Bearer ${localStorage.getItem('chad-token')}` }
-          : {}),
+        ...authHeader(),
         ...(envId ? { 'X-CHAD-Environment': envId } : {}),
       },
       body: JSON.stringify({ change_reason: changeReason }),
@@ -1440,6 +1496,7 @@ export type CurrentUser = {
   is_active: boolean
   auth_method: 'local' | 'sso'
   must_change_password: boolean
+  chad_delegated_auth?: boolean
   totp_enabled?: boolean
   mfa_enforced?: boolean
   mfa_required?: boolean
@@ -2085,7 +2142,7 @@ export const ssoApi = {
 
 // --- SCIM 2.0 types ---
 // Config read: enabled flag + whether a bearer token has been generated. The
-// SCIM base URL is derived on the client (origin + '/api/scim/v2'), not fetched.
+// SCIM base URL is derived on the client (origin + API_BASE + '/scim/v2'), not fetched.
 export type ScimConfig = {
   enabled: boolean
   token_configured: boolean
@@ -2313,7 +2370,8 @@ export const auditApi = {
     if (filters.end_date) params.set('end_date', filters.end_date)
 
     const response = await fetch(`${API_BASE}/audit/export?${params}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('chad-token')}` },
+      credentials: 'same-origin',
+      headers: authHeader(),
     })
     if (!response.ok) throw new Error('Export failed')
     // Backend sets X-Audit-Export-Truncated: true when the 10k cap is hit.
@@ -2324,7 +2382,8 @@ export const auditApi = {
   // JSON blob plus the truncation flag, mirroring export() above.
   exportChain: async (): Promise<AuditExportResult> => {
     const response = await fetch(`${API_BASE}/audit/export/chain`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('chad-token')}` },
+      credentials: 'same-origin',
+      headers: authHeader(),
     })
     if (!response.ok) throw new Error('Export failed')
     const truncated = response.headers.get('X-Audit-Export-Truncated') === 'true'
@@ -2880,12 +2939,12 @@ export const attackApi = {
     index_pattern_id?: string
     telemetry?: boolean
   }): Promise<Blob> => {
-    const token = localStorage.getItem('chad-token')
     const response = await fetch(`${API_BASE}/reports/attack-coverage/navigator`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeader(),
       },
       body: JSON.stringify({
         deployed_only: params?.deployed_only ?? false,
@@ -3503,12 +3562,12 @@ export type RuleCoverageRequest = {
 
 export const reportsApi = {
   generateAlertSummary: async (request: AlertSummaryRequest): Promise<Blob> => {
-    const token = localStorage.getItem('chad-token')
     const response = await fetch(`${API_BASE}/reports/alerts/summary`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeader(),
       },
       body: JSON.stringify(request),
     })
@@ -3519,12 +3578,12 @@ export const reportsApi = {
   },
 
   generateRuleCoverage: async (request: RuleCoverageRequest): Promise<Blob> => {
-    const token = localStorage.getItem('chad-token')
     const response = await fetch(`${API_BASE}/reports/rules/coverage`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeader(),
       },
       body: JSON.stringify(request),
     })
@@ -3548,12 +3607,10 @@ export type ImportSummary = {
 
 export const configApi = {
   exportConfig: async (): Promise<Blob> => {
-    const token = localStorage.getItem('chad-token')
     const response = await fetch(`${API_BASE}/export/config`, {
       method: 'GET',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      credentials: 'same-origin',
+      headers: authHeader(),
     })
     if (!response.ok) {
       throw new Error('Failed to export config')
@@ -3566,7 +3623,6 @@ export const configApi = {
     mode: ImportMode = 'skip',
     dryRun: boolean = false
   ): Promise<ImportSummary> => {
-    const token = localStorage.getItem('chad-token')
     const formData = new FormData()
     formData.append('file', file)
 
@@ -3576,9 +3632,8 @@ export const configApi = {
 
     const response = await fetch(`${API_BASE}/export/config/import?${params}`, {
       method: 'POST',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      credentials: 'same-origin',
+      headers: authHeader(),
       body: formData,
     })
     if (!response.ok) {

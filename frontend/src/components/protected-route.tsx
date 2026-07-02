@@ -2,6 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/components/ui/toast-provider'
 import { useEffect, useRef } from 'react'
+import { API_BASE } from '@/lib/api'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -30,7 +31,7 @@ export function ProtectedRoute({
     }
     hasLoggedRef.current = logKey
 
-    fetch('/api/audit/log', {
+    fetch(`${API_BASE}/audit/log`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

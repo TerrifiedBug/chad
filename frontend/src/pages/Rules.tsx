@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
-import { rulesApi, indexPatternsApi, correlationRulesApi, mispApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult, CorrelationRule } from '@/lib/api'
+import { rulesApi, indexPatternsApi, correlationRulesApi, mispApi, Rule, IndexPattern, RuleStatus, RuleSource, DeploymentEligibilityResult, CorrelationRule, API_BASE } from '@/lib/api'
 import yaml from 'js-yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -648,13 +648,13 @@ export default function RulesPage() {
     // Create a form and submit it to trigger the download
     const form = document.createElement('form')
     form.method = 'POST'
-    form.action = '/api/export/rules/bulk'
+    form.action = `${API_BASE}/export/rules/bulk`
     form.style.display = 'none'
 
     // Add the rule_ids as a JSON body - need to use fetch instead for JSON
     try {
       const token = localStorage.getItem('chad-token')
-      const response = await fetch('/api/export/rules/bulk', {
+      const response = await fetch(`${API_BASE}/export/rules/bulk`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

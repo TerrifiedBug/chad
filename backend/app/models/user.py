@@ -32,6 +32,9 @@ class ProvisionedVia(str, Enum):
     LOCAL = "local"
     SSO = "sso"
     SCIM = "scim"
+    # Suite-delegated (VectorFlow session) JIT provisioning. Plain-string
+    # column, so this is additive — no enum-type migration needed.
+    VECTORFLOW = "vectorflow"
 
 
 class TeamSource(str, Enum):

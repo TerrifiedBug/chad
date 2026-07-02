@@ -103,6 +103,9 @@ services:
       - CHAD_ENCRYPTION_KEY=${CHAD_ENCRYPTION_KEY}
       # Application URL
       - APP_URL=${APP_URL:-http://localhost}
+      # SSO redirect target — the SPA now lives under /chad (auth.py builds
+      # "<FRONTEND_URL>/login?..." from this; default "/" would land on VF).
+      - FRONTEND_URL=${FRONTEND_URL:-/chad}
       # Additional allowed hosts for CSRF (comma-separated, e.g., "api.example.com,backend.example.com")
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
       # Logging (production default is warning for quiet logs)

@@ -11,7 +11,12 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, require_admin, require_permission_dep
+from app.api.deps import (
+    block_in_delegated_mode,
+    get_current_user,
+    require_admin,
+    require_permission_dep,
+)
 from app.core.config import settings as app_settings
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.session import get_db
@@ -208,10 +213,16 @@ async def create_token_with_dynamic_timeout(user_id: str, db: AsyncSession, toke
 async def get_setup_status(db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(select(func.count()).select_from(User))
     user_count = result.scalar()
-    return {"setup_completed": user_count > 0}
+    return {
+        # In delegated mode VF owns account setup/provisioning entirely, so
+        # the CHAD setup wizard is meaningless (and would deadlock the
+        # frontend at cold start if left gated on user_count).
+        "setup_completed": app_settings.CHAD_DELEGATED_AUTH or user_count > 0,
+        "chad_delegated_auth": app_settings.CHAD_DELEGATED_AUTH,
+    }
 
 
-@router.post("/setup", response_model=TokenResponse)
+@router.post("/setup", response_model=TokenResponse, dependencies=[Depends(block_in_delegated_mode)])
 async def initial_setup(
     request: SetupRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -252,7 +263,7 @@ async def initial_setup(
     return TokenResponse(access_token=access_token)
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[Depends(block_in_delegated_mode)])
 async def login(
     request: LoginRequest,
     http_request: Request,
@@ -572,6 +583,7 @@ async def get_current_user_info(
             "browser_notifications": False,
             "severities": ["critical", "high"]
         },
+        "chad_delegated_auth": app_settings.CHAD_DELEGATED_AUTH,
     }
 
 
@@ -1096,7 +1108,7 @@ async def sso_exchange_token(
 # ============================================================================
 
 
-@router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
+@router.post("/2fa/setup", response_model=TwoFactorSetupResponse, dependencies=[Depends(block_in_delegated_mode)])
 async def setup_2fa(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -1129,7 +1141,7 @@ async def setup_2fa(
     return TwoFactorSetupResponse(qr_uri=qr_uri, secret=secret)
 
 
-@router.post("/2fa/verify", response_model=TwoFactorVerifyResponse)
+@router.post("/2fa/verify", response_model=TwoFactorVerifyResponse, dependencies=[Depends(block_in_delegated_mode)])
 async def verify_2fa_setup(
     request: TwoFactorVerifyRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -1174,7 +1186,7 @@ async def verify_2fa_setup(
     return TwoFactorVerifyResponse(message="2FA enabled successfully", backup_codes=backup_codes)
 
 
-@router.post("/2fa/disable")
+@router.post("/2fa/disable", dependencies=[Depends(block_in_delegated_mode)])
 async def disable_2fa(
     request: TwoFactorDisableRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -1209,7 +1221,7 @@ async def disable_2fa(
     return {"message": "2FA disabled"}
 
 
-@router.post("/login/2fa")
+@router.post("/login/2fa", dependencies=[Depends(block_in_delegated_mode)])
 async def login_2fa(
     request: TwoFactorLoginRequest,
     http_request: Request,

@@ -12,6 +12,7 @@ const scimSetEnabledMock = vi.fn()
 const scimGenerateTokenMock = vi.fn()
 
 vi.mock('@/lib/api', () => ({
+  API_BASE: '/chad/api',
   ssoApi: {
     listProviders: (...a: unknown[]) => listProvidersMock(...a),
     createProvider: vi.fn(),
@@ -65,9 +66,9 @@ describe('SCIM panel', () => {
 
   it('renders the SCIM base URL derived from the page origin', async () => {
     renderPage()
-    // Base URL is derived client-side as `${origin}/api/scim/v2`.
+    // Base URL is derived client-side as `${origin}${API_BASE}/scim/v2`.
     expect(
-      await screen.findByText(`${window.location.origin}/api/scim/v2`)
+      await screen.findByText(`${window.location.origin}/chad/api/scim/v2`)
     ).toBeInTheDocument()
   })
 

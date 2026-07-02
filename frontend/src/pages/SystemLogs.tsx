@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { systemLogsApi, SystemLogEntry, SystemLogListResponse } from '@/lib/api'
+import { systemLogsApi, SystemLogEntry, SystemLogListResponse, WS_BASE } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -197,7 +197,7 @@ export default function SystemLogsPage() {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
+    const ws = new WebSocket(`${protocol}//${window.location.host}${WS_BASE}`)
     wsRef.current = ws
 
     ws.onmessage = (event) => {

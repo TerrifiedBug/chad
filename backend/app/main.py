@@ -71,6 +71,20 @@ from app.services.websocket import manager as websocket_manager
 logger = logging.getLogger(__name__)
 
 
+def validate_delegated_auth_config() -> None:
+    """Fail fast when delegated suite auth is misconfigured.
+
+    In the suite 'full' profile, compose sets CHAD_DELEGATED_AUTH=true and
+    VF_SESSION_SECRET=${NEXTAUTH_SECRET}. Enabling the flag without the secret
+    would silently make every VF session undecodable, so refuse to start.
+    """
+    if settings.CHAD_DELEGATED_AUTH and not settings.VF_SESSION_SECRET:
+        raise RuntimeError(
+            "CHAD_DELEGATED_AUTH=true requires VF_SESSION_SECRET to be set "
+            "(share NEXTAUTH_SECRET from the VectorFlow service)."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown."""
@@ -116,6 +130,9 @@ async def lifespan(app: FastAPI):
             raise RuntimeError(
                 "CRITICAL SECURITY CONFIGURATION ERROR:\n" + "\n".join(f"  - {msg}" for msg in critical_failures)
             )
+
+    # Delegated suite auth guard: refuse to boot half-configured.
+    validate_delegated_auth_config()
 
     # Begin scheduler leader election. The scheduler runs in exactly one process
     # (whichever wins the Redis leader lock) and that leader syncs jobs from

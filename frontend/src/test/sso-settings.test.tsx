@@ -17,6 +17,7 @@ const scimSetEnabledMock = vi.fn()
 const scimGenerateTokenMock = vi.fn()
 
 vi.mock('@/lib/api', () => ({
+  API_BASE: '/chad/api',
   ssoApi: {
     listProviders: (...a: unknown[]) => listProvidersMock(...a),
     createProvider: (...a: unknown[]) => createProviderMock(...a),
