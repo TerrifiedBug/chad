@@ -17,6 +17,9 @@ from app.models.user import User
 from app.services.opensearch import get_cached_client
 from app.services.suite_auth import resolve_vf_user
 
+# auto_error=False (was True): lets delegated-cookie auth fall through to the VF-session
+# check below. Side effect: standalone GETs with NO credentials now return 401 instead of
+# 403 (401 is correct for missing creds) — intentional, not a regression.
 security = HTTPBearer(auto_error=False)
 
 
