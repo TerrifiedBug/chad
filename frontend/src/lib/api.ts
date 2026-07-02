@@ -21,6 +21,50 @@ export const queryClient = new QueryClient({
 export const API_BASE = '/chad/api'
 export const WS_BASE = '/chad/ws'
 
+// --- Delegated auth (suite mode) ---
+// Behind the suite proxy, browser auth is the VectorFlow session cookie: no
+// Bearer token is attached and dead-session 401s bounce to the VF login at the
+// origin root. Standalone keeps today's localStorage 'chad-token' Bearer flow.
+let delegatedAuth = false
+
+export function setDelegatedAuth(enabled: boolean): void {
+  delegatedAuth = enabled
+}
+
+export function isDelegatedAuth(): boolean {
+  return delegatedAuth
+}
+
+// The ONLY place api.ts reads the token. Returns {} in delegated mode.
+export function authHeader(): Record<string, string> {
+  if (delegatedAuth) return {}
+  const token = localStorage.getItem('chad-token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+// Indirection so vitest/jsdom can spy on full-page redirects.
+export const navigation = {
+  assign: (url: string) => window.location.assign(url),
+}
+
+// Pre-login endpoints where a 401 is an expected answer, not a dead session.
+const PRE_LOGIN_PATHS = [
+  '/auth/login',
+  '/auth/login/2fa',
+  '/auth/setup',
+  '/auth/setup-status',
+  '/auth/sso/exchange',
+  '/auth/sso/status',
+]
+
+function handleUnauthorized(path: string): void {
+  if (!delegatedAuth) return
+  if (PRE_LOGIN_PATHS.some((p) => path.startsWith(p))) return
+  if (window.location.pathname.endsWith('/login')) return
+  // Origin-root /login: VectorFlow's login in the suite; CHAD's own standalone.
+  navigation.assign('/login?callbackUrl=' + encodeURIComponent(window.location.pathname))
+}
+
 export class ApiClient {
   private csrfToken: string | null = null
 
@@ -35,12 +79,7 @@ export class ApiClient {
   private getHeaders(method: string = 'GET'): HeadersInit {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-    }
-
-    // Add JWT token if available
-    const token = localStorage.getItem('chad-token')
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
+      ...authHeader(),
     }
 
     // Add CSRF token for state-changing methods (POST, PATCH, PUT, DELETE)
@@ -62,7 +101,7 @@ export class ApiClient {
   async get<T>(path: string): Promise<T> {
     // Add cache-busting for rule detail requests
     const fetchPath = path
-    let fetchOptions: RequestInit = { headers: this.getHeaders('GET') }
+    let fetchOptions: RequestInit = { headers: this.getHeaders('GET'), credentials: 'same-origin' }
 
     // Add cache control headers for rules endpoint to prevent caching
     if (path.includes('/rules/') && !path.includes('/rules/validate') && !path.includes('/rules/test')) {
@@ -79,6 +118,7 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${fetchPath}`, fetchOptions)
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
@@ -93,11 +133,13 @@ export class ApiClient {
   async post<T>(path: string, data?: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: this.getHeaders('POST'),
       body: data ? JSON.stringify(data) : undefined,
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
@@ -112,11 +154,13 @@ export class ApiClient {
   async patch<T>(path: string, data: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'PATCH',
+      credentials: 'same-origin',
       headers: this.getHeaders('PATCH'),
       body: JSON.stringify(data),
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
@@ -131,6 +175,7 @@ export class ApiClient {
   async delete(path: string, body?: unknown): Promise<void> {
     const options: RequestInit = {
       method: 'DELETE',
+      credentials: 'same-origin',
       headers: this.getHeaders('DELETE'),
     }
     if (body) {
@@ -139,6 +184,7 @@ export class ApiClient {
     const response = await fetch(`${API_BASE}${path}`, options)
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
@@ -152,11 +198,13 @@ export class ApiClient {
   async put<T>(path: string, data: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'PUT',
+      credentials: 'same-origin',
       headers: this.getHeaders('PUT'),
       body: JSON.stringify(data),
     })
     this.updateCsrfToken(response)
     if (!response.ok) {
+      if (response.status === 401) handleUnauthorized(path)
       let error = await response.json().catch(() => ({ detail: `Request failed with status ${response.status}` }))
       // If JSON parsed but isn't a recognized format, use fallback
       if (!isApiError(error) && !isLegacyError(error)) {
