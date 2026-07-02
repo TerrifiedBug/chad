@@ -213,3 +213,54 @@ class TestWebSocketDependency:
         with patch("app.api.deps.decode_vf_session", return_value=None):
             user = await get_current_user_websocket(_StubWebSocket(), test_session)
         assert user is None
+
+
+class TestDelegatedModeGating:
+    """CHAD-local auth surfaces read as nonexistent (404) in delegated mode —
+    the CHAD_DELEGATED_AUTH twin of the sso_only seam (config.py:62)."""
+
+    GATED = [
+        ("post", "/api/auth/setup",
+         {"admin_email": "a@b.co", "admin_password": "Str0ng!Passw0rd9"}),
+        ("post", "/api/auth/login", {"email": "a@b.co", "password": "x"}),
+        ("post", "/api/auth/login/2fa", {"token": "t", "code": "000000"}),
+        ("post", "/api/auth/2fa/setup", {}),
+        ("post", "/api/auth/2fa/verify", {"code": "000000"}),
+        ("post", "/api/auth/2fa/disable", {"code": "000000"}),
+        ("post", "/api/auth/sso/providers",
+         {"name": "x", "client_id": "y", "issuer_url": "https://idp.example.com"}),
+    ]
+
+    @pytest.mark.asyncio
+    async def test_gated_routes_404_in_delegated_mode(self, client, monkeypatch):
+        _delegated(monkeypatch)
+        for method, path, payload in self.GATED:
+            # Any "Bearer ..." header makes CSRFMiddleware (csrf.py:205-227)
+            # skip the double-submit check, so the request reaches routing;
+            # the 404 gate is a route dependency and fires before auth runs.
+            resp = await getattr(client, method)(
+                path, json=payload, headers={"Authorization": "Bearer x"}
+            )
+            assert resp.status_code == 404, f"{path} -> {resp.status_code}"
+
+    @pytest.mark.asyncio
+    async def test_sso_provider_update_delete_gated(self, client, monkeypatch):
+        _delegated(monkeypatch)
+        pid = uuid.uuid4()
+        resp = await client.put(
+            f"/api/auth/sso/providers/{pid}", json={"name": "x"},
+            headers={"Authorization": "Bearer x"},
+        )
+        assert resp.status_code == 404
+        resp = await client.delete(
+            f"/api/auth/sso/providers/{pid}", headers={"Authorization": "Bearer x"}
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_login_still_live_in_standalone_mode(self, client):
+        resp = await client.post(
+            "/api/auth/login",
+            json={"email": "nobody@example.com", "password": "wrong"},
+        )
+        assert resp.status_code == 401  # route exists; credentials rejected

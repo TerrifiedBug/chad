@@ -151,6 +151,21 @@ async def get_current_user(
     return user
 
 
+async def block_in_delegated_mode() -> None:
+    """404 CHAD-local auth surfaces when the suite delegates auth to VectorFlow.
+
+    Counterpart of the ``sso_only`` seam (config.py:62): in delegated mode the
+    capability is hidden, not merely forbidden, so local login/setup/2FA/SSO
+    CRUD read as nonexistent in suite deployments while standalone deploys
+    (CHAD_DELEGATED_AUTH=False, the default) are byte-for-byte unchanged.
+    """
+    if settings.CHAD_DELEGATED_AUTH:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        )
+
+
 async def require_admin(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:

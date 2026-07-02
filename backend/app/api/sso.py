@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import require_permission_dep
+from app.api.deps import block_in_delegated_mode, require_permission_dep
 from app.core.encryption import encrypt
 from app.db.session import get_db
 from app.models.sso_provider import SSOGroupMapping, SSOProvider
@@ -128,7 +128,12 @@ async def get_provider(
     return _to_response(await _load_provider(db, provider_id))
 
 
-@router.post("", response_model=SSOProviderResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=SSOProviderResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(block_in_delegated_mode)],
+)
 async def create_provider(
     payload: SSOProviderCreate,
     request: Request,
@@ -178,7 +183,11 @@ async def create_provider(
     return _to_response(provider)
 
 
-@router.put("/{provider_id}", response_model=SSOProviderResponse)
+@router.put(
+    "/{provider_id}",
+    response_model=SSOProviderResponse,
+    dependencies=[Depends(block_in_delegated_mode)],
+)
 async def update_provider(
     provider_id: UUID,
     payload: SSOProviderUpdate,
@@ -228,7 +237,11 @@ async def update_provider(
     return _to_response(provider)
 
 
-@router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{provider_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(block_in_delegated_mode)],
+)
 async def delete_provider(
     provider_id: UUID,
     request: Request,
@@ -245,7 +258,11 @@ async def delete_provider(
     await db.commit()
 
 
-@router.post("/{provider_id}/test", response_model=SSOTestResult)
+@router.post(
+    "/{provider_id}/test",
+    response_model=SSOTestResult,
+    dependencies=[Depends(block_in_delegated_mode)],
+)
 async def test_provider_connection(
     provider_id: UUID,
     request: Request,
