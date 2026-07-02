@@ -1491,6 +1491,7 @@ export type CurrentUser = {
   is_active: boolean
   auth_method: 'local' | 'sso'
   must_change_password: boolean
+  chad_delegated_auth?: boolean
   totp_enabled?: boolean
   mfa_enforced?: boolean
   mfa_required?: boolean

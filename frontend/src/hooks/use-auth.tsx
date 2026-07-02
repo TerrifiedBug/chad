@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { api, authApi, settingsApi, CurrentUser } from '@/lib/api'
+import { api, authApi, settingsApi, CurrentUser, setDelegatedAuth, isDelegatedAuth, navigation } from '@/lib/api'
 
 interface AuthContextType {
   isAuthenticated: boolean
@@ -9,6 +9,7 @@ interface AuthContextType {
   setupCompleted: boolean
   isOpenSearchConfigured: boolean
   backendReady: boolean
+  delegatedAuth: boolean
   user: CurrentUser | null
   isAdmin: boolean
   hasPermission: (permission: string) => boolean
@@ -20,7 +21,7 @@ interface AuthContextType {
   canViewAudit: () => boolean
   canManageSigmahq: () => boolean
   login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   setup: (email: string, password: string) => Promise<void>
   setOpenSearchConfigured: (configured: boolean) => void
   refreshUser: () => Promise<void>
@@ -29,6 +30,7 @@ interface AuthContextType {
 
 interface SetupStatusResponse {
   setup_completed: boolean
+  chad_delegated_auth?: boolean
 }
 
 interface TokenResponse {
@@ -46,6 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [setupCompleted, setSetupCompleted] = useState(false)
   const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
   const [backendReady, setBackendReady] = useState(false)
+  const [delegatedAuth, setDelegatedAuthState] = useState(false)
   const [user, setUser] = useState<CurrentUser | null>(null)
 
   useEffect(() => {
@@ -131,12 +134,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // This call will throw if backend is unavailable (502/503/network error)
     const status = await api.get<SetupStatusResponse>('/auth/setup-status')
     setSetupCompleted(status.setup_completed)
+    // Suite mode flag — must arrive pre-auth, hence setup-status not /auth/me.
+    const delegated = status.chad_delegated_auth === true
+    setDelegatedAuth(delegated)
+    setDelegatedAuthState(delegated)
     setBackendReady(true)
     setIsStartingUp(false)
 
     const token = localStorage.getItem('chad-token')
 
-    if (!token || !status.setup_completed) {
+    if (!status.setup_completed || (!delegated && !token)) {
       setIsAuthenticated(false)
       setIsOpenSearchConfigured(false)
       setIsLoading(false)
@@ -154,8 +161,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsOpenSearchConfigured(osStatus.configured)
       setIsAuthenticated(true)
     } catch {
-      // Token is invalid or expired - clear it
-      localStorage.removeItem('chad-token')
+      // Standalone: token invalid/expired — clear it. Delegated: the api
+      // client's 401 handler has already redirected to the VF login.
+      if (!delegated) {
+        localStorage.removeItem('chad-token')
+      }
       setIsAuthenticated(false)
       setIsOpenSearchConfigured(false)
       setUser(null)
@@ -177,7 +187,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true)
   }
 
-  const logout = () => {
+  const logout = async () => {
+    if (isDelegatedAuth()) {
+      // Single logout: kill the shared VF session cookie (Auth.js requires the
+      // csrfToken form field), then land on the suite root — both UIs sign out.
+      try {
+        const csrfRes = await fetch('/api/auth/csrf', { credentials: 'same-origin' })
+        const { csrfToken } = await csrfRes.json()
+        await fetch('/api/auth/signout', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ csrfToken }).toString(),
+        })
+      } finally {
+        navigation.assign('/')
+      }
+      return
+    }
     localStorage.removeItem('chad-token')
     setIsAuthenticated(false)
     setIsOpenSearchConfigured(false)
@@ -232,6 +259,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setupCompleted,
       isOpenSearchConfigured,
       backendReady,
+      delegatedAuth,
       user,
       isAdmin: user?.role === 'admin',
       hasPermission,
