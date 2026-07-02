@@ -80,6 +80,17 @@ describe('delegated auth mode (suite SSO)', () => {
     expect(assignSpy).toHaveBeenCalledWith('/login?callbackUrl=%2F')
   })
 
+  it('attaches the HTTP status to a thrown GET error so callers can tell 403 apart', async () => {
+    setDelegatedAuth(true)
+    vi.mocked(global.fetch).mockResolvedValueOnce(createErrorResponse('Account inactive', 403))
+
+    const err = await apiClient.get('/auth/me').catch((e) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as { status?: number }).status).toBe(403)
+    // A 403 is not a dead session — no redirect should be issued.
+    expect(assignSpy).not.toHaveBeenCalled()
+  })
+
   it('does not redirect 401s from pre-login auth endpoints', async () => {
     setDelegatedAuth(true)
     vi.mocked(global.fetch).mockResolvedValueOnce(createErrorResponse('Bad credentials', 401))

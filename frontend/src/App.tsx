@@ -40,7 +40,7 @@ const EnvironmentsPage = lazy(() => import('@/pages/Environments'))
 const EnvironmentDetailPage = lazy(() => import('@/pages/EnvironmentDetail'))
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user, delegatedAuth } = useAuth()
+  const { isAuthenticated, isLoading, user, delegatedAuth, accountInactive } = useAuth()
   const location = useLocation()
 
   if (isLoading) {
@@ -48,6 +48,15 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
+    if (accountInactive) {
+      // A delegated 403: the account is deactivated and no redirect will fire.
+      // Show a terminal message instead of the "Redirecting..." dead-end.
+      return (
+        <div className="flex h-screen items-center justify-center">
+          Your account has been deactivated. Contact your administrator for access.
+        </div>
+      )
+    }
     if (delegatedAuth) {
       // The api client's 401 handler has already issued a full-page redirect
       // to the VF login; don't ping-pong with the hidden /login route.
@@ -121,8 +130,9 @@ export function AppRoutes() {
     )
   }
 
-  // Step 1: Initial setup (create admin account)
-  if (!setupCompleted) {
+  // Step 1: Initial setup (create admin account) — never shown in delegated
+  // (suite) mode, where VectorFlow owns onboarding for the whole suite.
+  if (!setupCompleted && !delegatedAuth) {
     return (
       <Routes>
         <Route path="*" element={<SetupPage />} />

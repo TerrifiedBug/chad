@@ -77,6 +77,34 @@ describe('use-auth in delegated (suite) mode', () => {
     expect(assignSpy).toHaveBeenCalledWith('/')
   })
 
+  it('provisions the first delegated user on cold start even when setup_completed is false', async () => {
+    // VF owns onboarding for the whole suite, so a delegated backend reports
+    // setup_completed=false with zero CHAD users. checkAuth must never gate on
+    // that flag in delegated mode — it must fall through to getMe() so JIT
+    // provisioning fires on the very first visit.
+    vi.mocked(api.get).mockResolvedValue({ setup_completed: false, chad_delegated_auth: true })
+    vi.mocked(authApi.getMe).mockResolvedValue(delegatedUser)
+
+    const { result } = renderHook(() => useAuth(), { wrapper })
+
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true))
+    expect(authApi.getMe).toHaveBeenCalled()
+    expect(result.current.delegatedAuth).toBe(true)
+  })
+
+  it('surfaces accountInactive (not a redirect) when getMe returns 403 in delegated mode', async () => {
+    // Backend returns HTTP 403 for a delegated user whose account is inactive.
+    // No redirect happens for a 403, so checkAuth must flag a terminal state
+    // instead of leaving AuthRoute stuck on "Redirecting...".
+    vi.mocked(api.get).mockResolvedValue({ setup_completed: true, chad_delegated_auth: true })
+    vi.mocked(authApi.getMe).mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }))
+
+    const { result } = renderHook(() => useAuth(), { wrapper })
+
+    await waitFor(() => expect(result.current.accountInactive).toBe(true))
+    expect(result.current.isAuthenticated).toBe(false)
+  })
+
   it('keeps the standalone flow untouched when the flag is absent', async () => {
     localStorage.setItem('chad-token', 'tok')
     vi.mocked(api.get).mockResolvedValue({ setup_completed: true })

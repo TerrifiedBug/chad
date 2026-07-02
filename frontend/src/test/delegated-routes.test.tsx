@@ -12,6 +12,7 @@ const authState = {
   isOpenSearchConfigured: true,
   backendReady: true,
   delegatedAuth: true,
+  accountInactive: false,
   user: {
     id: '1',
     email: 'a@b.c',
@@ -45,6 +46,7 @@ vi.mock('@/components/AppLayout', () => ({
   AppLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 vi.mock('@/pages/Login', () => ({ default: () => <div>chad-local-login</div> }))
+vi.mock('@/pages/Setup', () => ({ default: () => <div>setup-page</div> }))
 vi.mock('@/pages/Dashboard', () => ({ default: () => <div>dashboard-page</div> }))
 vi.mock('@/pages/Account', () => ({ default: () => <div>account-page</div> }))
 vi.mock('@/pages/SettingsHub', () => ({ default: () => <div>settings-hub</div> }))
@@ -66,6 +68,24 @@ describe('delegated-mode route hiding', () => {
   beforeEach(() => {
     authState.delegatedAuth = true
     authState.isAuthenticated = true
+    authState.setupCompleted = true
+    authState.accountInactive = false
+  })
+
+  it('never shows the setup wizard in delegated mode even when setup is incomplete', () => {
+    // VF owns onboarding for the suite; CHAD's setup wizard is meaningless here.
+    authState.setupCompleted = false
+    renderAt('/')
+    expect(screen.queryByText('setup-page')).not.toBeInTheDocument()
+    expect(screen.getByText('dashboard-page')).toBeInTheDocument()
+  })
+
+  it('shows a terminal inactive-account message (not a redirect) when the account is deactivated', () => {
+    authState.isAuthenticated = false
+    authState.accountInactive = true
+    renderAt('/rules')
+    expect(screen.getByText(/deactivated/i)).toBeInTheDocument()
+    expect(screen.queryByText(/redirecting/i)).not.toBeInTheDocument()
   })
 
   it('redirects /login to the dashboard when delegated (VF owns login)', () => {

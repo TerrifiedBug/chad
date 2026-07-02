@@ -10,6 +10,7 @@ interface AuthContextType {
   isOpenSearchConfigured: boolean
   backendReady: boolean
   delegatedAuth: boolean
+  accountInactive: boolean
   user: CurrentUser | null
   isAdmin: boolean
   hasPermission: (permission: string) => boolean
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
   const [backendReady, setBackendReady] = useState(false)
   const [delegatedAuth, setDelegatedAuthState] = useState(false)
+  const [accountInactive, setAccountInactive] = useState(false)
   const [user, setUser] = useState<CurrentUser | null>(null)
 
   useEffect(() => {
@@ -143,12 +145,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const token = localStorage.getItem('chad-token')
 
-    if (!status.setup_completed || (!delegated && !token)) {
+    // Delegated (suite) mode never gates on setup_completed or a Bearer token —
+    // VF owns onboarding and auth rides the session cookie, so always fall
+    // through to getMe() (which triggers JIT provisioning on first visit).
+    if (!delegated && (!status.setup_completed || !token)) {
       setIsAuthenticated(false)
       setIsOpenSearchConfigured(false)
       setIsLoading(false)
       return
     }
+
+    // Fresh check: clear any stale inactive-account error before revalidating.
+    setAccountInactive(false)
 
     // Validate token, get user info, and check OpenSearch status
     // This will throw if the token is invalid
@@ -160,11 +168,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(userData)
       setIsOpenSearchConfigured(osStatus.configured)
       setIsAuthenticated(true)
-    } catch {
-      // Standalone: token invalid/expired — clear it. Delegated: the api
-      // client's 401 handler has already redirected to the VF login.
+    } catch (error) {
+      // Standalone: token invalid/expired — clear it. Delegated: a 401 means the
+      // api client's handler has already redirected to the VF login; a 403 means
+      // the account is inactive — no redirect will happen, so surface a terminal
+      // error state instead of leaving AuthRoute stuck on "Redirecting...".
       if (!delegated) {
         localStorage.removeItem('chad-token')
+      } else if ((error as { status?: number })?.status === 403) {
+        setAccountInactive(true)
       }
       setIsAuthenticated(false)
       setIsOpenSearchConfigured(false)
@@ -260,6 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isOpenSearchConfigured,
       backendReady,
       delegatedAuth,
+      accountInactive,
       user,
       isAdmin: user?.role === 'admin',
       hasPermission,

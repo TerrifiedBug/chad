@@ -125,7 +125,12 @@ export class ApiClient {
         error = { detail: `Request failed with status ${response.status}` }
       }
       logError(error, 'GET ' + path)
-      throw new Error(getErrorMessage(error))
+      // Preserve the HTTP status on the thrown Error so callers (e.g. use-auth's
+      // checkAuth) can distinguish a 403 (inactive account) from other failures.
+      // The message is unchanged, so existing toThrow(message) assertions hold.
+      const httpError = new Error(getErrorMessage(error)) as Error & { status?: number }
+      httpError.status = response.status
+      throw httpError
     }
     return response.json()
   }
