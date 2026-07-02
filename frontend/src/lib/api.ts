@@ -229,13 +229,13 @@ async function postRaw(
   data: unknown,
   context: string
 ): Promise<{ status: number; body: any }> {
-  const token = localStorage.getItem('chad-token')
   const envId = getActiveEnvironmentId()
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
+    credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...authHeader(),
       ...(envId ? { 'X-CHAD-Environment': envId } : {}),
     },
     body: JSON.stringify(data),
@@ -682,11 +682,10 @@ export const rulesApi = {
     const envId = getActiveEnvironmentId()
     const response = await fetch(`${API_BASE}/rules/${id}/deploy`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        ...(localStorage.getItem('chad-token')
-          ? { Authorization: `Bearer ${localStorage.getItem('chad-token')}` }
-          : {}),
+        ...authHeader(),
         ...(envId ? { 'X-CHAD-Environment': envId } : {}),
       },
       body: JSON.stringify({ change_reason: changeReason }),
@@ -2365,7 +2364,8 @@ export const auditApi = {
     if (filters.end_date) params.set('end_date', filters.end_date)
 
     const response = await fetch(`${API_BASE}/audit/export?${params}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('chad-token')}` },
+      credentials: 'same-origin',
+      headers: authHeader(),
     })
     if (!response.ok) throw new Error('Export failed')
     // Backend sets X-Audit-Export-Truncated: true when the 10k cap is hit.
@@ -2376,7 +2376,8 @@ export const auditApi = {
   // JSON blob plus the truncation flag, mirroring export() above.
   exportChain: async (): Promise<AuditExportResult> => {
     const response = await fetch(`${API_BASE}/audit/export/chain`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('chad-token')}` },
+      credentials: 'same-origin',
+      headers: authHeader(),
     })
     if (!response.ok) throw new Error('Export failed')
     const truncated = response.headers.get('X-Audit-Export-Truncated') === 'true'
@@ -2932,12 +2933,12 @@ export const attackApi = {
     index_pattern_id?: string
     telemetry?: boolean
   }): Promise<Blob> => {
-    const token = localStorage.getItem('chad-token')
     const response = await fetch(`${API_BASE}/reports/attack-coverage/navigator`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeader(),
       },
       body: JSON.stringify({
         deployed_only: params?.deployed_only ?? false,
@@ -3555,12 +3556,12 @@ export type RuleCoverageRequest = {
 
 export const reportsApi = {
   generateAlertSummary: async (request: AlertSummaryRequest): Promise<Blob> => {
-    const token = localStorage.getItem('chad-token')
     const response = await fetch(`${API_BASE}/reports/alerts/summary`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeader(),
       },
       body: JSON.stringify(request),
     })
@@ -3571,12 +3572,12 @@ export const reportsApi = {
   },
 
   generateRuleCoverage: async (request: RuleCoverageRequest): Promise<Blob> => {
-    const token = localStorage.getItem('chad-token')
     const response = await fetch(`${API_BASE}/reports/rules/coverage`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeader(),
       },
       body: JSON.stringify(request),
     })
@@ -3600,12 +3601,10 @@ export type ImportSummary = {
 
 export const configApi = {
   exportConfig: async (): Promise<Blob> => {
-    const token = localStorage.getItem('chad-token')
     const response = await fetch(`${API_BASE}/export/config`, {
       method: 'GET',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      credentials: 'same-origin',
+      headers: authHeader(),
     })
     if (!response.ok) {
       throw new Error('Failed to export config')
@@ -3618,7 +3617,6 @@ export const configApi = {
     mode: ImportMode = 'skip',
     dryRun: boolean = false
   ): Promise<ImportSummary> => {
-    const token = localStorage.getItem('chad-token')
     const formData = new FormData()
     formData.append('file', file)
 
@@ -3628,9 +3626,8 @@ export const configApi = {
 
     const response = await fetch(`${API_BASE}/export/config/import?${params}`, {
       method: 'POST',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      credentials: 'same-origin',
+      headers: authHeader(),
       body: formData,
     })
     if (!response.ok) {
