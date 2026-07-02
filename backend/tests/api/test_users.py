@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash
 from app.models.setting import Setting
-from app.models.user import User, UserRole
+from app.models.user import TeamSource, User, UserRole
 
 
 class TestUpdateUser:
@@ -185,6 +185,47 @@ class TestUpdateUser:
         )
         # HTTPBearer returns 403 when no credentials provided
         assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_update_user_role_sets_team_source_manual(
+        self, authenticated_client: AsyncClient, test_session: AsyncSession
+    ):
+        """A CHAD-admin role change is an explicit manual override: it must
+        mark team_source='manual' so the suite_auth re-sync guard (which
+        treats team_source='manual' as sacred) actually protects this user
+        from being clobbered by a subsequent VF suite_role sync."""
+        user = User(
+            id=uuid.uuid4(),
+            email="promoted@example.com",
+            password_hash=None,
+            role=UserRole.VIEWER,
+            provisioned_via="vectorflow",
+            is_active=True,
+        )
+        test_session.add(user)
+        await test_session.commit()
+
+        response = await authenticated_client.patch(
+            f"/api/users/{user.id}",
+            json={"role": "admin"},
+        )
+        assert response.status_code == 200
+
+        await test_session.refresh(user)
+        assert user.team_source == TeamSource.MANUAL.value
+
+        # Close the loop: the guard this provenance write is meant to make
+        # live must now actually protect the manually-promoted role.
+        from app.core.vf_session import VfSessionClaims
+        from app.services.suite_auth import resolve_vf_user
+
+        claims = VfSessionClaims(
+            user_id="vf-1", email=user.email, name="Promoted",
+            suite_role="viewer", org_id="default", provider="google",
+            authed_at=1_751_000_000, exp=4_102_444_800,
+        )
+        resolved = await resolve_vf_user(test_session, claims)
+        assert resolved.role == UserRole.ADMIN
 
 
 class TestResetPassword:

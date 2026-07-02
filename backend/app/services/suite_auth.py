@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.vf_session import VfSessionClaims
 from app.models.user import AuthMethod, ProvisionedVia, TeamSource, User, UserRole
 from app.services.audit import audit_log
+from app.services.scim import count_active_admins
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,25 @@ async def resolve_vf_user(db: AsyncSession, claims: VfSessionClaims) -> User:
     # (team_source='manual') is sacred — same provenance rule sso_reconcile
     # applies to group mappings.
     if user.team_source != TeamSource.MANUAL.value and user.role != desired_role:
+        # Last-admin guard: never let a suite-side role sync demote the sole
+        # active CHAD admin. Mirrors scim.py's can_scim_deactivate guard,
+        # reusing the same count_active_admins helper.
+        if user.role == UserRole.ADMIN and desired_role != UserRole.ADMIN:
+            remaining_admins = await count_active_admins(db, exclude_user_id=user.id)
+            if remaining_admins == 0:
+                await audit_log(
+                    db, user.id, "auth.suite_role_sync_blocked", "user", str(user.id),
+                    {
+                        "email": email,
+                        "current_role": user.role.value,
+                        "attempted_role": desired_role.value,
+                        "reason": "last_active_admin",
+                    },
+                )
+                await db.commit()
+                await db.refresh(user)
+                return user
+
         user.role = desired_role
         await db.commit()
         await db.refresh(user)

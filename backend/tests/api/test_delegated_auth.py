@@ -121,6 +121,62 @@ class TestDelegatedCookieAuth:
         assert resp.json()["role"] == "admin"
 
     @pytest.mark.asyncio
+    async def test_last_admin_role_not_downgraded(self, client, test_session, monkeypatch):
+        """Last-admin guard: role re-sync must never demote the sole active
+        admin, mirroring app/services/scim.py's count_active_admins guard
+        (used by can_scim_deactivate's last-admin check)."""
+        _delegated(monkeypatch)
+        user = User(
+            id=uuid.uuid4(), email="suite.user@example.com", password_hash=None,
+            role=UserRole.ADMIN, provisioned_via="vectorflow", is_active=True,
+        )
+        test_session.add(user)
+        await test_session.commit()
+        with patch(
+            "app.api.deps.decode_vf_session",
+            return_value=_vf_claims(suite_role="viewer"),
+        ):
+            resp = await client.get("/api/auth/me")
+        assert resp.status_code == 200
+        assert resp.json()["role"] == "admin"
+
+        await test_session.refresh(user)
+        assert user.role == UserRole.ADMIN
+
+        audit = await test_session.execute(
+            select(AuditLog).where(AuditLog.action == "auth.suite_role_sync_blocked")
+        )
+        row = audit.scalars().first()
+        assert row is not None
+        assert row.details["current_role"] == "admin"
+        assert row.details["attempted_role"] == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_downgrade_proceeds_with_other_active_admins(
+        self, client, test_session, monkeypatch
+    ):
+        """With another active admin present, the re-sync downgrade proceeds
+        normally — the guard only blocks the *last* active admin."""
+        _delegated(monkeypatch)
+        user = User(
+            id=uuid.uuid4(), email="suite.user@example.com", password_hash=None,
+            role=UserRole.ADMIN, provisioned_via="vectorflow", is_active=True,
+        )
+        other_admin = User(
+            id=uuid.uuid4(), email="other-admin@example.com", password_hash=None,
+            role=UserRole.ADMIN, is_active=True,
+        )
+        test_session.add_all([user, other_admin])
+        await test_session.commit()
+        with patch(
+            "app.api.deps.decode_vf_session",
+            return_value=_vf_claims(suite_role="viewer"),
+        ):
+            resp = await client.get("/api/auth/me")
+        assert resp.status_code == 200
+        assert resp.json()["role"] == "viewer"
+
+    @pytest.mark.asyncio
     async def test_inactive_user_is_403(self, client, test_session, monkeypatch):
         _delegated(monkeypatch)
         user = User(

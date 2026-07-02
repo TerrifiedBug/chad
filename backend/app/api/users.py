@@ -14,7 +14,7 @@ from app.api.auth import validate_password_complexity
 from app.api.deps import get_db, require_admin, require_permission_dep
 from app.models.audit_log import AuditLog
 from app.models.setting import Setting
-from app.models.user import AuthMethod, ProvisionedVia, User, UserRole
+from app.models.user import AuthMethod, ProvisionedVia, TeamSource, User, UserRole
 from app.services.audit import audit_log
 from app.utils.request import get_client_ip
 
@@ -308,6 +308,11 @@ async def update_user(
         try:
             role = UserRole(data.role)
             user.role = role
+            # An admin-initiated role change is an explicit manual override:
+            # mark team_source='manual' so suite_auth's re-sync guard (which
+            # treats team_source='manual' as sacred) actually protects this
+            # user from being clobbered by a later VF suite_role sync.
+            user.team_source = TeamSource.MANUAL.value
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
