@@ -55,6 +55,19 @@ describe('useWebSocket auth modes', () => {
     unmount()
   })
 
+  it('omits the Bearer subprotocol in delegated mode even when a stale token lingers', () => {
+    // A leftover standalone token must never be attached in delegated mode — the
+    // backend would try to decode it as a JWT and the cookie fallback never fires.
+    localStorage.setItem('chad-token', 'stale-token')
+    setDelegatedAuth(true)
+
+    const { unmount } = renderHook(() => useWebSocket())
+
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    expect(FakeWebSocket.instances[0].protocols).toBeUndefined()
+    unmount()
+  })
+
   it('refuses to connect in standalone mode without a token', () => {
     const { result, unmount } = renderHook(() => useWebSocket())
 

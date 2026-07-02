@@ -19,7 +19,10 @@ export function useDeployProgressWs(enabled: boolean = true) {
     // Only connect when authenticated — the socket requires a token in standalone mode.
     // In delegated mode, the same-origin cookie carries auth.
     const delegated = isDelegatedAuth()
-    const token = localStorage.getItem('chad-token')
+    // In delegated mode auth rides the same-origin cookie; force the token to
+    // null so a stale localStorage 'chad-token' is never attached as a Bearer
+    // subprotocol (which would defeat the backend's cookie fallback).
+    const token = delegated ? null : localStorage.getItem('chad-token')
     if (!delegated && !token) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'

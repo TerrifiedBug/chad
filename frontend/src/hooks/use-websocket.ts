@@ -79,7 +79,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   const connect = useCallback(() => {
     const delegated = isDelegatedAuth()
-    const token = getToken()
+    // In delegated mode auth rides the same-origin cookie; force the token to
+    // null so a stale localStorage 'chad-token' is never attached as a Bearer
+    // subprotocol (which would defeat the backend's cookie fallback).
+    const token = delegated ? null : getToken()
     if (!delegated && !token) {
       setError('No authentication token available')
       return
