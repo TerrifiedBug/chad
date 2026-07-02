@@ -87,6 +87,13 @@ class Settings(BaseSettings):
             raise ValueError("CHAD_MODE must be 'push' or 'pull'")
         return v
 
+    # Delegated suite auth (VectorFlow SSO unification).
+    # When CHAD runs behind the suite proxy with CHAD_DELEGATED_AUTH=true,
+    # VectorFlow owns login and CHAD decodes the VF Auth.js session cookie
+    # using VF_SESSION_SECRET (the suite shares VF's NEXTAUTH_SECRET).
+    VF_SESSION_SECRET: str | None = None
+    CHAD_DELEGATED_AUTH: bool = False
+
     # Logging
     LOG_LEVEL: str = "WARNING"
 

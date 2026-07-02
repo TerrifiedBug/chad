@@ -58,3 +58,23 @@ class TestChadModeConfig:
         from app.core.config import Settings
         settings = Settings()
         assert settings.is_pull_only is True
+
+
+class TestDelegatedAuthConfig:
+    def test_delegated_auth_defaults_off(self, monkeypatch):
+        """Delegated suite auth must be opt-in: flag off, secret unset."""
+        monkeypatch.delenv("CHAD_DELEGATED_AUTH", raising=False)
+        monkeypatch.delenv("VF_SESSION_SECRET", raising=False)
+        from app.core.config import Settings
+        settings = Settings()
+        assert settings.CHAD_DELEGATED_AUTH is False
+        assert settings.VF_SESSION_SECRET is None
+
+    def test_delegated_auth_env_override(self, monkeypatch):
+        """Both fields must be settable from the environment (suite compose sets them)."""
+        monkeypatch.setenv("CHAD_DELEGATED_AUTH", "true")
+        monkeypatch.setenv("VF_SESSION_SECRET", "shared-nextauth-secret-32-chars-xx")
+        from app.core.config import Settings
+        settings = Settings()
+        assert settings.CHAD_DELEGATED_AUTH is True
+        assert settings.VF_SESSION_SECRET == "shared-nextauth-secret-32-chars-xx"
