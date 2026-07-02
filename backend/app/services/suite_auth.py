@@ -92,7 +92,20 @@ async def resolve_vf_user(db: AsyncSession, claims: VfSessionClaims) -> User:
                 await db.refresh(user)
                 return user
 
+        old_role = user.role.value
         user.role = desired_role
+        # NOTE: audit_log's ip_address param can't be populated here —
+        # resolve_vf_user runs inside a dependency (get_current_user /
+        # get_current_user_websocket), not a route handler, so there's no
+        # Request object available to pull the client IP from.
+        await audit_log(
+            db, user.id, "auth.suite_role_sync", "user", str(user.id),
+            {
+                "email": email,
+                "old_role": old_role,
+                "new_role": desired_role.value,
+            },
+        )
         await db.commit()
         await db.refresh(user)
 

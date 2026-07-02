@@ -177,6 +177,63 @@ class TestDelegatedCookieAuth:
         assert resp.json()["role"] == "viewer"
 
     @pytest.mark.asyncio
+    async def test_role_change_writes_suite_role_sync_audit(
+        self, client, test_session, monkeypatch
+    ):
+        """A real (non-blocked) role change from the suite must be audited —
+        silent privilege changes are unacceptable even for legitimate syncs."""
+        _delegated(monkeypatch)
+        user = User(
+            id=uuid.uuid4(), email="suite.user@example.com", password_hash=None,
+            role=UserRole.VIEWER, provisioned_via="vectorflow", is_active=True,
+        )
+        test_session.add(user)
+        await test_session.commit()
+        with patch(
+            "app.api.deps.decode_vf_session",
+            return_value=_vf_claims(suite_role="admin"),
+        ):
+            resp = await client.get("/api/auth/me")
+        assert resp.status_code == 200
+        assert resp.json()["role"] == "admin"
+
+        audit = await test_session.execute(
+            select(AuditLog).where(AuditLog.action == "auth.suite_role_sync")
+        )
+        row = audit.scalars().first()
+        assert row is not None
+        assert row.details["old_role"] == "viewer"
+        assert row.details["new_role"] == "admin"
+
+    @pytest.mark.asyncio
+    async def test_noop_role_sync_writes_no_audit(self, client, test_session, monkeypatch):
+        """suite_role maps to the same CHAD role the user already has —
+        nothing changed, so nothing should be audited."""
+        _delegated(monkeypatch)
+        user = User(
+            id=uuid.uuid4(), email="suite.user@example.com", password_hash=None,
+            role=UserRole.ANALYST, provisioned_via="vectorflow", is_active=True,
+        )
+        test_session.add(user)
+        await test_session.commit()
+        with patch(
+            "app.api.deps.decode_vf_session",
+            return_value=_vf_claims(suite_role="editor"),  # editor -> analyst: no-op
+        ):
+            resp = await client.get("/api/auth/me")
+        assert resp.status_code == 200
+        assert resp.json()["role"] == "analyst"
+
+        audit = await test_session.execute(
+            select(AuditLog).where(
+                AuditLog.action.in_(
+                    ["auth.suite_role_sync", "auth.suite_role_sync_blocked"]
+                )
+            )
+        )
+        assert audit.scalars().first() is None
+
+    @pytest.mark.asyncio
     async def test_inactive_user_is_403(self, client, test_session, monkeypatch):
         _delegated(monkeypatch)
         user = User(
