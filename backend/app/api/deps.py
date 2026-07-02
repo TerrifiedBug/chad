@@ -33,21 +33,13 @@ async def get_current_user_websocket(
     Supports:
     - Sec-WebSocket-Protocol header: "Bearer, <jwt_token>"
     - Query parameter fallback: ?token=<jwt_token>
-    """
-    # Delegated mode: VF session cookie first. Browser WebSockets cannot set
-    # an Authorization header; the shared suite cookie rides along instead.
-    if settings.CHAD_DELEGATED_AUTH and settings.VF_SESSION_SECRET:
-        try:
-            claims = decode_vf_session(websocket.cookies, settings.VF_SESSION_SECRET)
-        except VfSessionError:
-            claims = None
-        if claims is not None:
-            try:
-                return await resolve_vf_user(db, claims)
-            except HTTPException:
-                return None  # inactive user -> unauthenticated socket
 
-    # Fall through to the Sec-WebSocket-Protocol / query-param bearer flow.
+    Bearer-first: an explicit Sec-WebSocket-Protocol (or legacy query-param)
+    token takes precedence over the VF session cookie, matching
+    get_current_user's HTTP precedence (an Authorization header always wins
+    over the delegated cookie fallback there). Only when no bearer token is
+    present at all do we fall back to the VF session cookie.
+    """
     # Get token from Sec-WebSocket-Protocol header
     protocols = websocket.headers.get("sec-websocket-protocol", "")
     token = None
@@ -62,30 +54,44 @@ async def get_current_user_websocket(
     if not token:
         token = websocket.query_params.get("token")
 
-    if not token:
-        return None
+    if token:
+        payload = decode_access_token(token)
+        if payload is None:
+            return None
 
-    payload = decode_access_token(token)
-    if payload is None:
-        return None
+        user_id = payload.get("sub")
+        token_version = payload.get("tv", 0)  # Get token version from JWT
 
-    user_id = payload.get("sub")
-    token_version = payload.get("tv", 0)  # Get token version from JWT
+        if user_id is None:
+            return None
 
-    if user_id is None:
-        return None
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
 
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+        if user is None or not user.is_active:
+            return None
 
-    if user is None or not user.is_active:
-        return None
+        # Validate token version
+        if user.token_version != token_version:
+            return None
 
-    # Validate token version
-    if user.token_version != token_version:
-        return None
+        return user
 
-    return user
+    # No bearer token: delegated mode falls back to the VF session cookie.
+    # Browser WebSockets cannot set an Authorization header; the shared
+    # suite cookie rides along instead.
+    if settings.CHAD_DELEGATED_AUTH and settings.VF_SESSION_SECRET:
+        try:
+            claims = decode_vf_session(websocket.cookies, settings.VF_SESSION_SECRET)
+        except VfSessionError:
+            claims = None
+        if claims is not None:
+            try:
+                return await resolve_vf_user(db, claims)
+            except HTTPException:
+                return None  # inactive user -> unauthenticated socket
+
+    return None
 
 
 async def get_current_user(

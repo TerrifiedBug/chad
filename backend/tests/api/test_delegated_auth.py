@@ -280,6 +280,36 @@ class TestDelegatedCookieAuth:
         assert resp.status_code == 401
 
 
+class TestRealCookieWiring:
+    """Exercises the real request.cookies -> decode_vf_session wiring end to
+    end — no patching of decode_vf_session itself. Uses the same cross-repo
+    contract fixture as tests/core/test_vf_session.py::TestContractFixture
+    (minted by VectorFlow's scripts/mint-test-session.mjs)."""
+
+    @pytest.mark.asyncio
+    async def test_real_vf_cookie_authenticates_auth_me(self, client, monkeypatch):
+        import json
+        from pathlib import Path
+
+        from app.core.config import settings
+
+        fixture_path = (
+            Path(__file__).resolve().parents[1] / "fixtures" / "vf-session-fixture.json"
+        )
+        fixture = json.loads(fixture_path.read_text())
+
+        monkeypatch.setattr(settings, "CHAD_DELEGATED_AUTH", True)
+        monkeypatch.setattr(settings, "VF_SESSION_SECRET", fixture["secret"])
+
+        client.cookies.set(fixture["cookie_name"], fixture["cookie_value"])
+        resp = await client.get("/api/auth/me")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["email"] == fixture["expected_claims"]["email"].lower()
+        assert body["role"] == "admin"
+
+
 class _StubWebSocket:
     """Just enough of starlette.WebSocket for get_current_user_websocket
     (it only touches .headers, .query_params and — new — .cookies)."""
@@ -326,6 +356,34 @@ class TestWebSocketDependency:
         with patch("app.api.deps.decode_vf_session", return_value=None):
             user = await get_current_user_websocket(_StubWebSocket(), test_session)
         assert user is None
+
+    @pytest.mark.asyncio
+    async def test_bearer_wins_over_vf_cookie_when_both_present(
+        self, test_session, test_user, monkeypatch
+    ):
+        """Bearer-first precedence: get_current_user_websocket must match
+        get_current_user's HTTP precedence, where an explicit Authorization
+        (bearer) credential always wins over the delegated VF cookie
+        fallback. A valid Sec-WebSocket-Protocol bearer token plus a VF
+        cookie resolving to a DIFFERENT user must resolve to the bearer
+        user."""
+        _delegated(monkeypatch)
+        from app.api.deps import get_current_user_websocket
+        from app.core.security import create_access_token
+
+        token = create_access_token(data={"sub": str(test_user.id)})
+        ws = _StubWebSocket(
+            cookies={"authjs.session-token": "opaque-jwe"},
+            headers={"sec-websocket-protocol": f"Bearer, {token}"},
+        )
+        with patch(
+            "app.api.deps.decode_vf_session",
+            return_value=_vf_claims(email="someone-else@example.com"),
+        ):
+            user = await get_current_user_websocket(ws, test_session)
+        assert user is not None
+        assert user.id == test_user.id
+        assert user.email == "test@example.com"
 
 
 class TestDelegatedModeGating:
