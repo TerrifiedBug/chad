@@ -1,0 +1,15 @@
+{
+  "cookie_name": "authjs.session-token",
+  "cookie_value": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoibURreV9hODNyUEZGNVYtTllJemNPSmc0TWJGcUFPUF9jUkVTVUd2MlFLUWd4eWd3aXpkSjR6aWNJMnFFWTZraUxLbGppcFJCOW1LNXc0TGE4c0tuNUEifQ..gD8MQVY9cDFLsAlcqajyDw.iyP7SizvyAcqM7Dq_FqQ4IzwxbL37DK_SJLafVF2BUbsHKa9SUGa6zmR5F6WUeLDypPm6glQQrbGdrYWuj99V6kQs9FKF4ki6ohBJWtvvhQuu1TyXH5gscOtwbxHzKBG_ACo-2NGYz-fWusu8SlEjSfHTrfvKM_FTZZR6q2FroHpjdYYGA53xThqVTCVyhmdS9KYLFycTybqLtlyaSKDyiweQNNMTpuXu9YPU6C2bpL_w36cBWBAZs6SgWFcKlEnubGcjhj0vCKn-b3f0zRy_GHdzQXAoPtYignIZpY_V4MoFncipC9QkvE8BwbzPS83jLTCfrZIrvcG1mbyj8ykQZOGKcvdrFRSxyV6gBQFCzoyz28gxXGntlbntRGTrqZumJdBThsQh8YcHAAsruCtr371styvG9pEfDEykPmhAzE.iT1XLHYEJPTWvpjoOQOPsXHWzKdqD9L0eO9GUy3Voss",
+  "secret": "vf-suite-contract-test-secret",
+  "expected_claims": {
+    "user_id": "vf-contract-user-1",
+    "email": "suite-contract@vectorflow.test",
+    "name": "Suite Contract User",
+    "suite_role": "admin",
+    "org_id": "default",
+    "provider": "credentials",
+    "authed_at": 1782986415991,
+    "exp": 2098346415
+  }
+}
