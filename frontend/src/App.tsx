@@ -40,7 +40,7 @@ const EnvironmentsPage = lazy(() => import('@/pages/Environments'))
 const EnvironmentDetailPage = lazy(() => import('@/pages/EnvironmentDetail'))
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user } = useAuth()
+  const { isAuthenticated, isLoading, user, delegatedAuth } = useAuth()
   const location = useLocation()
 
   if (isLoading) {
@@ -48,6 +48,11 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
+    if (delegatedAuth) {
+      // The api client's 401 handler has already issued a full-page redirect
+      // to the VF login; don't ping-pong with the hidden /login route.
+      return <div className="flex h-screen items-center justify-center">Redirecting to sign-in...</div>
+    }
     return <Navigate to="/login" replace />
   }
 
@@ -70,8 +75,8 @@ function SettingsHubRedirect() {
   return <Navigate to="/settings" replace />
 }
 
-function AppRoutes() {
-  const { setupCompleted, isLoading, isStartingUp, connectionFailed, isAuthenticated, isOpenSearchConfigured, retryConnection } = useAuth()
+export function AppRoutes() {
+  const { setupCompleted, isLoading, isStartingUp, connectionFailed, isAuthenticated, isOpenSearchConfigured, retryConnection, delegatedAuth } = useAuth()
 
   if (isLoading || isStartingUp) {
     return (
@@ -141,7 +146,8 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      {/* Delegated (suite) mode: VectorFlow owns login at the origin root. */}
+      <Route path="/login" element={delegatedAuth ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={
         <AuthRoute>
           <AppLayout><Dashboard /></AppLayout>
@@ -249,6 +255,10 @@ function AppRoutes() {
       <Route path="/settings/hub" element={<SettingsHubRedirect />} />
       {/* Permissions opens the Users page's roles subtab. */}
       <Route path="/settings/permissions" element={<Navigate to="/settings/users?subtab=roles" replace />} />
+      {/* Delegated mode: VF owns identity — hide CHAD's SSO provider CRUD. */}
+      {delegatedAuth && (
+        <Route path="/settings/sso" element={<Navigate to="/settings" replace />} />
+      )}
       {/* Per-section route (general, security, ti, users, audit, …). The static
           /settings/api-keys route below still wins over this dynamic segment. */}
       <Route path="/settings/:section" element={
@@ -257,9 +267,11 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/change-password" element={
-        <AuthRoute>
-          <AppLayout><ChangePasswordPage /></AppLayout>
-        </AuthRoute>
+        delegatedAuth ? <Navigate to="/account" replace /> : (
+          <AuthRoute>
+            <AppLayout><ChangePasswordPage /></AppLayout>
+          </AuthRoute>
+        )
       } />
       <Route path="/account" element={
         <AuthRoute>
