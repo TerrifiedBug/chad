@@ -15,7 +15,11 @@ export const queryClient = new QueryClient({
   },
 })
 
-const API_BASE = '/api'
+// Suite path prefix: the whole CHAD app (SPA, API, WS) lives under /chad —
+// behind suite-nginx and standalone alike. Keep in sync with Vite `base`,
+// BrowserRouter `basename`, frontend/nginx.conf and suite/nginx/suite.conf.
+export const API_BASE = '/chad/api'
+export const WS_BASE = '/chad/ws'
 
 export class ApiClient {
   private csrfToken: string | null = null
@@ -2085,7 +2089,7 @@ export const ssoApi = {
 
 // --- SCIM 2.0 types ---
 // Config read: enabled flag + whether a bearer token has been generated. The
-// SCIM base URL is derived on the client (origin + '/api/scim/v2'), not fetched.
+// SCIM base URL is derived on the client (origin + API_BASE + '/scim/v2'), not fetched.
 export type ScimConfig = {
   enabled: boolean
   token_configured: boolean

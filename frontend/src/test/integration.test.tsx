@@ -28,7 +28,7 @@ describe('Integration Tests', () => {
         calls.push(urlStr);
 
         // Setup status check (happens on mount and after login)
-        if (urlStr === '/api/auth/setup-status') {
+        if (urlStr === '/chad/api/auth/setup-status') {
           return Promise.resolve(
             createMockResponse({
               ok: true,
@@ -41,7 +41,7 @@ describe('Integration Tests', () => {
         }
 
         // Login POST request
-        if (urlStr === '/api/auth/login') {
+        if (urlStr === '/chad/api/auth/login') {
           return Promise.resolve(
             createMockResponse({
               ok: true,
@@ -57,7 +57,7 @@ describe('Integration Tests', () => {
         }
 
         // getMe call (happens after login)
-        if (urlStr === '/api/auth/me') {
+        if (urlStr === '/chad/api/auth/me') {
           return Promise.resolve(
             createSuccessResponse({
               id: '123',
@@ -71,7 +71,7 @@ describe('Integration Tests', () => {
         }
 
         // OpenSearch status check (happens after login)
-        if (urlStr === '/api/settings/opensearch/status') {
+        if (urlStr === '/chad/api/settings/opensearch/status') {
           return Promise.resolve(createSuccessResponse({ configured: true }));
         }
 
@@ -158,7 +158,7 @@ describe('Integration Tests', () => {
       let csrfHeaderIncluded = false;
 
       vi.mocked(global.fetch).mockImplementation((url, options) => {
-        if (url === '/api/submit') {
+        if (url === '/chad/api/submit') {
           csrfHeaderIncluded = (options?.headers as Record<string, string>)?.['X-CSRF-Token'] === 'test-token';
           return Promise.resolve(createSuccessResponse({ success: true }));
         }

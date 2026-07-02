@@ -9,6 +9,7 @@ import {
   TechniqueWithCoverage,
   IndexPattern,
   CoverageState,
+  API_BASE,
 } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -146,7 +147,7 @@ export default function AttackMatrixPage() {
     setIsExporting(true)
     try {
       const token = localStorage.getItem('chad-token')
-      const response = await fetch('/api/reports/attack-coverage', {
+      const response = await fetch(`${API_BASE}/reports/attack-coverage`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

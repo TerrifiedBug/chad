@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
+import { API_BASE } from '@/lib/api'
 
 interface DynamicFieldSelectorProps {
   ruleYaml: string
@@ -39,7 +40,7 @@ export function DynamicFieldSelector({
           headers['Authorization'] = `Bearer ${token}`
         }
 
-        const response = await fetch('/api/rules/parse-fields', {
+        const response = await fetch(`${API_BASE}/rules/parse-fields`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ yaml_content: ruleYaml })
