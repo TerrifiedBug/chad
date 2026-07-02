@@ -21,6 +21,8 @@ from jose.exceptions import JWEError
 # Checked in order; the __Secure- name is what Auth.js sets over HTTPS.
 SESSION_COOKIE_NAMES = ("__Secure-authjs.session-token", "authjs.session-token")
 
+# Coupled to VectorFlow's suite_role contract (suite-role.ts). A new VF role requires
+# updating this tuple in lockstep — decoder rejects unknown roles as VfSessionInvalid.
 _SUITE_ROLES = ("admin", "editor", "viewer")
 
 
@@ -102,6 +104,9 @@ def decode_vf_session(cookies: dict[str, str], secret: str) -> VfSessionClaims |
         payload = json.loads(plaintext)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise VfSessionInvalid(f"VF session payload is not valid JSON: {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise VfSessionInvalid("VF session payload is not a JSON object")
 
     exp = payload.get("exp")
     if not isinstance(exp, int):

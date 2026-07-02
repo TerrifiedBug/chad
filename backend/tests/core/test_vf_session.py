@@ -107,6 +107,19 @@ class TestDecodeVfSession:
         with pytest.raises(VfSessionInvalid):
             decode_vf_session({COOKIE: tampered}, SECRET)
 
+    def test_non_object_payload_raises_vf_session_invalid(self):
+        """json.loads may return a list, string, number, or null; payload.get() raises AttributeError."""
+        # Mint a JWE whose plaintext is a JSON array instead of a dict
+        key = derive_encryption_key(SECRET, COOKIE)
+        token = jwe.encrypt(
+            b"[1, 2, 3]",
+            key,
+            algorithm="dir",
+            encryption="A256CBC-HS512",
+        ).decode()
+        with pytest.raises(VfSessionInvalid):
+            decode_vf_session({COOKIE: token}, SECRET)
+
 
 class TestContractFixture:
     """Cross-repo contract: fixture minted by VF scripts/mint-test-session.mjs."""
