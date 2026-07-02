@@ -34,6 +34,20 @@ async def get_current_user_websocket(
     - Sec-WebSocket-Protocol header: "Bearer, <jwt_token>"
     - Query parameter fallback: ?token=<jwt_token>
     """
+    # Delegated mode: VF session cookie first. Browser WebSockets cannot set
+    # an Authorization header; the shared suite cookie rides along instead.
+    if settings.CHAD_DELEGATED_AUTH and settings.VF_SESSION_SECRET:
+        try:
+            claims = decode_vf_session(websocket.cookies, settings.VF_SESSION_SECRET)
+        except VfSessionError:
+            claims = None
+        if claims is not None:
+            try:
+                return await resolve_vf_user(db, claims)
+            except HTTPException:
+                return None  # inactive user -> unauthenticated socket
+
+    # Fall through to the Sec-WebSocket-Protocol / query-param bearer flow.
     # Get token from Sec-WebSocket-Protocol header
     protocols = websocket.headers.get("sec-websocket-protocol", "")
     token = None

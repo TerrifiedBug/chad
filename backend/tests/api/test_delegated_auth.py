@@ -165,3 +165,51 @@ class TestDelegatedCookieAuth:
         client.cookies.set("authjs.session-token", "junk")
         resp = await client.get("/api/auth/me")
         assert resp.status_code == 401
+
+
+class _StubWebSocket:
+    """Just enough of starlette.WebSocket for get_current_user_websocket
+    (it only touches .headers, .query_params and — new — .cookies)."""
+
+    def __init__(self, cookies=None, headers=None, query_params=None):
+        self.cookies = cookies or {}
+        self.headers = headers or {}
+        self.query_params = query_params or {}
+
+
+class TestWebSocketDependency:
+    @pytest.mark.asyncio
+    async def test_vf_cookie_authenticates_websocket(self, test_session, monkeypatch):
+        _delegated(monkeypatch)
+        from app.api.deps import get_current_user_websocket
+
+        ws = _StubWebSocket(cookies={"authjs.session-token": "opaque-jwe"})
+        with patch("app.api.deps.decode_vf_session", return_value=_vf_claims()):
+            user = await get_current_user_websocket(ws, test_session)
+        assert user is not None
+        assert user.email == "suite.user@example.com"
+        assert user.provisioned_via == "vectorflow"
+
+    @pytest.mark.asyncio
+    async def test_bearer_protocol_fallback_still_works(
+        self, test_session, test_user, monkeypatch
+    ):
+        _delegated(monkeypatch)
+        from app.api.deps import get_current_user_websocket
+        from app.core.security import create_access_token
+
+        token = create_access_token(data={"sub": str(test_user.id)})
+        ws = _StubWebSocket(headers={"sec-websocket-protocol": f"Bearer, {token}"})
+        with patch("app.api.deps.decode_vf_session", return_value=None):
+            user = await get_current_user_websocket(ws, test_session)
+        assert user is not None
+        assert user.id == test_user.id
+
+    @pytest.mark.asyncio
+    async def test_no_cookie_no_token_returns_none(self, test_session, monkeypatch):
+        _delegated(monkeypatch)
+        from app.api.deps import get_current_user_websocket
+
+        with patch("app.api.deps.decode_vf_session", return_value=None):
+            user = await get_current_user_websocket(_StubWebSocket(), test_session)
+        assert user is None
