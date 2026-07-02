@@ -213,7 +213,10 @@ async def create_token_with_dynamic_timeout(user_id: str, db: AsyncSession, toke
 async def get_setup_status(db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(select(func.count()).select_from(User))
     user_count = result.scalar()
-    return {"setup_completed": user_count > 0}
+    return {
+        "setup_completed": user_count > 0,
+        "chad_delegated_auth": app_settings.CHAD_DELEGATED_AUTH,
+    }
 
 
 @router.post("/setup", response_model=TokenResponse, dependencies=[Depends(block_in_delegated_mode)])
@@ -577,6 +580,7 @@ async def get_current_user_info(
             "browser_notifications": False,
             "severities": ["critical", "high"]
         },
+        "chad_delegated_auth": app_settings.CHAD_DELEGATED_AUTH,
     }
 
 

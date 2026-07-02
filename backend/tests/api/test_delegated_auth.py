@@ -264,3 +264,26 @@ class TestDelegatedModeGating:
             json={"email": "nobody@example.com", "password": "wrong"},
         )
         assert resp.status_code == 401  # route exists; credentials rejected
+
+
+class TestDelegatedFlagExposure:
+    @pytest.mark.asyncio
+    async def test_setup_status_exposes_flag_off(self, client):
+        resp = await client.get("/api/auth/setup-status")
+        assert resp.status_code == 200
+        assert resp.json()["chad_delegated_auth"] is False
+
+    @pytest.mark.asyncio
+    async def test_setup_status_exposes_flag_on(self, client, monkeypatch):
+        _delegated(monkeypatch)
+        resp = await client.get("/api/auth/setup-status")
+        assert resp.status_code == 200
+        assert resp.json()["chad_delegated_auth"] is True
+
+    @pytest.mark.asyncio
+    async def test_auth_me_exposes_flag(self, client, monkeypatch):
+        _delegated(monkeypatch)
+        with patch("app.api.deps.decode_vf_session", return_value=_vf_claims()):
+            resp = await client.get("/api/auth/me")
+        assert resp.status_code == 200
+        assert resp.json()["chad_delegated_auth"] is True
