@@ -458,3 +458,22 @@ class TestDelegatedFlagExposure:
             resp = await client.get("/api/auth/me")
         assert resp.status_code == 200
         assert resp.json()["chad_delegated_auth"] is True
+
+    @pytest.mark.asyncio
+    async def test_setup_completed_true_when_delegated_even_with_zero_users(
+        self, client, monkeypatch
+    ):
+        """In delegated mode VF owns account provisioning/setup, so the CHAD
+        setup wizard must never be considered pending — even with zero local
+        users — or the frontend deadlocks on a wizard that can't be used."""
+        _delegated(monkeypatch)
+        resp = await client.get("/api/auth/setup-status")
+        assert resp.status_code == 200
+        assert resp.json()["setup_completed"] is True
+
+    @pytest.mark.asyncio
+    async def test_setup_completed_stays_user_count_based_when_flag_off(self, client):
+        """Standalone mode is unaffected: with zero users, setup is pending."""
+        resp = await client.get("/api/auth/setup-status")
+        assert resp.status_code == 200
+        assert resp.json()["setup_completed"] is False

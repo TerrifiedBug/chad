@@ -214,7 +214,10 @@ async def get_setup_status(db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(select(func.count()).select_from(User))
     user_count = result.scalar()
     return {
-        "setup_completed": user_count > 0,
+        # In delegated mode VF owns account setup/provisioning entirely, so
+        # the CHAD setup wizard is meaningless (and would deadlock the
+        # frontend at cold start if left gated on user_count).
+        "setup_completed": app_settings.CHAD_DELEGATED_AUTH or user_count > 0,
         "chad_delegated_auth": app_settings.CHAD_DELEGATED_AUTH,
     }
 
