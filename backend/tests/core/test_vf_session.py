@@ -101,6 +101,23 @@ class TestDecodeVfSession:
         with pytest.raises(VfSessionInvalid):
             decode_vf_session({COOKIE: token}, SECRET)
 
+    def test_missing_suite_role_defaults_to_viewer(self):
+        """Pre-rollout sessions minted before VF stamped suite_role have no
+        suite_role key at all. They're otherwise legitimate, so decode must
+        fail open to LEAST privilege (viewer) rather than reject them."""
+        payload = _payload()
+        del payload["suite_role"]
+        claims = decode_vf_session({COOKIE: _mint(payload)}, SECRET)
+        assert claims is not None
+        assert claims.suite_role == "viewer"
+
+    def test_unknown_suite_role_still_raises_vf_session_invalid(self):
+        """A PRESENT-but-unrecognized suite_role (e.g. a bogus/elevated value)
+        must still be rejected — fail-open only covers the absent key."""
+        token = _mint(_payload(suite_role="bogus"))
+        with pytest.raises(VfSessionInvalid):
+            decode_vf_session({COOKIE: token}, SECRET)
+
     def test_tampered_token_raises_vf_session_invalid(self):
         token = _mint(_payload())
         tampered = token[:-4] + ("AAAA" if not token.endswith("AAAA") else "BBBB")

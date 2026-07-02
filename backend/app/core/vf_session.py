@@ -119,7 +119,13 @@ def decode_vf_session(cookies: dict[str, str], secret: str) -> VfSessionClaims |
         raise VfSessionInvalid(f"VF session org_id {org_id!r} is not 'default'")
 
     suite_role = payload.get("suite_role")
-    if suite_role not in _SUITE_ROLES:
+    if suite_role is None:
+        # Pre-rollout sessions (minted before VF stamped suite_role) have no
+        # suite_role key. They're otherwise legitimate, so fail open to LEAST
+        # privilege rather than lock the user out. A PRESENT-but-unrecognized
+        # value still raises — only an absent claim defaults.
+        suite_role = "viewer"
+    elif suite_role not in _SUITE_ROLES:
         raise VfSessionInvalid(f"VF session suite_role {suite_role!r} not in {_SUITE_ROLES}")
 
     user_id = payload.get("id")
