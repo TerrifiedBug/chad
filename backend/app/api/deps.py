@@ -6,13 +6,16 @@ from opensearchpy import OpenSearch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.encryption import decrypt
 from app.core.security import decode_access_token
+from app.core.vf_session import VfSessionError, decode_vf_session
 from app.db.session import get_db
 from app.models.environment import Environment
 from app.models.setting import Setting
 from app.models.user import User
 from app.services.opensearch import get_cached_client
+from app.services.suite_auth import resolve_vf_user
 
 security = HTTPBearer(auto_error=False)
 
@@ -77,6 +80,15 @@ async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
 ) -> User:
     if credentials is None:
+        if settings.CHAD_DELEGATED_AUTH and settings.VF_SESSION_SECRET:
+            try:
+                claims = decode_vf_session(request.cookies, settings.VF_SESSION_SECRET)
+            except VfSessionError:
+                claims = None  # invalid/expired VF session -> 401 below
+            if claims is not None:
+                # NOTE: no CHAD token_version check for VF sessions — VF owns
+                # revocation (single logout invalidates the shared cookie).
+                return await resolve_vf_user(db, claims)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
