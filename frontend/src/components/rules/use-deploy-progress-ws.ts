@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { DeployProgressMessage } from '@/lib/api'
-import { WS_BASE } from '@/lib/api'
+import { WS_BASE, isDelegatedAuth } from '@/lib/api'
 import { applyProgress } from './deploy-progress-store'
 
 /**
@@ -16,13 +16,14 @@ export function useDeployProgressWs(enabled: boolean = true) {
 
   useEffect(() => {
     if (!enabled) return
-    // Only connect when authenticated — the socket requires a token like the
-    // other /ws consumers; without one there is nothing to subscribe to.
+    // Only connect when authenticated — the socket requires a token in standalone mode.
+    // In delegated mode, the same-origin cookie carries auth.
+    const delegated = isDelegatedAuth()
     const token = localStorage.getItem('chad-token')
-    if (!token) return
+    if (!delegated && !token) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}${WS_BASE}`)
+    const ws = token ? new WebSocket(`${protocol}//${window.location.host}${WS_BASE}`, ['Bearer', token]) : new WebSocket(`${protocol}//${window.location.host}${WS_BASE}`)
     wsRef.current = ws
 
     ws.onmessage = (event) => {
