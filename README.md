@@ -320,4 +320,4 @@ CHAD is under active development. Contributions, feedback, and design discussion
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+CHAD is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only), the same license as its sibling project [VectorFlow](https://github.com/terrifiedbug/vectorflow).
