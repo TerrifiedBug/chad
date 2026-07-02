@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { api, authApi, settingsApi, CurrentUser } from '@/lib/api'
+import { api, authApi, settingsApi, CurrentUser, setDelegatedAuth, isDelegatedAuth, navigation } from '@/lib/api'
 
 interface AuthContextType {
   isAuthenticated: boolean
@@ -9,6 +9,8 @@ interface AuthContextType {
   setupCompleted: boolean
   isOpenSearchConfigured: boolean
   backendReady: boolean
+  delegatedAuth: boolean
+  accountInactive: boolean
   user: CurrentUser | null
   isAdmin: boolean
   hasPermission: (permission: string) => boolean
@@ -20,7 +22,7 @@ interface AuthContextType {
   canViewAudit: () => boolean
   canManageSigmahq: () => boolean
   login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   setup: (email: string, password: string) => Promise<void>
   setOpenSearchConfigured: (configured: boolean) => void
   refreshUser: () => Promise<void>
@@ -29,6 +31,7 @@ interface AuthContextType {
 
 interface SetupStatusResponse {
   setup_completed: boolean
+  chad_delegated_auth?: boolean
 }
 
 interface TokenResponse {
@@ -46,6 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [setupCompleted, setSetupCompleted] = useState(false)
   const [isOpenSearchConfigured, setIsOpenSearchConfigured] = useState(false)
   const [backendReady, setBackendReady] = useState(false)
+  const [delegatedAuth, setDelegatedAuthState] = useState(false)
+  const [accountInactive, setAccountInactive] = useState(false)
   const [user, setUser] = useState<CurrentUser | null>(null)
 
   useEffect(() => {
@@ -131,17 +136,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // This call will throw if backend is unavailable (502/503/network error)
     const status = await api.get<SetupStatusResponse>('/auth/setup-status')
     setSetupCompleted(status.setup_completed)
+    // Suite mode flag — must arrive pre-auth, hence setup-status not /auth/me.
+    const delegated = status.chad_delegated_auth === true
+    setDelegatedAuth(delegated)
+    setDelegatedAuthState(delegated)
     setBackendReady(true)
     setIsStartingUp(false)
 
     const token = localStorage.getItem('chad-token')
 
-    if (!token || !status.setup_completed) {
+    // Delegated (suite) mode never gates on setup_completed or a Bearer token —
+    // VF owns onboarding and auth rides the session cookie, so always fall
+    // through to getMe() (which triggers JIT provisioning on first visit).
+    if (!delegated && (!status.setup_completed || !token)) {
       setIsAuthenticated(false)
       setIsOpenSearchConfigured(false)
       setIsLoading(false)
       return
     }
+
+    // Fresh check: clear any stale inactive-account error before revalidating.
+    setAccountInactive(false)
 
     // Validate token, get user info, and check OpenSearch status
     // This will throw if the token is invalid
@@ -153,9 +168,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(userData)
       setIsOpenSearchConfigured(osStatus.configured)
       setIsAuthenticated(true)
-    } catch {
-      // Token is invalid or expired - clear it
-      localStorage.removeItem('chad-token')
+    } catch (error) {
+      // Standalone: token invalid/expired — clear it. Delegated: a 401 means the
+      // api client's handler has already redirected to the VF login; a 403 means
+      // the account is inactive — no redirect will happen, so surface a terminal
+      // error state instead of leaving AuthRoute stuck on "Redirecting...".
+      if (!delegated) {
+        localStorage.removeItem('chad-token')
+      } else if ((error as { status?: number })?.status === 403) {
+        setAccountInactive(true)
+      }
       setIsAuthenticated(false)
       setIsOpenSearchConfigured(false)
       setUser(null)
@@ -177,7 +199,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true)
   }
 
-  const logout = () => {
+  const logout = async () => {
+    if (isDelegatedAuth()) {
+      // Single logout: kill the shared VF session cookie (Auth.js requires the
+      // csrfToken form field), then land on the suite root — both UIs sign out.
+      try {
+        const csrfRes = await fetch('/api/auth/csrf', { credentials: 'same-origin' })
+        const { csrfToken } = await csrfRes.json()
+        await fetch('/api/auth/signout', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ csrfToken }).toString(),
+        })
+      } finally {
+        navigation.assign('/')
+      }
+      return
+    }
     localStorage.removeItem('chad-token')
     setIsAuthenticated(false)
     setIsOpenSearchConfigured(false)
@@ -232,6 +271,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setupCompleted,
       isOpenSearchConfigured,
       backendReady,
+      delegatedAuth,
+      accountInactive,
       user,
       isAdmin: user?.role === 'admin',
       hasPermission,

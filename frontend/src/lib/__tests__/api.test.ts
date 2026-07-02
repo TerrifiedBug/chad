@@ -31,7 +31,7 @@ describe('Alerts API - Cache Invalidation', () => {
 
       // Verify DELETE request was made
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/alerts/' + alertId,
+        '/chad/api/alerts/' + alertId,
         expect.objectContaining({
           method: 'DELETE',
           headers: expect.objectContaining({
@@ -73,7 +73,7 @@ describe('Alerts API - Cache Invalidation', () => {
 
       // Verify bulk delete request
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/alerts/bulk/delete',
+        '/chad/api/alerts/bulk/delete',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
@@ -96,7 +96,7 @@ describe('Alerts API - Cache Invalidation', () => {
 
       // Should still make request with empty array
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/alerts/bulk/delete',
+        '/chad/api/alerts/bulk/delete',
         expect.objectContaining({
           body: JSON.stringify({ alert_ids: [] }),
         })
@@ -122,7 +122,7 @@ describe('Alerts API - Cache Invalidation', () => {
 
       // Verify bulk status update request
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/alerts/bulk/status',
+        '/chad/api/alerts/bulk/status',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
@@ -145,7 +145,7 @@ describe('Alerts API - Cache Invalidation', () => {
         await alertsApi.bulkUpdateStatus({ alert_ids: ['test-id'], status })
 
         expect(mockFetch).toHaveBeenCalledWith(
-          '/api/alerts/bulk/status',
+          '/chad/api/alerts/bulk/status',
           expect.objectContaining({
             body: JSON.stringify({
               alert_ids: ['test-id'],
@@ -177,7 +177,7 @@ describe('Alerts API - Cache Invalidation', () => {
 
       expect(alerts).toEqual(mockAlerts)
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/alerts',
+        '/chad/api/alerts',
         expect.anything() // Don't check method since API client doesn't set it for GET
       )
     })
@@ -189,7 +189,7 @@ describe('Alerts API - Cache Invalidation', () => {
       await alertsApi.list()
 
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/alerts',
+        '/chad/api/alerts',
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: `Bearer ${token}`,

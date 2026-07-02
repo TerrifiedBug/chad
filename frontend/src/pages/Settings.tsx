@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { settingsApiExtended, settingsApi, statsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, healthApi, notificationSettingsApi } from '@/lib/api'
+import { settingsApiExtended, settingsApi, statsApi, api, configApi, ImportMode, ImportSummary, OpenSearchStatusResponse, AIProvider, AISettings, AISettingsUpdate, AITestResponse, HealthSettings, alertClusteringApi, AlertClusteringSettings, queueApi, QueueSettings, healthApi, notificationSettingsApi, API_BASE } from '@/lib/api'
 import Notifications from '@/pages/Notifications'
 import GeoIPSettings from '@/pages/GeoIPSettings'
 import TISettings from '@/pages/TISettings'
@@ -2221,7 +2221,7 @@ export default function SettingsPage({ activeTab: activeTabProp }: { activeTab?:
                   variant="outline"
                   onClick={async () => {
                     try {
-                      await downloadWithAuth('/api/export/config', `chad-config-${new Date().toISOString().slice(0, 10)}.json`)
+                      await downloadWithAuth(`${API_BASE}/export/config`, `chad-config-${new Date().toISOString().slice(0, 10)}.json`)
                       showToast('Configuration exported successfully', 'success')
                     } catch (err) {
                       showToast(err instanceof Error ? err.message : 'Export failed', 'error')
@@ -2235,7 +2235,7 @@ export default function SettingsPage({ activeTab: activeTabProp }: { activeTab?:
                   variant="outline"
                   onClick={async () => {
                     try {
-                      await downloadWithAuth('/api/export/rules', `chad-rules-${new Date().toISOString().slice(0, 10)}.zip`)
+                      await downloadWithAuth(`${API_BASE}/export/rules`, `chad-rules-${new Date().toISOString().slice(0, 10)}.zip`)
                       showToast('Rules exported successfully', 'success')
                     } catch (err) {
                       showToast(err instanceof Error ? err.message : 'Export failed', 'error')

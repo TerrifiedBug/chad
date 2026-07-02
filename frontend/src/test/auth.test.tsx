@@ -15,18 +15,15 @@ const createWrapper = () => {
 };
 
 // Mock the API
-vi.mock('@/lib/api', () => ({
-  api: {
-    get: vi.fn(),
-    post: vi.fn(),
-  },
-  authApi: {
-    getMe: vi.fn(),
-  },
-  settingsApi: {
-    getOpenSearchStatus: vi.fn(),
-  },
-}));
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  return {
+    ...actual,
+    api: { get: vi.fn(), post: vi.fn() },
+    authApi: { getMe: vi.fn() },
+    settingsApi: { getOpenSearchStatus: vi.fn() },
+  };
+});
 
 describe('Authentication Flow', () => {
   beforeEach(async () => {

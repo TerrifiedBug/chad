@@ -40,7 +40,7 @@ const EnvironmentsPage = lazy(() => import('@/pages/Environments'))
 const EnvironmentDetailPage = lazy(() => import('@/pages/EnvironmentDetail'))
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user } = useAuth()
+  const { isAuthenticated, isLoading, user, delegatedAuth, accountInactive } = useAuth()
   const location = useLocation()
 
   if (isLoading) {
@@ -48,6 +48,20 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
+    if (accountInactive) {
+      // A delegated 403: the account is deactivated and no redirect will fire.
+      // Show a terminal message instead of the "Redirecting..." dead-end.
+      return (
+        <div className="flex h-screen items-center justify-center">
+          Your account has been deactivated. Contact your administrator for access.
+        </div>
+      )
+    }
+    if (delegatedAuth) {
+      // The api client's 401 handler has already issued a full-page redirect
+      // to the VF login; don't ping-pong with the hidden /login route.
+      return <div className="flex h-screen items-center justify-center">Redirecting to sign-in...</div>
+    }
     return <Navigate to="/login" replace />
   }
 
@@ -70,8 +84,8 @@ function SettingsHubRedirect() {
   return <Navigate to="/settings" replace />
 }
 
-function AppRoutes() {
-  const { setupCompleted, isLoading, isStartingUp, connectionFailed, isAuthenticated, isOpenSearchConfigured, retryConnection } = useAuth()
+export function AppRoutes() {
+  const { setupCompleted, isLoading, isStartingUp, connectionFailed, isAuthenticated, isOpenSearchConfigured, retryConnection, delegatedAuth } = useAuth()
 
   if (isLoading || isStartingUp) {
     return (
@@ -116,8 +130,9 @@ function AppRoutes() {
     )
   }
 
-  // Step 1: Initial setup (create admin account)
-  if (!setupCompleted) {
+  // Step 1: Initial setup (create admin account) — never shown in delegated
+  // (suite) mode, where VectorFlow owns onboarding for the whole suite.
+  if (!setupCompleted && !delegatedAuth) {
     return (
       <Routes>
         <Route path="*" element={<SetupPage />} />
@@ -141,7 +156,8 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      {/* Delegated (suite) mode: VectorFlow owns login at the origin root. */}
+      <Route path="/login" element={delegatedAuth ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={
         <AuthRoute>
           <AppLayout><Dashboard /></AppLayout>
@@ -249,6 +265,10 @@ function AppRoutes() {
       <Route path="/settings/hub" element={<SettingsHubRedirect />} />
       {/* Permissions opens the Users page's roles subtab. */}
       <Route path="/settings/permissions" element={<Navigate to="/settings/users?subtab=roles" replace />} />
+      {/* Delegated mode: VF owns identity — hide CHAD's SSO provider CRUD. */}
+      {delegatedAuth && (
+        <Route path="/settings/sso" element={<Navigate to="/settings" replace />} />
+      )}
       {/* Per-section route (general, security, ti, users, audit, …). The static
           /settings/api-keys route below still wins over this dynamic segment. */}
       <Route path="/settings/:section" element={
@@ -257,9 +277,11 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/change-password" element={
-        <AuthRoute>
-          <AppLayout><ChangePasswordPage /></AppLayout>
-        </AuthRoute>
+        delegatedAuth ? <Navigate to="/account" replace /> : (
+          <AuthRoute>
+            <AppLayout><ChangePasswordPage /></AppLayout>
+          </AuthRoute>
+        )
       } />
       <Route path="/account" element={
         <AuthRoute>

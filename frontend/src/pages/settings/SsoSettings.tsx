@@ -3,6 +3,7 @@ import {
   ssoApi,
   scimApi,
   teamsApi,
+  API_BASE,
   type SsoProvider,
   type SsoProviderInput,
   type SsoGroupMapping,
@@ -765,7 +766,7 @@ function ScimPanel() {
 
   // SCIM base URL is derived on the client (the backend doesn't return it).
   const baseUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}/api/scim/v2` : '/api/scim/v2'
+    typeof window !== 'undefined' ? `${window.location.origin}${API_BASE}/scim/v2` : `${API_BASE}/scim/v2`
 
   useEffect(() => {
     let active = true

@@ -16,7 +16,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { api } from '@/lib/api'
+import { api, WS_BASE } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
 import { TimestampTooltip } from '@/components/timestamp-tooltip'
 import { PageHeader } from '@/components/PageHeader'
@@ -134,7 +134,7 @@ export default function HealthPage() {
 
     // WebSocket for live health updates
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
+    const ws = new WebSocket(`${protocol}//${window.location.host}${WS_BASE}`)
 
     ws.onmessage = (event) => {
       try {
