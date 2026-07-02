@@ -120,3 +120,37 @@ class TestContractFixture:
         assert claims is not None
         for field_name, expected in fixture["expected_claims"].items():
             assert getattr(claims, field_name) == expected, field_name
+
+
+class TestDelegatedAuthStartupGuard:
+    """NOTE: patches `app.main.settings`, not `app.core.config.settings`.
+
+    TestChadModeConfig (tests/core/test_config.py) calls
+    importlib.reload(app.core.config) in several tests, which rebinds
+    app.core.config.settings to a brand-new Settings() instance.
+    app.main did `from app.core.config import settings` at its own import
+    time, so app.main.settings keeps referencing the pre-reload object for
+    the rest of the test session — the two names silently diverge once any
+    test in the package reloads the config module. validate_delegated_auth_config()
+    reads the module-global `settings` inside app.main, so tests must patch
+    that exact object to be correct regardless of collection/run order.
+    """
+
+    def test_raises_when_delegated_auth_without_secret(self, monkeypatch):
+        from app.main import settings, validate_delegated_auth_config
+
+        monkeypatch.setattr(settings, "CHAD_DELEGATED_AUTH", True)
+        monkeypatch.setattr(settings, "VF_SESSION_SECRET", None)
+        with pytest.raises(RuntimeError, match="VF_SESSION_SECRET"):
+            validate_delegated_auth_config()
+
+    def test_passes_when_secret_set_or_flag_off(self, monkeypatch):
+        from app.main import settings, validate_delegated_auth_config
+
+        monkeypatch.setattr(settings, "CHAD_DELEGATED_AUTH", True)
+        monkeypatch.setattr(settings, "VF_SESSION_SECRET", "shared-nextauth-secret-32-chars-xx")
+        validate_delegated_auth_config()
+
+        monkeypatch.setattr(settings, "CHAD_DELEGATED_AUTH", False)
+        monkeypatch.setattr(settings, "VF_SESSION_SECRET", None)
+        validate_delegated_auth_config()
